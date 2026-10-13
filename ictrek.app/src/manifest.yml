@@ -16,7 +16,7 @@ frontend:
   enabled: true
   basePath: /app/com.ictrek.v-scheduler
 platform:
-  version: '>=3.3.0'
+  version: '>=3.0.0'
 dependencies:
   apps:
     - id: com.ictrek.pgv
