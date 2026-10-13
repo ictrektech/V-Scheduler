@@ -11,8 +11,6 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
-    env:
-      CARGO_TARGET_DIR: ${{ runner.temp }}/v-scheduler-target
     steps:
       - uses: actions/checkout@v6
         with:
@@ -32,6 +30,8 @@ jobs:
           npm run build -- --outDir "$RUNNER_TEMP/v-scheduler-ui"
           npm test
       - name: Verify controller protocol helpers
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/v-scheduler-target
         run: cargo test --locked --manifest-path backend/Cargo.toml
 
       - name: Write Feishu component credentials
