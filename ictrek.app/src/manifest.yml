@@ -25,10 +25,12 @@ dependencies:
 profiles:
   - name: amd
     title: {zh-CN: AMD64, en: AMD64, zh-TW: AMD64}
+    description: {zh-CN: AMD64 节点资源调度服务, en: Resource scheduler for AMD64 nodes, zh-TW: AMD64 節點資源調度服務}
     caps: {arch: amd64}
     conflicts: [arm]
   - name: arm
     title: {zh-CN: ARM64, en: ARM64, zh-TW: ARM64}
+    description: {zh-CN: ARM64 节点资源调度服务, en: Resource scheduler for ARM64 nodes, zh-TW: ARM64 節點資源調度服務}
     caps: {arch: arm64}
     conflicts: [amd]
 require-profiles: true

@@ -300,6 +300,17 @@ verify_package() {
   if ! printf '%s\n' "$manifest_text" | grep -Eq '^category:[[:space:]]*\[system\][[:space:]]*$'; then
     die "V-Scheduler must use the VOS-supported system category"
   fi
+  python3 - "$app_tarball" <<'PYPROFILES'
+import re, sys, tarfile
+with tarfile.open(sys.argv[1], "r:gz") as archive:
+    text = archive.extractfile("manifest.yml").read().decode()
+section = re.search(r"^profiles:\n((?:[ \t].*\n|\n)+)", text, re.M)
+assert section, "manifest profiles missing"
+profiles = re.split(r"^  - name:\s*", section[1], flags=re.M)[1:]
+assert len(profiles) == 2, "expected AMD64 and ARM64 profiles"
+for profile in profiles:
+    assert re.search(r"^    description:\s*\S", profile, re.M), "profile description is required by VOS"
+PYPROFILES
   if ! printf '%s\n' "$manifest_text" | grep -q '^[[:space:]]*frontend:[[:space:]]*$'; then
     die "manifest.yml must declare frontend for VOS open button compatibility"
   fi
