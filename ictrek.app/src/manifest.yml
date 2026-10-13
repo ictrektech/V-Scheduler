@@ -9,7 +9,7 @@ description:
   zh-TW: 任務排隊、資源預約、受控重試與節點資源觀察。
 version: __APP_VERSION__
 author: ictrek
-category: [tools]
+category: [system]
 icon: icon.png
 arch: [amd64, arm64]
 frontend:

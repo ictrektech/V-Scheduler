@@ -297,6 +297,9 @@ verify_package() {
     die "unrendered placeholder remains"
   fi
   manifest_text="$(tar xOf "$app_tarball" manifest.yml)"
+  if ! printf '%s\n' "$manifest_text" | grep -Eq '^category:[[:space:]]*\[system\][[:space:]]*$'; then
+    die "V-Scheduler must use the VOS-supported system category"
+  fi
   if ! printf '%s\n' "$manifest_text" | grep -q '^[[:space:]]*frontend:[[:space:]]*$'; then
     die "manifest.yml must declare frontend for VOS open button compatibility"
   fi
