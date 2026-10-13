@@ -1,4 +1,10 @@
 export const messages:Record<string,[string,string]>={
+'连接 VOS':['Connect to VOS','連接 VOS'],
+'使用当前 VOS 管理员身份连接，首次使用自动准备 PGV 数据库。':['Use your current VOS administrator session. PGV is prepared automatically on first use.','使用目前 VOS 管理員身分連接，首次使用自動準備 PGV 資料庫。'],
+'重试连接':['Retry connection','重試連接'],
+'VOS_LOGIN_REQUIRED':['Open this app from VOS after signing in.','請登入 VOS 後開啟此應用。'],
+'PGV_SETUP_UNAVAILABLE':['PGV setup is unavailable. Check that PGV is installed and healthy, then retry.','PGV 初始化暫不可用，請確認 PGV 已安裝且健康後重試。'],
+'VOS_ADMIN_REQUIRED':['A VOS system administrator account is required.','需要 VOS 系統管理員帳戶。'],
 '此接口公开，无需访问令牌。':['This endpoint is public; no access token is required.','此介面公開，無需存取權杖。'],
 '最近结束':['Recently finished','最近結束'],
 '任务排布':['Task Schedule','任務排布'],

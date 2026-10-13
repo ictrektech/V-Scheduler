@@ -39,19 +39,31 @@ fn invalid() -> Error {
 fn unavailable(_: sqlx::Error) -> Error {
     Error(StatusCode::SERVICE_UNAVAILABLE, "TEMPORARILY_UNAVAILABLE")
 }
-fn auth(a: &App, h: &HeaderMap) -> Api<Principal> {
+async fn auth(a: &App, h: &HeaderMap) -> Api<Principal> {
     let token = h
         .get("authorization")
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
         .ok_or(Error(StatusCode::UNAUTHORIZED, "UNAUTHENTICATED"))?;
     let digest = Sha256::digest(token.as_bytes());
-    a.config
+    if let Some(p) = a
+        .config
         .principals
         .iter()
         .find(|p| Sha256::digest(p.token.as_bytes()) == digest)
-        .cloned()
-        .ok_or(Error(StatusCode::UNAUTHORIZED, "UNAUTHENTICATED"))
+    {
+        return Ok(p.clone());
+    }
+    crate::identity::verify(h).await.map_err(|status| {
+        Error(
+            status,
+            if status == StatusCode::FORBIDDEN {
+                "FORBIDDEN"
+            } else {
+                "UNAUTHENTICATED"
+            },
+        )
+    })
 }
 fn require(p: &Principal, role: &str) -> Api<()> {
     if p.role == role || p.role == "admin" {
@@ -168,6 +180,7 @@ pub async fn serve(
         }
     });
     let api = Router::new()
+        .route("/setup", get(|| async { ok(json!({"ready":true,"version":std::env::var("VOS_APP_VERSION").unwrap_or_else(|_| env!("CARGO_PKG_VERSION").into())})) }))
         .route("/discovery", get(discovery))
         .route(
             "/openapi.json",
@@ -219,7 +232,7 @@ async fn discovery() -> Json<Value> {
     )
 }
 async fn executors(State(a): State<App>, h: HeaderMap) -> Api<Json<Value>> {
-    let p = auth(&a, &h)?;
+    let p = auth(&a, &h).await?;
     require(&p, "submitter")?;
     Ok(ok(json!(
         a.config
@@ -230,7 +243,7 @@ async fn executors(State(a): State<App>, h: HeaderMap) -> Api<Json<Value>> {
     )))
 }
 async fn submit(State(a): State<App>, h: HeaderMap, Json(body): Json<TaskSubmit>) -> Api<Response> {
-    let p = auth(&a, &h)?;
+    let p = auth(&a, &h).await?;
     require(&p, "submitter")?;
     let key = h
         .get("idempotency-key")
@@ -331,7 +344,7 @@ fn page(q: &Page) -> Api<(i64, i64)> {
     Ok((offset, limit))
 }
 async fn tasks(State(a): State<App>, h: HeaderMap, Query(q): Query<Page>) -> Api<Json<Value>> {
-    let p = auth(&a, &h)?;
+    let p = auth(&a, &h).await?;
     require(&p, "submitter")?;
     let (offset, limit) = page(&q)?;
     let rs=sqlx::query("SELECT * FROM vrs_tasks WHERE deleted_at IS NULL AND ($1 OR app=$2) ORDER BY created_at DESC,id LIMIT $3 OFFSET $4").bind(p.role=="admin").bind(&p.app_id).bind(limit).bind(offset).fetch_all(&a.db).await.map_err(unavailable)?;
@@ -352,12 +365,12 @@ async fn get_task(a: &App, p: &Principal, id: &str) -> Api<sqlx::postgres::PgRow
     Ok(r)
 }
 async fn detail(State(a): State<App>, h: HeaderMap, Path(id): Path<String>) -> Api<Json<Value>> {
-    let p = auth(&a, &h)?;
+    let p = auth(&a, &h).await?;
     require(&p, "submitter")?;
     Ok(ok(task_value(&get_task(&a, &p, &id).await?)))
 }
 async fn cancel(State(a): State<App>, h: HeaderMap, Path(id): Path<String>) -> Api<Json<Value>> {
-    let p = auth(&a, &h)?;
+    let p = auth(&a, &h).await?;
     require(&p, "submitter")?;
     get_task(&a, &p, &id).await?;
     let mut tx = a.db.begin().await.map_err(unavailable)?;
@@ -369,7 +382,7 @@ async fn cancel(State(a): State<App>, h: HeaderMap, Path(id): Path<String>) -> A
     Ok(ok(task_value(&get_task(&a, &p, &id).await?)))
 }
 async fn events(State(a): State<App>, h: HeaderMap, Query(q): Query<Page>) -> Api<Json<Value>> {
-    let p = auth(&a, &h)?;
+    let p = auth(&a, &h).await?;
     require(&p, "submitter")?;
     let (c, l) = page(&q)?;
     let rs=sqlx::query("SELECT cursor,task,status,version FROM vrs_events WHERE cursor>$1 AND ($2 OR app=$3) ORDER BY cursor LIMIT $4").bind(c).bind(p.role=="admin").bind(&p.app_id).bind(l).fetch_all(&a.db).await.map_err(unavailable)?;
@@ -379,7 +392,7 @@ async fn events(State(a): State<App>, h: HeaderMap, Query(q): Query<Page>) -> Ap
     ))
 }
 async fn nodes(State(a): State<App>, h: HeaderMap) -> Api<Json<Value>> {
-    let p = auth(&a, &h)?;
+    let p = auth(&a, &h).await?;
     require(&p, "admin")?;
     let rs = sqlx::query("SELECT * FROM vrs_nodes ORDER BY id")
         .fetch_all(&a.db)
@@ -392,7 +405,7 @@ async fn nodes(State(a): State<App>, h: HeaderMap) -> Api<Json<Value>> {
     Ok(ok(json!(views)))
 }
 async fn reservations(State(a): State<App>, h: HeaderMap) -> Api<Json<Value>> {
-    let p = auth(&a, &h)?;
+    let p = auth(&a, &h).await?;
     require(&p, "admin")?;
     let rs =
         sqlx::query("SELECT attempt,task,node,resources,state,lease_until,created_at FROM vrs_reservations WHERE state<>'released' UNION ALL SELECT id AS attempt, 'permit:' || id AS task,node,resources,state,lease_until,created_at FROM vrs_permits WHERE state<>'released' ORDER BY created_at")
@@ -407,7 +420,7 @@ async fn drain(
     Path(id): Path<String>,
     Json(body): Json<Value>,
 ) -> Api<Json<Value>> {
-    require(&auth(&a, &h)?, "admin")?;
+    require(&auth(&a, &h).await?, "admin")?;
     let d = body
         .get("draining")
         .and_then(Value::as_bool)
@@ -431,7 +444,7 @@ async fn heartbeat(
     Path(id): Path<String>,
     Json(b): Json<Heartbeat>,
 ) -> Api<Json<Value>> {
-    let p = auth(&a, &h)?;
+    let p = auth(&a, &h).await?;
     worker(&p, &id)?;
     let changed=sqlx::query("UPDATE vrs_nodes SET heartbeat=now(),session=$2,report=$3 WHERE id=$1 AND (session IS NULL OR session=$2)").bind(id).bind(b.session_id).bind(b.report).execute(&a.db).await.map_err(unavailable)?.rows_affected();
     if changed == 0 {
@@ -463,7 +476,7 @@ async fn claim(
     Path(id): Path<String>,
     Json(b): Json<Session>,
 ) -> Api<Json<Value>> {
-    let p = auth(&a, &h)?;
+    let p = auth(&a, &h).await?;
     worker(&p, &id)?;
     expire(&a).await?;
     let mut tx = a.db.begin().await.map_err(unavailable)?;
@@ -551,7 +564,7 @@ async fn renew(
     Path(id): Path<String>,
     Json(b): Json<Renewal>,
 ) -> Api<Json<Value>> {
-    let p = auth(&a, &h)?;
+    let p = auth(&a, &h).await?;
     if p.role != "worker" {
         return Err(Error(StatusCode::FORBIDDEN, "FORBIDDEN"));
     }
@@ -582,7 +595,7 @@ async fn report(
     Path(id): Path<String>,
     Json(b): Json<Report>,
 ) -> Api<Json<Value>> {
-    let p = auth(&a, &h)?;
+    let p = auth(&a, &h).await?;
     if p.role != "worker" {
         return Err(Error(StatusCode::FORBIDDEN, "FORBIDDEN"));
     }
@@ -670,7 +683,7 @@ async fn permit_acquire(
     h: HeaderMap,
     Json(b): Json<PermitRequest>,
 ) -> Api<Json<Value>> {
-    let p = auth(&a, &h)?;
+    let p = auth(&a, &h).await?;
     require(&p, "submitter")?;
     let key = h
         .get("idempotency-key")
@@ -746,7 +759,7 @@ async fn permit_renew(
     h: HeaderMap,
     Path(id): Path<String>,
 ) -> Api<Json<Value>> {
-    let p = auth(&a, &h)?;
+    let p = auth(&a, &h).await?;
     require(&p, "submitter")?;
     let count=sqlx::query("UPDATE vrs_permits SET lease_until=now()+interval '30 seconds' WHERE id=$1 AND app=$2 AND state='active' AND lease_until>now()").bind(id).bind(&p.app_id).execute(&a.db).await.map_err(unavailable)?.rows_affected();
     if count != 1 {
@@ -766,7 +779,7 @@ async fn permit_release(
     Path(id): Path<String>,
     Json(b): Json<PermitRelease>,
 ) -> Api<Json<Value>> {
-    let p = auth(&a, &h)?;
+    let p = auth(&a, &h).await?;
     require(&p, "submitter")?;
     if b.evidence.is_empty() || b.evidence.len() > 512 {
         return Err(invalid());
@@ -803,7 +816,7 @@ async fn permit_confirm(
     Path(id): Path<String>,
     Json(b): Json<PermitRelease>,
 ) -> Api<Json<Value>> {
-    require(&auth(&a, &h)?, "admin")?;
+    require(&auth(&a, &h).await?, "admin")?;
     if !b.stopped || b.evidence.trim().is_empty() {
         return Err(invalid());
     }
@@ -819,7 +832,7 @@ async fn permit_confirm(
 }
 
 async fn attempts(State(a): State<App>, h: HeaderMap, Path(id): Path<String>) -> Api<Json<Value>> {
-    let p = auth(&a, &h)?;
+    let p = auth(&a, &h).await?;
     require(&p, "submitter")?;
     get_task(&a, &p, &id).await?;
     let rows = sqlx::query("SELECT * FROM vrs_attempts WHERE task=$1 ORDER BY fence")
@@ -834,7 +847,7 @@ async fn retry_task(
     h: HeaderMap,
     Path(id): Path<String>,
 ) -> Api<Json<Value>> {
-    let p = auth(&a, &h)?;
+    let p = auth(&a, &h).await?;
     require(&p, "submitter")?;
     get_task(&a, &p, &id).await?;
     let key = h
@@ -896,7 +909,7 @@ async fn delete_task(
     h: HeaderMap,
     Path(id): Path<String>,
 ) -> Api<Json<Value>> {
-    let p = auth(&a, &h)?;
+    let p = auth(&a, &h).await?;
     require(&p, "submitter")?;
     let mut tx = a.db.begin().await.map_err(unavailable)?;
     let row = sqlx::query("SELECT * FROM vrs_tasks WHERE id=$1 FOR UPDATE")

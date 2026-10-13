@@ -1,12 +1,11 @@
 x-controller: &controller
   restart: unless-stopped
   command: [controller, --config, /config/controller.json, --listen, '0.0.0.0:38120', --ui-dir, /opt/v-scheduler/ui]
-  env_file:
-    - ${VOS_APP_STORAGE_PATH}/config/database.env
   environment:
+    VOS_HOST_GW_IP: ${VOS_HOST_GW_IP}
     VOS_APP_VERSION: __APP_VERSION__
   volumes:
-    - ${VOS_APP_STORAGE_PATH}/config:/config:ro
+    - ${VOS_APP_STORAGE_PATH}/config:/config
   networks:
     vos_default:
       aliases: [v-scheduler, v-scheduler-backend, v-scheduler-frontend]

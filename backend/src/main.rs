@@ -1,6 +1,8 @@
 mod agent;
+mod bootstrap;
 mod controller;
 mod gpu;
+mod identity;
 mod model;
 mod vos;
 use clap::{Parser, Subcommand};
@@ -16,7 +18,7 @@ enum Mode {
         #[arg(long)]
         config: PathBuf,
         #[arg(long, env = "SCHEDULER_DATABASE_URL")]
-        database_url: String,
+        database_url: Option<String>,
         #[arg(long, default_value = "127.0.0.1:38120")]
         listen: String,
         #[arg(long)]
@@ -35,7 +37,20 @@ async fn main() -> anyhow::Result<()> {
             database_url,
             listen,
             ui_dir,
-        } => controller::serve(config, database_url, listen, ui_dir).await,
+        } => {
+            let mut url = database_url.or_else(|| bootstrap::database(&config));
+            if url.is_none() || !config.exists() {
+                bootstrap::wait(config.clone(), &listen, ui_dir.clone()).await?;
+                url = bootstrap::database(&config);
+            }
+            controller::serve(
+                config,
+                url.ok_or_else(|| anyhow::anyhow!("database setup incomplete"))?,
+                listen,
+                ui_dir,
+            )
+            .await
+        }
         Mode::Agent { config } => agent::run(config).await,
     }
 }

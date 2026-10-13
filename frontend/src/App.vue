@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {ref,computed,onMounted,onUnmounted,watch} from 'vue'
 import Icon from './Icon.vue'
+import {getVOSBearerToken,clearCachedVOSBearerToken} from './vos-auth'
 import logoUrl from '../../assets/icon.svg'
 import TaskCard from './TaskCard.vue'
 import {createLocaleController,type Locale,type Preference} from './locale'
@@ -13,6 +14,8 @@ const language=createLocaleController({window,document,navigator,storage:localSt
 preference.value=language.preference
 const t=(source:string)=>locale.value==='zh-CN'?source:messages[source]?.[locale.value==='en'?0:1]||source
 const demo=ref(false)
+const appVersion=ref('')
+const vosEmbedded=location.pathname.startsWith('/app/com.ictrek.v-scheduler')
 const page=ref(location.hash==='#api'?'api':'resources'),credential=ref(''),connected=ref(false),busy=ref(false),error=ref(''),tasks=ref<Task[]>([]),nodes=ref<Node[]>([]),reservations=ref<Reservation[]>([]),filter=ref('all'),search=ref(''),selected=ref<Task|null>(null),attempts=ref<any[]>([]),detailTab=ref('overview'),deleting=ref<Task|null>(null),confirmPermit=ref<Reservation|null>(null),stopEvidence=ref(''),copied=ref(false)
 const labels=computed<Record<string,string>>(()=>Object.fromEntries(Object.entries({queued:'排队中',assigned:'已预约',running:'运行中',cancelling:'取消中',recovering:'核验中',cancelled:'已取消',succeeded:'已完成',failed:'失败',retry_wait:'等待重试'}).map(([k,v])=>[k,t(v)])))
 const shown=computed(()=>tasks.value.filter(task=>(filter.value==='all'||task.status===filter.value)&&(!search.value||(task.task_id+' '+task.app_id).toLowerCase().includes(search.value.toLowerCase()))))
@@ -34,15 +37,16 @@ const docDescription=computed(()=>operation.value?.['x-description']?.[locale.va
 const code=computed(()=>exampleTab.value==='json'?JSON.stringify(sample.value,null,2):`curl -X ${operation.value?.method.toUpperCase()||'GET'} '${location.origin}${apiBase}${(operation.value?.path||'/discovery').slice(1)}'${operation.value?.security?.length?" \\\n  -H 'Authorization: Bearer <service-access-token>'":''}${operation.value?.parameters?.some((p:any)=>p.name==='Idempotency-Key')?" \\\n  -H 'Idempotency-Key: stable-business-key'":''}${operation.value?.requestBody?" \\\n  -H 'Content-Type: application/json' \\\n  -d '"+JSON.stringify(sample.value)+"'":''}`)
 function prettyTime(value:string){return new Intl.DateTimeFormat(locale.value,{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}).format(new Date(value))}
 const errors:Record<string,string>={UNAUTHENTICATED:'未授权或令牌无效',FORBIDDEN:'权限不足',STATE_CONFLICT:'任务或资源状态不允许此操作',RETRY_NOT_ALLOWED:'任务或资源状态不允许此操作',TASK_NOT_STOPPED:'任务或资源状态不允许此操作',TEMPORARILY_UNAVAILABLE:'调度器暂不可用',WAIT_RESOURCE:'资源忙，请稍后重试',WAIT_RESOURCE_OR_NODE:'资源忙，请稍后重试'}
-async function api(path:string,body?:unknown,method?:string,extra:Record<string,string>={}){
+async function api(path:string,body?:unknown,method?:string,extra:Record<string,string>={},retried=false){
  const response=await fetch(apiBase+path,{method:method||(body===undefined?'GET':'POST'),headers:{Authorization:`Bearer ${credential.value}`,'Content-Type':'application/json',...extra},body:body===undefined?undefined:JSON.stringify(body)})
+ if(response.status===401&&vosEmbedded&&!retried){clearCachedVOSBearerToken();credential.value=await getVOSBearerToken()||'';if(credential.value)return api(path,body,method,extra,true)}
  const text=await response.text();let payload:any;try{payload=JSON.parse(text)}catch{throw Error(`HTTP ${response.status}`)}
  if(!response.ok)throw Error(payload.code||`HTTP ${response.status}`)
  return payload.data
 }
 function showError(e:unknown){error.value=(e instanceof Error?e.message:String(e)).replace(/^Error: /,'')}
 async function refresh(){if(!connected.value||busy.value)return;busy.value=true;try{const [taskData,nodeData,reserved]=await Promise.all([api('tasks?limit=200'),api('nodes'),api('reservations')]);tasks.value=taskData.items;nodes.value=nodeData;reservations.value=reserved;error.value='';if(selected.value){selected.value=tasks.value.find(task=>task.task_id===selected.value?.task_id)||null}}catch(e){showError(e)}finally{busy.value=false}}
-async function connect(){demo.value=false;tasks.value=[];nodes.value=[];reservations.value=[];connected.value=true;await refresh();if(error.value)connected.value=false}
+async function connect(){if(location.pathname.startsWith('/app/com.ictrek.v-scheduler')){try{credential.value=await getVOSBearerToken()||'';if(!credential.value){error.value='VOS_LOGIN_REQUIRED';return}}catch{error.value='VOS_LOGIN_REQUIRED';return}const state=await (await fetch(apiBase+'setup')).json();appVersion.value=state.data?.version||'';if(state.data?.ready===false){try{await api('setup',{});await new Promise(resolve=>setTimeout(resolve,1000))}catch(e){showError(e);return}}}demo.value=false;tasks.value=[];nodes.value=[];reservations.value=[];connected.value=true;await refresh();if(error.value)connected.value=false}
 function logout(){demo.value=false;connected.value=false;credential.value='';tasks.value=[];nodes.value=[];reservations.value=[];selected.value=null}
 async function cancel(task:Task){if(demo.value){task.status='cancelled';task.can_retry=false;reservations.value=reservations.value.filter(r=>r.task_id!==task.task_id);return}try{await api(`tasks/${task.task_id}/cancel`,{});await refresh()}catch(e){showError(e)}}
 async function retry(task:Task){if(demo.value){task.status='queued';task.can_retry=false;task.node_id=null;task.progress={};return}try{await api(`tasks/${task.task_id}/retry`,{},'POST',{'Idempotency-Key':(crypto.randomUUID?.()||Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b=>b.toString(16).padStart(2,'0')).join(''))});await refresh();if(selected.value?.task_id===task.task_id)await select(task)}catch(e){showError(e)}}
@@ -62,17 +66,18 @@ async function tryDiscovery(){try{discoveryResult.value=await (await fetch(apiBa
 watch(page,value=>{location.hash=value==='api'?'api':'resources';selected.value=null})
 watch(locale,()=>{document.title=`V-Scheduler · ${t('资源调度')}`})
 let timer:ReturnType<typeof setInterval>
-onMounted(async()=>{timer=setInterval(refresh,2500);try{spec.value=await (await fetch(apiBase+'openapi.json')).json()}catch{error.value='加载接口文档失败'}})
+onMounted(async()=>{if(location.pathname.startsWith('/app/com.ictrek.v-scheduler'))await connect();timer=setInterval(refresh,2500);try{spec.value=await (await fetch(apiBase+'openapi.json')).json()}catch{if(!error.value)error.value='加载接口文档失败'}})
 onUnmounted(()=>{clearInterval(timer);language.dispose()})
 </script>
 <template>
  <div class="shell">
-  <aside><div class="brand"><img :src="logoUrl" alt=""><div>V-Scheduler<small>{{t('资源调度')}}</small></div></div><nav><button :class="{current:page==='resources'}" @click="page='resources'"><Icon name="queue"/>{{t('资源与任务')}}</button><button :class="{current:page==='api'}" @click="page='api'"><Icon name="book"/>{{t('API 文档')}}</button></nav><div class="aside-note"><span class="connection-dot" :class="{on:connected}"></span>{{t(demo?'演示模式':connected?'已连接':'未连接')}}<small>{{t('按能力分配')}}<br>{{t('确认停止后释放')}}</small><small>v0.1.0</small></div></aside>
+  <aside><div class="brand"><img :src="logoUrl" alt=""><div>V-Scheduler<small>{{t('资源调度')}}</small></div></div><nav><button :class="{current:page==='resources'}" @click="page='resources'"><Icon name="queue"/>{{t('资源与任务')}}</button><button :class="{current:page==='api'}" @click="page='api'"><Icon name="book"/>{{t('API 文档')}}</button></nav><div class="aside-note"><span class="connection-dot" :class="{on:connected}"></span>{{t(demo?'演示模式':connected?'已连接':'未连接')}}<small>{{t('按能力分配')}}<br>{{t('确认停止后释放')}}</small><small v-if="appVersion">v{{appVersion}}</small></div></aside>
   <main>
    <header><div><h1>{{t(page==='api'?'API 文档':'资源与任务')}}</h1><p>{{t(page==='api'?'接口标准、认证方式与可复制的请求示例。':'查看执行资源、预约与排队任务。')}}</p></div><div class="header-actions"><label class="locale-control"><Icon name="globe"/><select v-model="preference" :aria-label="t('界面语言')" @change="language.setPreference(preference)"><option value="auto">{{t('跟随 VOS')}}</option><option value="zh-CN">简体中文</option><option value="en">English</option><option value="zh-TW">繁體中文</option></select></label><button v-if="connected" class="quiet" @click="logout"><Icon name="out"/>{{t('断开连接')}}</button></div></header>
    <div v-if="error" class="error" role="alert">{{t(errors[error]||error)}}<code v-if="errors[error]">{{error}}</code></div>
    <template v-if="page==='resources'">
-    <form v-if="!connected&&!demo" class="login" @submit.prevent="connect"><div class="login-mark"><Icon name="shield"/></div><h2>{{t('连接调度器')}}</h2><p>{{t('输入管理员访问令牌。令牌仅保留在当前页面内存中。')}}</p><label for="token">{{t('访问令牌')}}</label><div class="login-row"><input id="token" v-model="credential" type="password" autocomplete="off" required :placeholder="t('管理员访问令牌')"><button type="submit">{{t('连接')}}</button></div><button class="quiet preview-button" type="button" @click="preview">{{t('查看任务管理演示')}}</button></form>
+    <section v-if="!connected&&!demo&&vosEmbedded" class="login"><div class="login-mark"><Icon name="shield"/></div><h2>{{t('连接 VOS')}}</h2><p>{{t('使用当前 VOS 管理员身份连接，首次使用自动准备 PGV 数据库。')}}</p><button :disabled="busy" @click="connect">{{t('重试连接')}}</button></section>
+    <form v-if="!connected&&!demo&&!vosEmbedded" class="login" @submit.prevent="connect"><div class="login-mark"><Icon name="shield"/></div><h2>{{t('连接调度器')}}</h2><p>{{t('输入管理员访问令牌。令牌仅保留在当前页面内存中。')}}</p><label for="token">{{t('访问令牌')}}</label><div class="login-row"><input id="token" v-model="credential" type="password" autocomplete="off" required :placeholder="t('管理员访问令牌')"><button type="submit">{{t('连接')}}</button></div><button class="quiet preview-button" type="button" @click="preview">{{t('查看任务管理演示')}}</button></form>
     <div v-if="demo" class="demo-banner"><div><strong>{{t('演示模式')}}</strong><span>{{t('样例数据；操作只影响当前演示，不会执行计算或修改真实任务。')}}</span></div><button class="quiet" @click="logout">{{t('连接真实调度器')}}</button></div>
     <template v-if="connected||demo">
      <section class="summary"><div v-for="metric in [{name:'排队任务',n:queued,icon:'queue'},{name:'执行与核验',n:active,icon:'play'},{name:'纳管节点',n:nodes.filter(n=>n.managed!==false).length,icon:'server'},{name:'未释放预约',n:reservations.length,icon:'clock'}]"><span>{{t(metric.name)}}</span><div><strong>{{metric.n}}</strong><Icon :name="metric.icon"/></div><i></i></div></section>

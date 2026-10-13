@@ -1,16 +1,10 @@
 routers:
-  - id: com-ictrek-v-scheduler
-    kind: group
-    title: {zh-CN: 资源调度, en: Resource Scheduling, zh-TW: 資源調度}
+  - id: v-scheduler
+    kind: page
+    title: {zh-CN: V-Scheduler, en: V-Scheduler, zh-TW: V-Scheduler}
     icon: lucide:workflow
+    iframe-src: /app/com.ictrek.v-scheduler/
     order: 215
-    children:
-      - id: v-scheduler
-        kind: page
-        title: {zh-CN: 资源与任务, en: Resources and Tasks, zh-TW: 資源與任務}
-        icon: lucide:network
-        iframe-src: /app/com.ictrek.v-scheduler/
-        order: 1
-        keep-alive: true
-        entry-point: true
-        embed: true
+    keep-alive: true
+    entry-point: true
+    embed: true
