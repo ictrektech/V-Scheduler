@@ -40,6 +40,7 @@ export const messages:Record<string,[string,string]>={
 '执行资源':['Execution resources','執行資源'],
 '每 2.5 秒刷新':['Refreshes every 2.5 seconds','每 2.5 秒重新整理'],
 '名称':['Name','名稱'],
+'未命名设备':['Unnamed device','未命名裝置'],
 '状态':['Status','狀態'],
 'CPU 预算':['CPU budget','CPU 預算'],
 '内存预算':['Memory budget','記憶體預算'],
