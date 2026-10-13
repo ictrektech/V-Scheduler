@@ -18,6 +18,8 @@ gh workflow run vos-release.yml --repo ictrektech/V-Scheduler --ref main -f vers
 
 Manual dispatch publishes the existing package to App Store only; it does not change the public tag or replace the GitHub asset.
 
+Use `v0.0.3` or later: earlier packages omitted required profile descriptions and were skipped by VOS catalog parsing. Version 0.0.3 supplies `profiles[].description`, uses the supported `system` category, and adds packaging guards. Its complete manifest passes the native VOS parser, and the tc229 VOS App Store search displays the published app.
+
 `package.sh` is for the existing CI package flow. It reads `~/.feishu.components.json`, falling back to `~/.feishu.json`, renders every template and image variable, includes Agent project templates and localized READMEs, then verifies outer/inner structure. It is not a substitute for image publication. The outer tar contains only `app.tar.gz`.
 
 Before VOS installation, prepare a protected directory with `controller.json` and `database.env` (`SCHEDULER_DATABASE_URL=...`), and choose it through `V_SCHEDULER_CONFIG_PATH`. Use a dedicated PGV database/ordinary role or a separately managed PostgreSQL endpoint. Do not place credentials in public app configs. Deploy a matching resource-agent project on each execution node with a protected Agent config and durable journal, only after that node has this application installed.

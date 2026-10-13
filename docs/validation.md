@@ -21,4 +21,14 @@
 - [发布 CI](https://github.com/ictrektech/V-Scheduler/actions/runs/38339762990) 的前端、协议测试、飞书读取、打包和 GitHub 发布步骤通过；首次 App Store 步骤因缺少仓库级 Secrets 失败。补齐后，[续发 CI](https://github.com/ictrektech/V-Scheduler/actions/runs/38341855065) 下载已有 GitHub 安装包并成功发布，商店返回 `com.ictrek.v-scheduler@0.0.1`；没有重建或升版。
 - 修复后的分离发布工作流通过 YAML、发布/重试条件和全部 shell 步骤语法检查。
 
+## 商店列表兼容修复（0.0.3）
+
+上传成功不代表 VOS 客户端可解析 manifest。首版缺少 `profiles[].description`，使用 VOS 原生 `vos-app-manifest` 模型复现：`profiles[0]: missing field description`；客户端目录会跳过解析失败的应用。另将未在分类枚举内的 `tools` 修正为 `system`。0.0.2 仅修正分类，完整修复位于 0.0.3。
+
+- 补齐 AMD64 / ARM64 profile 描述；打包检查验证支持的分类和每个 profile 的描述，回归检查能拒绝缺少描述的包。
+- 完整修复 manifest 通过 VOS 原生模型反序列化及 `validate()`；实际发布包与公开 metadata 的 manifest 字节一致。
+- [0.0.3 发布 CI](https://github.com/ictrektech/V-Scheduler/actions/runs/38348346765) 的 GitHub 和 App Store 作业均成功；商店返回 `com.ictrek.v-scheduler@0.0.3`，渠道 `stable`。沿用原服务镜像，没有改动 VOS 平台代码。
+- tc229 的实际 Safari 应用商店页面刷新目录后，搜索 `scheduler` 正常显示「V-Scheduler 资源调度 v0.0.3」，图标及描述可见。
+- `v_scheduler_0.0.3_pull.tar` SHA-256：`89b83e2639396de3a7804160dceb5b289723392c0ddceba167f0d790ce1c81d4`。
+
 未完成的部署验证：实际 VOS 只读认证/版本/节点拓扑，多节点 Agent projects 安装，ARM64 GPU 采集器验证，以及 VOS 安装。本次未升级任何已安装应用。
