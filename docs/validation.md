@@ -31,4 +31,12 @@
 - tc229 的实际 Safari 应用商店页面刷新目录后，搜索 `scheduler` 正常显示「V-Scheduler 资源调度 v0.0.3」，图标及描述可见。
 - `v_scheduler_0.0.3_pull.tar` SHA-256：`89b83e2639396de3a7804160dceb5b289723392c0ddceba167f0d790ce1c81d4`。
 
-未完成的部署验证：实际 VOS 只读认证/版本/节点拓扑，多节点 Agent projects 安装，ARM64 GPU 采集器验证，以及 VOS 安装。本次未升级任何已安装应用。
+以上为 0.0.3 阶段的边界；后续目标机器验证见下文。
+
+## tc192、tc229 实际 VOS 验证（0.0.9）
+
+- [0.0.9 发布 CI](https://github.com/ictrektech/V-Scheduler/actions/runs/38365367581) 的 GitHub Release 与应用商店发布均成功。AMD64、ARM64 镜像分别由 tc232、tc229 原生构建，推送并写入对应飞书表；安装包外层仅含 `app.tar.gz`，清单含原生 `oauth2.client`，路由为单个页面并带 `?v=0.0.9`。
+- tc192、tc229 的 VOS 异步升级工作流均达到 `Completed`，应用详情均返回已安装 0.0.9。实际 VOS 页面复测：沿用平台登录后自动进入资源与任务页面，未出现 Scheduler 令牌表单；两台均显示真实资源、在线节点和已安装应用。节点名称从 VOS 设备信息读取：这两台的 `device_name` 均为空，分别回退到 VOS 主机名 `ubuntu`、`ictrek`；内部 Agent `node_id` 不再作为界面名称。保存了两台真实页面截图。tc192 起初复用了同日标签的旧镜像，显式拉取新 digest 并重跑 VOS 升级后，已在实际页面确认新名称。
+- 两台 Controller 均连接专用 PGV 数据库，tc192 的旧 PGV 自定义管理凭据通过一次性受保护文件完成初始化，之后移除。两台资源采集后台服务均在线；tc192 未安装 Image Studio，Agent 采用只上报资源、不认领任务的空执行器配置。当前 VOS projects API 在目标版本报暂存 `.env` 不存在，故用本应用自带 Compose 模板部署后台服务；不声称该 projects API 已验证通过。没有修改 VOS 平台或 vos-cluster-manager 代码。
+- tc229 的实际 Image Studio 入口完成两个 SD-Turbo CUDA 任务，输出两份真实 PNG；任务串行占用一个 GPU 槽，预约最终归零。实际 V-Router 本地 Qwen 模型请求成功；资源被许可或图像任务占用时返回 429。此项在 0.0.7 的同机 Controller 与业务验证包上执行，0.0.9 升级后两条完成任务仍在真实任务列表中；未为 0.0.9 重复生成图像。
+- Image Studio `0.0.61-vscheduler.1` 与 V-Router `0.0.43-vscheduler.1` 是 tc229 定向验证包，不等同所有 profile 的正式业务应用发布。Cluster Manager 清单的跨节点自动关联及更多新机器的自动后台服务部署仍待实现。
