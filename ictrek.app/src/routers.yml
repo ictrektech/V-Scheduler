@@ -3,7 +3,7 @@ routers:
     kind: page
     title: {zh-CN: V-Scheduler, en: V-Scheduler, zh-TW: V-Scheduler}
     icon: lucide:workflow
-    iframe-src: /app/com.ictrek.v-scheduler/
+    iframe-src: /app/com.ictrek.v-scheduler/?v=__APP_VERSION__
     order: 215
     keep-alive: true
     entry-point: true

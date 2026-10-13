@@ -126,7 +126,6 @@ pub async fn run(path: PathBuf) -> anyhow::Result<()> {
         cfg.token.len() >= 32 && !cfg.token.contains("REPLACE"),
         "invalid worker credential"
     );
-    ensure!(!cfg.executors.is_empty(), "no executor adapters configured");
     let client = Client::builder()
         .timeout(std::time::Duration::from_secs(8))
         .build()?;
@@ -154,7 +153,7 @@ pub async fn run(path: PathBuf) -> anyhow::Result<()> {
             eprintln!("heartbeat unavailable: {e}");
         }
         // The executor watchdog is independent of this Agent process and network.
-        if journal.command.is_none() {
+        if journal.command.is_none() && !cfg.executors.is_empty() {
             if let Ok(v) = post(
                 &client,
                 &format!("{base}/workers/{}/commands/claim", cfg.node_id),
