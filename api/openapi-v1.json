@@ -1,0 +1,1228 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "V-Scheduler Public API (DRAFT)",
+    "version": "1.0.0-draft",
+    "description": "Design only. No running implementation. Worker payloads and resource constraints still require Phase 0 schema freeze. VOS and non-VOS clients use the same protocol."
+  },
+  "servers": [
+    {
+      "url": "https://scheduler.example.invalid/api/v1",
+      "description": "Standalone controller placeholder"
+    },
+    {
+      "url": "https://vos.example.invalid/app/com.ictrek.v-scheduler/api/v1",
+      "description": "VOS app mounting placeholder"
+    }
+  ],
+  "paths": {
+    "/discovery": {
+      "get": {
+        "summary": "Non-sensitive version and implemented feature discovery",
+        "operationId": "get_discovery",
+        "security": [],
+        "x-required-scope": "public-metadata",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/HTTP200"
+          },
+          "400": {
+            "$ref": "#/components/responses/HTTP400"
+          },
+          "401": {
+            "$ref": "#/components/responses/HTTP401"
+          },
+          "403": {
+            "$ref": "#/components/responses/HTTP403"
+          },
+          "404": {
+            "$ref": "#/components/responses/HTTP404"
+          },
+          "409": {
+            "$ref": "#/components/responses/HTTP409"
+          },
+          "422": {
+            "$ref": "#/components/responses/HTTP422"
+          },
+          "429": {
+            "$ref": "#/components/responses/HTTP429"
+          },
+          "503": {
+            "$ref": "#/components/responses/HTTP503"
+          }
+        }
+      }
+    },
+    "/executors": {
+      "get": {
+        "summary": "List authorized executors and templates",
+        "operationId": "get_executors",
+        "security": [
+          {
+            "serviceBearer": []
+          }
+        ],
+        "x-required-scope": "tasks:read",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/HTTP200"
+          },
+          "400": {
+            "$ref": "#/components/responses/HTTP400"
+          },
+          "401": {
+            "$ref": "#/components/responses/HTTP401"
+          },
+          "403": {
+            "$ref": "#/components/responses/HTTP403"
+          },
+          "404": {
+            "$ref": "#/components/responses/HTTP404"
+          },
+          "409": {
+            "$ref": "#/components/responses/HTTP409"
+          },
+          "422": {
+            "$ref": "#/components/responses/HTTP422"
+          },
+          "429": {
+            "$ref": "#/components/responses/HTTP429"
+          },
+          "503": {
+            "$ref": "#/components/responses/HTTP503"
+          },
+          "410": {
+            "$ref": "#/components/responses/HTTP410"
+          }
+        },
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          }
+        ]
+      }
+    },
+    "/artifacts": {
+      "post": {
+        "summary": "Register object in approved storage; no arbitrary paths or URLs",
+        "operationId": "post_artifacts",
+        "security": [
+          {
+            "serviceBearer": []
+          }
+        ],
+        "x-required-scope": "artifacts:register",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/HTTP200"
+          },
+          "202": {
+            "$ref": "#/components/responses/HTTP202"
+          },
+          "400": {
+            "$ref": "#/components/responses/HTTP400"
+          },
+          "401": {
+            "$ref": "#/components/responses/HTTP401"
+          },
+          "403": {
+            "$ref": "#/components/responses/HTTP403"
+          },
+          "404": {
+            "$ref": "#/components/responses/HTTP404"
+          },
+          "409": {
+            "$ref": "#/components/responses/HTTP409"
+          },
+          "422": {
+            "$ref": "#/components/responses/HTTP422"
+          },
+          "429": {
+            "$ref": "#/components/responses/HTTP429"
+          },
+          "503": {
+            "$ref": "#/components/responses/HTTP503"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArtifactRegister"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tasks": {
+      "post": {
+        "summary": "Persist task; 202 new / 200 idempotent duplicate",
+        "operationId": "post_tasks",
+        "security": [
+          {
+            "serviceBearer": []
+          }
+        ],
+        "x-required-scope": "tasks:submit",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/HTTP200"
+          },
+          "202": {
+            "$ref": "#/components/responses/HTTP202"
+          },
+          "400": {
+            "$ref": "#/components/responses/HTTP400"
+          },
+          "401": {
+            "$ref": "#/components/responses/HTTP401"
+          },
+          "403": {
+            "$ref": "#/components/responses/HTTP403"
+          },
+          "404": {
+            "$ref": "#/components/responses/HTTP404"
+          },
+          "409": {
+            "$ref": "#/components/responses/HTTP409"
+          },
+          "422": {
+            "$ref": "#/components/responses/HTTP422"
+          },
+          "429": {
+            "$ref": "#/components/responses/HTTP429"
+          },
+          "503": {
+            "$ref": "#/components/responses/HTTP503"
+          }
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskSubmit"
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "List scoped tasks",
+        "operationId": "get_tasks",
+        "security": [
+          {
+            "serviceBearer": []
+          }
+        ],
+        "x-required-scope": "tasks:read",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/HTTP200"
+          },
+          "400": {
+            "$ref": "#/components/responses/HTTP400"
+          },
+          "401": {
+            "$ref": "#/components/responses/HTTP401"
+          },
+          "403": {
+            "$ref": "#/components/responses/HTTP403"
+          },
+          "404": {
+            "$ref": "#/components/responses/HTTP404"
+          },
+          "409": {
+            "$ref": "#/components/responses/HTTP409"
+          },
+          "422": {
+            "$ref": "#/components/responses/HTTP422"
+          },
+          "429": {
+            "$ref": "#/components/responses/HTTP429"
+          },
+          "503": {
+            "$ref": "#/components/responses/HTTP503"
+          },
+          "410": {
+            "$ref": "#/components/responses/HTTP410"
+          }
+        },
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          }
+        ]
+      }
+    },
+    "/tasks/{task_id}": {
+      "get": {
+        "summary": "Read scoped task status",
+        "operationId": "get_tasks_task_id",
+        "security": [
+          {
+            "serviceBearer": []
+          }
+        ],
+        "x-required-scope": "tasks:read",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/HTTP200"
+          },
+          "400": {
+            "$ref": "#/components/responses/HTTP400"
+          },
+          "401": {
+            "$ref": "#/components/responses/HTTP401"
+          },
+          "403": {
+            "$ref": "#/components/responses/HTTP403"
+          },
+          "404": {
+            "$ref": "#/components/responses/HTTP404"
+          },
+          "409": {
+            "$ref": "#/components/responses/HTTP409"
+          },
+          "422": {
+            "$ref": "#/components/responses/HTTP422"
+          },
+          "429": {
+            "$ref": "#/components/responses/HTTP429"
+          },
+          "503": {
+            "$ref": "#/components/responses/HTTP503"
+          }
+        },
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/tasks/{task_id}/cancel": {
+      "post": {
+        "summary": "Request cancellation; release only on confirmed stop",
+        "operationId": "post_tasks_task_id_cancel",
+        "security": [
+          {
+            "serviceBearer": []
+          }
+        ],
+        "x-required-scope": "tasks:cancel",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/HTTP200"
+          },
+          "202": {
+            "$ref": "#/components/responses/HTTP202"
+          },
+          "400": {
+            "$ref": "#/components/responses/HTTP400"
+          },
+          "401": {
+            "$ref": "#/components/responses/HTTP401"
+          },
+          "403": {
+            "$ref": "#/components/responses/HTTP403"
+          },
+          "404": {
+            "$ref": "#/components/responses/HTTP404"
+          },
+          "409": {
+            "$ref": "#/components/responses/HTTP409"
+          },
+          "422": {
+            "$ref": "#/components/responses/HTTP422"
+          },
+          "429": {
+            "$ref": "#/components/responses/HTTP429"
+          },
+          "503": {
+            "$ref": "#/components/responses/HTTP503"
+          }
+        },
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Cancel"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tasks/{task_id}/retry": {
+      "post": {
+        "summary": "Request safe manual retry; reject unknown old execution",
+        "operationId": "post_tasks_task_id_retry",
+        "security": [
+          {
+            "serviceBearer": []
+          }
+        ],
+        "x-required-scope": "tasks:retry",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/HTTP200"
+          },
+          "202": {
+            "$ref": "#/components/responses/HTTP202"
+          },
+          "400": {
+            "$ref": "#/components/responses/HTTP400"
+          },
+          "401": {
+            "$ref": "#/components/responses/HTTP401"
+          },
+          "403": {
+            "$ref": "#/components/responses/HTTP403"
+          },
+          "404": {
+            "$ref": "#/components/responses/HTTP404"
+          },
+          "409": {
+            "$ref": "#/components/responses/HTTP409"
+          },
+          "422": {
+            "$ref": "#/components/responses/HTTP422"
+          },
+          "429": {
+            "$ref": "#/components/responses/HTTP429"
+          },
+          "503": {
+            "$ref": "#/components/responses/HTTP503"
+          }
+        },
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Cancel"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/events": {
+      "get": {
+        "summary": "At-least-once scoped events; deduplicate by task version",
+        "operationId": "get_events",
+        "security": [
+          {
+            "serviceBearer": []
+          }
+        ],
+        "x-required-scope": "tasks:read",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/HTTP200"
+          },
+          "400": {
+            "$ref": "#/components/responses/HTTP400"
+          },
+          "401": {
+            "$ref": "#/components/responses/HTTP401"
+          },
+          "403": {
+            "$ref": "#/components/responses/HTTP403"
+          },
+          "404": {
+            "$ref": "#/components/responses/HTTP404"
+          },
+          "409": {
+            "$ref": "#/components/responses/HTTP409"
+          },
+          "422": {
+            "$ref": "#/components/responses/HTTP422"
+          },
+          "429": {
+            "$ref": "#/components/responses/HTTP429"
+          },
+          "503": {
+            "$ref": "#/components/responses/HTTP503"
+          },
+          "410": {
+            "$ref": "#/components/responses/HTTP410"
+          }
+        },
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          }
+        ]
+      }
+    },
+    "/workers/register": {
+      "post": {
+        "summary": "Enroll worker with administrator-approved bootstrap credential",
+        "operationId": "post_workers_register",
+        "security": [
+          {
+            "serviceBearer": []
+          }
+        ],
+        "x-required-scope": "workers:connect",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/HTTP200"
+          },
+          "202": {
+            "$ref": "#/components/responses/HTTP202"
+          },
+          "400": {
+            "$ref": "#/components/responses/HTTP400"
+          },
+          "401": {
+            "$ref": "#/components/responses/HTTP401"
+          },
+          "403": {
+            "$ref": "#/components/responses/HTTP403"
+          },
+          "404": {
+            "$ref": "#/components/responses/HTTP404"
+          },
+          "409": {
+            "$ref": "#/components/responses/HTTP409"
+          },
+          "422": {
+            "$ref": "#/components/responses/HTTP422"
+          },
+          "429": {
+            "$ref": "#/components/responses/HTTP429"
+          },
+          "503": {
+            "$ref": "#/components/responses/HTTP503"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DraftMessage"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workers/{node_id}/heartbeat": {
+      "post": {
+        "summary": "Report resources, executions and session sequence",
+        "operationId": "post_workers_node_id_heartbeat",
+        "security": [
+          {
+            "serviceBearer": []
+          }
+        ],
+        "x-required-scope": "workers:connect",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/HTTP200"
+          },
+          "202": {
+            "$ref": "#/components/responses/HTTP202"
+          },
+          "400": {
+            "$ref": "#/components/responses/HTTP400"
+          },
+          "401": {
+            "$ref": "#/components/responses/HTTP401"
+          },
+          "403": {
+            "$ref": "#/components/responses/HTTP403"
+          },
+          "404": {
+            "$ref": "#/components/responses/HTTP404"
+          },
+          "409": {
+            "$ref": "#/components/responses/HTTP409"
+          },
+          "422": {
+            "$ref": "#/components/responses/HTTP422"
+          },
+          "429": {
+            "$ref": "#/components/responses/HTTP429"
+          },
+          "503": {
+            "$ref": "#/components/responses/HTTP503"
+          }
+        },
+        "parameters": [
+          {
+            "name": "node_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DraftMessage"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workers/{node_id}/commands/claim": {
+      "post": {
+        "summary": "Receive repeatable node-scoped execution commands",
+        "operationId": "post_workers_node_id_commands_claim",
+        "security": [
+          {
+            "serviceBearer": []
+          }
+        ],
+        "x-required-scope": "workers:connect",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/HTTP200"
+          },
+          "202": {
+            "$ref": "#/components/responses/HTTP202"
+          },
+          "400": {
+            "$ref": "#/components/responses/HTTP400"
+          },
+          "401": {
+            "$ref": "#/components/responses/HTTP401"
+          },
+          "403": {
+            "$ref": "#/components/responses/HTTP403"
+          },
+          "404": {
+            "$ref": "#/components/responses/HTTP404"
+          },
+          "409": {
+            "$ref": "#/components/responses/HTTP409"
+          },
+          "422": {
+            "$ref": "#/components/responses/HTTP422"
+          },
+          "429": {
+            "$ref": "#/components/responses/HTTP429"
+          },
+          "503": {
+            "$ref": "#/components/responses/HTTP503"
+          }
+        },
+        "parameters": [
+          {
+            "name": "node_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DraftMessage"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workers/{node_id}/commands/{command_id}/ack": {
+      "post": {
+        "summary": "Acknowledge after durable journal; accepted is not running",
+        "operationId": "post_workers_node_id_commands_command_id_ack",
+        "security": [
+          {
+            "serviceBearer": []
+          }
+        ],
+        "x-required-scope": "workers:connect",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/HTTP200"
+          },
+          "202": {
+            "$ref": "#/components/responses/HTTP202"
+          },
+          "400": {
+            "$ref": "#/components/responses/HTTP400"
+          },
+          "401": {
+            "$ref": "#/components/responses/HTTP401"
+          },
+          "403": {
+            "$ref": "#/components/responses/HTTP403"
+          },
+          "404": {
+            "$ref": "#/components/responses/HTTP404"
+          },
+          "409": {
+            "$ref": "#/components/responses/HTTP409"
+          },
+          "422": {
+            "$ref": "#/components/responses/HTTP422"
+          },
+          "429": {
+            "$ref": "#/components/responses/HTTP429"
+          },
+          "503": {
+            "$ref": "#/components/responses/HTTP503"
+          }
+        },
+        "parameters": [
+          {
+            "name": "node_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "command_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DraftMessage"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/attempts/{attempt_id}/renew": {
+      "post": {
+        "summary": "Renew only current worker session and attempt fence",
+        "operationId": "post_attempts_attempt_id_renew",
+        "security": [
+          {
+            "serviceBearer": []
+          }
+        ],
+        "x-required-scope": "workers:connect",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/HTTP200"
+          },
+          "202": {
+            "$ref": "#/components/responses/HTTP202"
+          },
+          "400": {
+            "$ref": "#/components/responses/HTTP400"
+          },
+          "401": {
+            "$ref": "#/components/responses/HTTP401"
+          },
+          "403": {
+            "$ref": "#/components/responses/HTTP403"
+          },
+          "404": {
+            "$ref": "#/components/responses/HTTP404"
+          },
+          "409": {
+            "$ref": "#/components/responses/HTTP409"
+          },
+          "422": {
+            "$ref": "#/components/responses/HTTP422"
+          },
+          "429": {
+            "$ref": "#/components/responses/HTTP429"
+          },
+          "503": {
+            "$ref": "#/components/responses/HTTP503"
+          }
+        },
+        "parameters": [
+          {
+            "name": "attempt_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DraftMessage"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/attempts/{attempt_id}/report": {
+      "post": {
+        "summary": "Report execution state, stop evidence or staged result",
+        "operationId": "post_attempts_attempt_id_report",
+        "security": [
+          {
+            "serviceBearer": []
+          }
+        ],
+        "x-required-scope": "workers:connect",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/HTTP200"
+          },
+          "202": {
+            "$ref": "#/components/responses/HTTP202"
+          },
+          "400": {
+            "$ref": "#/components/responses/HTTP400"
+          },
+          "401": {
+            "$ref": "#/components/responses/HTTP401"
+          },
+          "403": {
+            "$ref": "#/components/responses/HTTP403"
+          },
+          "404": {
+            "$ref": "#/components/responses/HTTP404"
+          },
+          "409": {
+            "$ref": "#/components/responses/HTTP409"
+          },
+          "422": {
+            "$ref": "#/components/responses/HTTP422"
+          },
+          "429": {
+            "$ref": "#/components/responses/HTTP429"
+          },
+          "503": {
+            "$ref": "#/components/responses/HTTP503"
+          }
+        },
+        "parameters": [
+          {
+            "name": "attempt_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DraftMessage"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "serviceBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "V-Scheduler issued scoped credential, independent of VOS JWT. Enrollment uses separately scoped short-lived bootstrap credential."
+      }
+    },
+    "schemas": {
+      "Envelope": {
+        "type": "object",
+        "required": [
+          "code",
+          "category",
+          "data",
+          "msg",
+          "version",
+          "request_id"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "v-scheduler"
+            ]
+          },
+          "data": {},
+          "msg": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string",
+            "enum": [
+              "1"
+            ]
+          },
+          "request_id": {
+            "type": "string"
+          }
+        }
+      },
+      "ExecutorRef": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "contract_version",
+          "task_type"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "contract_version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "task_type": {
+            "type": "string",
+            "minLength": 1
+          },
+          "model_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "TaskSubmit": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "protocol_version",
+          "app_task_id",
+          "executor",
+          "parameters"
+        ],
+        "properties": {
+          "protocol_version": {
+            "type": "integer",
+            "enum": [
+              1
+            ]
+          },
+          "app_task_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "idempotency_key": {
+            "type": "string"
+          },
+          "executor": {
+            "$ref": "#/components/schemas/ExecutorRef"
+          },
+          "parameters": {
+            "type": "object"
+          },
+          "inputs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "artifact_id"
+              ],
+              "properties": {
+                "artifact_id": {
+                  "type": "string"
+                },
+                "sha256": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "placement": {
+            "type": "object",
+            "description": "Draft: approved capability constraints/preferences; task template validated."
+          },
+          "resources": {
+            "type": "object",
+            "description": "Draft: approved template overrides in millicores/MiB; unified pool must not double-count."
+          },
+          "queue_class": {
+            "type": "string",
+            "enum": [
+              "batch"
+            ]
+          },
+          "timeouts": {
+            "type": "object",
+            "description": "Draft: positive seconds within approved template."
+          },
+          "retry_policy": {
+            "type": "object",
+            "description": "Draft: mode and max_attempts per executor safety contract."
+          }
+        }
+      },
+      "ArtifactRegister": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "storage_id",
+          "object_key",
+          "size_bytes",
+          "sha256",
+          "media_type"
+        ],
+        "properties": {
+          "storage_id": {
+            "type": "string"
+          },
+          "object_key": {
+            "type": "string"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "media_type": {
+            "type": "string"
+          }
+        }
+      },
+      "Cancel": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "type": "string",
+            "maxLength": 1024
+          }
+        }
+      },
+      "DraftMessage": {
+        "type": "object",
+        "description": "DRAFT ONLY: full worker/resource/command/event field schemas must be frozen in Phase 0; not an interoperability claim."
+      }
+    },
+    "responses": {
+      "HTTP200": {
+        "description": "Accepted/current state; does not mean compute completed.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Envelope"
+            }
+          }
+        }
+      },
+      "HTTP400": {
+        "description": "See integration standard for stable error codes and retry rules.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Envelope"
+            }
+          }
+        }
+      },
+      "HTTP401": {
+        "description": "See integration standard for stable error codes and retry rules.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Envelope"
+            }
+          }
+        }
+      },
+      "HTTP403": {
+        "description": "See integration standard for stable error codes and retry rules.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Envelope"
+            }
+          }
+        }
+      },
+      "HTTP404": {
+        "description": "See integration standard for stable error codes and retry rules.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Envelope"
+            }
+          }
+        }
+      },
+      "HTTP409": {
+        "description": "See integration standard for stable error codes and retry rules.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Envelope"
+            }
+          }
+        }
+      },
+      "HTTP422": {
+        "description": "See integration standard for stable error codes and retry rules.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Envelope"
+            }
+          }
+        }
+      },
+      "HTTP429": {
+        "description": "See integration standard for stable error codes and retry rules.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Envelope"
+            }
+          }
+        }
+      },
+      "HTTP503": {
+        "description": "See integration standard for stable error codes and retry rules.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Envelope"
+            }
+          }
+        }
+      },
+      "HTTP410": {
+        "description": "CURSOR_EXPIRED: resync snapshot before resuming events."
+      },
+      "HTTP202": {
+        "description": "Accepted/current state; does not mean compute completed.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Envelope"
+            }
+          }
+        }
+      }
+    }
+  }
+}
