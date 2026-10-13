@@ -1,6 +1,12 @@
 name: VOS Pull Package Release
 
 on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Existing GitHub release version to publish to VOS App Store (e.g. 0.0.1)'
+        required: true
+        type: string
   push:
     tags:
       - "vos-v-scheduler-v*"
@@ -10,6 +16,7 @@ permissions:
 
 jobs:
   release:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -90,6 +97,28 @@ jobs:
             --title "v${VERSION}" \
             --notes-file release-notes.md
 
+  appstore:
+    needs: release
+    if: ${{ always() && (needs.release.result == 'success' || github.event_name == 'workflow_dispatch') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download published GitHub package
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            VERSION="$REQUESTED_VERSION"
+          else
+            VERSION="${GITHUB_REF_NAME#vos-v-scheduler-v}"
+          fi
+          [[ "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || { echo 'Invalid release version' >&2; exit 1; }
+          mkdir -p ictrek.app/dist
+          gh release download "v${VERSION}" --repo "$GITHUB_REPOSITORY" \
+            --pattern "v_scheduler_${VERSION}_pull.tar" --dir ictrek.app/dist
+          echo "PACKAGE_VERSION=$VERSION" >> "$GITHUB_ENV"
+
       - name: Publish package to VOS App Store
         env:
           APPSTORE_IP: ${{ secrets.APPSTORE_IP }}
@@ -99,7 +128,7 @@ jobs:
           test -n "${APPSTORE_IP:-}" || { echo "APPSTORE_IP is not configured." >&2; exit 1; }
           test -n "${APPSTORE_TOKEN:-}" || { echo "APPSTORE_TOKEN is not configured." >&2; exit 1; }
 
-          VERSION="${GITHUB_REF_NAME#vos-v-scheduler-v}"
+          VERSION="$PACKAGE_VERSION"
           PACKAGE="ictrek.app/dist/v_scheduler_${VERSION}_pull.tar"
           mkdir -p "$HOME/.ssh"
           chmod 700 "$HOME/.ssh"

@@ -13,4 +13,12 @@
 - VOS 适配：使用与已核验源码 DTO 一致的只读契约模拟源，验证新节点仅观察、资源单位、节点/本机安装实例关联、字段脱敏，以及来源不可达时保留旧值并标记过期。
 - 浏览器：实际构建页面检查 API 文档和新图标；演示模式中验证取消后转终态、删除确认/输出保留说明、人工重试回队列，切换繁中保持操作后的页面状态。演示操作不代表生产业务操作。
 
-未完成的部署验证：实际 VOS 只读认证/版本/节点拓扑，多节点 Agent projects 安装，ARM64 实际镜像构建和 GPU 采集器验证，镜像 push/飞书写回、GitHub 包发布和 App Store 安装。代码/契约检查不等于这些阶段已完成；本次没有正式发布或升级。
+## 首版发布验证
+
+- AMD64（tc232）与 ARM64（tc229）原生镜像构建、容器 CLI / UI 文件检查、仓库推送、飞书写入与回读通过；标签分别为 `amd_20261013` / `arm_20261013`，registry manifest 架构分别为 `amd64` / `arm64`。
+- 两套实际发布镜像使用临时网络、专用 PostgreSQL 18 容器与随机身份配置，通过数据库迁移、健康检查、UI 和鉴权任务 API；验证容器与网络已清理。
+- [GitHub v0.0.1](https://github.com/ictrektech/V-Scheduler/releases/tag/v0.0.1) 的 `v_scheduler_0.0.1_pull.tar` 已下载核验：外层仅 `app.tar.gz`，内层版本、完整镜像引用、两套 Agent projects、导航及三种语言说明正确，无残留模板变量。SHA-256：`9ed96f9c27ddbade206c16e2b8ce4eb463fb6e67c067fdc318a3d6a65fad9cbe`，与 GitHub asset digest 相同。
+- [发布 CI](https://github.com/ictrektech/V-Scheduler/actions/runs/38339762990) 的前端、协议测试、飞书读取、打包和 GitHub 发布步骤通过；App Store 步骤因缺少仓库级 `APPSTORE_IP` / `APPSTORE_TOKEN` 失败，因此整体 CI 尚未成功，商店发布尚未完成。已补齐飞书仓库级 Secrets，并提供只发布既有安装包的 workflow dispatch，凭据补齐后不需要升版。
+- 修复后的分离发布工作流通过 YAML、发布/重试条件和全部 shell 步骤语法检查。
+
+未完成的部署验证：实际 VOS 只读认证/版本/节点拓扑，多节点 Agent projects 安装，ARM64 GPU 采集器验证，以及 App Store 发布/安装。本次未升级任何已安装应用。
