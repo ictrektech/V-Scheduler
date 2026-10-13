@@ -2,7 +2,7 @@
 
 面向 VOS 应用、其他服务、脚本和第三方 worker 的独立资源调度应用。统一管理耗时任务的排队、资源预约、执行许可、取消与故障恢复。
 
-**当前状态：Rust controller / Agent、Vue 管理界面及 Image Studio / V-Router 适配已完成最小版本，并通过独立环境验证。正式安装包见 [GitHub Releases](https://github.com/ictrektech/V-Scheduler/releases)。首次安装需要预先准备专用 PostgreSQL 数据库、受保护的配置与节点 Agent；目标 VOS 的只读认证和多节点部署仍待验证。完整设计的后续能力不代表当前已支持。**
+**当前状态：Rust controller、节点后台服务、Vue 管理界面及 Image Studio / V-Router 适配已完成最小版本。tc192、tc229 的实际 VOS 登录与节点资源页面，以及 tc229 的真实业务任务已验证。正式安装包见 [GitHub Releases](https://github.com/ictrektech/V-Scheduler/releases)。完整设计的后续能力不代表当前已支持。**
 
 - 应用名称：V-Scheduler；中文显示名：资源调度。
 - VOS app ID：`com.ictrek.v-scheduler`。
@@ -49,7 +49,7 @@ cd ..
 
 失败自动重试只针对已确认停止、可重试错误、声明幂等的执行器；`max_attempts` 为总尝试上限（1–10），退避 3/6/12/24/48 秒。人工重试也受上限约束。失联先进入 recovering/suspect，停止核验前不释放。人工删除只软删除已停止终态记录，保留审计、幂等占位与业务输出。
 
-目前不支持动态 worker/执行器注册、OIDC 管理登录、HA、跨节点数据复制、多 GPU 设备级分配或任意远程命令。现有测试以 tc232 上的独立服务与真实 CUDA Image Studio 为范围；尚未完成目标 VOS 版本的只读认证和多节点部署验证。镜像及安装包发布另按仓库既有流程执行。
+目前不支持动态 worker/执行器注册、HA、跨节点数据复制、多 GPU 设备级分配或任意远程命令。已验证的目标机器及业务范围见验证记录；Cluster Manager 节点清单接入仍需单独配置和验证。镜像及安装包发布另按仓库既有流程执行。
 
 `scripts/e2e.mjs` 是获授权 tc232 测试环境的故障注入工具，使用独立端口/容器/数据目录；需要已安装 Image Studio 镜像和只读模型挂载。构建及测试遵循 VAI 指定的远程构建规则。
 
@@ -64,3 +64,5 @@ VOS 侧导航只有一个 `v-scheduler` 页面；资源任务和 API 文档使�
 VOS 登录接入清单必须声明 `oauth2.client: {}`，与 V-Router 相同；该声明使平台注册客户端并提供已有登录桥接接口。界面不提供单独的令牌登录表单。
 
 Agent 允许空执行器配置：这种模式只上报节点资源，不认领任务，适合先纳管节点、再逐步接入业务。VOS 页面入口带安装版本查询参数，使升级后的 iframe 使用新页面。
+
+Agent 是本应用在节点上运行的资源采集与任务执行后台进程，不是用户需要选择或命名的应用。资源页优先显示 VOS 集群登记名称；未接集群清单时使用该节点 VOS 的 `device_name`，再退回 VOS 上报的主机名。Agent 的 `node_id` 只用于内部协议关联，不作为节点显示名称。新节点接入仍由管理员部署后台进程和批准资源预算，普通用户无需配置 Agent。

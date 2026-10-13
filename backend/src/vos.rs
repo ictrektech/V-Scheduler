@@ -81,9 +81,13 @@ fn telemetry(info: &Value, usage: &Value) -> anyhow::Result<Value> {
             && (0.0..=100.0).contains(&cpu),
         "invalid usage"
     );
-    Ok(
-        json!({"cpu_logical_count":info["cpu_logical_count"],"cpu_used_percent":cpu,"memory_total_mib":total/1048576.0,"memory_used_mib":used/1048576.0,"disk": {"size_bytes":usage["disk"]["size"].as_f64(),"used_bytes":usage["disk"]["used"].as_f64()},"gpu_usage":null,"gpu_status":"UNSUPPORTED_BY_VOS"}),
-    )
+    let name = |key: &str| {
+        info[key]
+            .as_str()
+            .map(str::trim)
+            .filter(|value| !value.is_empty() && value.len() <= 128)
+    };
+    Ok(json!({"device_name":name("device_name"),"hostname":name("hostname"),"cpu_logical_count":info["cpu_logical_count"],"cpu_used_percent":cpu,"memory_total_mib":total/1048576.0,"memory_used_mib":used/1048576.0,"disk": {"size_bytes":usage["disk"]["size"].as_f64(),"used_bytes":usage["disk"]["used"].as_f64()},"gpu_usage":null,"gpu_status":"UNSUPPORTED_BY_VOS"}))
 }
 fn applications(data: &Value) -> anyhow::Result<Value> {
     let items = data["data"].as_array().context("missing apps")?;
@@ -231,11 +235,13 @@ mod tests {
     }
     #[test]
     fn correct_units_and_unknown_gpu_instead_of_zero() {
-        let info = json!({"cpu_logical_count":8,"memory":{"size":8388608,"unit":"B"}});
+        let info = json!({"cpu_logical_count":8,"device_name":null,"hostname":"vos-node","memory":{"size":8388608,"unit":"B"}});
         let mut usage = json!({"cpu":{"used":25},"ram":{"size":8388608,"used":2097152,"unit":"B"},"gpu":{"used":0}});
         let value = telemetry(&info, &usage).unwrap();
         assert_eq!(value["memory_used_mib"], 2.0);
         assert_eq!(value["cpu_used_percent"], 25.0);
+        assert_eq!(value["hostname"], "vos-node");
+        assert!(value["device_name"].is_null());
         assert!(value["gpu_usage"].is_null());
         usage["ram"]["unit"] = json!("GB");
         assert!(telemetry(&info, &usage).is_err());
