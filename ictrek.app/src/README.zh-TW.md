@@ -2,7 +2,7 @@
 
 版本 __APP_VERSION__。
 
-安裝前準備受保護目錄，包含 controller.json 和 database.env（SCHEDULER_DATABASE_URL），安裝時將 V_SCHEDULER_CONFIG_PATH 指向該目錄。建議使用 PGV 中專用資料庫與一般 owner 角色；不要連接平台內部資料庫或使用超級使用者。節點、執行器、預算與服務憑證由 controller 設定核准。
+設定固定存放在應用專屬 ${VOS_APP_STORAGE_PATH}/config 中，無需選擇公共設定目錄。安裝前在該目錄準備 controller.json 和 database.env（SCHEDULER_DATABASE_URL），目錄權限 0700、檔案權限 0600。建議使用 PGV 中專用資料庫與一般 owner 角色；不要連接平台內部資料庫或使用超級使用者。節點、執行器、預算與服務憑證由 controller 設定核准。
 
 管理介面支援按節點檢視執行任務、等待順序與近期結束任務，提供取消、受控重試和人工刪除。連接前可檢視明確標示的演示；樣例操作不影響實際任務。介面預設跟隨 VOS 語言，可選擇簡中、英文或繁中。
 

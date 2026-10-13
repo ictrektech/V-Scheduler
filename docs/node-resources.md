@@ -84,3 +84,5 @@ Cluster Manager URL 指向应用根前缀，适配器追加 `/api/nodes`；节�
 业务执行器的资源位置必须由管理员绑定或经已认证 worker 注册确认，不能因为应用安装在 A 就假定其请求消耗 A 的 GPU。Image Studio 的本地生成使用其 executor 所绑定节点；V-Router 云端 upstream 不占本地预约，本地 upstream 的许可配置须绑定模型服务真正所在节点，delegated upstream 由执行器持有预约，避免在网关所在节点再次预约。
 
 外部应用和手工运行的模型也使用同一 executor/upstream 绑定机制，不要求出现在 VOS 安装清单内。监控发现一个容器或 GPU 进程只证明外部负载，不能据此自动赋予任务执行权限。拓扑来源失效时保留位置及新鲜度，节点失联后停止新增预约，已运行任务继续走停止确认与故障对账。
+
+NVIDIA Agent 使用 `compute,utility` 驱动能力。单 GPU 节点的 nvidia-smi 内存字段不可用时，查询 CUDA 驱动的真实 total/free；适用于 Thor 和 Jetson 的统一内存。查询失败保留未知并拒绝需要 GPU 内存的任务，不用主机总内存伪造空闲显存。CUDA free 是保守快照，可回收缓存不计入其中。

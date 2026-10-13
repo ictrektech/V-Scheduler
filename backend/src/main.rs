@@ -1,5 +1,6 @@
 mod agent;
 mod controller;
+mod gpu;
 mod model;
 mod vos;
 use clap::{Parser, Subcommand};

@@ -99,7 +99,26 @@ async fn probe(previous: &mut Option<(u64, u64)>) -> Value {
         .ok()
         .filter(|o| o.status.success())
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
-    json!({"observed_at":chrono::Utc::now(),"cpu_logical_count":std::thread::available_parallelism().ok().map(|n|n.get()),"cpu_used_percent":cpu_used_percent,"arch":std::env::consts::ARCH,"memory_total_mib":read("MemTotal:"),"memory_available_mib":read("MemAvailable:"),"gpus":gpu.map(|lines|lines.lines().filter_map(|line|{let columns:Vec<_>=line.split(',').map(str::trim).collect();if columns.len()==4{Some(json!({"uuid":columns[0],"total_mib":columns[1].parse::<u64>().unwrap_or(0),"free_mib":columns[2].parse::<u64>().unwrap_or(0),"utilization_percent":columns[3].parse::<u64>().ok()}))}else{None}}).collect::<Vec<_>>()).unwrap_or_default(),"agent_version":"0.1.0"})
+    let mut gpus = gpu.map(|lines| lines.lines().filter_map(|line| {
+        let columns: Vec<_> = line.split(',').map(str::trim).collect();
+        if columns.len() != 4 { return None; }
+        Some(json!({"uuid":columns[0],"total_mib":columns[1].parse::<u64>().ok(),"free_mib":columns[2].parse::<u64>().ok(),"utilization_percent":columns[3].parse::<u64>().ok(),"memory_source":"nvidia-smi"}))
+    }).collect::<Vec<_>>()).unwrap_or_default();
+    // The MVP supports one GPU per node. Keep unavailable values unknown;
+    // a missing driver or failed query must never fabricate a free-memory budget.
+    if gpus.len() == 1
+        && (gpus[0]["total_mib"].as_u64().is_none() || gpus[0]["free_mib"].as_u64().is_none())
+    {
+        if let Ok(Some((total, free, integrated))) =
+            tokio::task::spawn_blocking(crate::gpu::memory).await
+        {
+            gpus[0]["total_mib"] = json!(total);
+            gpus[0]["free_mib"] = json!(free);
+            gpus[0]["memory_source"] = json!("cuda-driver");
+            gpus[0]["memory_type"] = json!(if integrated { "unified" } else { "dedicated" });
+        }
+    }
+    json!({"observed_at":chrono::Utc::now(),"cpu_logical_count":std::thread::available_parallelism().ok().map(|n|n.get()),"cpu_used_percent":cpu_used_percent,"arch":std::env::consts::ARCH,"memory_total_mib":read("MemTotal:"),"memory_available_mib":read("MemAvailable:"),"gpus":gpus,"agent_version":"0.1.0"})
 }
 pub async fn run(path: PathBuf) -> anyhow::Result<()> {
     let cfg: Config = serde_json::from_slice(&std::fs::read(path)?)?;

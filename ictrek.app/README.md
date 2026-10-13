@@ -1,6 +1,6 @@
 # VOS packaging and release
 
-A single `v-scheduler` service image contains the Rust controller/Agent and compiled UI. Controller profiles: `amd → AMD_with_cuda → amd_YYYYMMDD`, `arm → ARM_with_cuda → arm_YYYYMMDD`. The image itself requires no GPU; NVIDIA Agents use the host's supported NVIDIA runtime with `utility` driver capability.
+A single `v-scheduler` service image contains the Rust controller/Agent and compiled UI. Controller profiles: `amd → AMD_with_cuda → amd_YYYYMMDD`, `arm → ARM_with_cuda → arm_YYYYMMDD`. The image itself requires no GPU; NVIDIA Agents use the host's supported NVIDIA runtime with `compute,utility` driver capabilities.
 
 1. Commit/push verified application code and the VAI submodule reference.
 2. Rsync the local checkout to the matching build host's `~/dev/repos/V-Scheduler`. Do not run Git on the host. The image script stages Docker inputs under `~/dev/build/V-Scheduler/images/<profile>`.
@@ -22,6 +22,6 @@ Use `v0.0.3` or later: earlier packages omitted required profile descriptions an
 
 `package.sh` is for the existing CI package flow. It reads `~/.feishu.components.json`, falling back to `~/.feishu.json`, renders every template and image variable, includes Agent project templates and localized READMEs, then verifies outer/inner structure. It is not a substitute for image publication. The outer tar contains only `app.tar.gz`.
 
-Before VOS installation, prepare a protected directory with `controller.json` and `database.env` (`SCHEDULER_DATABASE_URL=...`), and choose it through `V_SCHEDULER_CONFIG_PATH`. Use a dedicated PGV database/ordinary role or a separately managed PostgreSQL endpoint. Do not place credentials in public app configs. Deploy a matching resource-agent project on each execution node with a protected Agent config and durable journal, only after that node has this application installed.
+Before VOS installation, prepare `${VOS_APP_STORAGE_PATH}/config` with `controller.json` and `database.env` (`SCHEDULER_DATABASE_URL=...`), directory mode 0700 and file mode 0600. There is no extra public-directory selection. Use a dedicated PGV database/ordinary role or a separately managed PostgreSQL endpoint. Do not place credentials in public app configs. Deploy a matching resource-agent project on each execution node with a protected Agent config and durable journal, only after that node has this application installed.
 
 Initial release `v0.0.1` has AMD64/ARM64 images (`amd_20261013` / `arm_20261013`) published and recorded in Feishu, plus a GitHub pull package. Both native images passed isolated PostgreSQL migration, authenticated API and UI startup checks. App Store publication succeeded through [the existing-package dispatch](https://github.com/ictrektech/V-Scheduler/actions/runs/38341855065), confirming `com.ictrek.v-scheduler@0.0.1`; target VOS installation, authentication and multi-node deployment remain unverified.

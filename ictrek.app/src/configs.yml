@@ -1,8 +1,1 @@
-configs:
-  - name: V_SCHEDULER_CONFIG_PATH
-    type: path
-    title: {zh-CN: 受保护配置目录, en: Protected configuration directory, zh-TW: 受保護設定目錄}
-    description:
-      zh-CN: 预先提供 controller.json 与 database.env。数据库连接和身份令牌只放在受保护文件中。
-      en: Pre-provision controller.json and database.env; keep database credentials and identity tokens in protected files.
-    default: ''
+configs: []

@@ -2,7 +2,7 @@
 
 Version __APP_VERSION__
 
-Install one controller with a dedicated PostgreSQL database (PGV recommended). Before installation, provide a protected configuration directory containing controller.json and database.env (SCHEDULER_DATABASE_URL). Set V_SCHEDULER_CONFIG_PATH to that directory. Never place credentials in public configuration fields.
+Install one controller with a dedicated PostgreSQL database (PGV recommended). Configuration lives in the dedicated ${VOS_APP_STORAGE_PATH}/config directory; no public configuration directory selection is needed. Before installation, provision controller.json and database.env (SCHEDULER_DATABASE_URL) there, with directory mode 0700 and file mode 0600. Never place credentials in public configuration fields.
 
 The controller uses the approved static node/executor registry. Open the management page with an administrator service token. UI language follows VOS by default (English / Simplified Chinese / Traditional Chinese).
 
