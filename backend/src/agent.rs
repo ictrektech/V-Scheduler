@@ -1,0 +1,197 @@
+use crate::model::Command;
+use anyhow::{Context, ensure};
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
+use std::path::{Path, PathBuf};
+use uuid::Uuid;
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Adapter {
+    id: String,
+    url: String,
+    token: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Config {
+    controller: String,
+    node_id: String,
+    token: String,
+    journal: PathBuf,
+    executors: Vec<Adapter>,
+}
+#[derive(Serialize, Deserialize)]
+struct Journal {
+    session_id: String,
+    command: Option<Command>,
+}
+fn save(path: &Path, journal: &Journal) -> anyhow::Result<()> {
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let tmp = path.with_extension("tmp");
+    let file = std::fs::File::create(&tmp)?;
+    serde_json::to_writer(&file, journal)?;
+    file.sync_all()?;
+    std::fs::rename(tmp, path)?;
+    if let Some(dir) = path.parent() {
+        std::fs::File::open(dir)?.sync_all()?;
+    }
+    Ok(())
+}
+async fn post(c: &Client, url: &str, token: &str, body: Value) -> anyhow::Result<Value> {
+    let response = c.post(url).bearer_auth(token).json(&body).send().await?;
+    ensure!(
+        response.status().is_success(),
+        "remote operation rejected ({})",
+        response.status()
+    );
+    let data: Value = response.json().await?;
+    Ok(data.get("data").cloned().unwrap_or(data))
+}
+fn cpu_sample() -> Option<(u64, u64)> {
+    let stat = std::fs::read_to_string("/proc/stat").ok()?;
+    let values: Vec<u64> = stat
+        .lines()
+        .next()?
+        .split_whitespace()
+        .skip(1)
+        .take(8)
+        .map(str::parse)
+        .collect::<Result<_, _>>()
+        .ok()?;
+    if values.len() < 5 {
+        return None;
+    }
+    Some((values.iter().sum(), values[3] + values[4]))
+}
+async fn probe(previous: &mut Option<(u64, u64)>) -> Value {
+    let current = cpu_sample();
+    let cpu_used_percent = previous
+        .zip(current)
+        .and_then(|((total, idle), (next, next_idle))| {
+            let delta = next.checked_sub(total)?;
+            let free = next_idle.checked_sub(idle)?;
+            if delta == 0 || free > delta {
+                None
+            } else {
+                Some(100.0 * (delta - free) as f64 / delta as f64)
+            }
+        });
+    *previous = current;
+    let mem = std::fs::read_to_string("/proc/meminfo").unwrap_or_default();
+    let read = |key: &str| {
+        mem.lines()
+            .find(|line| line.starts_with(key))
+            .and_then(|line| line.split_whitespace().nth(1))
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(0)
+            / 1024
+    };
+    let gpu = tokio::process::Command::new("nvidia-smi")
+        .args([
+            "--query-gpu=uuid,memory.total,memory.free,utilization.gpu",
+            "--format=csv,noheader,nounits",
+        ])
+        .output()
+        .await
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+    json!({"observed_at":chrono::Utc::now(),"cpu_logical_count":std::thread::available_parallelism().ok().map(|n|n.get()),"cpu_used_percent":cpu_used_percent,"arch":std::env::consts::ARCH,"memory_total_mib":read("MemTotal:"),"memory_available_mib":read("MemAvailable:"),"gpus":gpu.map(|lines|lines.lines().filter_map(|line|{let columns:Vec<_>=line.split(',').map(str::trim).collect();if columns.len()==4{Some(json!({"uuid":columns[0],"total_mib":columns[1].parse::<u64>().unwrap_or(0),"free_mib":columns[2].parse::<u64>().unwrap_or(0),"utilization_percent":columns[3].parse::<u64>().ok()}))}else{None}}).collect::<Vec<_>>()).unwrap_or_default(),"agent_version":"0.1.0"})
+}
+pub async fn run(path: PathBuf) -> anyhow::Result<()> {
+    let cfg: Config = serde_json::from_slice(&std::fs::read(path)?)?;
+    ensure!(
+        cfg.token.len() >= 32 && !cfg.token.contains("REPLACE"),
+        "invalid worker credential"
+    );
+    ensure!(!cfg.executors.is_empty(), "no executor adapters configured");
+    let client = Client::builder()
+        .timeout(std::time::Duration::from_secs(8))
+        .build()?;
+    let mut journal = if cfg.journal.exists() {
+        serde_json::from_slice(&std::fs::read(&cfg.journal)?)?
+    } else {
+        Journal {
+            session_id: Uuid::new_v4().to_string(),
+            command: None,
+        }
+    };
+    save(&cfg.journal, &journal)?;
+    eprintln!("V-Scheduler Agent started for {}", cfg.node_id);
+    let mut previous = cpu_sample();
+    loop {
+        let base = cfg.controller.trim_end_matches('/');
+        let heartbeat = post(
+            &client,
+            &format!("{base}/workers/{}/heartbeat", cfg.node_id),
+            &cfg.token,
+            json!({"session_id":journal.session_id,"report":probe(&mut previous).await}),
+        )
+        .await;
+        if let Err(e) = heartbeat {
+            eprintln!("heartbeat unavailable: {e}");
+        }
+        // The executor watchdog is independent of this Agent process and network.
+        if journal.command.is_none() {
+            if let Ok(v) = post(
+                &client,
+                &format!("{base}/workers/{}/commands/claim", cfg.node_id),
+                &cfg.token,
+                json!({"session_id":journal.session_id}),
+            )
+            .await
+            {
+                if let Some(value) = v["commands"].as_array().and_then(|c| c.first()) {
+                    journal.command = Some(serde_json::from_value(value.clone())?);
+                    save(&cfg.journal, &journal)?;
+                }
+            }
+        }
+        if let Some(cmd) = journal.command.clone() {
+            let adapter = cfg
+                .executors
+                .iter()
+                .find(|e| e.id == cmd.executor_id)
+                .context("command has unknown adapter; reservation remains held")?;
+            let lease = post(
+                &client,
+                &format!("{base}/attempts/{}/renew", cmd.attempt_id),
+                &cfg.token,
+                json!({"session_id":journal.session_id,"fence":cmd.fence}),
+            )
+            .await;
+            let action = if lease.is_ok() { "start" } else { "cancel" };
+            let body = json!({"attempt_id":cmd.attempt_id,"task_id":cmd.task_id,"fence":cmd.fence,"lease_seconds":cmd.lease_seconds,"parameters":cmd.parameters});
+            let url = format!(
+                "{}/scheduler/executions/{}/{}",
+                adapter.url.trim_end_matches('/'),
+                cmd.attempt_id,
+                action
+            );
+            if let Err(e) = post(&client, &url, &adapter.token, body.clone()).await {
+                eprintln!("executor {action} unavailable: {e}");
+            }
+            let inspect = format!(
+                "{}/scheduler/executions/{}/inspect",
+                adapter.url.trim_end_matches('/'),
+                cmd.attempt_id
+            );
+            if let Ok(v) = post(&client, &inspect, &adapter.token, body).await {
+                let status = v["status"].as_str().unwrap_or("unknown");
+                let stopped = v["stopped"].as_bool().unwrap_or(false);
+                let terminal = ["succeeded", "failed", "cancelled"].contains(&status) && stopped;
+                let report=post(&client,&format!("{base}/attempts/{}/report",cmd.attempt_id),&cfg.token,json!({"session_id":journal.session_id,"fence":cmd.fence,"status":status,"stopped":stopped,"progress":v["progress"],"result":v["result"]})).await;
+                if terminal && report.is_ok() {
+                    journal.command = None;
+                    save(&cfg.journal, &journal)?;
+                }
+            } else {
+                eprintln!("execution state unavailable; reservation retained");
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    }
+}

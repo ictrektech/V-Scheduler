@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="V-Scheduler: queued tasks enter an execution slot">
+  <rect width="100" height="100" rx="22" fill="#F4F2EC"/>
+  <g fill="#173047">
+    <rect x="18" y="24" width="26" height="12" rx="3"/>
+    <rect x="18" y="64" width="26" height="12" rx="3"/>
+  </g>
+  <rect x="18" y="44" width="26" height="12" rx="3" fill="#168D7B"/>
+  <path d="M44 50H58M54 46L58 50L54 54" fill="none" stroke="#168D7B" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="64" y="36" width="22" height="28" rx="4" fill="none" stroke="#173047" stroke-width="3"/>
+  <path d="M72 44L80 50L72 56Z" fill="#168D7B"/>
+</svg>

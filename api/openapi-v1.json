@@ -1,217 +1,167 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "V-Scheduler Public API (DRAFT)",
-    "version": "1.0.0-draft",
-    "description": "Design only. No running implementation. Worker payloads and resource constraints still require Phase 0 schema freeze. VOS and non-VOS clients use the same protocol."
+    "title": "V-Scheduler Public API",
+    "version": "1.0.0",
+    "description": "MVP implementation v0.1.0. Versioned API for VOS and external clients; authenticated app-scoped access. JSON body limit 256 KiB. Framework extraction errors can return plain text. Static executors and one active execution lane per node; no HA or dynamic enrollment."
   },
   "servers": [
     {
-      "url": "https://scheduler.example.invalid/api/v1",
-      "description": "Standalone controller placeholder"
-    },
-    {
-      "url": "https://vos.example.invalid/app/com.ictrek.v-scheduler/api/v1",
-      "description": "VOS app mounting placeholder"
+      "url": "/api/v1",
+      "description": "Standalone controller; use application prefix when mounted in VOS"
     }
   ],
   "paths": {
     "/discovery": {
       "get": {
-        "summary": "Non-sensitive version and implemented feature discovery",
         "operationId": "get_discovery",
+        "summary": "Discover capabilities",
+        "x-title": {
+          "zh-CN": "发现能力",
+          "en": "Discover capabilities",
+          "zh-TW": "探索能力"
+        },
         "security": [],
-        "x-required-scope": "public-metadata",
+        "x-role": "public",
         "responses": {
           "200": {
-            "$ref": "#/components/responses/HTTP200"
-          },
-          "400": {
-            "$ref": "#/components/responses/HTTP400"
-          },
-          "401": {
-            "$ref": "#/components/responses/HTTP401"
-          },
-          "403": {
-            "$ref": "#/components/responses/HTTP403"
-          },
-          "404": {
-            "$ref": "#/components/responses/HTTP404"
-          },
-          "409": {
-            "$ref": "#/components/responses/HTTP409"
-          },
-          "422": {
-            "$ref": "#/components/responses/HTTP422"
-          },
-          "429": {
-            "$ref": "#/components/responses/HTTP429"
-          },
-          "503": {
-            "$ref": "#/components/responses/HTTP503"
-          }
-        }
-      }
-    },
-    "/executors": {
-      "get": {
-        "summary": "List authorized executors and templates",
-        "operationId": "get_executors",
-        "security": [
-          {
-            "serviceBearer": []
-          }
-        ],
-        "x-required-scope": "tasks:read",
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/HTTP200"
-          },
-          "400": {
-            "$ref": "#/components/responses/HTTP400"
-          },
-          "401": {
-            "$ref": "#/components/responses/HTTP401"
-          },
-          "403": {
-            "$ref": "#/components/responses/HTTP403"
-          },
-          "404": {
-            "$ref": "#/components/responses/HTTP404"
-          },
-          "409": {
-            "$ref": "#/components/responses/HTTP409"
-          },
-          "422": {
-            "$ref": "#/components/responses/HTTP422"
-          },
-          "429": {
-            "$ref": "#/components/responses/HTTP429"
-          },
-          "503": {
-            "$ref": "#/components/responses/HTTP503"
-          },
-          "410": {
-            "$ref": "#/components/responses/HTTP410"
-          }
-        },
-        "parameters": [
-          {
-            "name": "cursor",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 200,
-              "default": 50
-            }
-          }
-        ]
-      }
-    },
-    "/artifacts": {
-      "post": {
-        "summary": "Register object in approved storage; no arbitrary paths or URLs",
-        "operationId": "post_artifacts",
-        "security": [
-          {
-            "serviceBearer": []
-          }
-        ],
-        "x-required-scope": "artifacts:register",
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/HTTP200"
-          },
-          "202": {
-            "$ref": "#/components/responses/HTTP202"
-          },
-          "400": {
-            "$ref": "#/components/responses/HTTP400"
-          },
-          "401": {
-            "$ref": "#/components/responses/HTTP401"
-          },
-          "403": {
-            "$ref": "#/components/responses/HTTP403"
-          },
-          "404": {
-            "$ref": "#/components/responses/HTTP404"
-          },
-          "409": {
-            "$ref": "#/components/responses/HTTP409"
-          },
-          "422": {
-            "$ref": "#/components/responses/HTTP422"
-          },
-          "429": {
-            "$ref": "#/components/responses/HTTP429"
-          },
-          "503": {
-            "$ref": "#/components/responses/HTTP503"
-          }
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ArtifactRegister"
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
               }
             }
           }
         }
       }
     },
-    "/tasks": {
-      "post": {
-        "summary": "Persist task; 202 new / 200 idempotent duplicate",
-        "operationId": "post_tasks",
-        "security": [
-          {
-            "serviceBearer": []
-          }
-        ],
-        "x-required-scope": "tasks:submit",
+    "/openapi.json": {
+      "get": {
+        "operationId": "get_openapi.json",
+        "summary": "Read API specification",
+        "x-title": {
+          "zh-CN": "读取 API 规范",
+          "en": "Read API specification",
+          "zh-TW": "讀取 API 規範"
+        },
+        "security": [],
+        "x-role": "public",
         "responses": {
           "200": {
-            "$ref": "#/components/responses/HTTP200"
-          },
-          "202": {
-            "$ref": "#/components/responses/HTTP202"
-          },
-          "400": {
-            "$ref": "#/components/responses/HTTP400"
+            "description": "OpenAPI 3.1 document"
+          }
+        }
+      }
+    },
+    "/executors": {
+      "get": {
+        "operationId": "get_executors",
+        "summary": "Available executors",
+        "x-title": {
+          "zh-CN": "可用执行器",
+          "en": "Available executors",
+          "zh-TW": "可用執行器"
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-role": "submitter",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
           },
           "401": {
-            "$ref": "#/components/responses/HTTP401"
+            "description": "Missing or invalid bearer token"
           },
           "403": {
-            "$ref": "#/components/responses/HTTP403"
+            "description": "Role or app scope denied"
           },
           "404": {
-            "$ref": "#/components/responses/HTTP404"
+            "description": "Not found or not visible"
           },
           "409": {
-            "$ref": "#/components/responses/HTTP409"
+            "description": "State or idempotency conflict"
           },
           "422": {
-            "$ref": "#/components/responses/HTTP422"
+            "description": "Invalid request"
           },
           "429": {
-            "$ref": "#/components/responses/HTTP429"
+            "description": "Resource busy or queue quota"
           },
           "503": {
-            "$ref": "#/components/responses/HTTP503"
+            "description": "Temporarily unavailable"
+          }
+        }
+      }
+    },
+    "/tasks": {
+      "post": {
+        "operationId": "post_tasks",
+        "summary": "Submit a task",
+        "x-title": {
+          "zh-CN": "提交任务",
+          "en": "Submit a task",
+          "zh-TW": "提交任務"
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-role": "submitter",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "New queued task"
+          },
+          "401": {
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "description": "Role or app scope denied"
+          },
+          "404": {
+            "description": "Not found or not visible"
+          },
+          "409": {
+            "description": "State or idempotency conflict"
+          },
+          "422": {
+            "description": "Invalid request"
+          },
+          "429": {
+            "description": "Resource busy or queue quota"
+          },
+          "503": {
+            "description": "Temporarily unavailable"
           }
         },
+        "x-description": {
+          "zh-CN": "应用身份提交指定执行器；资源由服务器批准的模板确定。",
+          "en": "App-scoped tasks use approved executor templates; callers cannot choose arbitrary resource budgets.",
+          "zh-TW": "應用身分提交指定執行器；資源由伺服器核准的範本確定。"
+        },
+        "description": "App-scoped tasks use approved executor templates; callers cannot choose arbitrary resource budgets.",
         "parameters": [
           {
             "name": "Idempotency-Key",
@@ -233,49 +183,75 @@
               }
             }
           }
+        },
+        "x-example": {
+          "protocol_version": 1,
+          "app_task_id": "business-job-001",
+          "executor": {
+            "id": "image-studio.generate",
+            "contract_version": "1",
+            "task_type": "image.generate"
+          },
+          "parameters": {
+            "user_key": "authorized-user-key",
+            "job_id": "business-job-001"
+          },
+          "inputs": []
         }
       },
       "get": {
-        "summary": "List scoped tasks",
         "operationId": "get_tasks",
+        "summary": "List tasks",
+        "x-title": {
+          "zh-CN": "任务列表",
+          "en": "List tasks",
+          "zh-TW": "任務列表"
+        },
         "security": [
           {
-            "serviceBearer": []
+            "bearerAuth": []
           }
         ],
-        "x-required-scope": "tasks:read",
+        "x-role": "submitter",
         "responses": {
           "200": {
-            "$ref": "#/components/responses/HTTP200"
-          },
-          "400": {
-            "$ref": "#/components/responses/HTTP400"
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
           },
           "401": {
-            "$ref": "#/components/responses/HTTP401"
+            "description": "Missing or invalid bearer token"
           },
           "403": {
-            "$ref": "#/components/responses/HTTP403"
+            "description": "Role or app scope denied"
           },
           "404": {
-            "$ref": "#/components/responses/HTTP404"
+            "description": "Not found or not visible"
           },
           "409": {
-            "$ref": "#/components/responses/HTTP409"
+            "description": "State or idempotency conflict"
           },
           "422": {
-            "$ref": "#/components/responses/HTTP422"
+            "description": "Invalid request"
           },
           "429": {
-            "$ref": "#/components/responses/HTTP429"
+            "description": "Resource busy or queue quota"
           },
           "503": {
-            "$ref": "#/components/responses/HTTP503"
-          },
-          "410": {
-            "$ref": "#/components/responses/HTTP410"
+            "description": "Temporarily unavailable"
           }
         },
+        "x-description": {
+          "zh-CN": "应用身份提交指定执行器；资源由服务器批准的模板确定。",
+          "en": "App-scoped tasks use approved executor templates; callers cannot choose arbitrary resource budgets.",
+          "zh-TW": "應用身分提交指定執行器；資源由伺服器核准的範本確定。"
+        },
+        "description": "App-scoped tasks use approved executor templates; callers cannot choose arbitrary resource budgets.",
         "parameters": [
           {
             "name": "cursor",
@@ -297,48 +273,127 @@
         ]
       }
     },
-    "/tasks/{task_id}": {
+    "/tasks/{id}": {
       "get": {
-        "summary": "Read scoped task status",
-        "operationId": "get_tasks_task_id",
+        "operationId": "get_tasks_id",
+        "summary": "Get task details",
+        "x-title": {
+          "zh-CN": "任务详情",
+          "en": "Get task details",
+          "zh-TW": "任務詳情"
+        },
         "security": [
           {
-            "serviceBearer": []
+            "bearerAuth": []
           }
         ],
-        "x-required-scope": "tasks:read",
+        "x-role": "submitter",
         "responses": {
           "200": {
-            "$ref": "#/components/responses/HTTP200"
-          },
-          "400": {
-            "$ref": "#/components/responses/HTTP400"
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
           },
           "401": {
-            "$ref": "#/components/responses/HTTP401"
+            "description": "Missing or invalid bearer token"
           },
           "403": {
-            "$ref": "#/components/responses/HTTP403"
+            "description": "Role or app scope denied"
           },
           "404": {
-            "$ref": "#/components/responses/HTTP404"
+            "description": "Not found or not visible"
           },
           "409": {
-            "$ref": "#/components/responses/HTTP409"
+            "description": "State or idempotency conflict"
           },
           "422": {
-            "$ref": "#/components/responses/HTTP422"
+            "description": "Invalid request"
           },
           "429": {
-            "$ref": "#/components/responses/HTTP429"
+            "description": "Resource busy or queue quota"
           },
           "503": {
-            "$ref": "#/components/responses/HTTP503"
+            "description": "Temporarily unavailable"
           }
         },
+        "x-description": {
+          "zh-CN": "删除只适用于确认停止的终态任务；保留审计和输出文件。",
+          "en": "Deletion requires a stopped terminal task; audit records and output files remain.",
+          "zh-TW": "刪除僅適用於確認停止的終態任務；保留稽核與輸出檔案。"
+        },
+        "description": "Deletion requires a stopped terminal task; audit records and output files remain.",
         "parameters": [
           {
-            "name": "task_id",
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      },
+      "delete": {
+        "operationId": "delete_tasks_id",
+        "summary": "Delete task record",
+        "x-title": {
+          "zh-CN": "删除任务记录",
+          "en": "Delete task record",
+          "zh-TW": "刪除任務記錄"
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-role": "submitter",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "description": "Role or app scope denied"
+          },
+          "404": {
+            "description": "Not found or not visible"
+          },
+          "409": {
+            "description": "State or idempotency conflict"
+          },
+          "422": {
+            "description": "Invalid request"
+          },
+          "429": {
+            "description": "Resource busy or queue quota"
+          },
+          "503": {
+            "description": "Temporarily unavailable"
+          }
+        },
+        "x-description": {
+          "zh-CN": "删除只适用于确认停止的终态任务；保留审计和输出文件。",
+          "en": "Deletion requires a stopped terminal task; audit records and output files remain.",
+          "zh-TW": "刪除僅適用於確認停止的終態任務；保留稽核與輸出檔案。"
+        },
+        "description": "Deletion requires a stopped terminal task; audit records and output files remain.",
+        "parameters": [
+          {
+            "name": "id",
             "in": "path",
             "required": true,
             "schema": {
@@ -348,115 +403,123 @@
         ]
       }
     },
-    "/tasks/{task_id}/cancel": {
+    "/tasks/{id}/cancel": {
       "post": {
-        "summary": "Request cancellation; release only on confirmed stop",
-        "operationId": "post_tasks_task_id_cancel",
+        "operationId": "post_tasks_id_cancel",
+        "summary": "Cancel task",
+        "x-title": {
+          "zh-CN": "取消任务",
+          "en": "Cancel task",
+          "zh-TW": "取消任務"
+        },
         "security": [
           {
-            "serviceBearer": []
+            "bearerAuth": []
           }
         ],
-        "x-required-scope": "tasks:cancel",
+        "x-role": "submitter",
         "responses": {
           "200": {
-            "$ref": "#/components/responses/HTTP200"
-          },
-          "202": {
-            "$ref": "#/components/responses/HTTP202"
-          },
-          "400": {
-            "$ref": "#/components/responses/HTTP400"
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
           },
           "401": {
-            "$ref": "#/components/responses/HTTP401"
+            "description": "Missing or invalid bearer token"
           },
           "403": {
-            "$ref": "#/components/responses/HTTP403"
+            "description": "Role or app scope denied"
           },
           "404": {
-            "$ref": "#/components/responses/HTTP404"
+            "description": "Not found or not visible"
           },
           "409": {
-            "$ref": "#/components/responses/HTTP409"
+            "description": "State or idempotency conflict"
           },
           "422": {
-            "$ref": "#/components/responses/HTTP422"
+            "description": "Invalid request"
           },
           "429": {
-            "$ref": "#/components/responses/HTTP429"
+            "description": "Resource busy or queue quota"
           },
           "503": {
-            "$ref": "#/components/responses/HTTP503"
+            "description": "Temporarily unavailable"
           }
         },
         "parameters": [
           {
-            "name": "task_id",
+            "name": "id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string"
             }
           }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/Cancel"
-              }
-            }
-          }
-        }
+        ]
       }
     },
-    "/tasks/{task_id}/retry": {
+    "/tasks/{id}/retry": {
       "post": {
-        "summary": "Request safe manual retry; reject unknown old execution",
-        "operationId": "post_tasks_task_id_retry",
+        "operationId": "post_tasks_id_retry",
+        "summary": "Retry task manually",
+        "x-title": {
+          "zh-CN": "人工重试",
+          "en": "Retry task manually",
+          "zh-TW": "人工重試"
+        },
         "security": [
           {
-            "serviceBearer": []
+            "bearerAuth": []
           }
         ],
-        "x-required-scope": "tasks:retry",
+        "x-role": "submitter",
         "responses": {
           "200": {
-            "$ref": "#/components/responses/HTTP200"
-          },
-          "202": {
-            "$ref": "#/components/responses/HTTP202"
-          },
-          "400": {
-            "$ref": "#/components/responses/HTTP400"
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
           },
           "401": {
-            "$ref": "#/components/responses/HTTP401"
+            "description": "Missing or invalid bearer token"
           },
           "403": {
-            "$ref": "#/components/responses/HTTP403"
+            "description": "Role or app scope denied"
           },
           "404": {
-            "$ref": "#/components/responses/HTTP404"
+            "description": "Not found or not visible"
           },
           "409": {
-            "$ref": "#/components/responses/HTTP409"
+            "description": "State or idempotency conflict"
           },
           "422": {
-            "$ref": "#/components/responses/HTTP422"
+            "description": "Invalid request"
           },
           "429": {
-            "$ref": "#/components/responses/HTTP429"
+            "description": "Resource busy or queue quota"
           },
           "503": {
-            "$ref": "#/components/responses/HTTP503"
+            "description": "Temporarily unavailable"
           }
         },
+        "x-description": {
+          "zh-CN": "仅允许已停止失败任务，执行器必须声明幂等，且未超过尝试上限。",
+          "en": "Requires a stopped failed task, an idempotent executor and remaining attempts.",
+          "zh-TW": "僅允許已停止失敗任務，執行器須聲明冪等，且未超過嘗試上限。"
+        },
+        "description": "Requires a stopped failed task, an idempotent executor and remaining attempts.",
         "parameters": [
           {
-            "name": "task_id",
+            "name": "id",
             "in": "path",
             "required": true,
             "schema": {
@@ -473,59 +536,115 @@
               "maxLength": 256
             }
           }
+        ]
+      }
+    },
+    "/tasks/{id}/attempts": {
+      "get": {
+        "operationId": "get_tasks_id_attempts",
+        "summary": "Attempt history",
+        "x-title": {
+          "zh-CN": "执行历史",
+          "en": "Attempt history",
+          "zh-TW": "執行歷史"
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/Cancel"
+        "x-role": "submitter",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
               }
             }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "description": "Role or app scope denied"
+          },
+          "404": {
+            "description": "Not found or not visible"
+          },
+          "409": {
+            "description": "State or idempotency conflict"
+          },
+          "422": {
+            "description": "Invalid request"
+          },
+          "429": {
+            "description": "Resource busy or queue quota"
+          },
+          "503": {
+            "description": "Temporarily unavailable"
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
       }
     },
     "/events": {
       "get": {
-        "summary": "At-least-once scoped events; deduplicate by task version",
         "operationId": "get_events",
+        "summary": "Incremental events",
+        "x-title": {
+          "zh-CN": "增量事件",
+          "en": "Incremental events",
+          "zh-TW": "增量事件"
+        },
         "security": [
           {
-            "serviceBearer": []
+            "bearerAuth": []
           }
         ],
-        "x-required-scope": "tasks:read",
+        "x-role": "submitter",
         "responses": {
           "200": {
-            "$ref": "#/components/responses/HTTP200"
-          },
-          "400": {
-            "$ref": "#/components/responses/HTTP400"
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
           },
           "401": {
-            "$ref": "#/components/responses/HTTP401"
+            "description": "Missing or invalid bearer token"
           },
           "403": {
-            "$ref": "#/components/responses/HTTP403"
+            "description": "Role or app scope denied"
           },
           "404": {
-            "$ref": "#/components/responses/HTTP404"
+            "description": "Not found or not visible"
           },
           "409": {
-            "$ref": "#/components/responses/HTTP409"
+            "description": "State or idempotency conflict"
           },
           "422": {
-            "$ref": "#/components/responses/HTTP422"
+            "description": "Invalid request"
           },
           "429": {
-            "$ref": "#/components/responses/HTTP429"
+            "description": "Resource busy or queue quota"
           },
           "503": {
-            "$ref": "#/components/responses/HTTP503"
-          },
-          "410": {
-            "$ref": "#/components/responses/HTTP410"
+            "description": "Temporarily unavailable"
           }
         },
         "parameters": [
@@ -549,105 +668,113 @@
         ]
       }
     },
-    "/workers/register": {
-      "post": {
-        "summary": "Enroll worker with administrator-approved bootstrap credential",
-        "operationId": "post_workers_register",
+    "/nodes": {
+      "get": {
+        "operationId": "get_nodes",
+        "summary": "Nodes and placements",
+        "x-title": {
+          "zh-CN": "节点与部署位置",
+          "en": "Nodes and placements",
+          "zh-TW": "節點與部署位置"
+        },
         "security": [
           {
-            "serviceBearer": []
+            "bearerAuth": []
           }
         ],
-        "x-required-scope": "workers:connect",
+        "x-role": "admin",
         "responses": {
           "200": {
-            "$ref": "#/components/responses/HTTP200"
-          },
-          "202": {
-            "$ref": "#/components/responses/HTTP202"
-          },
-          "400": {
-            "$ref": "#/components/responses/HTTP400"
-          },
-          "401": {
-            "$ref": "#/components/responses/HTTP401"
-          },
-          "403": {
-            "$ref": "#/components/responses/HTTP403"
-          },
-          "404": {
-            "$ref": "#/components/responses/HTTP404"
-          },
-          "409": {
-            "$ref": "#/components/responses/HTTP409"
-          },
-          "422": {
-            "$ref": "#/components/responses/HTTP422"
-          },
-          "429": {
-            "$ref": "#/components/responses/HTTP429"
-          },
-          "503": {
-            "$ref": "#/components/responses/HTTP503"
-          }
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DraftMessage"
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
               }
             }
-          }
-        }
-      }
-    },
-    "/workers/{node_id}/heartbeat": {
-      "post": {
-        "summary": "Report resources, executions and session sequence",
-        "operationId": "post_workers_node_id_heartbeat",
-        "security": [
-          {
-            "serviceBearer": []
-          }
-        ],
-        "x-required-scope": "workers:connect",
-        "responses": {
-          "200": {
-            "$ref": "#/components/responses/HTTP200"
-          },
-          "202": {
-            "$ref": "#/components/responses/HTTP202"
-          },
-          "400": {
-            "$ref": "#/components/responses/HTTP400"
           },
           "401": {
-            "$ref": "#/components/responses/HTTP401"
+            "description": "Missing or invalid bearer token"
           },
           "403": {
-            "$ref": "#/components/responses/HTTP403"
+            "description": "Role or app scope denied"
           },
           "404": {
-            "$ref": "#/components/responses/HTTP404"
+            "description": "Not found or not visible"
           },
           "409": {
-            "$ref": "#/components/responses/HTTP409"
+            "description": "State or idempotency conflict"
           },
           "422": {
-            "$ref": "#/components/responses/HTTP422"
+            "description": "Invalid request"
           },
           "429": {
-            "$ref": "#/components/responses/HTTP429"
+            "description": "Resource busy or queue quota"
           },
           "503": {
-            "$ref": "#/components/responses/HTTP503"
+            "description": "Temporarily unavailable"
+          }
+        },
+        "x-description": {
+          "zh-CN": "合并 Agent 心跳、批准预算、VOS 清单与观测、本机安装应用和执行器位置；来源带新鲜度。",
+          "en": "Combines Agent heartbeat, approved budgets, VOS observations, local app installations and executor placement with source freshness.",
+          "zh-TW": "合併 Agent 心跳、核准預算、VOS 清單與觀測、本機安裝應用和執行器位置；來源含新鮮度。"
+        },
+        "description": "Combines Agent heartbeat, approved budgets, VOS observations, local app installations and executor placement with source freshness."
+      }
+    },
+    "/nodes/{id}/drain": {
+      "post": {
+        "operationId": "post_nodes_id_drain",
+        "summary": "Drain a node",
+        "x-title": {
+          "zh-CN": "节点排空",
+          "en": "Drain a node",
+          "zh-TW": "節點排空"
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-role": "admin",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "description": "Role or app scope denied"
+          },
+          "404": {
+            "description": "Not found or not visible"
+          },
+          "409": {
+            "description": "State or idempotency conflict"
+          },
+          "422": {
+            "description": "Invalid request"
+          },
+          "429": {
+            "description": "Resource busy or queue quota"
+          },
+          "503": {
+            "description": "Temporarily unavailable"
           }
         },
         "parameters": [
           {
-            "name": "node_id",
+            "name": "id",
             "in": "path",
             "required": true,
             "schema": {
@@ -660,62 +787,123 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/DraftMessage"
+                "$ref": "#/components/schemas/Drain"
               }
             }
+          }
+        },
+        "x-example": {
+          "draining": true
+        }
+      }
+    },
+    "/reservations": {
+      "get": {
+        "operationId": "get_reservations",
+        "summary": "Unreleased reservations",
+        "x-title": {
+          "zh-CN": "未释放预约",
+          "en": "Unreleased reservations",
+          "zh-TW": "未釋放預約"
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-role": "admin",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "description": "Role or app scope denied"
+          },
+          "404": {
+            "description": "Not found or not visible"
+          },
+          "409": {
+            "description": "State or idempotency conflict"
+          },
+          "422": {
+            "description": "Invalid request"
+          },
+          "429": {
+            "description": "Resource busy or queue quota"
+          },
+          "503": {
+            "description": "Temporarily unavailable"
           }
         }
       }
     },
-    "/workers/{node_id}/commands/claim": {
+    "/permits": {
       "post": {
-        "summary": "Receive repeatable node-scoped execution commands",
-        "operationId": "post_workers_node_id_commands_claim",
+        "operationId": "post_permits",
+        "summary": "Acquire online permit",
+        "x-title": {
+          "zh-CN": "申请在线许可",
+          "en": "Acquire online permit",
+          "zh-TW": "申請線上許可"
+        },
         "security": [
           {
-            "serviceBearer": []
+            "bearerAuth": []
           }
         ],
-        "x-required-scope": "workers:connect",
+        "x-role": "submitter",
         "responses": {
           "200": {
-            "$ref": "#/components/responses/HTTP200"
-          },
-          "202": {
-            "$ref": "#/components/responses/HTTP202"
-          },
-          "400": {
-            "$ref": "#/components/responses/HTTP400"
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
           },
           "401": {
-            "$ref": "#/components/responses/HTTP401"
+            "description": "Missing or invalid bearer token"
           },
           "403": {
-            "$ref": "#/components/responses/HTTP403"
+            "description": "Role or app scope denied"
           },
           "404": {
-            "$ref": "#/components/responses/HTTP404"
+            "description": "Not found or not visible"
           },
           "409": {
-            "$ref": "#/components/responses/HTTP409"
+            "description": "State or idempotency conflict"
           },
           "422": {
-            "$ref": "#/components/responses/HTTP422"
+            "description": "Invalid request"
           },
           "429": {
-            "$ref": "#/components/responses/HTTP429"
+            "description": "Resource busy or queue quota"
           },
           "503": {
-            "$ref": "#/components/responses/HTTP503"
+            "description": "Temporarily unavailable"
           }
         },
         "parameters": [
           {
-            "name": "node_id",
-            "in": "path",
+            "name": "Idempotency-Key",
+            "in": "header",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
             }
           }
         ],
@@ -724,66 +912,133 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/DraftMessage"
+                "$ref": "#/components/schemas/PermitRequest"
               }
             }
           }
+        },
+        "x-example": {
+          "executor_id": "v-router.local.infer"
         }
       }
     },
-    "/workers/{node_id}/commands/{command_id}/ack": {
+    "/permits/{id}/renew": {
       "post": {
-        "summary": "Acknowledge after durable journal; accepted is not running",
-        "operationId": "post_workers_node_id_commands_command_id_ack",
+        "operationId": "post_permits_id_renew",
+        "summary": "Renew online permit",
+        "x-title": {
+          "zh-CN": "续约在线许可",
+          "en": "Renew online permit",
+          "zh-TW": "續約線上許可"
+        },
         "security": [
           {
-            "serviceBearer": []
+            "bearerAuth": []
           }
         ],
-        "x-required-scope": "workers:connect",
+        "x-role": "submitter",
         "responses": {
           "200": {
-            "$ref": "#/components/responses/HTTP200"
-          },
-          "202": {
-            "$ref": "#/components/responses/HTTP202"
-          },
-          "400": {
-            "$ref": "#/components/responses/HTTP400"
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
           },
           "401": {
-            "$ref": "#/components/responses/HTTP401"
+            "description": "Missing or invalid bearer token"
           },
           "403": {
-            "$ref": "#/components/responses/HTTP403"
+            "description": "Role or app scope denied"
           },
           "404": {
-            "$ref": "#/components/responses/HTTP404"
+            "description": "Not found or not visible"
           },
           "409": {
-            "$ref": "#/components/responses/HTTP409"
+            "description": "State or idempotency conflict"
           },
           "422": {
-            "$ref": "#/components/responses/HTTP422"
+            "description": "Invalid request"
           },
           "429": {
-            "$ref": "#/components/responses/HTTP429"
+            "description": "Resource busy or queue quota"
           },
           "503": {
-            "$ref": "#/components/responses/HTTP503"
+            "description": "Temporarily unavailable"
           }
         },
         "parameters": [
           {
-            "name": "node_id",
+            "name": "id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string"
             }
-          },
+          }
+        ]
+      }
+    },
+    "/permits/{id}/release": {
+      "post": {
+        "operationId": "post_permits_id_release",
+        "summary": "Release online permit",
+        "x-title": {
+          "zh-CN": "释放在线许可",
+          "en": "Release online permit",
+          "zh-TW": "釋放線上許可"
+        },
+        "security": [
           {
-            "name": "command_id",
+            "bearerAuth": []
+          }
+        ],
+        "x-role": "submitter",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "description": "Role or app scope denied"
+          },
+          "404": {
+            "description": "Not found or not visible"
+          },
+          "409": {
+            "description": "State or idempotency conflict"
+          },
+          "422": {
+            "description": "Invalid request"
+          },
+          "429": {
+            "description": "Resource busy or queue quota"
+          },
+          "503": {
+            "description": "Temporarily unavailable"
+          }
+        },
+        "x-description": {
+          "zh-CN": "无法确认停止时 stopped=false；预约转为 suspect 并保留容量。",
+          "en": "When stop is unconfirmed, stopped=false keeps capacity reserved as suspect.",
+          "zh-TW": "無法確認停止時 stopped=false；預約轉為 suspect 並保留容量。"
+        },
+        "description": "When stop is unconfirmed, stopped=false keeps capacity reserved as suspect.",
+        "parameters": [
+          {
+            "name": "id",
             "in": "path",
             "required": true,
             "schema": {
@@ -796,58 +1051,68 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/DraftMessage"
+                "$ref": "#/components/schemas/PermitRelease"
               }
             }
           }
+        },
+        "x-example": {
+          "stopped": true,
+          "evidence": "upstream_response_completed"
         }
       }
     },
-    "/attempts/{attempt_id}/renew": {
+    "/permits/{id}/confirm-stopped": {
       "post": {
-        "summary": "Renew only current worker session and attempt fence",
-        "operationId": "post_attempts_attempt_id_renew",
+        "operationId": "post_permits_id_confirm-stopped",
+        "summary": "Confirm stopped execution",
+        "x-title": {
+          "zh-CN": "核验停止",
+          "en": "Confirm stopped execution",
+          "zh-TW": "核驗停止"
+        },
         "security": [
           {
-            "serviceBearer": []
+            "bearerAuth": []
           }
         ],
-        "x-required-scope": "workers:connect",
+        "x-role": "admin",
         "responses": {
           "200": {
-            "$ref": "#/components/responses/HTTP200"
-          },
-          "202": {
-            "$ref": "#/components/responses/HTTP202"
-          },
-          "400": {
-            "$ref": "#/components/responses/HTTP400"
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
           },
           "401": {
-            "$ref": "#/components/responses/HTTP401"
+            "description": "Missing or invalid bearer token"
           },
           "403": {
-            "$ref": "#/components/responses/HTTP403"
+            "description": "Role or app scope denied"
           },
           "404": {
-            "$ref": "#/components/responses/HTTP404"
+            "description": "Not found or not visible"
           },
           "409": {
-            "$ref": "#/components/responses/HTTP409"
+            "description": "State or idempotency conflict"
           },
           "422": {
-            "$ref": "#/components/responses/HTTP422"
+            "description": "Invalid request"
           },
           "429": {
-            "$ref": "#/components/responses/HTTP429"
+            "description": "Resource busy or queue quota"
           },
           "503": {
-            "$ref": "#/components/responses/HTTP503"
+            "description": "Temporarily unavailable"
           }
         },
         "parameters": [
           {
-            "name": "attempt_id",
+            "name": "id",
             "in": "path",
             "required": true,
             "schema": {
@@ -860,58 +1125,68 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/DraftMessage"
+                "$ref": "#/components/schemas/PermitRelease"
               }
             }
           }
+        },
+        "x-example": {
+          "stopped": true,
+          "evidence": "upstream_response_completed"
         }
       }
     },
-    "/attempts/{attempt_id}/report": {
+    "/workers/{id}/heartbeat": {
       "post": {
-        "summary": "Report execution state, stop evidence or staged result",
-        "operationId": "post_attempts_attempt_id_report",
+        "operationId": "post_workers_id_heartbeat",
+        "summary": "Worker heartbeat",
+        "x-title": {
+          "zh-CN": "节点心跳",
+          "en": "Worker heartbeat",
+          "zh-TW": "節點心跳"
+        },
         "security": [
           {
-            "serviceBearer": []
+            "bearerAuth": []
           }
         ],
-        "x-required-scope": "workers:connect",
+        "x-role": "worker",
         "responses": {
           "200": {
-            "$ref": "#/components/responses/HTTP200"
-          },
-          "202": {
-            "$ref": "#/components/responses/HTTP202"
-          },
-          "400": {
-            "$ref": "#/components/responses/HTTP400"
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
           },
           "401": {
-            "$ref": "#/components/responses/HTTP401"
+            "description": "Missing or invalid bearer token"
           },
           "403": {
-            "$ref": "#/components/responses/HTTP403"
+            "description": "Role or app scope denied"
           },
           "404": {
-            "$ref": "#/components/responses/HTTP404"
+            "description": "Not found or not visible"
           },
           "409": {
-            "$ref": "#/components/responses/HTTP409"
+            "description": "State or idempotency conflict"
           },
           "422": {
-            "$ref": "#/components/responses/HTTP422"
+            "description": "Invalid request"
           },
           "429": {
-            "$ref": "#/components/responses/HTTP429"
+            "description": "Resource busy or queue quota"
           },
           "503": {
-            "$ref": "#/components/responses/HTTP503"
+            "description": "Temporarily unavailable"
           }
         },
         "parameters": [
           {
-            "name": "attempt_id",
+            "name": "id",
             "in": "path",
             "required": true,
             "schema": {
@@ -924,9 +1199,239 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/DraftMessage"
+                "$ref": "#/components/schemas/Heartbeat"
               }
             }
+          }
+        },
+        "x-example": {
+          "session_id": "durable-agent-session",
+          "report": {}
+        }
+      }
+    },
+    "/workers/{id}/commands/claim": {
+      "post": {
+        "operationId": "post_workers_id_commands_claim",
+        "summary": "Claim execution commands",
+        "x-title": {
+          "zh-CN": "领取执行命令",
+          "en": "Claim execution commands",
+          "zh-TW": "領取執行命令"
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-role": "worker",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "description": "Role or app scope denied"
+          },
+          "404": {
+            "description": "Not found or not visible"
+          },
+          "409": {
+            "description": "State or idempotency conflict"
+          },
+          "422": {
+            "description": "Invalid request"
+          },
+          "429": {
+            "description": "Resource busy or queue quota"
+          },
+          "503": {
+            "description": "Temporarily unavailable"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Session"
+              }
+            }
+          }
+        },
+        "x-example": {
+          "session_id": "durable-agent-session"
+        }
+      }
+    },
+    "/attempts/{id}/renew": {
+      "post": {
+        "operationId": "post_attempts_id_renew",
+        "summary": "Renew execution lease",
+        "x-title": {
+          "zh-CN": "续约执行",
+          "en": "Renew execution lease",
+          "zh-TW": "續約執行"
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-role": "worker",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "description": "Role or app scope denied"
+          },
+          "404": {
+            "description": "Not found or not visible"
+          },
+          "409": {
+            "description": "State or idempotency conflict"
+          },
+          "422": {
+            "description": "Invalid request"
+          },
+          "429": {
+            "description": "Resource busy or queue quota"
+          },
+          "503": {
+            "description": "Temporarily unavailable"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Renew"
+              }
+            }
+          }
+        },
+        "x-example": {
+          "session_id": "durable-agent-session",
+          "fence": 1
+        }
+      }
+    },
+    "/attempts/{id}/report": {
+      "post": {
+        "operationId": "post_attempts_id_report",
+        "summary": "Report execution status",
+        "x-title": {
+          "zh-CN": "上报执行状态",
+          "en": "Report execution status",
+          "zh-TW": "回報執行狀態"
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-role": "worker",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "description": "Role or app scope denied"
+          },
+          "404": {
+            "description": "Not found or not visible"
+          },
+          "409": {
+            "description": "State or idempotency conflict"
+          },
+          "422": {
+            "description": "Invalid request"
+          },
+          "429": {
+            "description": "Resource busy or queue quota"
+          },
+          "503": {
+            "description": "Temporarily unavailable"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Report"
+              }
+            }
+          }
+        },
+        "x-example": {
+          "session_id": "durable-agent-session",
+          "fence": 1,
+          "status": "succeeded",
+          "stopped": true,
+          "result": {
+            "output_reference": "application-owned-output"
           }
         }
       }
@@ -934,294 +1439,214 @@
   },
   "components": {
     "securitySchemes": {
-      "serviceBearer": {
+      "bearerAuth": {
         "type": "http",
-        "scheme": "bearer",
-        "description": "V-Scheduler issued scoped credential, independent of VOS JWT. Enrollment uses separately scoped short-lived bootstrap credential."
+        "scheme": "bearer"
       }
     },
     "schemas": {
-      "Envelope": {
-        "type": "object",
-        "required": [
-          "code",
-          "category",
-          "data",
-          "msg",
-          "version",
-          "request_id"
-        ],
-        "properties": {
-          "code": {
-            "type": "string"
-          },
-          "category": {
-            "type": "string",
-            "enum": [
-              "v-scheduler"
-            ]
-          },
-          "data": {},
-          "msg": {
-            "type": "string"
-          },
-          "version": {
-            "type": "string",
-            "enum": [
-              "1"
-            ]
-          },
-          "request_id": {
-            "type": "string"
-          }
-        }
-      },
       "ExecutorRef": {
         "type": "object",
         "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "contract_version": {
+            "type": "string"
+          },
+          "task_type": {
+            "type": "string"
+          }
+        },
         "required": [
           "id",
           "contract_version",
           "task_type"
-        ],
-        "properties": {
-          "id": {
-            "type": "string",
-            "minLength": 1
-          },
-          "contract_version": {
-            "type": "string",
-            "minLength": 1
-          },
-          "task_type": {
-            "type": "string",
-            "minLength": 1
-          },
-          "model_id": {
-            "type": "string",
-            "minLength": 1
-          }
-        }
+        ]
       },
       "TaskSubmit": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "protocol_version",
-          "app_task_id",
-          "executor",
-          "parameters"
-        ],
         "properties": {
           "protocol_version": {
             "type": "integer",
-            "enum": [
-              1
-            ]
+            "const": 1
           },
           "app_task_id": {
-            "type": "string",
-            "minLength": 1
-          },
-          "idempotency_key": {
             "type": "string"
           },
           "executor": {
             "$ref": "#/components/schemas/ExecutorRef"
           },
           "parameters": {
-            "type": "object"
+            "type": "object",
+            "additionalProperties": true
           },
           "inputs": {
             "type": "array",
-            "items": {
-              "type": "object",
-              "required": [
-                "artifact_id"
-              ],
-              "properties": {
-                "artifact_id": {
-                  "type": "string"
-                },
-                "sha256": {
-                  "type": "string"
-                }
-              },
-              "additionalProperties": false
-            }
+            "maxItems": 0
           },
-          "placement": {
+          "idempotency_key": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "protocol_version",
+          "app_task_id",
+          "executor",
+          "parameters"
+        ]
+      },
+      "Session": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "session_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id"
+        ]
+      },
+      "Heartbeat": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "session_id": {
+            "type": "string"
+          },
+          "report": {
             "type": "object",
-            "description": "Draft: approved capability constraints/preferences; task template validated."
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "session_id",
+          "report"
+        ]
+      },
+      "Renew": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "session_id": {
+            "type": "string"
           },
-          "resources": {
-            "type": "object",
-            "description": "Draft: approved template overrides in millicores/MiB; unified pool must not double-count."
+          "fence": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "session_id",
+          "fence"
+        ]
+      },
+      "Report": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "session_id": {
+            "type": "string"
           },
-          "queue_class": {
+          "fence": {
+            "type": "integer"
+          },
+          "status": {
             "type": "string",
             "enum": [
-              "batch"
+              "running",
+              "succeeded",
+              "failed",
+              "cancelled",
+              "unknown"
             ]
           },
-          "timeouts": {
-            "type": "object",
-            "description": "Draft: positive seconds within approved template."
+          "stopped": {
+            "type": "boolean"
           },
-          "retry_policy": {
+          "progress": {
             "type": "object",
-            "description": "Draft: mode and max_attempts per executor safety contract."
+            "additionalProperties": true
+          },
+          "result": {
+            "type": "object",
+            "additionalProperties": true
           }
-        }
-      },
-      "ArtifactRegister": {
-        "type": "object",
-        "additionalProperties": false,
+        },
         "required": [
-          "storage_id",
-          "object_key",
-          "size_bytes",
-          "sha256",
-          "media_type"
-        ],
-        "properties": {
-          "storage_id": {
-            "type": "string"
-          },
-          "object_key": {
-            "type": "string"
-          },
-          "size_bytes": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "sha256": {
-            "type": "string",
-            "pattern": "^[a-f0-9]{64}$"
-          },
-          "media_type": {
-            "type": "string"
-          }
-        }
+          "session_id",
+          "fence",
+          "status"
+        ]
       },
-      "Cancel": {
+      "PermitRequest": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "reason": {
-            "type": "string",
-            "maxLength": 1024
+          "executor_id": {
+            "type": "string"
           }
-        }
+        },
+        "required": [
+          "executor_id"
+        ]
       },
-      "DraftMessage": {
+      "PermitRelease": {
         "type": "object",
-        "description": "DRAFT ONLY: full worker/resource/command/event field schemas must be frozen in Phase 0; not an interoperability claim."
-      }
-    },
-    "responses": {
-      "HTTP200": {
-        "description": "Accepted/current state; does not mean compute completed.",
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/Envelope"
-            }
+        "additionalProperties": false,
+        "properties": {
+          "stopped": {
+            "type": "boolean"
+          },
+          "evidence": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
           }
-        }
+        },
+        "required": [
+          "stopped",
+          "evidence"
+        ]
       },
-      "HTTP400": {
-        "description": "See integration standard for stable error codes and retry rules.",
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/Envelope"
-            }
+      "Drain": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "draining": {
+            "type": "boolean"
           }
-        }
+        },
+        "required": [
+          "draining"
+        ]
       },
-      "HTTP401": {
-        "description": "See integration standard for stable error codes and retry rules.",
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/Envelope"
-            }
+      "Envelope": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "data": {},
+          "msg": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
           }
-        }
-      },
-      "HTTP403": {
-        "description": "See integration standard for stable error codes and retry rules.",
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/Envelope"
-            }
-          }
-        }
-      },
-      "HTTP404": {
-        "description": "See integration standard for stable error codes and retry rules.",
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/Envelope"
-            }
-          }
-        }
-      },
-      "HTTP409": {
-        "description": "See integration standard for stable error codes and retry rules.",
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/Envelope"
-            }
-          }
-        }
-      },
-      "HTTP422": {
-        "description": "See integration standard for stable error codes and retry rules.",
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/Envelope"
-            }
-          }
-        }
-      },
-      "HTTP429": {
-        "description": "See integration standard for stable error codes and retry rules.",
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/Envelope"
-            }
-          }
-        }
-      },
-      "HTTP503": {
-        "description": "See integration standard for stable error codes and retry rules.",
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/Envelope"
-            }
-          }
-        }
-      },
-      "HTTP410": {
-        "description": "CURSOR_EXPIRED: resync snapshot before resuming events."
-      },
-      "HTTP202": {
-        "description": "Accepted/current state; does not mean compute completed.",
-        "content": {
-          "application/json": {
-            "schema": {
-              "$ref": "#/components/schemas/Envelope"
-            }
-          }
-        }
+        },
+        "required": [
+          "code",
+          "data"
+        ]
       }
     }
   }

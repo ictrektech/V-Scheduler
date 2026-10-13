@@ -1,0 +1,45 @@
+x-controller: &controller
+  restart: unless-stopped
+  command: [controller, --config, /config/controller.json, --listen, '0.0.0.0:38120', --ui-dir, /opt/v-scheduler/ui]
+  env_file:
+    - ${V_SCHEDULER_CONFIG_PATH:-${VOS_APP_STORAGE_PATH}/config}/database.env
+  environment:
+    VOS_APP_VERSION: __APP_VERSION__
+  volumes:
+    - ${V_SCHEDULER_CONFIG_PATH:-${VOS_APP_STORAGE_PATH}/config}:/config:ro
+  networks:
+    vos_default:
+      aliases: [v-scheduler, v-scheduler-backend, v-scheduler-frontend]
+  labels:
+    - "traefik.enable=true"
+    - "traefik.docker.network=vos_default"
+    - "traefik.http.routers.v-scheduler-top-open.rule=PathPrefix(`/app/com.ictrek.v-scheduler`) && HeadersRegexp(`Sec-Fetch-Dest`, `document`)"
+    - "traefik.http.routers.v-scheduler-top-open.priority=1000"
+    - "traefik.http.routers.v-scheduler-top-open.service=v-scheduler-web"
+    - "traefik.http.routers.v-scheduler-top-open.middlewares=v-scheduler-top-open-redirect"
+    - "traefik.http.middlewares.v-scheduler-top-open-redirect.redirectregex.regex=^(https?://[^/]+)/app/com\\.ictrek\\.v-scheduler/?(?:\\?.*)?$"
+    - "traefik.http.middlewares.v-scheduler-top-open-redirect.redirectregex.replacement=$${1}/#/app/com.ictrek.v-scheduler/v-scheduler"
+    - "traefik.http.middlewares.v-scheduler-top-open-redirect.redirectregex.permanent=false"
+    - "traefik.http.routers.v-scheduler-web.rule=PathPrefix(`/app/com.ictrek.v-scheduler`)"
+    - "traefik.http.routers.v-scheduler-web.service=v-scheduler-web"
+    - "traefik.http.routers.v-scheduler-web.middlewares=v-scheduler-strip"
+    - "traefik.http.middlewares.v-scheduler-strip.stripprefix.prefixes=/app/com.ictrek.v-scheduler"
+    - "traefik.http.services.v-scheduler-web.loadbalancer.server.port=38120"
+  healthcheck:
+    test: [CMD, curl, -fsS, 'http://127.0.0.1:38120/health']
+    interval: 30s
+    timeout: 5s
+    start_period: 20s
+    retries: 3
+services:
+  controller-amd:
+    <<: *controller
+    profiles: [amd]
+    image: ${V_SCHEDULER_AMD_IMAGE}
+  controller-arm:
+    <<: *controller
+    profiles: [arm]
+    image: ${V_SCHEDULER_ARM_IMAGE}
+networks:
+  vos_default:
+    external: true

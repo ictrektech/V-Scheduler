@@ -1,0 +1,49 @@
+id: com.ictrek.v-scheduler
+name:
+  zh-CN: V-Scheduler 资源调度
+  en: V-Scheduler
+  zh-TW: V-Scheduler 資源調度
+description:
+  zh-CN: 任务排队、资源预约、受控重试与节点资源观察。
+  en: Task queues, reservations, controlled retries and node resource monitoring.
+  zh-TW: 任務排隊、資源預約、受控重試與節點資源觀察。
+version: __APP_VERSION__
+author: ictrek
+category: [tools]
+icon: icon.png
+arch: [amd64, arm64]
+frontend:
+  enabled: true
+  basePath: /app/com.ictrek.v-scheduler
+platform:
+  version: '>=3.3.0'
+dependencies:
+  apps:
+    - id: com.ictrek.pgv
+      version: '>=0.0.21'
+      optional: true
+profiles:
+  - name: amd
+    title: {zh-CN: AMD64, en: AMD64, zh-TW: AMD64}
+    caps: {arch: amd64}
+    conflicts: [arm]
+  - name: arm
+    title: {zh-CN: ARM64, en: ARM64, zh-TW: ARM64}
+    caps: {arch: arm64}
+    conflicts: [amd]
+require-profiles: true
+projects:
+  - name: resource-agent-amd
+    title: {zh-CN: AMD64 节点 Agent, en: AMD64 Node Agent, zh-TW: AMD64 節點 Agent}
+    description:
+      zh-CN: 使用受保护配置部署节点执行 Agent；GPU 节点指定 NVIDIA runtime。
+      en: Node execution Agent with protected configuration; select NVIDIA runtime for GPU nodes.
+  - name: resource-agent-arm
+    title: {zh-CN: ARM64 节点 Agent, en: ARM64 Node Agent, zh-TW: ARM64 節點 Agent}
+    description:
+      zh-CN: 使用受保护配置部署节点执行 Agent；GPU 节点指定 NVIDIA runtime。
+      en: Node execution Agent with protected configuration; select NVIDIA runtime for GPU nodes.
+storage:
+  directories:
+    - path: config
+      mode: '0700'

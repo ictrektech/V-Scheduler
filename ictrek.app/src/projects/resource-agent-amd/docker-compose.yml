@@ -1,0 +1,17 @@
+services:
+  resource-agent:
+    image: ${V_SCHEDULER_AMD_IMAGE}
+    command: [agent, --config, /config/agent.json]
+    restart: unless-stopped
+    runtime: ${AGENT_RUNTIME:-runc}
+    environment:
+      NVIDIA_VISIBLE_DEVICES: ${AGENT_GPU_DEVICES:-all}
+      NVIDIA_DRIVER_CAPABILITIES: utility
+    volumes:
+      - ${AGENT_CONFIG_PATH}:/config:ro
+      - ${VOS_PROJECT_DATA_PATH}/journal:/journal
+    networks:
+      - vos_default
+networks:
+  vos_default:
+    external: true

@@ -1,6 +1,6 @@
 # V-Scheduler（资源调度）详细设计
 
-日期：2026-10-13。状态：设计提案，尚未实现或部署。部署归属：用户维护的独立应用 `apps/V-Scheduler/`，拟定应用 ID `com.ictrek.v-scheduler`。不修改 vos-cluster-manager 或 VOS 平台代码。
+日期：2026-10-13。状态：完整目标设计；MVP 已进入实现与隔离测试，未发布或安装到生产 VOS。当前支持范围以 README、OpenAPI 和节点资源文档为准。部署归属：用户维护的独立应用 `apps/V-Scheduler/`，拟定应用 ID `com.ictrek.v-scheduler`。不修改 vos-cluster-manager 或 VOS 平台代码。
 
 本文以当前 VAI checkout 中的 VOS 源码和正式规范为依据；本地存在代码不代表目标机器已安装该能力。本文新增的接口、状态、配置均为提案，不是已存在的 VOS 契约。现有架构核验见 [证据清单](architecture-evidence.md)。
 
@@ -19,6 +19,7 @@
 7. 不承诺任意业务的 exactly-once。采用至少一次投递、幂等接收、执行代次隔离、受控重试；结果发布与外部副作用需要各自的去重机制。
 8. 独立应用名为 **V-Scheduler**，中文显示名“资源调度”，应用 ID 为 `com.ictrek.v-scheduler`。Scheduler、UI、Agent、协议、打包和发布均在本仓库维护。
 9. 公开版本化 HTTP API 面向 VOS 应用、非 VOS 服务、脚本及第三方 worker。接入不依赖 VAI 路径、平台 dispatcher 或 VOS 用户系统；公开是接口标准公开，任务和执行操作仍须认证授权。
+10. 节点资源管理纳入 V-Scheduler：自动读取已有集群清单，复用 VOS 设备容量及 CPU/RAM/disk 使用接口；Agent 补充真实 GPU 遥测。发现、监控与执行授权分别维护，不因为发现节点就开放调度。具体实现状态、配置与阶段边界见 [节点资源管理](node-resources.md)。
 
 第一版不含抢占正在执行的 GPU 任务、任意应用自动跨机迁移、任意 Docker/SSH 命令执行、跨集群调度、GPU 显存硬隔离或新建通用容器编排平台。
 

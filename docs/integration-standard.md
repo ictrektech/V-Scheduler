@@ -1,6 +1,6 @@
 # V-Scheduler 公开 API 与接入标准 v1
 
-日期：2026-10-13。状态：draft，未实现。适用于所有接入方，不以是否位于 VAI `apps/` 或是否运行 VOS 为前提。[设计](design.md)规定资源与恢复不变量；[OpenAPI](../api/openapi-v1.json)描述 v1 HTTP 草案。三者变更必须一起维护。
+日期：2026-10-13。状态：完整目标协议与 MVP 实现范围。适用于所有接入方，不以是否位于 VAI `apps/` 或是否运行 VOS 为前提。[设计](design.md)规定资源与恢复不变量；[OpenAPI](../api/openapi-v1.json)描述当前已实现的 v1 HTTP 路由。三者变更必须一起维护。
 
 ## 1. 接入角色和保证等级
 
@@ -130,3 +130,10 @@ W2：启动 ACK 丢失、journal/控制器重启、网络分区、租约过期�
 W3：输入跨机授权、模型/contract 版本、输出数值容差、多 app 公平性和配额通过。登记不存在的 contract/version 时必须拒绝。
 
 实施时提供与 OpenAPI 同步的 JSON Schema、契约测试与可复现 demo；SDK 是可选便利层，标准客户端只需 HTTP/JSON。当前 OpenAPI 不描述尚未冻结的全部 worker payload 子字段，标注 DraftMessage；不能据此宣称 worker 标准已经冻结。Phase 0 需补齐资源/命令/事件 schema，Phase 4 前提供独立第三方实现的 conformance 证据。
+
+
+## 当前 MVP 接入范围
+
+以 OpenAPI 与 discovery 声明为准。controller 当前使用受保护配置中的 admin/submitter/worker 凭据，submitter 按 app_id 隔离，worker 绑定 node_id；没有动态注册、OIDC 管理登录或 artifact 上传 API。任务只引用预先批准的 executor，资源预算来自其模板，inputs 必须为空；应用保留自己授权的任务与文件。原协议中 workspace、artifact、优先级、动态能力注册等属于后续目标，不能发送给当前严格的提交结构。
+
+Image Studio 用业务任务 ID 作为幂等键，保留原业务入口与输出。Rust Agent 将 command 持久化后通过 start/inspect/cancel 执行契约驱动它。V-Router 对批准的同步本地 upstream 申请短租约 permit，delegated 路径不重复申请，cloud 路径直接请求供应商。两种预约共享节点预算，未知停止不能自动释放。失败重试/人工删除约束见 README，节点与应用位置见节点资源文档。
