@@ -2,7 +2,7 @@
 
 面向 VOS 应用、其他服务、脚本和第三方 worker 的独立资源调度应用。统一管理耗时任务的排队、资源预约、执行许可、取消与故障恢复。
 
-**当前状态：Rust controller / Agent、Vue 管理界面及 Image Studio / V-Router 适配实现中。尚未发布服务镜像或 VOS 安装包；测试证据与实现限制见下文，完整设计的后续能力不代表当前已支持。**
+**当前状态：Rust controller / Agent、Vue 管理界面及 Image Studio / V-Router 适配已完成最小版本，并通过独立环境验证。正式安装包见 [GitHub Releases](https://github.com/ictrektech/V-Scheduler/releases)。首次安装需要预先准备专用 PostgreSQL 数据库、受保护的配置与节点 Agent；目标 VOS 的只读认证和多节点部署仍待验证。完整设计的后续能力不代表当前已支持。**
 
 - 应用名称：V-Scheduler；中文显示名：资源调度。
 - VOS app ID：`com.ictrek.v-scheduler`。
