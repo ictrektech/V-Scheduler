@@ -18,6 +18,15 @@ use tokio::sync::{Mutex, oneshot};
 use tower_http::services::ServeDir;
 use uuid::Uuid;
 
+#[derive(Debug)]
+struct PgvCredentialRequired;
+impl std::fmt::Display for PgvCredentialRequired {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("PGV_CREDENTIAL_REQUIRED")
+    }
+}
+impl std::error::Error for PgvCredentialRequired {}
+
 #[derive(Clone)]
 struct Setup {
     config: PathBuf,
@@ -56,11 +65,16 @@ async fn initialize(
     if shutdown.is_none() {
         return Ok(Json(json!({"code":"OK","data":{"ready":true}})));
     }
-    if provision(&state.config, &headers).await.is_err() {
+    if let Err(error) = provision(&state.config, &headers).await {
         // Connection strings, upstream responses and credentials never reach the UI.
+        let code = if error.downcast_ref::<PgvCredentialRequired>().is_some() {
+            "PGV_CREDENTIAL_REQUIRED"
+        } else {
+            "PGV_SETUP_UNAVAILABLE"
+        };
         return Err((
             StatusCode::SERVICE_UNAVAILABLE,
-            Json(json!({"code":"PGV_SETUP_UNAVAILABLE"})),
+            Json(json!({"code":code})),
         ));
     }
     if let Some(sender) = shutdown.take() {
@@ -90,9 +104,8 @@ async fn provision(config: &Path, headers: &HeaderMap) -> anyhow::Result<()> {
         detail["code"] == 0 && detail["data"]["state"] == "installed",
         "PGV must be installed"
     );
-    let discovered = &detail["data"]["configs_current"];
-    // A host-side installer can supply a one-use PGV credential from the actual
-    // running PGV container when VOS does not retain its installation secrets.
+    // VOS app/detail intentionally masks secrets. The Compose environment gets
+    // the actual VOS-injected value, which PGV uses for its own superuser.
     let credential_path = config
         .parent()
         .context("config directory missing")?
@@ -102,7 +115,11 @@ async fn provision(config: &Path, headers: &HeaderMap) -> anyhow::Result<()> {
     } else {
         None
     };
-    let env = supplied.as_ref().unwrap_or(discovered);
+    let default_password = std::env::var("SCHEDULER_PGV_BOOTSTRAP_PASSWORD")
+        .ok()
+        .filter(|value| !value.is_empty());
+    let empty = json!({});
+    let env = supplied.as_ref().unwrap_or(&empty);
     let setting = |key: &str, default: &str| -> String {
         env[key]
             .as_str()
@@ -114,9 +131,20 @@ async fn provision(config: &Path, headers: &HeaderMap) -> anyhow::Result<()> {
         .host("pgv")
         .port(5432)
         .username(&setting("POSTGRES_SUPERUSER", "postgres"))
-        .password(&setting("POSTGRES_PASSWORD", "postgres"))
+        .password(&setting(
+            "POSTGRES_PASSWORD",
+            default_password.as_deref().unwrap_or("postgres"),
+        ))
         .database(&setting("POSTGRES_DB", "postgres"));
-    let mut admin = PgConnection::connect_with(&options).await?;
+    // Older PGV installations can still differ from the injected platform
+    // password; identify that case without exposing credentials.
+    let mut admin = PgConnection::connect_with(&options).await.map_err(|error| {
+        if error.as_database_error().and_then(|db| db.code()).as_deref() == Some("28P01") {
+            anyhow::Error::new(PgvCredentialRequired)
+        } else {
+            anyhow::Error::new(error)
+        }
+    })?;
     let dir = config.parent().context("config directory missing")?;
     std::fs::create_dir_all(dir)?;
     let pending = dir.join("database-provision.json");

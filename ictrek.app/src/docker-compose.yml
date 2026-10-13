@@ -4,6 +4,7 @@ x-controller: &controller
   environment:
     VOS_HOST_GW_IP: ${VOS_HOST_GW_IP}
     VOS_APP_VERSION: __APP_VERSION__
+    SCHEDULER_PGV_BOOTSTRAP_PASSWORD: ${VOS_POSTGRES_PASSWORD:?VOS_POSTGRES_PASSWORD is required}
   volumes:
     - ${VOS_APP_STORAGE_PATH}/config:/config
   networks:

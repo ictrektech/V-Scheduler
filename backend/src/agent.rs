@@ -66,6 +66,37 @@ fn cpu_sample() -> Option<(u64, u64)> {
     }
     Some((values.iter().sum(), values[3] + values[4]))
 }
+fn jetson_load_percent(raw: &str) -> Option<u64> {
+    let load = raw.trim().parse::<u64>().ok()?;
+    (load <= 1000).then_some((load + 5) / 10)
+}
+fn jetson_gpu_utilization() -> Option<u64> {
+    // nvgpu-based Jetsons report N/A through nvidia-smi. The kernel's load
+    // counter is per-mille; do not infer zero when it cannot be read.
+    for path in [
+        "/sys/devices/platform/17000000.gpu/load",
+        "/sys/devices/gpu.0/load",
+    ] {
+        if let Ok(raw) = std::fs::read_to_string(path) {
+            if let Some(percent) = jetson_load_percent(&raw) {
+                return Some(percent);
+            }
+        }
+    }
+    None
+}
+#[cfg(test)]
+mod tests {
+    use super::jetson_load_percent;
+    #[test]
+    fn jetson_load_is_per_mille_and_invalid_values_stay_unknown() {
+        assert_eq!(jetson_load_percent("0\n"), Some(0));
+        assert_eq!(jetson_load_percent("475\n"), Some(48));
+        assert_eq!(jetson_load_percent("1000\n"), Some(100));
+        assert_eq!(jetson_load_percent("1001\n"), None);
+        assert_eq!(jetson_load_percent("[N/A]\n"), None);
+    }
+}
 async fn probe(previous: &mut Option<(u64, u64)>) -> Value {
     let current = cpu_sample();
     let cpu_used_percent = previous
@@ -116,6 +147,12 @@ async fn probe(previous: &mut Option<(u64, u64)>) -> Value {
             gpus[0]["free_mib"] = json!(free);
             gpus[0]["memory_source"] = json!("cuda-driver");
             gpus[0]["memory_type"] = json!(if integrated { "unified" } else { "dedicated" });
+        }
+    }
+    if gpus.len() == 1 && gpus[0]["utilization_percent"].as_u64().is_none() {
+        if let Some(percent) = jetson_gpu_utilization() {
+            gpus[0]["utilization_percent"] = json!(percent);
+            gpus[0]["utilization_source"] = json!("jetson-sysfs");
         }
     }
     json!({"observed_at":chrono::Utc::now(),"cpu_logical_count":std::thread::available_parallelism().ok().map(|n|n.get()),"cpu_used_percent":cpu_used_percent,"arch":std::env::consts::ARCH,"memory_total_mib":read("MemTotal:"),"memory_available_mib":read("MemAvailable:"),"gpus":gpus,"agent_version":"0.1.0"})

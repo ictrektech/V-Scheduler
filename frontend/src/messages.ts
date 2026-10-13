@@ -4,6 +4,7 @@ export const messages:Record<string,[string,string]>={
 '重试连接':['Retry connection','重試連接'],
 'VOS_LOGIN_REQUIRED':['Open this app from VOS after signing in.','請登入 VOS 後開啟此應用。'],
 'PGV_SETUP_UNAVAILABLE':['PGV setup is unavailable. Check that PGV is installed and healthy, then retry.','PGV 初始化暫不可用，請確認 PGV 已安裝且健康後重試。'],
+'PGV_CREDENTIAL_REQUIRED':['PGV is installed, but its runtime database credential is not available to V-Scheduler. The host installer must prepare the one-use credential handoff.','PGV 已安裝，但 V-Scheduler 無法取得其執行時資料庫憑據。需由主機安裝流程準備一次性憑據交接。'],
 'VOS_ADMIN_REQUIRED':['A VOS system administrator account is required.','需要 VOS 系統管理員帳戶。'],
 '此接口公开，无需访问令牌。':['This endpoint is public; no access token is required.','此介面公開，無需存取權杖。'],
 '最近结束':['Recently finished','最近結束'],
@@ -17,6 +18,7 @@ export const messages:Record<string,[string,string]>={
 
  '本机已安装应用':['Locally installed apps','本機已安裝應用'], '已绑定执行器':['Bound executors','已綁定執行器'],
  '实际使用':['Actual usage','實際使用'], '仅观察':['Observe only','僅觀察'], 'VOS 数据已过期':['VOS data is stale','VOS 資料已過期'],
+ 'CPU 使用率':['CPU usage','CPU 使用率'], '逻辑处理器':['logical processors','邏輯處理器'], '内存使用率':['Memory usage','記憶體使用率'], 'GPU 使用率':['GPU usage','GPU 使用率'], '显存使用率':['Video memory usage','顯示記憶體使用率'], '独立显存':['Dedicated memory','獨立顯示記憶體'], '与系统共享内存':['Shared system memory','與系統共用記憶體'], '最近一分钟负载':['Last minute of activity','最近一分鐘負載'], '每 2.5 秒采样':['Sampled every 2.5 seconds','每 2.5 秒取樣'], 'CPU 与 GPU 使用率变化':['CPU and GPU usage over time','CPU 與 GPU 使用率變化'], 'GPU 与 CPU 共用系统内存；只按一份内存计算占用。':['GPU and CPU share system memory; usage is counted once.','GPU 與 CPU 共用系統記憶體；占用只計算一次。'],
 
 '资源调度':['Resource scheduler','資源調度'],
 '资源与任务':['Resources & Tasks','資源與任務'],
