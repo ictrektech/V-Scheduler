@@ -317,17 +317,23 @@ if [[ "$dry_run" == true ]]; then
 ' "$profile" "$arch" "$COMPONENT_NAME" "$IMAGE" "$sheet" "$BUILD_DIR"
  exit 0
 fi
-for cmd in docker curl python3 rsync; do require_cmd "$cmd"; done
+for cmd in docker curl python3 tar; do require_cmd "$cmd"; done
 [[ -f "$FEISHU_CONFIG_FILE" ]] || die 'missing write-capable ~/.feishu.json'
+case "$(uname -m):$arch" in x86_64:amd64|aarch64:arm64|arm64:arm64) ;; *) die 'use a build host matching the selected profile';; esac
+mkdir -p "$BUILD_DIR"
+rm -rf "$BUILD_DIR/context"
 mkdir -p "$BUILD_DIR/context"
-# All Docker build inputs and cache/output live under ~/dev/build.
-rsync -a --delete --exclude .git --exclude node_modules --exclude target --exclude dist --exclude '*.local.json' --exclude .env "$ROOT_DIR/" "$BUILD_DIR/context/"
+# Local staging only; no Git, SSH or rsync inside the build script.
+tar --exclude=.git --exclude=node_modules --exclude=target --exclude=dist --exclude='*.local.json' --exclude=.env -cf - -C "$ROOT_DIR" . | tar -xf - -C "$BUILD_DIR/context"
 FEISHU_APP_ID="$(read_feishu_field feishu_app_id)"
 FEISHU_APP_SECRET="$(read_feishu_field feishu_app_secret)"
 [[ -n "$FEISHU_APP_ID" && -n "$FEISHU_APP_SECRET" ]] || die 'missing Feishu credentials'
 FEISHU_TOKEN="$(get_feishu_token "$FEISHU_APP_ID" "$FEISHU_APP_SECRET")"
 SHEET_ID="$(get_sheet_id_by_title "$FEISHU_TOKEN" "$FEISHU_SPREADSHEET_TOKEN" "$sheet")"
 docker buildx build --platform "linux/${arch}" --load --provenance=false --sbom=false -f "$BUILD_DIR/context/docker/Dockerfile" -t "$IMAGE" "$BUILD_DIR/context"
+# Verify runtime linkage and bundled UI before any registry publication.
+docker run --rm --network none "$IMAGE" --help > "$BUILD_DIR/runtime-help.txt"
+docker run --rm --network none --entrypoint /bin/sh "$IMAGE" -c 'test -s /opt/v-scheduler/ui/index.html'
 docker push "$IMAGE"
 # Check the actual registry publication before recording a tag.
 docker manifest inspect "$IMAGE" > "$BUILD_DIR/manifest.json"
