@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {ref,computed,onMounted,onUnmounted,watch} from 'vue'
 import Icon from './Icon.vue'
+import logoUrl from '../../assets/icon.svg'
 import TaskCard from './TaskCard.vue'
 import {createLocaleController,type Locale,type Preference} from './locale'
 import {messages} from './messages'
@@ -66,7 +67,7 @@ onUnmounted(()=>{clearInterval(timer);language.dispose()})
 </script>
 <template>
  <div class="shell">
-  <aside><div class="brand"><img :src="basePath+'icon.png'" alt=""><div>V-Scheduler<small>{{t('资源调度')}}</small></div></div><nav><button :class="{current:page==='resources'}" @click="page='resources'"><Icon name="queue"/>{{t('资源与任务')}}</button><button :class="{current:page==='api'}" @click="page='api'"><Icon name="book"/>{{t('API 文档')}}</button></nav><div class="aside-note"><span class="connection-dot" :class="{on:connected}"></span>{{t(demo?'演示模式':connected?'已连接':'未连接')}}<small>{{t('按能力分配')}}<br>{{t('确认停止后释放')}}</small><small>v0.1.0</small></div></aside>
+  <aside><div class="brand"><img :src="logoUrl" alt=""><div>V-Scheduler<small>{{t('资源调度')}}</small></div></div><nav><button :class="{current:page==='resources'}" @click="page='resources'"><Icon name="queue"/>{{t('资源与任务')}}</button><button :class="{current:page==='api'}" @click="page='api'"><Icon name="book"/>{{t('API 文档')}}</button></nav><div class="aside-note"><span class="connection-dot" :class="{on:connected}"></span>{{t(demo?'演示模式':connected?'已连接':'未连接')}}<small>{{t('按能力分配')}}<br>{{t('确认停止后释放')}}</small><small>v0.1.0</small></div></aside>
   <main>
    <header><div><h1>{{t(page==='api'?'API 文档':'资源与任务')}}</h1><p>{{t(page==='api'?'接口标准、认证方式与可复制的请求示例。':'查看执行资源、预约与排队任务。')}}</p></div><div class="header-actions"><label class="locale-control"><Icon name="globe"/><select v-model="preference" :aria-label="t('界面语言')" @change="language.setPreference(preference)"><option value="auto">{{t('跟随 VOS')}}</option><option value="zh-CN">简体中文</option><option value="en">English</option><option value="zh-TW">繁體中文</option></select></label><button v-if="connected" class="quiet" @click="logout"><Icon name="out"/>{{t('断开连接')}}</button></div></header>
    <div v-if="error" class="error" role="alert">{{t(errors[error]||error)}}<code v-if="errors[error]">{{error}}</code></div>

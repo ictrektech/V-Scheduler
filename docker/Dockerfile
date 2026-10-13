@@ -1,8 +1,9 @@
 FROM node:24-bookworm-slim AS ui
-WORKDIR /build
+WORKDIR /build/frontend
 COPY frontend/package*.json ./
 RUN npm ci
 COPY frontend/ ./
+COPY assets/ /build/assets/
 RUN npm run build
 
 FROM rust:1.97-bookworm AS backend
@@ -15,6 +16,6 @@ RUN cargo build --release --locked
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && rm -rf /var/lib/apt/lists/*
 COPY --from=backend /build/target/release/v-scheduler /usr/local/bin/v-scheduler
-COPY --from=ui /build/dist /opt/v-scheduler/ui
+COPY --from=ui /build/frontend/dist /opt/v-scheduler/ui
 ENTRYPOINT ["v-scheduler"]
 CMD ["controller", "--config", "/config/controller.json", "--listen", "0.0.0.0:38120", "--ui-dir", "/opt/v-scheduler/ui"]
