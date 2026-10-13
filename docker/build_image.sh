@@ -330,7 +330,14 @@ FEISHU_APP_SECRET="$(read_feishu_field feishu_app_secret)"
 [[ -n "$FEISHU_APP_ID" && -n "$FEISHU_APP_SECRET" ]] || die 'missing Feishu credentials'
 FEISHU_TOKEN="$(get_feishu_token "$FEISHU_APP_ID" "$FEISHU_APP_SECRET")"
 SHEET_ID="$(get_sheet_id_by_title "$FEISHU_TOKEN" "$FEISHU_SPREADSHEET_TOKEN" "$sheet")"
-docker buildx build --platform "linux/${arch}" --load --provenance=false --sbom=false -f "$BUILD_DIR/context/docker/Dockerfile" -t "$IMAGE" "$BUILD_DIR/context"
+build_args=()
+if [[ -n "${SCHEDULER_RUST_BUILD_IMAGE:-}" ]]; then
+  build_args+=(--build-arg "RUST_BUILD_IMAGE=$SCHEDULER_RUST_BUILD_IMAGE")
+fi
+if [[ "${SCHEDULER_CARGO_OFFLINE:-0}" == 1 ]]; then
+  build_args+=(--build-arg CARGO_OFFLINE=true)
+fi
+docker buildx build "${build_args[@]}" --platform "linux/${arch}" --load --provenance=false --sbom=false -f "$BUILD_DIR/context/docker/Dockerfile" -t "$IMAGE" "$BUILD_DIR/context"
 # Verify runtime linkage and bundled UI before any registry publication.
 docker run --rm --network none "$IMAGE" --help > "$BUILD_DIR/runtime-help.txt"
 docker run --rm --network none --entrypoint /bin/sh "$IMAGE" -c 'test -s /opt/v-scheduler/ui/index.html'

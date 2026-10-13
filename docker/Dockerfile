@@ -1,3 +1,4 @@
+ARG RUST_BUILD_IMAGE=rust:1.97-bookworm
 FROM node:24-bookworm-slim AS ui
 WORKDIR /build/frontend
 COPY frontend/package*.json ./
@@ -6,12 +7,13 @@ COPY frontend/ ./
 COPY assets/ /build/assets/
 RUN npm run build
 
-FROM rust:1.97-bookworm AS backend
+FROM ${RUST_BUILD_IMAGE} AS backend
 WORKDIR /build/backend
 COPY backend/ ./
 COPY api/ /build/api/
 ENV CARGO_TARGET_DIR=/build/target
-RUN cargo build --release --locked
+ARG CARGO_OFFLINE=false
+RUN if [ "$CARGO_OFFLINE" = true ]; then cargo build --release --locked --offline; else cargo build --release --locked; fi
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && rm -rf /var/lib/apt/lists/*

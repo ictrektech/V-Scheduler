@@ -38,18 +38,49 @@ impl Resources {
         self.gpu_memory_mib += other.gpu_memory_mib;
     }
     pub fn fits_observed(&self, observed: &Value) -> bool {
-        observed["memory_available_mib"].as_i64().unwrap_or(0) >= self.memory_mib
-            && (self.gpu_slots == 0
-                || observed["gpus"]
-                    .as_array()
-                    .and_then(|items| items.first())
-                    .and_then(|gpu| gpu["free_mib"].as_i64())
-                    .is_some_and(|free| free >= self.gpu_memory_mib))
+        let available = observed["memory_available_mib"].as_i64().unwrap_or(0);
+        if available < self.memory_mib {
+            return false;
+        }
+        if self.gpu_slots == 0 {
+            return true;
+        }
+        let Some(gpu) = observed["gpus"].as_array().and_then(|items| items.first()) else {
+            return false;
+        };
+        // On Tegra the CUDA pool shares system RAM. CUDA free excludes
+        // reclaimable page cache; admission budgets host and GPU memory together.
+        // Keep the raw CUDA free value in telemetry instead of relabeling it.
+        if gpu["memory_type"] == "unified" && gpu["total_mib"].as_i64().is_some_and(|n| n > 0) {
+            return self
+                .memory_mib
+                .checked_add(self.gpu_memory_mib)
+                .is_some_and(|required| available >= required);
+        }
+        gpu["free_mib"]
+            .as_i64()
+            .is_some_and(|free| free >= self.gpu_memory_mib)
     }
 }
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn unified_memory_shares_the_observed_host_budget() {
+        let resources = Resources {
+            memory_mib: 1024,
+            gpu_slots: 1,
+            gpu_memory_mib: 2048,
+            ..Resources::default()
+        };
+        let mut report = serde_json::json!({"memory_available_mib":4096,"gpus":[{"total_mib":8192,"free_mib":128,"memory_type":"unified"}]});
+        assert!(resources.fits_observed(&report));
+        report["memory_available_mib"] = serde_json::json!(3000);
+        assert!(!resources.fits_observed(&report));
+        report["memory_available_mib"] = serde_json::json!(4096);
+        report["gpus"][0]["memory_type"] = serde_json::json!("dedicated");
+        assert!(!resources.fits_observed(&report));
+    }
     #[test]
     fn gpu_slots_require_actual_telemetry_even_with_zero_memory_request() {
         let gpu = Resources {
