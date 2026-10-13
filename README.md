@@ -60,3 +60,5 @@ cd ..
 首次安装不再要求已有 `database.env` 才能创建容器：配置缺失时先提供初始化界面，VOS 管理员身份通过校验后为现有 PGV 创建专用数据库和随机普通角色，再启动调度控制器。PGV 未安装、不健康或凭据无法发现时会明确失败，保持初始化界面，不回滚安装或改用 VOS 平台数据库。PGV 自定义凭据未被 VOS 保存的旧实例，需要运维在受保护的 App Storage `config/pgv-bootstrap.json` 中交接一次 PGV 凭据（键 `POSTGRES_SUPERUSER`、`POSTGRES_PASSWORD`、`POSTGRES_DB`）；初始化成功后删除该文件。业务应用和 Agent 仍使用独立服务身份，不共享 VOS 用户或数据库管理凭据。
 
 VOS 侧导航只有一个 `v-scheduler` 页面；资源任务和 API 文档使用应用内部导航。
+
+VOS 登录接入清单必须声明 `oauth2.client: {}`，与 V-Router 相同；该声明使平台注册客户端并提供已有登录桥接接口。界面不提供单独的令牌登录表单。

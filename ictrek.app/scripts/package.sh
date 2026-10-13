@@ -339,7 +339,13 @@ PYPROFILES
   if ! grep -Fq "${ROUTER_HASH_PATH}" <<< "$compose_text"; then
     die "docker-compose.yml redirect must target ${ROUTER_HASH_PATH}"
   fi
+  if ! tar xOf "$app_tarball" manifest.yml | grep -q '^oauth2:'; then
+    die "manifest.yml must declare the existing VOS OAuth2 login bridge"
+  fi
   routers_text="$(tar xOf "$app_tarball" routers.yml)"
+  if printf '%s\n' "$routers_text" | grep -q 'kind:[[:space:]]*group'; then
+    die "V-Scheduler must expose one VOS page without an extra navigation group"
+  fi
   if printf '%s\n' "$routers_text" | grep -q '^[[:space:]]*icon:'; then
     : # Group/page icons are part of current VOS navigation specification.
   fi

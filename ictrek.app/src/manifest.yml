@@ -15,6 +15,9 @@ arch: [amd64, arm64]
 frontend:
   enabled: true
   basePath: /app/com.ictrek.v-scheduler
+# Reuse the VOS login bridge, as declared by V-Router.
+oauth2:
+  client: {}
 platform:
   version: '>=3.0.0'
 dependencies:
