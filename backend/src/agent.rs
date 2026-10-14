@@ -144,8 +144,44 @@ mod tests {
         assert_eq!(jetson_load_percent("1001\n"), None);
         assert_eq!(jetson_load_percent("[N/A]\n"), None);
     }
+
+    #[tokio::test]
+    async fn timed_out_gpu_probe_is_killed_and_reaped_before_returning() {
+        let marker = std::env::temp_dir().join(format!("gpu-probe-{}", uuid::Uuid::new_v4()));
+        let mut command = tokio::process::Command::new("sh");
+        command.args(["-c", "echo $$ > \"$1\"; exec sleep 60", "gpu-probe"]);
+        command.arg(&marker);
+        assert!(
+            super::gpu_output(command, std::time::Duration::from_millis(200))
+                .await
+                .is_none()
+        );
+        let pid: i32 = std::fs::read_to_string(&marker)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        assert_eq!(unsafe { libc::kill(pid, 0) }, -1);
+        assert_eq!(
+            std::io::Error::last_os_error().raw_os_error(),
+            Some(libc::ESRCH)
+        );
+        std::fs::remove_file(marker).unwrap();
+    }
+
+    #[tokio::test]
+    async fn completed_gpu_probe_returns_its_output() {
+        let mut command = tokio::process::Command::new("printf");
+        command.arg("gpu sample\n");
+        assert_eq!(
+            super::gpu_output(command, std::time::Duration::from_secs(1))
+                .await
+                .as_deref(),
+            Some("gpu sample")
+        );
+    }
 }
-pub(crate) async fn probe(previous: &mut Option<CpuSnapshot>) -> Value {
+pub(crate) fn host_probe(previous: &mut Option<CpuSnapshot>) -> Value {
     let observed_at = chrono::Utc::now();
     let current = cpu_sample().unwrap_or_default();
     let cpu_used_percent = cpu_load(previous.as_ref(), &current, "cpu");
@@ -168,22 +204,51 @@ pub(crate) async fn probe(previous: &mut Option<CpuSnapshot>) -> Value {
             .unwrap_or(0)
             / 1024
     };
+    json!({"observed_at":observed_at,"cpu_logical_count":host_cores,"cpu_count_source":"host-proc-stat","cpu_used_percent":cpu_used_percent,"cpu_cores":cpu_cores,"arch":std::env::consts::ARCH,"memory_total_mib":read("MemTotal:"),"memory_available_mib":read("MemAvailable:"),"gpus":[],"agent_version":"0.1.0"})
+}
+
+async fn gpu_output(
+    mut command: tokio::process::Command,
+    timeout: std::time::Duration,
+) -> Option<String> {
+    use tokio::io::AsyncReadExt;
+    command
+        .kill_on_drop(true)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null());
+    let mut child = command.spawn().ok()?;
+    let status = match tokio::time::timeout(timeout, child.wait()).await {
+        Ok(status) => status.ok()?,
+        Err(_) => {
+            let _ = child.start_kill();
+            // A driver syscall can remain uninterruptible after SIGKILL. Keep
+            // ownership until reaped: never accumulate another nvidia-smi.
+            let _ = child.wait().await;
+            return None;
+        }
+    };
+    if !status.success() {
+        return None;
+    }
+    let mut bytes = Vec::new();
+    child
+        .stdout
+        .take()?
+        .take(65_536)
+        .read_to_end(&mut bytes)
+        .await
+        .ok()?;
+    Some(String::from_utf8_lossy(&bytes).trim().to_owned())
+}
+
+pub(crate) async fn probe(previous: &mut Option<CpuSnapshot>) -> Value {
+    let mut report = host_probe(previous);
     let mut gpu_query = tokio::process::Command::new("nvidia-smi");
-    gpu_query.kill_on_drop(true);
-    let gpu = tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        gpu_query
-            .args([
-                "--query-gpu=uuid,name,memory.total,memory.free,utilization.gpu",
-                "--format=csv,noheader,nounits",
-            ])
-            .output(),
-    )
-    .await
-    .ok()
-    .and_then(Result::ok)
-    .filter(|o| o.status.success())
-    .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+    gpu_query.args([
+        "--query-gpu=uuid,name,memory.total,memory.free,utilization.gpu",
+        "--format=csv,noheader,nounits",
+    ]);
+    let gpu = gpu_output(gpu_query, std::time::Duration::from_secs(5)).await;
     let mut gpus = gpu.map(|lines| lines.lines().filter_map(|line| {
         let columns: Vec<_> = line.split(',').map(str::trim).collect();
         if columns.len() != 5 { return None; }
@@ -222,7 +287,8 @@ pub(crate) async fn probe(previous: &mut Option<CpuSnapshot>) -> Value {
             gpus[0]["utilization_source"] = json!("jetson-sysfs");
         }
     }
-    json!({"observed_at":observed_at,"cpu_logical_count":host_cores,"cpu_count_source":"host-proc-stat","cpu_used_percent":cpu_used_percent,"cpu_cores":cpu_cores,"arch":std::env::consts::ARCH,"memory_total_mib":read("MemTotal:"),"memory_available_mib":read("MemAvailable:"),"gpus":gpus,"agent_version":"0.1.0"})
+    report["gpus"] = json!(gpus);
+    report
 }
 pub async fn run(path: PathBuf) -> anyhow::Result<()> {
     let cfg: Config = serde_json::from_slice(&std::fs::read(path)?)?;

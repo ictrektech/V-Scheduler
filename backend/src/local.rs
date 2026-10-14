@@ -32,7 +32,9 @@ pub async fn prepare(path: &Path, listen: &str) -> anyhow::Result<Option<PathBuf
 }
 async fn prepare_enabled(path: &Path, listen: &str) -> anyhow::Result<PathBuf> {
     let mut config: Value = serde_json::from_slice(&std::fs::read(path)?)?;
-    let report = crate::agent::probe(&mut None).await;
+    // Start the control plane without entering a potentially stalled GPU driver.
+    // The first full Agent heartbeat updates automatically measured capacity.
+    let report = crate::agent::host_probe(&mut None);
     let base = crate::identity::base();
     let id = config["local_agent"]["node_id"]
         .as_str()
@@ -59,11 +61,6 @@ async fn prepare_enabled(path: &Path, listen: &str) -> anyhow::Result<PathBuf> {
             node["vos"] = json!({"url":url});
         }
         nodes.push(node);
-    } else if previously_automatic {
-        if let Some(resources) = capacity(&report) {
-            nodes.iter_mut().find(|node| node["id"] == id).unwrap()["capacities"] =
-                json!(resources);
-        }
     }
     let principals = config["principals"]
         .as_array_mut()
@@ -171,6 +168,14 @@ mod tests {
                 > 0
         );
         assert_eq!(first["controller"], "http://127.0.0.1:38120/api/v1");
+        let mut cached = config;
+        cached["nodes"][0]["capacities"]["gpu_slots"] = json!(1);
+        cached["nodes"][0]["capacities"]["gpu_memory_mib"] = json!(4096);
+        write_private(&path, &cached).unwrap();
+        prepare_enabled(&path, "0.0.0.0:38120").await.unwrap();
+        let restarted: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(restarted["nodes"][0]["capacities"]["gpu_slots"], 1);
+        assert_eq!(restarted["nodes"][0]["capacities"]["gpu_memory_mib"], 4096);
         std::fs::remove_dir_all(directory).unwrap();
     }
 }
