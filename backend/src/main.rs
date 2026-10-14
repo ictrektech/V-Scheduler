@@ -5,6 +5,7 @@ mod gpu;
 mod identity;
 mod local;
 mod model;
+mod statistics;
 mod vos;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;

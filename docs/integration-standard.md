@@ -164,3 +164,11 @@ VOS 网关必须在私有配置 `models[upstreamID/nativeModelID]` 批准输入�
 异步创建先取得桥接许可，只有 `/permits/{id}/delegate` 核验同节点、批准的业务 executor 与 app_task_id 后才能移交；否则网关持久化 job 并轮询终态。已运行任务的嵌套调用通过 `/delegations/verify` 核验用户、节点、地址与父预算，使用幂等键申请关联子许可。子调用未停止时父任务继续占用资源，也不能重试。WebSocket 仅批准执行端在停止后发送正常关闭码 1000 的契约。
 
 `resident_baseline` 是常驻预算；`safety_reserve` 可增加系统余量。默认至少保留 2 GiB 或系统 RAM 的 10%、一个 CPU 核（单核半核）、独立显存的 256 MiB 或 5%。观测与所有未释放预约保守共同约束准入；CPU 占用达到 95% 暂停新计算。统一内存按 RAM 与 GPU 需求之和校验一次。Controller/Agent/网关容器自身也有内存与 CPU 上限。预算需实测峰值校准，外部未纳管进程与执行端越界仍需要硬限制。
+
+## 负载统计与许可历史
+
+`GET /statistics` 使用同一服务认证，普通服务只读取自身 app 的固定 24 小时样本；管理员可读取全部。`first_queue_wait` 是窗口内提交任务的首次分配等待，重试不增加该样本；`attempts.occupancy` 是窗口内已确认停止的每次执行从分配至停止的占用时长。`attempts.failure_rate` 为失败 /（成功 + 失败），取消不计入。软删除不会移除审计样本。
+
+`permits.occupancy` 只使用窗口内真实记录 `released_at` 的许可；旧记录时间未知时不补造。释放表示停止或移交，不提供推理成功率。`P50` 无样本和 `P95` 少于 20 个样本时为 null，不构成 SLO 承诺。
+
+`GET /permits` 可用 `state=active|suspect|released` 过滤并复用 `cursor` / `limit` 分页；权限隔离先于筛选和分页。`released_at` 为首次确认停止或移交时间，续租、重复释放、重复移交都不能延长它，旧记录没有时间时为 null。所有功能使用 PostgreSQL 内置能力，不要求安装搜索或向量扩展。

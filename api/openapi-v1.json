@@ -950,7 +950,36 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "items": {
+                              "type": "array",
+                              "items": {
+                                "$ref": "#/components/schemas/PermitHistoryItem"
+                              }
+                            },
+                            "next_cursor": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "items",
+                            "next_cursor"
+                          ]
+                        }
+                      }
+                    }
+                  ]
                 }
               }
             }
@@ -978,9 +1007,9 @@
           }
         },
         "x-description": {
-          "zh-CN": "按服务 app_id 隔离的许可历史，包含模型、节点、预算、父任务、状态及释放证据；管理员可查看全部。",
-          "en": "App-scoped permit history with model, node, budget, parent task, state and completion evidence. Administrators can inspect all apps.",
-          "zh-TW": "按服務 app_id 隔離的許可歷史，包含模型、節點、預算、父任務、狀態及釋放證據；管理員可查看全部。"
+          "zh-CN": "按服务 app_id 隔离的许可历史，可按状态筛选并分页。包括模型、节点、预算、父任务、释放依据与首次释放时间；旧记录缺少释放时间时返回 null。释放或移交不表示推理成功。管理员可查看全部。",
+          "en": "App-scoped permit history with optional state filtering and pagination, model, node, budget, parent task, release evidence and first release time. Older undated releases remain null. Release or handoff does not imply inference succeeded. Administrators can inspect all apps.",
+          "zh-TW": "按服務 app_id 隔離的許可歷史，可按狀態篩選及分頁。包括模型、節點、預算、父任務、釋放依據與首次釋放時間；舊記錄缺少釋放時間時回傳 null。釋放或移交不代表推論成功。管理員可查看全部。"
         },
         "parameters": [
           {
@@ -998,6 +1027,19 @@
               "minimum": 1,
               "maximum": 200,
               "default": 50
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "description": "Optional state filter, applied before pagination and within the authenticated app scope.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "active",
+                "suspect",
+                "released"
+              ]
             }
           }
         ]
@@ -1679,6 +1721,74 @@
           "model_id": "approved-model"
         }
       }
+    },
+    "/statistics": {
+      "get": {
+        "operationId": "get_statistics",
+        "description": "Fixed 24-hour operational samples from core PostgreSQL; no inference outcome is inferred from permit release.",
+        "summary": "Operational statistics",
+        "x-title": {
+          "zh-CN": "负载与可靠性统计",
+          "en": "Load and reliability statistics",
+          "zh-TW": "負載與可靠性統計"
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-role": "submitter",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/Statistics"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "description": "Role or app scope denied"
+          },
+          "404": {
+            "description": "Not found or not visible"
+          },
+          "409": {
+            "description": "State or idempotency conflict"
+          },
+          "422": {
+            "description": "Invalid request"
+          },
+          "429": {
+            "description": "Resource busy or queue quota"
+          },
+          "503": {
+            "description": "Temporarily unavailable"
+          }
+        },
+        "x-description": {
+          "zh-CN": "固定最近 24 小时，按服务 app_id 隔离，管理员可查看全部。首次排队只取任务第一次分配；执行占用按分配至确认停止计算，包含重试执行。任务失败率不计取消；许可释放不是推理成功。缺少释放时间的旧许可不进入耗时样本。P50 无样本、P95 少于 20 个样本时返回 null。",
+          "en": "Fixed last 24 hours, scoped to the authenticated app; administrators see all apps. First queue wait uses the first assignment only. Occupancy runs from assignment to confirmed stop and includes retry attempts. Cancellations do not count toward task failure rate; permit release is not inference success. Undated old permits are excluded from timing samples. P50 without samples and P95 below 20 samples are null.",
+          "zh-TW": "固定最近 24 小時，按服務 app_id 隔離，管理員可查看全部。首次排隊只取任務第一次分配；執行占用按分配至確認停止計算，包含重試執行。任務失敗率不計取消；許可釋放不是推論成功。缺少釋放時間的舊許可不納入耗時樣本。P50 無樣本、P95 少於 20 個樣本時回傳 null。"
+        },
+        "parameters": []
+      }
     }
   },
   "components": {
@@ -1952,6 +2062,224 @@
           "executor_id",
           "owner_id",
           "upstream_url"
+        ]
+      },
+      "TimingStatistics": {
+        "type": "object",
+        "properties": {
+          "samples": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "p50_ms": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "p95_ms": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "Null until at least 20 valid samples are available."
+          }
+        },
+        "required": [
+          "samples",
+          "p50_ms",
+          "p95_ms"
+        ]
+      },
+      "Statistics": {
+        "type": "object",
+        "properties": {
+          "window": {
+            "type": "object",
+            "properties": {
+              "hours": {
+                "type": "integer",
+                "const": 24
+              },
+              "from": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "until": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "hours",
+              "from",
+              "until"
+            ]
+          },
+          "min_p95_samples": {
+            "type": "integer",
+            "const": 20
+          },
+          "first_queue_wait": {
+            "$ref": "#/components/schemas/TimingStatistics"
+          },
+          "attempts": {
+            "type": "object",
+            "properties": {
+              "succeeded": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "failed": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "cancelled": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "failure_rate": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0,
+                "maximum": 1,
+                "description": "Failed / (succeeded + failed) stopped attempts; cancellations excluded. Null without outcomes."
+              },
+              "occupancy": {
+                "$ref": "#/components/schemas/TimingStatistics"
+              }
+            },
+            "required": [
+              "succeeded",
+              "failed",
+              "cancelled",
+              "failure_rate",
+              "occupancy"
+            ]
+          },
+          "permits": {
+            "type": "object",
+            "properties": {
+              "occupancy": {
+                "$ref": "#/components/schemas/TimingStatistics"
+              }
+            },
+            "required": [
+              "occupancy"
+            ]
+          }
+        },
+        "required": [
+          "window",
+          "min_p95_samples",
+          "first_queue_wait",
+          "attempts",
+          "permits"
+        ]
+      },
+      "ResourceBudget": {
+        "type": "object",
+        "properties": {
+          "cpu_millicores": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "memory_mib": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "gpu_slots": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "gpu_memory_mib": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "PermitHistoryItem": {
+        "type": "object",
+        "properties": {
+          "permit_id": {
+            "type": "string"
+          },
+          "app_id": {
+            "type": "string"
+          },
+          "executor_id": {
+            "type": "string"
+          },
+          "node_id": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "active",
+              "suspect",
+              "released"
+            ]
+          },
+          "model_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "parent_task_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resources": {
+            "$ref": "#/components/schemas/ResourceBudget"
+          },
+          "delegated_resources": {
+            "$ref": "#/components/schemas/ResourceBudget"
+          },
+          "evidence": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "released_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "First confirmed stop or handoff; old released records without a recorded timestamp remain null."
+          },
+          "lease_until": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "permit_id",
+          "app_id",
+          "executor_id",
+          "node_id",
+          "state",
+          "model_id",
+          "parent_task_id",
+          "resources",
+          "delegated_resources",
+          "evidence",
+          "created_at",
+          "released_at",
+          "lease_until"
         ]
       }
     }

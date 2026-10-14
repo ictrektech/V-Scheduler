@@ -344,6 +344,7 @@ pub async fn serve(
             }),
         )
         .route("/executors", get(executors))
+        .route("/statistics", get(statistics))
         .route("/tasks", post(submit).get(tasks))
         .route("/tasks/{id}", get(detail).delete(delete_task))
         .route("/tasks/{id}/retry", post(retry_task))
@@ -382,7 +383,7 @@ pub async fn serve(
 }
 async fn discovery() -> Json<Value> {
     ok(
-        json!({"protocol_version":1,"implementation_version":"0.1.0","features":["tasks","idempotency","reservations","events","static-executors","agent-image-studio","permits","permit-history","delegated-permits","safety-headroom","retry","manual-delete","attempt-history"],"unsupported":["artifacts","dynamic-enrollment","ha"],"authentication":"scoped-bearer","max_body_bytes":262144,"openapi_url":"openapi.json"}),
+        json!({"protocol_version":1,"implementation_version":"0.1.0","features":["tasks","idempotency","reservations","events","static-executors","agent-image-studio","permits","permit-history","statistics","permit-release-times","delegated-permits","safety-headroom","retry","manual-delete","attempt-history"],"unsupported":["artifacts","dynamic-enrollment","ha"],"authentication":"scoped-bearer","max_body_bytes":262144,"openapi_url":"openapi.json"}),
     )
 }
 async fn executors(State(a): State<App>, h: HeaderMap) -> Api<Json<Value>> {
@@ -1023,15 +1024,29 @@ async fn permit_acquire(
         json!({"permit_id":id,"lease_seconds":30,"node_id":e.node_id}),
     ))
 }
-async fn permits(State(a): State<App>, h: HeaderMap, Query(q): Query<Page>) -> Api<Json<Value>> {
+#[derive(Deserialize)]
+struct PermitPage {
+    cursor: Option<String>,
+    limit: Option<i64>,
+    state: Option<String>,
+}
+async fn statistics(State(a): State<App>, h: HeaderMap) -> Api<Json<Value>> {
     let p = auth(&a, &h).await?;
     require(&p, "submitter")?;
-    let (offset, limit) = page(&q)?;
-    let rows=sqlx::query("SELECT * FROM vrs_permits WHERE ($1 OR app=$2) ORDER BY created_at DESC,id LIMIT $3 OFFSET $4")
-        .bind(p.role=="admin").bind(&p.app_id).bind(limit).bind(offset).fetch_all(&a.db).await.map_err(unavailable)?;
+    Ok(ok(crate::statistics::read(&a.db, p.role == "admin", &p.app_id).await.map_err(unavailable)?))
+}
+async fn permits(State(a): State<App>, h: HeaderMap, Query(q): Query<PermitPage>) -> Api<Json<Value>> {
+    let p = auth(&a, &h).await?;
+    require(&p, "submitter")?;
+    let (offset, limit) = page(&Page { cursor: q.cursor, limit: q.limit })?;
+    if q.state.as_deref().is_some_and(|state| !["active", "suspect", "released"].contains(&state)) {
+        return Err(invalid());
+    }
+    let rows=sqlx::query("SELECT * FROM vrs_permits WHERE ($1 OR app=$2) AND ($3::text IS NULL OR state=$3) ORDER BY created_at DESC,id LIMIT $4 OFFSET $5")
+        .bind(p.role=="admin").bind(&p.app_id).bind(q.state.as_deref()).bind(limit).bind(offset).fetch_all(&a.db).await.map_err(unavailable)?;
     let items:Vec<Value>=rows.iter().map(|r|{
         let metadata:Value=r.get("metadata");
-        json!({"permit_id":r.get::<String,_>("id"),"app_id":r.get::<String,_>("app"),"executor_id":r.get::<String,_>("executor"),"node_id":r.get::<String,_>("node"),"state":r.get::<String,_>("state"),"resources":r.get::<Value,_>("resources"),"delegated_resources":r.get::<Value,_>("delegated_resources"),"model_id":metadata["model_id"],"parent_task_id":metadata["parent_task_id"],"evidence":r.get::<Option<String>,_>("evidence"),"created_at":r.get::<DateTime<Utc>,_>("created_at"),"lease_until":r.get::<DateTime<Utc>,_>("lease_until")})
+        json!({"permit_id":r.get::<String,_>("id"),"app_id":r.get::<String,_>("app"),"executor_id":r.get::<String,_>("executor"),"node_id":r.get::<String,_>("node"),"state":r.get::<String,_>("state"),"resources":r.get::<Value,_>("resources"),"delegated_resources":r.get::<Value,_>("delegated_resources"),"model_id":metadata["model_id"],"parent_task_id":metadata["parent_task_id"],"evidence":r.get::<Option<String>,_>("evidence"),"created_at":r.get::<DateTime<Utc>,_>("created_at"),"released_at":r.get::<Option<DateTime<Utc>>,_>("released_at"),"lease_until":r.get::<DateTime<Utc>,_>("lease_until")})
     }).collect();
     Ok(ok(
         json!({"items":items,"next_cursor":if rows.len()==limit as usize{Some((offset+limit).to_string())}else{None}}),
@@ -1069,7 +1084,7 @@ async fn permit_release(
     }
     let state = if b.stopped { "released" } else { "suspect" };
     let count = sqlx::query(
-        "UPDATE vrs_permits SET state=$3,evidence=$4 WHERE id=$1 AND app=$2 AND state<>'released'",
+        "UPDATE vrs_permits SET state=$3,evidence=$4,released_at=CASE WHEN $3='released' THEN COALESCE(released_at,now()) ELSE released_at END WHERE id=$1 AND app=$2 AND state<>'released'",
     )
     .bind(&id)
     .bind(&p.app_id)
@@ -1104,7 +1119,7 @@ async fn permit_confirm(
         return Err(invalid());
     }
     sqlx::query(
-        "UPDATE vrs_permits SET state='released',evidence=$2 WHERE id=$1 AND state='suspect'",
+        "UPDATE vrs_permits SET state='released',evidence=$2,released_at=COALESCE(released_at,now()) WHERE id=$1 AND state='suspect'",
     )
     .bind(&id)
     .bind(b.evidence)
@@ -1177,7 +1192,7 @@ async fn permit_delegate(
     {
         return Err(Error(StatusCode::CONFLICT, "PERMIT_ALREADY_RELEASED"));
     }
-    sqlx::query("UPDATE vrs_permits SET state='released',evidence=$2 WHERE id=$1")
+    sqlx::query("UPDATE vrs_permits SET state='released',evidence=$2,released_at=COALESCE(released_at,now()) WHERE id=$1 AND state<>'released'")
         .bind(&id)
         .bind(&evidence)
         .execute(&mut *tx)

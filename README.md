@@ -87,3 +87,11 @@ Agent 是本应用在节点上运行的资源采集与任务执行后台进程�
 安装包按 VOS 硬件能力提供 NVIDIA、CPU、Jetson/L4T 与 Thor/Spark 运行配置，GPU 配置自动声明 NVIDIA runtime。首次启动从宿主机 `/proc/stat`、`/proc/meminfo` 初始化本机节点并启动内部采集；空配置也会出现实际资源，重启保留身份与 journal。没有单独部署采集组件的用户步骤。
 
 每个逻辑处理器分别计算两次实际计数器的差值，点击数量可展开逐核心占用。GPU 类型未知显示未知，不默认当作独立显存。Thor 的 integrated 属性独立于 CUDA 上下文和显存查询；统一内存只按系统 RAM 池预算，NVML 不提供的显存数值仍保留为空，不伪造独立显存池。
+
+管理页的“负载与可靠性”展示最近 24 小时的首次排队等待、任务执行占用、任务失败率和模型许可占用；“模型调用许可”可筛选、分页查看在线模型的节点、预算、停止或移交依据。统计每 30 秒更新，许可历史每 2.5 秒刷新。
+
+`GET /api/v1/statistics` 按服务 `app_id` 隔离，管理员可查看全部。首次等待只取任务第一次分配；执行占用包含分配与停止核验，重试按各次执行统计。失败率为失败 /（成功 + 失败），取消不计入；许可释放不能代表业务推理成功。没有样本时返回 `null`，P95 至少需要 20 条有效样本。新许可保存首次 `released_at`；旧许可没有实际释放时间时保持未知，不使用租约截止时间推算。`GET /api/v1/permits?state=active|suspect|released&cursor=0&limit=50` 提供按状态分页历史。此统计不自动调整节点选择。
+
+数据库仅使用 PostgreSQL 内置表、事务、JSONB、行锁和聚合功能，不依赖 pgvector、pg_search 或 ParadeDB 扩展。
+
+统计回归测试可在已同步源码的 Linux 测试机运行 `node scripts/e2e-statistics.mjs`：需 Docker、Node 22.18+、已构建的 `~/dev/build/V-Scheduler/cargo/debug/v-scheduler` 和 `~/dev/build/V-Scheduler/ui-verify/dist`，以及迁移前版本的已安装镜像（或 `SCHEDULER_LEGACY_IMAGE`）。测试使用独立临时 PostgreSQL 和内部网络，检查完成后自动清理；`KEEP_TEST_SERVICES=1` 可保留至页面检查结束，向记录的测试 PID 发送 SIGTERM 即清理。
