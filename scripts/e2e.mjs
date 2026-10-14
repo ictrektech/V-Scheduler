@@ -47,12 +47,17 @@ try{
  const session={session_id:'protocol-session'};const beat=()=>call(api+'/workers/protocol-node/heartbeat',tokens.protocol,'POST',{...session,report:{memory_available_mib:512}});const claim=async()=>{await beat();return (await call(api+'/workers/protocol-node/commands/claim',tokens.protocol,'POST',session)).data.commands[0]}
  const job=(await call(api+'/tasks',tokens.other,'POST',{protocol_version:1,app_task_id:'retry-proof',executor:{id:'protocol-test',contract_version:'1',task_type:'protocol.test'},parameters:{},inputs:[]},{'Idempotency-Key':'retry-proof'})).data.task_id
  let cmd=await claim();assert.equal((await call(api+'/tasks/'+job,tokens.other,'DELETE')).status,409)
+ const running=await call(api+'/attempts/'+cmd.attempt_id+'/report',tokens.protocol,'POST',{...session,fence:cmd.fence,status:'running',stopped:false,progress:{percent:0.5},stage:'decode',message:'segment 2/4'})
+ assert.equal(running.status,200);assert.deepEqual((await task(job)).progress,{percent:0.5,stage:'decode',message:'segment 2/4'})
+ const progressEvent=(await call(api+'/events',tokens.other)).data.items.find(e=>e.task_id===job&&e.progress?.stage==='decode')
+ assert.equal(progressEvent.progress.percent,0.5)
  const failure=c=>call(api+'/attempts/'+c.attempt_id+'/report',tokens.protocol,'POST',{...session,fence:c.fence,status:'failed',stopped:true,result:{retryable:true,code:'TEST_TRANSIENT'}})
  await failure(cmd);assert.equal((await task(job)).status,'retry_wait');assert.equal((await call(api+'/reservations',tokens.admin)).data.length,0)
+ assert.deepEqual((await call(api+'/events',tokens.other)).data.items.find(e=>e.cursor===progressEvent.cursor).progress,progressEvent.progress)
  await until(job,['queued']);cmd=await claim();assert.equal(cmd.fence,2);await call(api+'/attempts/'+cmd.attempt_id+'/report',tokens.protocol,'POST',{...session,fence:cmd.fence,status:'failed',stopped:true,result:{retryable:false}})
  const retry=()=>call(api+'/tasks/'+job+'/retry',tokens.other,'POST',{}, {'Idempotency-Key':'manual-retry-once'});assert.equal((await retry()).status,200);assert.equal((await retry()).status,200);cmd=await claim();assert.equal(cmd.fence,3);await failure(cmd);assert.equal((await task(job)).status,'failed');assert.equal((await call(api+'/tasks/'+job+'/attempts',tokens.other)).data.length,3)
  assert.equal((await call(api+'/tasks/'+job,tokens.other,'DELETE')).status,200);assert.equal((await call(api+'/tasks/'+job,tokens.other)).status,404)
- console.log('PASS: bounded automatic backoff, idempotent manual retry, attempt history and stopped-only soft deletion')
+ console.log('PASS: progress snapshot events, bounded automatic backoff, idempotent manual retry, attempt history and stopped-only soft deletion')
  const installed='vos-app-com-ictrek-image-studio-01m4pwcrg1a4tpbv9wmf9jxrcw-image-studio-backend-amd-cuda-1'
  const mounts=JSON.parse(execFileSync('docker',['inspect',installed,'--format','{{json .Mounts}}']).toString());const model=mounts.find(m=>m.Destination==='/modelhub').Source
  mkdirSync(path.join(run,'image-data'),{recursive:true})

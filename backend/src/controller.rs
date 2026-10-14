@@ -92,7 +92,7 @@ fn task_value(r: &sqlx::postgres::PgRow) -> Value {
     json!({"task_id":r.get::<String,_>("id"),"app_task_id":body["app_task_id"],"executor_id":body["executor"]["id"],"can_retry":can_retry,"attempt_count":r.get::<i64,_>("fence"),"app_id":r.get::<String,_>("app"),"status":status,"version":r.get::<i64,_>("version"),"attempt_id":r.get::<Option<String>,_>("attempt"),"node_id":r.get::<Option<String>,_>("node"),"fence":r.get::<i64,_>("fence"),"progress":r.get::<Value,_>("progress"),"result":r.get::<Value,_>("result"),"created_at":r.get::<DateTime<Utc>,_>("created_at"),"wait_reasons":if status=="queued" {json!(["WAIT_RESOURCE_OR_NODE"])} else {json!([])}})
 }
 async fn event(tx: &mut Transaction<'_, Postgres>, id: &str) -> Api<()> {
-    sqlx::query("INSERT INTO vrs_events(task,app,status,version) SELECT id,app,status,version FROM vrs_tasks WHERE id=$1").bind(id).execute(&mut **tx).await.map_err(unavailable)?;
+    sqlx::query("INSERT INTO vrs_events(task,app,status,version,progress) SELECT id,app,status,version,progress FROM vrs_tasks WHERE id=$1").bind(id).execute(&mut **tx).await.map_err(unavailable)?;
     Ok(())
 }
 async fn expire(a: &App) -> Api<()> {
@@ -385,10 +385,10 @@ async fn events(State(a): State<App>, h: HeaderMap, Query(q): Query<Page>) -> Ap
     let p = auth(&a, &h).await?;
     require(&p, "submitter")?;
     let (c, l) = page(&q)?;
-    let rs=sqlx::query("SELECT cursor,task,status,version FROM vrs_events WHERE cursor>$1 AND ($2 OR app=$3) ORDER BY cursor LIMIT $4").bind(c).bind(p.role=="admin").bind(&p.app_id).bind(l).fetch_all(&a.db).await.map_err(unavailable)?;
+    let rs=sqlx::query("SELECT cursor,task,status,version,progress FROM vrs_events WHERE cursor>$1 AND ($2 OR app=$3) ORDER BY cursor LIMIT $4").bind(c).bind(p.role=="admin").bind(&p.app_id).bind(l).fetch_all(&a.db).await.map_err(unavailable)?;
     let cursor = rs.last().map(|r| r.get::<i64, _>("cursor")).unwrap_or(c);
     Ok(ok(
-        json!({"items":rs.iter().map(|r|json!({"cursor":r.get::<i64,_>("cursor"),"task_id":r.get::<String,_>("task"),"status":r.get::<String,_>("status"),"version":r.get::<i64,_>("version")})).collect::<Vec<_>>(),"next_cursor":cursor.to_string()}),
+        json!({"items":rs.iter().map(|r|json!({"cursor":r.get::<i64,_>("cursor"),"task_id":r.get::<String,_>("task"),"status":r.get::<String,_>("status"),"version":r.get::<i64,_>("version"),"progress":r.get::<Value,_>("progress")})).collect::<Vec<_>>(),"next_cursor":cursor.to_string()}),
     ))
 }
 async fn nodes(State(a): State<App>, h: HeaderMap) -> Api<Json<Value>> {
@@ -587,7 +587,27 @@ struct Report {
     #[serde(default)]
     progress: Value,
     #[serde(default)]
+    stage: Option<String>,
+    #[serde(default)]
+    message: Option<String>,
+    #[serde(default)]
     result: Value,
+}
+fn reported_progress(mut progress: Value, stage: Option<&str>, message: Option<&str>) -> Api<Value> {
+    if progress.is_null() { progress = json!({}); }
+    let fields = progress.as_object_mut().ok_or_else(invalid)?;
+    if let Some(percent) = fields.get("percent") {
+        let value = percent.as_f64().ok_or_else(invalid)?;
+        if !(0.0..=1.0).contains(&value) { return Err(invalid()); }
+    }
+    for (key, input, limit) in [("stage", stage, 128), ("message", message, 512)] {
+        if let Some(value) = input { fields.insert(key.to_string(), json!(value)); }
+        if let Some(value) = fields.get(key) {
+            let value = value.as_str().ok_or_else(invalid)?;
+            if value.len() > limit { return Err(invalid()); }
+        }
+    }
+    Ok(progress)
 }
 async fn report(
     State(a): State<App>,
@@ -606,6 +626,7 @@ async fn report(
     if terminal && !b.stopped {
         return Err(Error(StatusCode::CONFLICT, "STOP_NOT_CONFIRMED"));
     }
+    let progress = reported_progress(b.progress, b.stage.as_deref(), b.message.as_deref())?;
     let mut tx = a.db.begin().await.map_err(unavailable)?;
     let r=sqlx::query("SELECT t.* FROM vrs_tasks t JOIN vrs_nodes n ON n.id=t.node WHERE t.attempt=$1 AND t.fence=$2 AND t.node=$3 AND n.session=$4 FOR UPDATE OF t").bind(&id).bind(b.fence).bind(&p.node_id).bind(b.session_id).fetch_optional(&mut *tx).await.map_err(unavailable)?.ok_or(Error(StatusCode::CONFLICT,"STALE_ATTEMPT"))?;
     let released: bool =
@@ -648,7 +669,7 @@ async fn report(
     } else {
         "running"
     };
-    sqlx::query("UPDATE vrs_tasks SET status=$2,progress=$3,result=$4,version=version+1,updated_at=now() WHERE id=$1").bind(&task).bind(status).bind(b.progress).bind(if status=="cancelled" {json!({"reason":"cancelled"})}else{b.result.clone()}).execute(&mut *tx).await.map_err(unavailable)?;
+    sqlx::query("UPDATE vrs_tasks SET status=$2,progress=$3,result=$4,version=version+1,updated_at=now() WHERE id=$1").bind(&task).bind(status).bind(progress).bind(if status=="cancelled" {json!({"reason":"cancelled"})}else{b.result.clone()}).execute(&mut *tx).await.map_err(unavailable)?;
     sqlx::query("UPDATE vrs_attempts SET status=$2,result=$3,stopped_at=CASE WHEN $4 THEN now() ELSE stopped_at END WHERE id=$1").bind(&id).bind(&b.status).bind(&b.result).bind(terminal).execute(&mut *tx).await.map_err(unavailable)?;
     if auto_retry {
         sqlx::query("UPDATE vrs_tasks SET retry_at=now()+interval '3 seconds' * power(2,least(fence-1,4)) WHERE id=$1").bind(&task).execute(&mut *tx).await.map_err(unavailable)?;
@@ -942,4 +963,23 @@ async fn delete_task(
     Ok(ok(
         json!({"task_id":id,"deleted":true,"outputs_deleted":false,"audit_retained":true}),
     ))
+}
+
+#[cfg(test)]
+mod status_progress_tests {
+    use super::*;
+
+    #[test]
+    fn accepts_optional_stage_and_message_without_requiring_percent() {
+        let progress = reported_progress(Value::Null, Some("decode"), Some("segment 2/4"));
+        assert_eq!(progress.ok(), Some(json!({"stage":"decode","message":"segment 2/4"})));
+    }
+
+    #[test]
+    fn preserves_existing_progress_and_rejects_invalid_percent() {
+        let progress = reported_progress(json!({"percent":0.5,"stage":"old","step":2}), Some("new"), None);
+        assert_eq!(progress.ok(), Some(json!({"percent":0.5,"stage":"new","step":2})));
+        assert!(reported_progress(json!({"percent":75}), None, None).is_err());
+        assert!(reported_progress(json!([1,2]), None, None).is_err());
+    }
 }

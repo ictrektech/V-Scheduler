@@ -1,0 +1,1 @@
+ALTER TABLE vrs_events ADD COLUMN progress JSONB NOT NULL DEFAULT '{}';

@@ -61,6 +61,8 @@ export const messages:Record<string,[string,string]>={
 '任务 / 应用':['Task / Application','任務 / 應用'],
 '执行节点':['Node','執行節點'],
 '进度':['Progress','進度'],
+'阶段':['Stage','階段'],
+'状态说明':['Status message','狀態說明'],
 '创建时间':['Created','建立時間'],
 '操作':['Action','操作'],
 '取消':['Cancel','取消'],

@@ -72,7 +72,7 @@ JSON 使用 UTF-8，时间为 RFC3339 UTC，CPU 单位 millicores、内存 MiB�
 | GET `/tasks/{task_id}` | 状态、进度、等待原因、attempt、结果 artifact 引用 |
 | POST `/tasks/{task_id}/cancel` | 请求取消，可重复；正在取消返回 202，终态返回 200及当前状态 |
 | POST `/tasks/{task_id}/retry` | 授权显式重试；旧执行 unknown/未停止则 409 |
-| GET `/events` | 基于 cursor 的授权增量事件，至少一次、按任务 version 去重 |
+| GET `/events` | 基于 cursor 的授权增量事件，含提交时状态与进度快照；至少一次、按任务 version 去重 |
 
 `Idempotency-Key` 与 body 中 `idempotency_key` 若同时给出必须一致；推荐只用 header。去重作用域为 workspace + app + key。相同键不同规范化内容返回 409，网络超时后保留原键查询/重提。手工 retry 另需幂等键以防一次点击产生多个新 attempt。
 
@@ -103,7 +103,9 @@ Content-Type: application/json
 | POST `/workers/{node_id}/commands/claim` | session 和领取 cursor；返回本节点 command 列表，可重复投递 |
 | POST `/workers/{node_id}/commands/{command_id}/ack` | accepted/rejected 及 evidence；ACK 前 durable journal，不能凭受理就报告 running |
 | POST `/attempts/{attempt_id}/renew` | reservation_id、fence、session、report_seq；只续当前 attempt，返回 TTL |
-| POST `/attempts/{attempt_id}/report` | fence、session、event_seq、状态、execution_handle、进度或停止证据/暂存结果 |
+| POST `/attempts/{attempt_id}/report` | fence、session、状态、可选进度/阶段/说明或停止证据/暂存结果；旧 attempt 拒绝 |
+
+执行端的最低要求是开始与结束；不提供中间进度时 `progress` 可省略。能感知运行过程的执行器可在 `progress` 中报告 `percent`（0–1 小数），或额外报告 `stage`（最多 128 字节）和 `message`（最多 512 字节）；顶层的阶段/说明会并入最新进度快照。执行器的 `inspect` 响应也可带这两个可选字段，由标准 Agent 透传。任务查询给最新快照，`/events` 给每个已提交状态版本的快照；旧版本事件的 `progress` 为 `{}`。业务方按 `task_id + version` 去重，不能从消息或进度推断任务已成功，终态仍以 `status` 为准。详见 [OpenAPI Report](../api/openapi-v1.json)。
 
 命令至少包含 task/attempt/reservation/command ID、fence、executor contract、输入与模板参数、资源池绑定、lease TTL；worker 必须验证身份、资源容量、版本和数据可达性后启动。同一 attempt 重复命令只返回原 execution handle。
 

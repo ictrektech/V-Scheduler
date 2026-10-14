@@ -603,6 +603,7 @@
       "get": {
         "operationId": "get_events",
         "summary": "Incremental events",
+        "description": "Each event is a committed task version with a snapshot of its status and progress. The progress object may contain percent (0..1), stage and message. Older events have an empty progress object.",
         "x-title": {
           "zh-CN": "增量事件",
           "en": "Incremental events",
@@ -1568,7 +1569,18 @@
           },
           "progress": {
             "type": "object",
-            "additionalProperties": true
+            "additionalProperties": true,
+            "description": "Latest progress snapshot. percent, if present, is a fraction from 0 to 1; stage and message are optional strings."
+          },
+          "stage": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "Optional execution stage, merged into progress.stage."
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 512,
+            "description": "Optional human-readable update, merged into progress.message."
           },
           "result": {
             "type": "object",

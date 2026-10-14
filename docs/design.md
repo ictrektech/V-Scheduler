@@ -1,8 +1,8 @@
 # V-Scheduler（资源调度）详细设计
 
-日期：2026-10-13。状态：完整目标设计；MVP 已进入实现与隔离测试，未发布或安装到生产 VOS。当前支持范围以 README、OpenAPI 和节点资源文档为准。部署归属：用户维护的独立应用 `apps/V-Scheduler/`，拟定应用 ID `com.ictrek.v-scheduler`。不修改 vos-cluster-manager 或 VOS 平台代码。
+更新：2026-10-14。状态：目标设计与分阶段实施；MVP 已发布，已在 tc192、tc229、tc232 的现有 VOS 环境打开验证。当前支持范围以 README、OpenAPI 和验证记录为准。部署归属：用户维护的独立应用 `apps/V-Scheduler/`，应用 ID `com.ictrek.v-scheduler`。不修改 vos-cluster-manager 或 VOS 平台代码。
 
-本文以当前 VAI checkout 中的 VOS 源码和正式规范为依据；本地存在代码不代表目标机器已安装该能力。本文新增的接口、状态、配置均为提案，不是已存在的 VOS 契约。现有架构核验见 [证据清单](architecture-evidence.md)。
+本文以当前 VAI checkout 中的 VOS 源码和正式规范为依据；本地存在代码不代表目标机器已安装该能力。分阶段规划中的后续接口、状态、配置仍是提案，不是已存在的 VOS 契约；已实现范围以 README 和 OpenAPI 为准。现有架构核验见 [证据清单](architecture-evidence.md)。
 
 ## 1. 目标和关键决策
 
@@ -80,7 +80,7 @@ sequenceDiagram
 
 所有新增实现放在 V-Scheduler；业务适配只修改用户维护且获授权接入的应用。`docs/ictrek-monorepo/` 作为现有接口的只读证据来源，本方案不在该仓库中新增源码、修改平台规范或扩展集群管理应用。
 
-建议实现目录（尚未创建实现）：
+实现与后续扩展的目录边界：
 
 ```text
 V-Scheduler/
@@ -520,6 +520,28 @@ VOS 和非 VOS 新应用均可按公开协议接入耗时入口；已有轻应�
 | Phase 3：恢复与跨机 | Agent journal、故障注入、租约/fence、两节点执行；输入输出传输；必要 Temporal 编排 | 不同能力节点正确选择；分区不重复运行；控制器/Agent 重启恢复；旧结果不能覆盖；跨架构输出合格 | 禁用远程候选，保留单机纳管 |
 | Phase 4：公平与多来源 | 第二个应用、非 VOS 提交者/worker、接入认证测试、配额/aging/排空、常驻预算 | 无 VAI 路径/VOS JWT 依赖；版本/权限/幂等/取消 conformance 通过；公平与容量成立 | 按接入方 drain 回退，保留基础配额 |
 | Phase 5：在线准入与 HA | 在共享执行层加入短期 permit、流式取消、批/在线保留容量；多控制器领导权与 failover | 在线延迟达到约定 SLO；流式不中途重放；HA 切换不重复执行；数据库恢复过程可复现 | 在线回原链路需独立预算，控制器回单实例 |
+
+### 13.1 参考设计的增量吸收（2026-10-14）
+
+以下六份飞书材料用于提炼需求，并非 V-Scheduler 的实现契约。文档中 Celery、Redis Stream、按“设备 × 算法”创建队列和单独的状态服务，是其原方案的技术选型；本应用继续使用 PGV 权威台账、现有 Agent 命令/租约和公开 HTTP API，不为相同语义增设一套 Broker 或状态库。
+
+| 参考材料 | 吸收的需求 | V-Scheduler 的取舍 |
+|---|---|---|
+| [调度器架构大纲](https://twp99wyutbs.feishu.cn/docx/AnJidIyjwoRPXwxE2RZcZtolnIf) | 能力过滤、承诺容量、节点选择分别可解释；资源释放触发再调度；故障设备冷却；未来按观测 SLO 调整容量 | 保留当前能力/预约/决策路径；使用 DB 事件与短轮询收敛，不引入 Celery/Redis；实时 GPU 利用率只作压力保护，不按瞬时空闲显存精算容量 |
+| [结构详细设计](https://twp99wyutbs.feishu.cn/docx/ZIySdsNwlo6qXExNI9lcVvQsnLd) | 节点上线、短暂失联、排空、长期离线的可见状态；执行器健康与多卡设备归属；双节点竞争时的 fence | 失联先冻结新分配并保留 suspect 预约，核验旧执行停止后才能转移；多卡设备级预约列为后续阶段 |
+| [任务状态感知详细设计](https://twp99wyutbs.feishu.cn/docx/U2fQdLAhyomUt9xpBxxczQNTnZe) | 执行器能力分级：最少开始/结束，可选运行态、进度、阶段和说明；内部上报、外部查询；事件去重和历史回放 | 当前 Agent 与 task/attempt API 已承担状态收集，不另建状态服务；调度器继续校验当前 attempt/fence 和状态转移，避免旧执行覆盖新结果。进度仍采用现有 0–1 小数，不改为参考文档的 0–100 |
+| [设备硬件信息采集](https://twp99wyutbs.feishu.cn/docx/SV45dIg90oLFbhxbuXAcmKSYntt) | Jetson 与独立 GPU 的采集路径不同；可逐步纳入每核 CPU、温度、功耗、设备健康与来源/采样时间 | 已实现 CPU/RAM/GPU 占用、Jetson GPU 内核负载回退和统一内存单次记账；附加指标须标记来源、新鲜度和不可用，不把遥测值直接当可预约容量 |
+| [会议记录](https://twp99wyutbs.feishu.cn/docx/YTRSdQwAwoIdTvxbRDic9Esjnbb) | 不以执行框架的结果缓存作为唯一任务状态；任务终态与预约释放由调度器自己维护 | 沿用 PGV 任务、attempt、预约和事件台账；执行器回调只是受验证的事实输入 |
+| [组件 API/资源模板（未完成）](https://twp99wyutbs.feishu.cn/docx/BBJsdWffOoIQZ2xkpxucWy7Pn2i) | 按任务类型、模型、输入规模记录依赖和保守资源需求；区分短任务、长任务和流式调用 | 模板值必须由真实峰值与兼容测试校准，文档示例不能直接作为生产预算；在线推理继续用 permit，不强制转成异步任务 |
+
+增量验收按现有发布边界进行：
+
+1. **第一步，状态可感知（代码与隔离验证已完成，待后续发布）**：worker 可选上报 `stage`/`message` 与 `progress.percent`；允许只有起止状态的执行器。`/tasks/{id}` 展示最新进度，`/events` 在同一事务保存每个状态版本的进度快照，UI 仅在有值时显示阶段/说明。旧事件无进度快照时返回空对象。已在 tc232 隔离端口验证上报、重复查询、事件快照以及无进度执行器的重试流程；未把本次改动安装到 VOS。
+2. **第二步，节点健康与资源来源**：把 Agent 心跳、执行器探测、遥测采样时间分别展示为 ready/degraded/unavailable/draining；离线节点不接新任务。采用现有租约与 suspect 预约验证失联恢复，绝不因超时直接释放正在运行的资源。
+3. **第三步，承诺容量和排队说明**：按 executor/task type 建立经实测批准的并发成本与常驻模型基线；向任务提供能力不符、容量不足、排空、冷却等稳定等待/拒绝原因。资源预算保持 PGV 事务预约；实时 GPU 利用率仅作保守阻断。
+4. **第四步，负载与可靠性演进**：在有足够样本后使用失败率、排队时长和延迟分位数调整选择偏好；按节点/设备做故障注入和多卡验收，再决定是否需要事件触发优化或额外通信基础设施。未验证 SLO 前不宣称“保证 P99”。
+
+每一步都保持 Image Studio 任务入口和 V-Router 本地许可的现有接入；云端模型继续绕过本地资源预约。新字段是可选字段，旧 worker/应用不需要同步改造。
 
 Phase 5 的多实例不能只“复制容器”：需持久化调度领导 epoch、数据库事务中校验领导权、旧 leader 禁止续租/派发，所有 command 仍由 Agent 幂等接收。第一版使用单实例部署互斥，不能宣称已具备 HA。
 

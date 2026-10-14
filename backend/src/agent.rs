@@ -238,7 +238,7 @@ pub async fn run(path: PathBuf) -> anyhow::Result<()> {
                 let status = v["status"].as_str().unwrap_or("unknown");
                 let stopped = v["stopped"].as_bool().unwrap_or(false);
                 let terminal = ["succeeded", "failed", "cancelled"].contains(&status) && stopped;
-                let report=post(&client,&format!("{base}/attempts/{}/report",cmd.attempt_id),&cfg.token,json!({"session_id":journal.session_id,"fence":cmd.fence,"status":status,"stopped":stopped,"progress":v["progress"],"result":v["result"]})).await;
+                let report=post(&client,&format!("{base}/attempts/{}/report",cmd.attempt_id),&cfg.token,json!({"session_id":journal.session_id,"fence":cmd.fence,"status":status,"stopped":stopped,"progress":v["progress"],"stage":v["stage"],"message":v["message"],"result":v["result"]})).await;
                 if terminal && report.is_ok() {
                     journal.command = None;
                     save(&cfg.journal, &journal)?;
