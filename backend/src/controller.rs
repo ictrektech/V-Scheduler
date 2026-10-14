@@ -349,6 +349,7 @@ pub async fn serve(
         .route("/tasks/{id}", get(detail).delete(delete_task))
         .route("/tasks/{id}/retry", post(retry_task))
         .route("/tasks/{id}/attempts", get(attempts))
+        .route("/tasks/{id}/events", get(task_events))
         .route("/tasks/{id}/cancel", post(cancel))
         .route("/events", get(events))
         .route("/permits", post(permit_acquire).get(permits))
@@ -383,7 +384,7 @@ pub async fn serve(
 }
 async fn discovery() -> Json<Value> {
     ok(
-        json!({"protocol_version":1,"implementation_version":"0.1.0","features":["tasks","idempotency","reservations","events","static-executors","agent-image-studio","permits","permit-history","statistics","permit-release-times","delegated-permits","safety-headroom","retry","manual-delete","attempt-history"],"unsupported":["artifacts","dynamic-enrollment","ha"],"authentication":"scoped-bearer","max_body_bytes":262144,"openapi_url":"openapi.json"}),
+        json!({"protocol_version":1,"implementation_version":"0.1.0","features":["tasks","idempotency","reservations","events","static-executors","agent-image-studio","permits","permit-history","statistics","permit-release-times","task-timeline","delegated-permits","safety-headroom","retry","manual-delete","attempt-history"],"unsupported":["artifacts","dynamic-enrollment","ha"],"authentication":"scoped-bearer","max_body_bytes":262144,"openapi_url":"openapi.json"}),
     )
 }
 async fn executors(State(a): State<App>, h: HeaderMap) -> Api<Json<Value>> {
@@ -548,6 +549,16 @@ async fn events(State(a): State<App>, h: HeaderMap, Query(q): Query<Page>) -> Ap
     Ok(ok(
         json!({"items":rs.iter().map(|r|json!({"cursor":r.get::<i64,_>("cursor"),"task_id":r.get::<String,_>("task"),"status":r.get::<String,_>("status"),"version":r.get::<i64,_>("version"),"progress":r.get::<Value,_>("progress")})).collect::<Vec<_>>(),"next_cursor":cursor.to_string()}),
     ))
+}
+async fn task_events(State(a): State<App>, h: HeaderMap, Path(id): Path<String>, Query(q): Query<Page>) -> Api<Json<Value>> {
+    let p = auth(&a, &h).await?;
+    require(&p, "submitter")?;
+    get_task(&a, &p, &id).await?;
+    let (before, limit) = page(&q)?;
+    let rows = sqlx::query("SELECT cursor,status,version,progress,created_at FROM vrs_events WHERE task=$1 AND ($2=0 OR cursor<$2) ORDER BY cursor DESC LIMIT $3")
+        .bind(&id).bind(before).bind(limit).fetch_all(&a.db).await.map_err(unavailable)?;
+    let next = if rows.len() == limit as usize { rows.last().map(|r| r.get::<i64,_>("cursor").to_string()) } else { None };
+    Ok(ok(json!({"items":rows.iter().map(|r|json!({"cursor":r.get::<i64,_>("cursor"),"task_id":id,"status":r.get::<String,_>("status"),"version":r.get::<i64,_>("version"),"progress":r.get::<Value,_>("progress"),"created_at":r.get::<DateTime<Utc>,_>("created_at")})).collect::<Vec<_>>(),"next_cursor":next})))
 }
 async fn nodes(State(a): State<App>, h: HeaderMap) -> Api<Json<Value>> {
     let p = auth(&a, &h).await?;

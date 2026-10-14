@@ -95,3 +95,11 @@ Agent 是本应用在节点上运行的资源采集与任务执行后台进程�
 数据库仅使用 PostgreSQL 内置表、事务、JSONB、行锁和聚合功能，不依赖 pgvector、pg_search 或 ParadeDB 扩展。
 
 统计回归测试可在已同步源码的 Linux 测试机运行 `node scripts/e2e-statistics.mjs`：需 Docker、Node 22.18+、已构建的 `~/dev/build/V-Scheduler/cargo/debug/v-scheduler` 和 `~/dev/build/V-Scheduler/ui-verify/dist`，以及迁移前版本的已安装镜像（或 `SCHEDULER_LEGACY_IMAGE`）。测试使用独立临时 PostgreSQL 和内部网络，检查完成后自动清理；`KEEP_TEST_SERVICES=1` 可保留至页面检查结束，向记录的测试 PID 发送 SIGTERM 即清理。
+
+### 任务跟踪与排查
+
+点击任务的业务 ID 打开详情，概览、状态时间线和执行历史每 2.5 秒持续更新，切换页签保留位置。时间线展示数据库中已保存的状态版本、时间和进度快照，可加载更早事件；执行历史区分每次分配、确认停止及资源占用时长。失败任务显示当前是否允许重试，重试仍保留在原任务历史中。排队详情列出完整等待原因及检查建议，不把已等待时长当作开始时间预测。
+
+任务列表支持状态、应用、节点组合筛选，并搜索业务任务 ID、调度任务 ID、应用和执行器。默认加载最近 200 条；存在更早任务时明确标记筛选范围，并提供“加载更早任务”。打开的详情独立查询原任务，不随列表翻页消失。
+
+`GET /api/v1/tasks/{id}/events?cursor=0&limit=50` 返回单个可见任务的事件，按最新在前排列。`next_cursor` 用于查询更早事件，无更早页时为 null。原 `/events` 的正向增量读取契约不变。

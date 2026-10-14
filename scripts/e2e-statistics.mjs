@@ -9,7 +9,7 @@ const run=path.join(build,'statistics-'+Date.now());mkdirSync(run,{recursive:tru
 const port=Number(process.env.SCHEDULER_TEST_BASE_PORT||38780)
 assert(Number.isInteger(port)&&port>1024&&port<65534)
 const api=`http://127.0.0.1:${port}/api/v1`,network='v-scheduler-statistics-'+process.pid,db=network+'-pg',legacy=network+'-legacy'
-const tokens=Object.fromEntries(['admin','alpha','beta','db'].map(k=>[k,randomBytes(32).toString('hex')]))
+const tokens=Object.fromEntries(['admin','alpha','beta','db','uiworker'].map(k=>[k,randomBytes(32).toString('hex')]))
 const resources={cpu_millicores:100,memory_mib:128,gpu_slots:0,gpu_memory_mib:0}
 function file(name,value){const p=path.join(run,name);writeFileSync(p,typeof value==='string'?value:JSON.stringify(value),{mode:0o600});return p}
 function docker(args,input){return execFileSync('docker',args,{input,encoding:'utf8',stdio:['pipe','pipe','pipe']})}
@@ -17,6 +17,9 @@ const installed=docker(['ps','--filter','name=vos-app-com-ictrek-v-scheduler','-
 const legacyImage=process.env.SCHEDULER_LEGACY_IMAGE||JSON.parse(docker(['inspect',installed]))[0].Image
 const cfg={principals:[{role:'admin',app_id:'admin',token:tokens.admin},{role:'submitter',app_id:'alpha',token:tokens.alpha,delegated_executors:['alpha-async']},{role:'submitter',app_id:'beta',token:tokens.beta}],nodes:[{id:'statistics-node',capacities:{cpu_millicores:8000,memory_mib:16384,gpu_slots:0,gpu_memory_mib:0}}],executors:['alpha','beta'].map(app=>({id:app+'-model',app_id:app,node_id:'statistics-node',task_type:'model.infer',contract_version:'1',resources,upstream_urls:['http://127.0.0.1:39999']})),local_agent:{node_id:'statistics-node',automatic_capacity:false,executors:[]}}
 cfg.executors.push({id:'alpha-async',app_id:'alpha',node_id:'statistics-node',task_type:'test.generate',contract_version:'1',resources})
+cfg.principals.push({role:'worker',app_id:'timeline-agent',node_id:'timeline-node',token:tokens.uiworker})
+cfg.nodes.push({id:'timeline-node',capacities:{cpu_millicores:4000,memory_mib:8192,gpu_slots:0,gpu_memory_mib:0}})
+cfg.executors.push({id:'alpha-timeline',app_id:'alpha',node_id:'timeline-node',task_type:'test.timeline',contract_version:'1',resources,retry_mode:'idempotent',max_attempts:3})
 const configDir=path.join(run,'config');mkdirSync(configDir,{mode:0o700});const configFile=file('config/controller.json',cfg)
 const pgEnv=file('pg.env',`POSTGRES_USER=postgres\nPOSTGRES_PASSWORD=${tokens.db}\nPOSTGRES_DB=statistics\n`)
 const legacyEnv=file('legacy.env',`SCHEDULER_DATABASE_URL=postgres://scheduler:${tokens.db}@pg:5432/statistics\nSCHEDULER_EMBEDDED_AGENT=false\n`)
@@ -91,6 +94,18 @@ try{
  const enough=(await call('/statistics',tokens.alpha)).data;assert.equal(enough.first_queue_wait.samples,20);near(enough.first_queue_wait.p50_ms,2000);near(enough.first_queue_wait.p95_ms,10750);assert.equal(enough.attempts.occupancy.samples,21);near(enough.attempts.occupancy.p95_ms,20000);near(enough.attempts.failure_rate,.05)
  assert.equal((await call('/statistics')).data.attempts.occupancy.samples,22)
  pass('P95 becomes available only at the stated sample threshold; admin and service aggregates remain correctly scoped')
+ sql("INSERT INTO vrs_events(task,app,status,version,progress,created_at) SELECT 'alpha-success','alpha','running',i,jsonb_build_object('percent',i/100.0,'stage','decode','message','timeline checkpoint '||i),now()-interval '1 minute'+i*interval '1 second' FROM generate_series(1,55) i;")
+ const timeline=(await call('/tasks/alpha-success/events?limit=50',tokens.alpha)).data
+ assert.equal(timeline.items.length,50);assert.equal(timeline.items[0].version,55);assert.equal(timeline.items[0].progress.stage,'decode');assert(timeline.items[0].created_at)
+ const older=(await call('/tasks/alpha-success/events?limit=50&cursor='+timeline.next_cursor,tokens.alpha)).data
+ assert.equal(older.items.length,5);assert.equal(older.items[0].version,5);assert.equal(older.next_cursor,null)
+ assert.equal((await call('/tasks/alpha-success/events',tokens.beta)).status,404)
+ assert.equal((await call('/tasks/alpha-success/events',worker)).status,403)
+ assert.equal((await call('/tasks/alpha-success/events','')).status,401)
+ assert.equal((await call('/tasks/alpha-success/events?cursor=-1',tokens.alpha)).status,422)
+ const retained=(await call('/tasks/alpha-success/events?limit=50',tokens.alpha)).data
+ assert.deepEqual(retained.items,timeline.items)
+ pass('task timeline keeps timestamped progress snapshots, paginates newest first and enforces task visibility')
  // Leave representative active/suspect rows for browser QA, without starting compute.
  sql("INSERT INTO vrs_permits(id,app,idem,executor,node,resources,state,metadata) VALUES('ui-active','alpha','ui-active','alpha-model','statistics-node','{\"cpu_millicores\":100,\"memory_mib\":128,\"gpu_slots\":0,\"gpu_memory_mib\":0}','active','{\"model_id\":\"statistics-live-model\"}'),('ui-suspect','alpha','ui-suspect','alpha-model','statistics-node','{\"cpu_millicores\":0,\"memory_mib\":0,\"gpu_slots\":0,\"gpu_memory_mib\":0}','suspect','{\"model_id\":\"statistics-unconfirmed-model\"}');")
  // Complete zero budgets and long-lived UI fixtures keep the unrelated
@@ -100,6 +115,11 @@ try{
  UPDATE vrs_permits SET lease_until=now()+interval '1 hour' WHERE id='ui-active';
  INSERT INTO vrs_permits(id,app,idem,executor,node,resources,state,metadata)
  SELECT 'ui-page-'||i,'alpha','ui-page-'||i,'alpha-model','statistics-node','${JSON.stringify({...resources,cpu_millicores:0,memory_mib:0})}','released','{"model_id":"pagination-test"}' FROM generate_series(1,51) i;`)
+ // A manual, CPU-only protocol worker lets browser QA drive real state
+ // transitions without launching a model or touching any installed application.
+ const uiTask=await call('/tasks',tokens.alpha,'POST',{protocol_version:1,app_task_id:'experience-live-task',executor:{id:'alpha-timeline',contract_version:'1',task_type:'test.timeline'},parameters:{},inputs:[]},{'Idempotency-Key':'experience-live-task'})
+ assert.equal(uiTask.status,202)
+ file('ui-task.json',{task_id:uiTask.data.task_id})
  file('evidence.json',{date:new Date().toISOString(),checks,alpha_statistics:enough,ui_url:`http://127.0.0.1:${port}/`})
  file('services.json',{pid:process.pid,controller_pid:controller.pid,db,legacy,network,port})
  console.log('Evidence: '+run)

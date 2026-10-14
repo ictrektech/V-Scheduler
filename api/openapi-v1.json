@@ -1789,6 +1789,121 @@
         },
         "parameters": []
       }
+    },
+    "/tasks/{id}/events": {
+      "get": {
+        "operationId": "get_task_events",
+        "summary": "Task status timeline",
+        "x-title": {
+          "zh-CN": "任务状态时间线",
+          "en": "Task status timeline",
+          "zh-TW": "任務狀態時間線"
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-role": "submitter",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "required": [
+                            "items",
+                            "next_cursor"
+                          ],
+                          "properties": {
+                            "items": {
+                              "type": "array",
+                              "items": {
+                                "$ref": "#/components/schemas/TaskTimelineEvent"
+                              }
+                            },
+                            "next_cursor": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "description": "Role or app scope denied"
+          },
+          "404": {
+            "description": "Not found or not visible"
+          },
+          "409": {
+            "description": "State or idempotency conflict"
+          },
+          "422": {
+            "description": "Invalid request"
+          },
+          "429": {
+            "description": "Resource busy or queue quota"
+          },
+          "503": {
+            "description": "Temporarily unavailable"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Exclusive before-event cursor; 0 selects the latest page.",
+            "schema": {
+              "type": "string",
+              "default": "0"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          }
+        ],
+        "description": "Saved state/progress snapshots for one visible task, newest first. cursor is an exclusive before-event cursor, 0 or omitted selects the newest page. next_cursor is null when there is no older page. Existing /events forward-cursor semantics are unchanged.",
+        "x-description": {
+          "zh-CN": "按最新事件在前查询单个任务的已保存状态与进度快照。cursor 为排他式向前翻页的事件游标，0 或省略表示最新页；next_cursor 为 null 表示没有更早记录。原 /events 的正向游标语义不变。",
+          "en": "Saved state/progress snapshots for one visible task, newest first. cursor is an exclusive before-event cursor, 0 or omitted selects the newest page. next_cursor is null when there is no older page. Existing /events forward-cursor semantics are unchanged.",
+          "zh-TW": "按最新事件在前查詢單一任務已儲存的狀態與進度快照。cursor 為查詢更早事件的排他游標，0 或省略表示最新頁；next_cursor 為 null 表示沒有更早紀錄。原 /events 的正向游標語意不變。"
+        }
+      }
     }
   },
   "components": {
@@ -2281,6 +2396,39 @@
           "released_at",
           "lease_until"
         ]
+      },
+      "TaskTimelineEvent": {
+        "type": "object",
+        "required": [
+          "cursor",
+          "task_id",
+          "status",
+          "version",
+          "progress",
+          "created_at"
+        ],
+        "properties": {
+          "cursor": {
+            "type": "integer"
+          },
+          "task_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "progress": {
+            "type": "object",
+            "description": "The saved progress snapshot; older events may have an empty object."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
       }
     }
   }

@@ -172,3 +172,7 @@ VOS 网关必须在私有配置 `models[upstreamID/nativeModelID]` 批准输入�
 `permits.occupancy` 只使用窗口内真实记录 `released_at` 的许可；旧记录时间未知时不补造。释放表示停止或移交，不提供推理成功率。`P50` 无样本和 `P95` 少于 20 个样本时为 null，不构成 SLO 承诺。
 
 `GET /permits` 可用 `state=active|suspect|released` 过滤并复用 `cursor` / `limit` 分页；权限隔离先于筛选和分页。`released_at` 为首次确认停止或移交时间，续租、重复释放、重复移交都不能延长它，旧记录没有时间时为 null。所有功能使用 PostgreSQL 内置能力，不要求安装搜索或向量扩展。
+
+## 单任务状态时间线
+
+`GET /tasks/{id}/events` 复用任务可见性与服务认证。查询参数 `limit` 为 1–200，默认 50；`cursor=0` 或省略时返回最新事件，传入 `next_cursor` 时读取严格早于该游标的下一页。记录含 `cursor`、`task_id`、`status`、`version`、保存的 `progress` 和实际 `created_at`，按 cursor 降序排列；`next_cursor=null` 表示没有更早页。普通服务不能查询其他 app 的任务，返回 404。旧事件没有进度快照时仍为空对象。此接口用于详情时间线，不改变全局 `/events` 的正向增量协议。
