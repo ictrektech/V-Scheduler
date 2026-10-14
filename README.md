@@ -26,6 +26,10 @@ VOS 上通过独立应用包安装 controller/node 模式，再经现有 project
 
 应用保留原业务入口，按任务类型选择接入：只提交任务，或注册 worker 提供执行能力。普通请求无需经过调度器；未接入重任务需要固定预算/设备隔离，否则不能保证整机资源不被抢占。
 
+V-Router 不是所有本地算力应用的必经层。自有异步执行器由原应用直接提交 V-Scheduler 任务；通过 V-Router 的本地同步/流式模型由 V-Router 申请短期 permit；已持有任务预约的执行端若再调用 V-Router，须核验父任务与关联许可，避免重复扣预算。云端上游不占本机 GPU。按真实计算入口确定唯一预约责任，详见[设计中的路径判定](docs/design.md#23-v-router-不是所有算力应用的必经层)。
+
+已纳管的其他节点与本 VOS 节点按各自的资源池预约；外部云端模型不申请本地许可。上游位于其他机器并不自动等于云端，接入步骤见 [VAI 总览](../../docs/vos-compute-access.md)和[公开 API 与接入标准](docs/integration-standard.md)。
+
 ## 运行实现
 
 核心服务为 Rust Axum/Tokio + SQLx PostgreSQL，界面为 Vue 3 / TypeScript。数据库推荐复用独立 PGV 服务，为 V-Scheduler 创建专用 `v_scheduler` 数据库与普通 owner 角色；不连接 VOS 平台内部数据库，不使用 PGV 超级用户或其他应用角色。只需 controller 连接数据库，Agent 无需本地 PGV。测试使用隔离 PostgreSQL 容器。
@@ -48,6 +52,8 @@ cd ..
 
 数据库迁移只作用于专用数据库。节点/执行器/凭据由 controller 配置批准；第一版每节点一条执行通道、FIFO 排队，资源预约和 V-Router 本地在线许可共享预算。云端请求不申请本地许可。VOS 节点发现/应用清单见节点资源文档。
 
+controller 中每个 executor 的 `resources` 是单次执行的承诺成本；节点可选 `resident_baseline`（CPU millicores、RAM/GPU MiB、GPU 槽位）预留已实测的常驻开销，默认全零。运行时预算先扣常驻基线，再计算未释放的任务预约和在线许可。只有经目标机器实测批准的数值才能写入生产配置。Agent 的执行器配置可选 `health_url`（完整、由运维批准的 URL）；探测失败时暂停该执行器的新任务，旧 Agent 或未配置探测的执行器仍按心跳与资源判断。`/nodes` 分别显示 Agent 心跳、执行器探测、VOS 遥测采样时间；`/tasks` 与任务详情返回明确的 `wait_reasons`，包括离线、排空、执行器异常、承诺容量已满及观测压力。失联时现有 suspect 预约不会自动释放。
+
 失败自动重试只针对已确认停止、可重试错误、声明幂等的执行器；`max_attempts` 为总尝试上限（1–10），退避 3/6/12/24/48 秒。人工重试也受上限约束。失联先进入 recovering/suspect，停止核验前不释放。人工删除只软删除已停止终态记录，保留审计、幂等占位与业务输出。
 
 状态上报兼容只提供起止状态的执行器；可选的 `progress.percent` 使用 0–1 小数，`stage`/`message` 用于展示当前阶段与说明。`/events` 保存每个提交状态版本的进度快照，旧事件的进度为 `{}`；调度器仍以状态和 attempt/fence 为准，不能用进度判断是否已完成。
@@ -69,3 +75,9 @@ VOS 登录接入清单必须声明 `oauth2.client: {}`，与 V-Router 相同；�
 Agent 允许空执行器配置：这种模式只上报节点资源，不认领任务，适合先纳管节点、再逐步接入业务。VOS 页面入口带安装版本查询参数，使升级后的 iframe 使用新页面。
 
 Agent 是本应用在节点上运行的资源采集与任务执行后台进程，不是用户需要选择或命名的应用。资源页优先显示 VOS 集群登记名称；未接集群清单时使用该节点 VOS 的 `device_name`，再退回 VOS 上报的主机名。Agent 的 `node_id` 只用于内部协议关联，不作为节点显示名称。新节点接入仍由管理员部署后台进程和批准资源预算，普通用户无需配置 Agent。
+
+### 网关完整准入与系统资源保护
+
+新版 V-Router 的 VOS 包强制依赖 Scheduler `>=0.0.11`，逐模型批准输入、资源参数与目标 executor。HTTP/SSE、WebSocket 与异步创建均有准入；异步接力和已运行任务子调用必须经数据库核验，不能凭 delegated 声明跳过。`GET /api/v1/permits` 显示模型许可历史，executor `upstream_urls` 绑定实际计算地址。接口以 [OpenAPI](api/openapi-v1.json) 和 [接入标准](docs/integration-standard.md) 为准。
+
+节点 `resident_baseline` 计常驻模型，`safety_reserve` 保护 VOS 余量；默认保留至少 2 GiB/10% RAM、一个 CPU 核和 256 MiB/5% 独立显存，CPU 95% 暂停准入。全部未释放预约与观测余量共同校验，统一内存仅用一个池。未知停止继续占用；关联子许可未停止时父任务不释放、不重试。Controller 限制 512 MiB/1 CPU、Agent 256 MiB/1 CPU。模板须按真实模型峰值校准，外部未纳管进程及不守契约的模型服务仍需执行端硬约束。

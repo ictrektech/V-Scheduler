@@ -1,18 +1,18 @@
 use crate::model::*;
-use anyhow::{Context, ensure};
+use anyhow::{ensure, Context};
 use axum::{
-    Json, Router,
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
+    Json, Router,
 };
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use sqlx::{PgPool, Postgres, Row, Transaction, postgres::PgPoolOptions};
-use std::{path::PathBuf, sync::Arc};
+use sqlx::{postgres::PgPoolOptions, PgPool, Postgres, Row, Transaction};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use tower_http::services::ServeDir;
 use uuid::Uuid;
 #[derive(Clone)]
@@ -82,6 +82,79 @@ fn worker(p: &Principal, node: &str) -> Api<()> {
 fn visible(p: &Principal, app: &str) -> bool {
     p.role == "admin" || (p.role == "submitter" && p.app_id == app)
 }
+fn timestamp_fresh(value: &Value, seconds: i64) -> bool {
+    value
+        .as_str()
+        .and_then(|at| DateTime::parse_from_rfc3339(at).ok())
+        .is_some_and(|at| {
+            (0..seconds).contains(&(Utc::now() - at.with_timezone(&Utc)).num_seconds())
+        })
+}
+fn report_fresh(report: &Value) -> bool {
+    report["observed_at"].is_null() || timestamp_fresh(&report["observed_at"], 30)
+}
+fn probe_ready(report: &Value, executor: &str) -> bool {
+    report["executor_health"][executor].is_null()
+        || (report["executor_health"][executor]["healthy"] == true
+            && timestamp_fresh(&report["executor_health"][executor]["observed_at"], 15))
+}
+fn node_state(view: &Value) -> &'static str {
+    if view["managed"] == false {
+        return "observing";
+    }
+    if view["draining"] == true {
+        return "draining";
+    }
+    let fresh = timestamp_fresh(&view["heartbeat"], 12);
+    if !fresh {
+        return "unavailable";
+    }
+    let report = &view["report"];
+    let degraded_probe = report["executor_health"]
+        .as_object()
+        .is_some_and(|probes| probes.iter().any(|(id, _)| !probe_ready(report, id)));
+    if degraded_probe || !report_fresh(report) || view["vos_metrics"]["fresh"] == false {
+        "degraded"
+    } else {
+        "ready"
+    }
+}
+fn wait_reason(node: &Value, used: &Resources, executor: Option<&Executor>) -> &'static str {
+    if node["draining"] == true {
+        return "WAIT_NODE_DRAINING";
+    }
+    let fresh = timestamp_fresh(&node["heartbeat"], 12);
+    if !fresh {
+        return "WAIT_NODE_OFFLINE";
+    }
+    if !report_fresh(&node["report"]) {
+        return "WAIT_TELEMETRY_STALE";
+    }
+    let Some(executor) = executor else {
+        return "WAIT_EXECUTOR_UNAVAILABLE";
+    };
+    if !probe_ready(&node["report"], &executor.id) {
+        return "WAIT_EXECUTOR_UNHEALTHY";
+    }
+    let capacity: Resources =
+        serde_json::from_value(node["capacities"].clone()).unwrap_or_default();
+    let mut committed = used.clone();
+    committed.add(
+        &serde_json::from_value::<Resources>(node["resident_baseline"].clone()).unwrap_or_default(),
+    );
+    if !executor.resources.fits(&committed, &capacity) {
+        return "WAIT_CAPACITY";
+    }
+    let reserve =
+        serde_json::from_value::<Resources>(node["safety_reserve"].clone()).unwrap_or_default();
+    if !executor
+        .resources
+        .fits_guarded(&committed, &node["report"], &reserve)
+    {
+        return "WAIT_OBSERVED_PRESSURE";
+    }
+    "WAIT_PRIOR_EXECUTION"
+}
 fn task_value(r: &sqlx::postgres::PgRow) -> Value {
     let status: String = r.get("status");
     let body: Value = r.get("body");
@@ -89,7 +162,52 @@ fn task_value(r: &sqlx::postgres::PgRow) -> Value {
     let can_retry = status == "failed"
         && policy["retry_mode"] == "idempotent"
         && r.get::<i64, _>("fence") < policy["max_attempts"].as_i64().unwrap_or(1);
-    json!({"task_id":r.get::<String,_>("id"),"app_task_id":body["app_task_id"],"executor_id":body["executor"]["id"],"can_retry":can_retry,"attempt_count":r.get::<i64,_>("fence"),"app_id":r.get::<String,_>("app"),"status":status,"version":r.get::<i64,_>("version"),"attempt_id":r.get::<Option<String>,_>("attempt"),"node_id":r.get::<Option<String>,_>("node"),"fence":r.get::<i64,_>("fence"),"progress":r.get::<Value,_>("progress"),"result":r.get::<Value,_>("result"),"created_at":r.get::<DateTime<Utc>,_>("created_at"),"wait_reasons":if status=="queued" {json!(["WAIT_RESOURCE_OR_NODE"])} else {json!([])}})
+    json!({"task_id":r.get::<String,_>("id"),"app_task_id":body["app_task_id"],"executor_id":body["executor"]["id"],"can_retry":can_retry,"attempt_count":r.get::<i64,_>("fence"),"app_id":r.get::<String,_>("app"),"status":status,"version":r.get::<i64,_>("version"),"attempt_id":r.get::<Option<String>,_>("attempt"),"node_id":r.get::<Option<String>,_>("node"),"fence":r.get::<i64,_>("fence"),"progress":r.get::<Value,_>("progress"),"result":r.get::<Value,_>("result"),"created_at":r.get::<DateTime<Utc>,_>("created_at"),"wait_reasons":if status=="queued" {json!(["WAIT_RESOURCE_OR_NODE"])} else if status=="retry_wait" {json!(["WAIT_RETRY_BACKOFF"])} else {json!([])}})
+}
+async fn task_values(a: &App, rows: &[sqlx::postgres::PgRow]) -> Api<Vec<Value>> {
+    let mut values: Vec<Value> = rows.iter().map(task_value).collect();
+    if !rows
+        .iter()
+        .any(|r| r.get::<String, _>("status") == "queued")
+    {
+        return Ok(values);
+    }
+    let nodes = sqlx::query("SELECT id,capacities,resident_baseline,safety_reserve,report,heartbeat,draining FROM vrs_nodes").fetch_all(&a.db).await.map_err(unavailable)?;
+    let mut node_map = HashMap::new();
+    for node in nodes {
+        let id: String = node.get("id");
+        node_map.insert(id, json!({"capacities":node.get::<Value,_>("capacities"),"resident_baseline":node.get::<Value,_>("resident_baseline"),"safety_reserve":node.get::<Value,_>("safety_reserve"),"report":node.get::<Value,_>("report"),"heartbeat":node.get::<Option<DateTime<Utc>>,_>("heartbeat"),"draining":node.get::<bool,_>("draining")}));
+    }
+    let reservations = sqlx::query("SELECT node,resources FROM vrs_reservations WHERE state<>'released' UNION ALL SELECT node,resources FROM vrs_permits WHERE state<>'released'").fetch_all(&a.db).await.map_err(unavailable)?;
+    let mut used = HashMap::<String, Resources>::new();
+    for row in reservations {
+        let resources: Resources =
+            serde_json::from_value(row.get("resources")).map_err(|_| invalid())?;
+        used.entry(row.get("node")).or_default().add(&resources);
+    }
+    for (row, value) in rows.iter().zip(&mut values) {
+        if row.get::<String, _>("status") != "queued" {
+            continue;
+        }
+        let Some(node_id) = row.get::<Option<String>, _>("node") else {
+            continue;
+        };
+        let Some(node) = node_map.get(&node_id) else {
+            continue;
+        };
+        let executor_id = value["executor_id"].as_str().unwrap_or_default();
+        let executor = a
+            .config
+            .executors
+            .iter()
+            .find(|e| e.node_id == node_id && e.id == executor_id);
+        value["wait_reasons"] = json!([wait_reason(
+            node,
+            used.get(&node_id).unwrap_or(&Resources::default()),
+            executor
+        )]);
+    }
+    Ok(values)
 }
 async fn event(tx: &mut Transaction<'_, Postgres>, id: &str) -> Api<()> {
     sqlx::query("INSERT INTO vrs_events(task,app,status,version,progress) SELECT id,app,status,version,progress FROM vrs_tasks WHERE id=$1").bind(id).execute(&mut **tx).await.map_err(unavailable)?;
@@ -108,7 +226,8 @@ async fn expire(a: &App) -> Api<()> {
     .execute(&mut *tx)
     .await
     .map_err(unavailable)?;
-    let ready=sqlx::query("UPDATE vrs_tasks SET status='queued',version=version+1,updated_at=now() WHERE status='retry_wait' AND retry_at<=now() RETURNING id").fetch_all(&mut *tx).await.map_err(unavailable)?;
+    sqlx::query("UPDATE vrs_reservations r SET state='released' WHERE state<>'released' AND EXISTS(SELECT 1 FROM vrs_attempts a WHERE a.id=r.attempt AND a.stopped_at IS NOT NULL) AND NOT EXISTS(SELECT 1 FROM vrs_permits p WHERE p.parent_attempt=r.attempt AND p.state<>'released')").execute(&mut *tx).await.map_err(unavailable)?;
+    let ready=sqlx::query("UPDATE vrs_tasks t SET status='queued',version=version+1,updated_at=now() WHERE status='retry_wait' AND retry_at<=now() AND NOT EXISTS(SELECT 1 FROM vrs_reservations r WHERE r.task=t.id AND r.state<>'released') RETURNING id").fetch_all(&mut *tx).await.map_err(unavailable)?;
     for row in ready {
         event(&mut tx, &row.get::<String, _>("id")).await?;
     }
@@ -138,8 +257,22 @@ pub async fn serve(
     }
     for n in &config.nodes {
         ensure!(n.capacities.valid(), "invalid capacity");
+        ensure!(
+            n.resident_baseline
+                .fits(&Resources::default(), &n.capacities),
+            "resident baseline exceeds node capacity"
+        );
+        ensure!(n.safety_reserve.valid(), "invalid system safety reserve");
     }
     for e in &config.executors {
+        ensure!(
+            e.resources.cpu_millicores > 0 && e.resources.memory_mib > 0,
+            "compute executor requires nonzero CPU and host-memory budgets"
+        );
+        ensure!(
+            e.resources.gpu_memory_mib == 0 || e.resources.gpu_slots > 0,
+            "GPU memory budget requires a GPU slot"
+        );
         ensure!(
             (1..=10).contains(&e.max_attempts),
             "max_attempts must be 1..10"
@@ -154,9 +287,17 @@ pub async fn serve(
             .find(|n| n.id == e.node_id)
             .context("unknown executor node")?;
         ensure!(
-            e.resources.fits(&Resources::default(), &n.capacities),
+            e.resources.fits(&n.resident_baseline, &n.capacities),
             "executor exceeds node capacity"
         );
+    }
+    for p in &config.principals {
+        for executor in &p.delegated_executors {
+            ensure!(
+                p.role == "submitter" && config.executors.iter().any(|e| e.id == *executor),
+                "invalid delegated executor approval"
+            );
+        }
     }
     let db = PgPoolOptions::new()
         .max_connections(12)
@@ -165,7 +306,7 @@ pub async fn serve(
         .context("database connection failed")?;
     sqlx::migrate!().run(&db).await?;
     for n in &config.nodes {
-        sqlx::query("INSERT INTO vrs_nodes(id,capacities) VALUES($1,$2) ON CONFLICT(id) DO UPDATE SET capacities=excluded.capacities").bind(&n.id).bind(json!(n.capacities)).execute(&db).await?;
+        sqlx::query("INSERT INTO vrs_nodes(id,capacities,resident_baseline,safety_reserve) VALUES($1,$2,$3,$4) ON CONFLICT(id) DO UPDATE SET capacities=excluded.capacities,resident_baseline=excluded.resident_baseline,safety_reserve=excluded.safety_reserve").bind(&n.id).bind(json!(n.capacities)).bind(json!(n.resident_baseline)).bind(json!(n.safety_reserve)).execute(&db).await?;
     }
     let a = App {
         db,
@@ -198,10 +339,12 @@ pub async fn serve(
         .route("/tasks/{id}/attempts", get(attempts))
         .route("/tasks/{id}/cancel", post(cancel))
         .route("/events", get(events))
-        .route("/permits", post(permit_acquire))
+        .route("/permits", post(permit_acquire).get(permits))
         .route("/permits/{id}/renew", post(permit_renew))
         .route("/permits/{id}/release", post(permit_release))
+        .route("/permits/{id}/delegate", post(permit_delegate))
         .route("/permits/{id}/confirm-stopped", post(permit_confirm))
+        .route("/delegations/verify", post(delegation_verify))
         .route("/nodes", get(nodes))
         .route("/nodes/{id}/drain", post(drain))
         .route("/reservations", get(reservations))
@@ -228,19 +371,18 @@ pub async fn serve(
 }
 async fn discovery() -> Json<Value> {
     ok(
-        json!({"protocol_version":1,"implementation_version":"0.1.0","features":["tasks","idempotency","reservations","events","static-executors","agent-image-studio","permits","retry","manual-delete","attempt-history"],"unsupported":["artifacts","dynamic-enrollment","ha"],"authentication":"scoped-bearer","max_body_bytes":262144,"openapi_url":"openapi.json"}),
+        json!({"protocol_version":1,"implementation_version":"0.1.0","features":["tasks","idempotency","reservations","events","static-executors","agent-image-studio","permits","permit-history","delegated-permits","safety-headroom","retry","manual-delete","attempt-history"],"unsupported":["artifacts","dynamic-enrollment","ha"],"authentication":"scoped-bearer","max_body_bytes":262144,"openapi_url":"openapi.json"}),
     )
 }
 async fn executors(State(a): State<App>, h: HeaderMap) -> Api<Json<Value>> {
     let p = auth(&a, &h).await?;
     require(&p, "submitter")?;
-    Ok(ok(json!(
-        a.config
-            .executors
-            .iter()
-            .filter(|e| visible(&p, &e.app_id))
-            .collect::<Vec<_>>()
-    )))
+    Ok(ok(json!(a
+        .config
+        .executors
+        .iter()
+        .filter(|e| visible(&p, &e.app_id))
+        .collect::<Vec<_>>())))
 }
 async fn submit(State(a): State<App>, h: HeaderMap, Json(body): Json<TaskSubmit>) -> Api<Response> {
     let p = auth(&a, &h).await?;
@@ -348,8 +490,9 @@ async fn tasks(State(a): State<App>, h: HeaderMap, Query(q): Query<Page>) -> Api
     require(&p, "submitter")?;
     let (offset, limit) = page(&q)?;
     let rs=sqlx::query("SELECT * FROM vrs_tasks WHERE deleted_at IS NULL AND ($1 OR app=$2) ORDER BY created_at DESC,id LIMIT $3 OFFSET $4").bind(p.role=="admin").bind(&p.app_id).bind(limit).bind(offset).fetch_all(&a.db).await.map_err(unavailable)?;
+    let items = task_values(&a, &rs).await?;
     Ok(ok(
-        json!({"items":rs.iter().map(task_value).collect::<Vec<_>>(),"next_cursor":if rs.len()==limit as usize{Some((offset+limit).to_string())}else{None}}),
+        json!({"items":items,"next_cursor":if rs.len()==limit as usize{Some((offset+limit).to_string())}else{None}}),
     ))
 }
 async fn get_task(a: &App, p: &Principal, id: &str) -> Api<sqlx::postgres::PgRow> {
@@ -367,7 +510,8 @@ async fn get_task(a: &App, p: &Principal, id: &str) -> Api<sqlx::postgres::PgRow
 async fn detail(State(a): State<App>, h: HeaderMap, Path(id): Path<String>) -> Api<Json<Value>> {
     let p = auth(&a, &h).await?;
     require(&p, "submitter")?;
-    Ok(ok(task_value(&get_task(&a, &p, &id).await?)))
+    let row = get_task(&a, &p, &id).await?;
+    Ok(ok(task_values(&a, &[row]).await?.remove(0)))
 }
 async fn cancel(State(a): State<App>, h: HeaderMap, Path(id): Path<String>) -> Api<Json<Value>> {
     let p = auth(&a, &h).await?;
@@ -379,7 +523,8 @@ async fn cancel(State(a): State<App>, h: HeaderMap, Path(id): Path<String>) -> A
         event(&mut tx, &id).await?;
     }
     tx.commit().await.map_err(unavailable)?;
-    Ok(ok(task_value(&get_task(&a, &p, &id).await?)))
+    let row = get_task(&a, &p, &id).await?;
+    Ok(ok(task_values(&a, &[row]).await?.remove(0)))
 }
 async fn events(State(a): State<App>, h: HeaderMap, Query(q): Query<Page>) -> Api<Json<Value>> {
     let p = auth(&a, &h).await?;
@@ -398,10 +543,16 @@ async fn nodes(State(a): State<App>, h: HeaderMap) -> Api<Json<Value>> {
         .fetch_all(&a.db)
         .await
         .map_err(unavailable)?;
-    let mut views: Vec<Value> = rs.iter().map(|r|json!({"id":r.get::<String,_>("id"),"capacities":r.get::<Value,_>("capacities"),"report":r.get::<Value,_>("report"),"draining":r.get::<bool,_>("draining"),"heartbeat":r.get::<Option<DateTime<Utc>>,_>("heartbeat")})).collect();
+    let mut views: Vec<Value> = rs.iter().map(|r|json!({"id":r.get::<String,_>("id"),"capacities":r.get::<Value,_>("capacities"),"resident_baseline":r.get::<Value,_>("resident_baseline"),"safety_reserve":r.get::<Value,_>("safety_reserve"),"report":r.get::<Value,_>("report"),"draining":r.get::<bool,_>("draining"),"heartbeat":r.get::<Option<DateTime<Utc>>,_>("heartbeat")})).collect();
     crate::vos::decorate(&a.db, &a.config, &mut views)
         .await
         .map_err(unavailable)?;
+    for view in &mut views {
+        view["health_state"] = json!(node_state(view));
+        let reserve: Resources =
+            serde_json::from_value(view["safety_reserve"].clone()).unwrap_or_default();
+        view["effective_safety_reserve"] = json!(reserve.safety_floor(&view["report"]));
+    }
     Ok(ok(json!(views)))
 }
 async fn reservations(State(a): State<App>, h: HeaderMap) -> Api<Json<Value>> {
@@ -492,12 +643,16 @@ async fn claim(
             json!({"commands":existing.iter().map(command).collect::<Vec<_>>()}),
         ));
     }
-    if node.get::<bool, _>("draining") || !node.get::<Option<bool>, _>("fresh").unwrap_or(false) {
+    if node.get::<bool, _>("draining")
+        || !node.get::<Option<bool>, _>("fresh").unwrap_or(false)
+        || !report_fresh(&node.get::<Value, _>("report"))
+    {
         return Ok(ok(json!({"commands":[]})));
     }
     let capacity: Resources =
         serde_json::from_value(node.get("capacities")).map_err(|_| invalid())?;
-    let mut used = Resources::default();
+    let mut used: Resources =
+        serde_json::from_value(node.get("resident_baseline")).map_err(|_| invalid())?;
     for r in
         sqlx::query("SELECT resources FROM vrs_reservations WHERE node=$1 AND state<>'released' UNION ALL SELECT resources FROM vrs_permits WHERE node=$1 AND state<>'released'")
             .bind(&id)
@@ -509,6 +664,16 @@ async fn claim(
     }
     let queued=sqlx::query("SELECT * FROM vrs_tasks WHERE node=$1 AND status='queued' ORDER BY created_at,id LIMIT 32 FOR UPDATE SKIP LOCKED").bind(&id).fetch_all(&mut *tx).await.map_err(unavailable)?;
     for r in queued {
+        let prior: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM vrs_reservations WHERE task=$1 AND state<>'released')",
+        )
+        .bind(r.get::<String, _>("id"))
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(unavailable)?;
+        if prior {
+            continue;
+        }
         let body: Value = r.get("body");
         let Some(e) = a
             .config
@@ -518,11 +683,16 @@ async fn claim(
         else {
             continue;
         };
+        if !probe_ready(&node.get::<Value, _>("report"), &e.id) {
+            continue;
+        }
         if !e.resources.fits(&used, &capacity) {
             continue;
         }
         let observed: Value = node.get("report");
-        if !e.resources.fits_observed(&observed) {
+        let reserve: Resources =
+            serde_json::from_value(node.get("safety_reserve")).map_err(|_| invalid())?;
+        if !e.resources.fits_guarded(&used, &observed, &reserve) {
             continue;
         }
         let task: String = r.get("id");
@@ -593,18 +763,30 @@ struct Report {
     #[serde(default)]
     result: Value,
 }
-fn reported_progress(mut progress: Value, stage: Option<&str>, message: Option<&str>) -> Api<Value> {
-    if progress.is_null() { progress = json!({}); }
+fn reported_progress(
+    mut progress: Value,
+    stage: Option<&str>,
+    message: Option<&str>,
+) -> Api<Value> {
+    if progress.is_null() {
+        progress = json!({});
+    }
     let fields = progress.as_object_mut().ok_or_else(invalid)?;
     if let Some(percent) = fields.get("percent") {
         let value = percent.as_f64().ok_or_else(invalid)?;
-        if !(0.0..=1.0).contains(&value) { return Err(invalid()); }
+        if !(0.0..=1.0).contains(&value) {
+            return Err(invalid());
+        }
     }
     for (key, input, limit) in [("stage", stage, 128), ("message", message, 512)] {
-        if let Some(value) = input { fields.insert(key.to_string(), json!(value)); }
+        if let Some(value) = input {
+            fields.insert(key.to_string(), json!(value));
+        }
         if let Some(value) = fields.get(key) {
             let value = value.as_str().ok_or_else(invalid)?;
-            if value.len() > limit { return Err(invalid()); }
+            if value.len() > limit {
+                return Err(invalid());
+            }
         }
     }
     Ok(progress)
@@ -676,7 +858,7 @@ async fn report(
     }
     if terminal {
         sqlx::query(
-            "UPDATE vrs_reservations SET state='released',stopped_at=now() WHERE attempt=$1",
+            "UPDATE vrs_reservations SET state=CASE WHEN EXISTS(SELECT 1 FROM vrs_permits WHERE parent_attempt=$1 AND state<>'released') THEN 'suspect' ELSE 'released' END,stopped_at=now() WHERE attempt=$1",
         )
         .bind(&id)
         .execute(&mut *tx)
@@ -698,6 +880,30 @@ async fn report(
 #[serde(deny_unknown_fields)]
 struct PermitRequest {
     executor_id: String,
+    upstream_url: String,
+    #[serde(default)]
+    model_id: String,
+}
+fn approved_upstream(executor: &Executor, value: &str) -> bool {
+    let canonical = |value: &str| -> Option<String> {
+        let parsed = reqwest::Url::parse(value).ok()?;
+        if !["http", "https"].contains(&parsed.scheme())
+            || !parsed.username().is_empty()
+            || parsed.password().is_some()
+            || parsed.query().is_some()
+            || parsed.fragment().is_some()
+        {
+            return None;
+        }
+        Some(parsed.as_str().trim_end_matches('/').to_owned())
+    };
+    let Some(target) = canonical(value) else {
+        return false;
+    };
+    executor
+        .upstream_urls
+        .iter()
+        .any(|allowed| canonical(allowed).as_deref() == Some(target.as_str()))
 }
 async fn permit_acquire(
     State(a): State<App>,
@@ -717,6 +923,9 @@ async fn permit_acquire(
         .iter()
         .find(|e| e.id == b.executor_id && e.app_id == p.app_id && e.task_type == "model.infer")
         .ok_or(Error(StatusCode::FORBIDDEN, "EXECUTOR_NOT_ALLOWED"))?;
+    if !approved_upstream(e, &b.upstream_url) || b.model_id.len() > 512 {
+        return Err(Error(StatusCode::FORBIDDEN, "UPSTREAM_NOT_APPROVED"));
+    }
     let mut tx = a.db.begin().await.map_err(unavailable)?;
     let node=sqlx::query("SELECT *,heartbeat>now()-interval '12 seconds' AS fresh FROM vrs_nodes WHERE id=$1 FOR UPDATE").bind(&e.node_id).fetch_one(&mut *tx).await.map_err(unavailable)?;
     if let Some(old) =
@@ -727,7 +936,11 @@ async fn permit_acquire(
             .await
             .map_err(unavailable)?
     {
-        if old.get::<String, _>("executor") != b.executor_id {
+        let metadata: Value = old.get("metadata");
+        if old.get::<String, _>("executor") != b.executor_id
+            || metadata["upstream_url"] != b.upstream_url
+            || metadata["model_id"] != b.model_id
+        {
             return Err(Error(StatusCode::CONFLICT, "IDEMPOTENCY_CONFLICT"));
         }
         if old.get::<String, _>("state") != "active" || !old.get::<bool, _>("valid") {
@@ -737,14 +950,19 @@ async fn permit_acquire(
             json!({"permit_id":old.get::<String,_>("id"),"lease_seconds":30,"node_id":e.node_id}),
         ));
     }
-    if node.get::<bool, _>("draining") || !node.get::<Option<bool>, _>("fresh").unwrap_or(false) {
+    if node.get::<bool, _>("draining")
+        || !node.get::<Option<bool>, _>("fresh").unwrap_or(false)
+        || !report_fresh(&node.get::<Value, _>("report"))
+        || !probe_ready(&node.get::<Value, _>("report"), &e.id)
+    {
         return Err(Error(
             StatusCode::TOO_MANY_REQUESTS,
             "WAIT_RESOURCE_OR_NODE",
         ));
     }
     let cap: Resources = serde_json::from_value(node.get("capacities")).map_err(|_| invalid())?;
-    let mut used = Resources::default();
+    let mut used: Resources =
+        serde_json::from_value(node.get("resident_baseline")).map_err(|_| invalid())?;
     for r in sqlx::query("SELECT resources FROM vrs_reservations WHERE node=$1 AND state<>'released' UNION ALL SELECT resources FROM vrs_permits WHERE node=$1 AND state<>'released'").bind(&e.node_id).fetch_all(&mut *tx).await.map_err(unavailable)?{used.add(&serde_json::from_value(r.get("resources")).map_err(|_|invalid())?);}
     let queued: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM vrs_tasks WHERE node=$1 AND status='queued')",
@@ -754,12 +972,17 @@ async fn permit_acquire(
     .await
     .map_err(unavailable)?;
     let observed: Value = node.get("report");
-    if queued || !e.resources.fits(&used, &cap) || !e.resources.fits_observed(&observed) {
+    let reserve: Resources =
+        serde_json::from_value(node.get("safety_reserve")).map_err(|_| invalid())?;
+    if queued
+        || !e.resources.fits(&used, &cap)
+        || !e.resources.fits_guarded(&used, &observed, &reserve)
+    {
         return Err(Error(StatusCode::TOO_MANY_REQUESTS, "WAIT_RESOURCE"));
     }
     let id = Uuid::new_v4().to_string();
     sqlx::query(
-        "INSERT INTO vrs_permits(id,app,idem,executor,node,resources) VALUES($1,$2,$3,$4,$5,$6)",
+        "INSERT INTO vrs_permits(id,app,idem,executor,node,resources,metadata) VALUES($1,$2,$3,$4,$5,$6,$7)",
     )
     .bind(&id)
     .bind(&p.app_id)
@@ -767,12 +990,27 @@ async fn permit_acquire(
     .bind(&e.id)
     .bind(&e.node_id)
     .bind(json!(e.resources))
+    .bind(json!({"model_id":b.model_id,"upstream_url":b.upstream_url}))
     .execute(&mut *tx)
     .await
     .map_err(unavailable)?;
     tx.commit().await.map_err(unavailable)?;
     Ok(ok(
         json!({"permit_id":id,"lease_seconds":30,"node_id":e.node_id}),
+    ))
+}
+async fn permits(State(a): State<App>, h: HeaderMap, Query(q): Query<Page>) -> Api<Json<Value>> {
+    let p = auth(&a, &h).await?;
+    require(&p, "submitter")?;
+    let (offset, limit) = page(&q)?;
+    let rows=sqlx::query("SELECT * FROM vrs_permits WHERE ($1 OR app=$2) ORDER BY created_at DESC,id LIMIT $3 OFFSET $4")
+        .bind(p.role=="admin").bind(&p.app_id).bind(limit).bind(offset).fetch_all(&a.db).await.map_err(unavailable)?;
+    let items:Vec<Value>=rows.iter().map(|r|{
+        let metadata:Value=r.get("metadata");
+        json!({"permit_id":r.get::<String,_>("id"),"app_id":r.get::<String,_>("app"),"executor_id":r.get::<String,_>("executor"),"node_id":r.get::<String,_>("node"),"state":r.get::<String,_>("state"),"resources":r.get::<Value,_>("resources"),"delegated_resources":r.get::<Value,_>("delegated_resources"),"model_id":metadata["model_id"],"parent_task_id":metadata["parent_task_id"],"evidence":r.get::<Option<String>,_>("evidence"),"created_at":r.get::<DateTime<Utc>,_>("created_at"),"lease_until":r.get::<DateTime<Utc>,_>("lease_until")})
+    }).collect();
+    Ok(ok(
+        json!({"items":items,"next_cursor":if rows.len()==limit as usize{Some((offset+limit).to_string())}else{None}}),
     ))
 }
 async fn permit_renew(
@@ -782,7 +1020,7 @@ async fn permit_renew(
 ) -> Api<Json<Value>> {
     let p = auth(&a, &h).await?;
     require(&p, "submitter")?;
-    let count=sqlx::query("UPDATE vrs_permits SET lease_until=now()+interval '30 seconds' WHERE id=$1 AND app=$2 AND state='active' AND lease_until>now()").bind(id).bind(&p.app_id).execute(&a.db).await.map_err(unavailable)?.rows_affected();
+    let count=sqlx::query("UPDATE vrs_permits p SET lease_until=now()+interval '30 seconds' WHERE id=$1 AND app=$2 AND state='active' AND lease_until>now() AND (parent_attempt IS NULL OR EXISTS(SELECT 1 FROM vrs_tasks t JOIN vrs_reservations r ON r.attempt=t.attempt WHERE t.attempt=p.parent_attempt AND t.status='running' AND r.state='active' AND r.lease_until>now()))").bind(id).bind(&p.app_id).execute(&a.db).await.map_err(unavailable)?.rows_affected();
     if count != 1 {
         return Err(Error(StatusCode::CONFLICT, "PERMIT_NOT_ACTIVE"));
     }
@@ -850,6 +1088,181 @@ async fn permit_confirm(
     .await
     .map_err(unavailable)?;
     Ok(ok(json!({"permit_id":id,"state":"released"})))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PermitDelegate {
+    task_id: String,
+    app_task_id: String,
+}
+// The gateway holds a bridge permit before asking an asynchronous application
+// to create work. Transfer responsibility only to an approved, durable task on
+// the same node; never treat the application's "delegated" label as evidence.
+async fn permit_delegate(
+    State(a): State<App>,
+    h: HeaderMap,
+    Path(id): Path<String>,
+    Json(b): Json<PermitDelegate>,
+) -> Api<Json<Value>> {
+    let p = auth(&a, &h).await?;
+    require(&p, "submitter")?;
+    let node_id: Option<String> =
+        sqlx::query_scalar("SELECT node FROM vrs_permits WHERE id=$1 AND app=$2")
+            .bind(&id)
+            .bind(&p.app_id)
+            .fetch_optional(&a.db)
+            .await
+            .map_err(unavailable)?;
+    let node_id = node_id.ok_or(Error(StatusCode::NOT_FOUND, "NOT_FOUND"))?;
+    let mut tx = a.db.begin().await.map_err(unavailable)?;
+    sqlx::query("SELECT id FROM vrs_nodes WHERE id=$1 FOR UPDATE")
+        .bind(&node_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(unavailable)?;
+    let permit =
+        sqlx::query("SELECT state,evidence FROM vrs_permits WHERE id=$1 AND app=$2 FOR UPDATE")
+            .bind(&id)
+            .bind(&p.app_id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(unavailable)?;
+    let task = sqlx::query(
+        "SELECT body,node,app,status FROM vrs_tasks WHERE id=$1 AND deleted_at IS NULL FOR UPDATE",
+    )
+    .bind(&b.task_id)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(unavailable)?
+    .ok_or(Error(StatusCode::FORBIDDEN, "DELEGATION_NOT_ALLOWED"))?;
+    let body: Value = task.get("body");
+    let executor = body["executor"]["id"].as_str().unwrap_or("");
+    if !p.delegated_executors.iter().any(|e| e == executor)
+        || body["app_task_id"] != b.app_task_id
+        || task.get::<Option<String>, _>("node").as_deref() != Some(&node_id)
+        || !a.config.executors.iter().any(|e| {
+            e.id == executor && e.app_id == task.get::<String, _>("app") && e.node_id == node_id
+        })
+    {
+        return Err(Error(StatusCode::FORBIDDEN, "DELEGATION_NOT_ALLOWED"));
+    }
+    let evidence = format!("delegated_task:{}", b.task_id);
+    if permit.get::<String, _>("state") == "released"
+        && permit.get::<String, _>("evidence") != evidence
+    {
+        return Err(Error(StatusCode::CONFLICT, "PERMIT_ALREADY_RELEASED"));
+    }
+    sqlx::query("UPDATE vrs_permits SET state='released',evidence=$2 WHERE id=$1")
+        .bind(&id)
+        .bind(&evidence)
+        .execute(&mut *tx)
+        .await
+        .map_err(unavailable)?;
+    tx.commit().await.map_err(unavailable)?;
+    Ok(ok(
+        json!({"permit_id":id,"task_id":b.task_id,"state":"delegated"}),
+    ))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DelegationVerify {
+    task_id: String,
+    executor_id: String,
+    owner_id: String,
+    upstream_url: String,
+    #[serde(default)]
+    model_id: String,
+}
+async fn delegation_verify(
+    State(a): State<App>,
+    h: HeaderMap,
+    Json(b): Json<DelegationVerify>,
+) -> Api<Json<Value>> {
+    let p = auth(&a, &h).await?;
+    require(&p, "submitter")?;
+    let infer = a
+        .config
+        .executors
+        .iter()
+        .find(|e| e.id == b.executor_id && e.app_id == p.app_id && e.task_type == "model.infer")
+        .ok_or(Error(StatusCode::FORBIDDEN, "DELEGATION_NOT_ALLOWED"))?;
+    if !approved_upstream(infer, &b.upstream_url) || b.model_id.len() > 512 {
+        return Err(Error(StatusCode::FORBIDDEN, "UPSTREAM_NOT_APPROVED"));
+    }
+    let key = h
+        .get("idempotency-key")
+        .and_then(|v| v.to_str().ok())
+        .filter(|v| !v.is_empty() && v.len() <= 256)
+        .ok_or(invalid())?;
+    let mut tx = a.db.begin().await.map_err(unavailable)?;
+    let node = sqlx::query("SELECT *,heartbeat>now()-interval '12 seconds' AS fresh FROM vrs_nodes WHERE id=$1 FOR UPDATE")
+        .bind(&infer.node_id).fetch_one(&mut *tx).await.map_err(unavailable)?;
+    let row = sqlx::query("SELECT t.body,t.node,t.attempt,r.resources FROM vrs_tasks t JOIN vrs_reservations r ON r.attempt=t.attempt WHERE t.id=$1 AND t.status='running' AND t.deleted_at IS NULL AND r.state='active' AND r.lease_until>now() FOR UPDATE OF t,r")
+        .bind(&b.task_id).fetch_optional(&mut *tx).await.map_err(unavailable)?
+        .ok_or(Error(StatusCode::FORBIDDEN, "DELEGATION_NOT_ALLOWED"))?;
+    let body: Value = row.get("body");
+    let resources: Resources =
+        serde_json::from_value(row.get("resources")).map_err(|_| invalid())?;
+    let owner = body["parameters"]["owner_id"]
+        .as_str()
+        .or_else(|| body["parameters"]["user_key"].as_str());
+    if b.owner_id.is_empty()
+        || owner != Some(b.owner_id.as_str())
+        || !p
+            .delegated_executors
+            .iter()
+            .any(|id| body["executor"]["id"] == *id)
+        || row.get::<Option<String>, _>("node").as_deref() != Some(infer.node_id.as_str())
+        || !infer.resources.fits(&Resources::default(), &resources)
+    {
+        return Err(Error(StatusCode::FORBIDDEN, "DELEGATION_NOT_ALLOWED"));
+    }
+    let attempt: String = row.get("attempt");
+    if let Some(old) = sqlx::query("SELECT id,executor,parent_attempt,state,lease_until>now() AS valid FROM vrs_permits WHERE app=$1 AND idem=$2")
+        .bind(&p.app_id).bind(key).fetch_optional(&mut *tx).await.map_err(unavailable)? {
+        if old.get::<String,_>("executor")!=infer.id || old.get::<Option<String>,_>("parent_attempt").as_deref()!=Some(&attempt) {return Err(Error(StatusCode::CONFLICT,"IDEMPOTENCY_CONFLICT"));}
+        if old.get::<String,_>("state")!="active"||!old.get::<bool,_>("valid"){return Err(Error(StatusCode::CONFLICT,"PERMIT_NOT_ACTIVE"));}
+        return Ok(ok(json!({"permit_id":old.get::<String,_>("id"),"lease_seconds":30,"node_id":infer.node_id,"parent_task_id":b.task_id})));
+    }
+    let observed: Value = node.get("report");
+    let reserve: Resources =
+        serde_json::from_value(node.get("safety_reserve")).map_err(|_| invalid())?;
+    if !node.get::<Option<bool>, _>("fresh").unwrap_or(false)
+        || !report_fresh(&observed)
+        || !probe_ready(&observed, &infer.id)
+        || !infer
+            .resources
+            .fits_guarded(&Resources::default(), &observed, &reserve)
+    {
+        return Err(Error(StatusCode::TOO_MANY_REQUESTS, "WAIT_RESOURCE"));
+    }
+    let mut children = Resources::default();
+    for child in sqlx::query(
+        "SELECT delegated_resources FROM vrs_permits WHERE parent_attempt=$1 AND state<>'released'",
+    )
+    .bind(&attempt)
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(unavailable)?
+    {
+        children
+            .add(&serde_json::from_value(child.get("delegated_resources")).map_err(|_| invalid())?);
+    }
+    if !infer.resources.fits(&children, &resources) {
+        return Err(Error(
+            StatusCode::TOO_MANY_REQUESTS,
+            "DELEGATED_BUDGET_BUSY",
+        ));
+    }
+    let id = Uuid::new_v4().to_string();
+    sqlx::query("INSERT INTO vrs_permits(id,app,idem,executor,node,resources,parent_attempt,delegated_resources,metadata) VALUES($1,$2,$3,$4,$5,'{}',$6,$7,$8)")
+        .bind(&id).bind(&p.app_id).bind(key).bind(&infer.id).bind(&infer.node_id).bind(&attempt).bind(json!(infer.resources)).bind(json!({"model_id":b.model_id,"upstream_url":b.upstream_url,"parent_task_id":b.task_id})).execute(&mut *tx).await.map_err(unavailable)?;
+    tx.commit().await.map_err(unavailable)?;
+    Ok(ok(
+        json!({"permit_id":id,"lease_seconds":30,"node_id":infer.node_id,"parent_task_id":b.task_id}),
+    ))
 }
 
 async fn attempts(State(a): State<App>, h: HeaderMap, Path(id): Path<String>) -> Api<Json<Value>> {
@@ -972,14 +1385,24 @@ mod status_progress_tests {
     #[test]
     fn accepts_optional_stage_and_message_without_requiring_percent() {
         let progress = reported_progress(Value::Null, Some("decode"), Some("segment 2/4"));
-        assert_eq!(progress.ok(), Some(json!({"stage":"decode","message":"segment 2/4"})));
+        assert_eq!(
+            progress.ok(),
+            Some(json!({"stage":"decode","message":"segment 2/4"}))
+        );
     }
 
     #[test]
     fn preserves_existing_progress_and_rejects_invalid_percent() {
-        let progress = reported_progress(json!({"percent":0.5,"stage":"old","step":2}), Some("new"), None);
-        assert_eq!(progress.ok(), Some(json!({"percent":0.5,"stage":"new","step":2})));
+        let progress = reported_progress(
+            json!({"percent":0.5,"stage":"old","step":2}),
+            Some("new"),
+            None,
+        );
+        assert_eq!(
+            progress.ok(),
+            Some(json!({"percent":0.5,"stage":"new","step":2}))
+        );
         assert!(reported_progress(json!({"percent":75}), None, None).is_err());
-        assert!(reported_progress(json!([1,2]), None, None).is_err());
+        assert!(reported_progress(json!([1, 2]), None, None).is_err());
     }
 }

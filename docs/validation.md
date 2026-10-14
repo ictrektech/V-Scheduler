@@ -40,3 +40,16 @@
 - 两台 Controller 均连接专用 PGV 数据库，tc192 的旧 PGV 自定义管理凭据通过一次性受保护文件完成初始化，之后移除。两台资源采集后台服务均在线；tc192 未安装 Image Studio，Agent 采用只上报资源、不认领任务的空执行器配置。当前 VOS projects API 在目标版本报暂存 `.env` 不存在，故用本应用自带 Compose 模板部署后台服务；不声称该 projects API 已验证通过。没有修改 VOS 平台或 vos-cluster-manager 代码。
 - tc229 的实际 Image Studio 入口完成两个 SD-Turbo CUDA 任务，输出两份真实 PNG；任务串行占用一个 GPU 槽，预约最终归零。实际 V-Router 本地 Qwen 模型请求成功；资源被许可或图像任务占用时返回 429。此项在 0.0.7 的同机 Controller 与业务验证包上执行，0.0.9 升级后两条完成任务仍在真实任务列表中；未为 0.0.9 重复生成图像。
 - Image Studio `0.0.61-vscheduler.1` 与 V-Router `0.0.43-vscheduler.1` 是 tc229 定向验证包，不等同所有 profile 的正式业务应用发布。Cluster Manager 清单的跨节点自动关联及更多新机器的自动后台服务部署仍待实现。
+
+## 节点健康、容量与 V-Router 接入顺序（2026-10-14）
+
+- 本轮源码同步至 tc232 的 `~/dev/repos/V-Scheduler`，构建产物留在 `~/dev/build/V-Scheduler`。Rust 11 项单元测试、前端 4 项测试及生产构建通过。独立 PostgreSQL/Controller 端口上的 API 故障注入通过：离线、排空、执行器探测失败、Agent 遥测过期、常驻基线加预约后的容量已满、进度事件快照，以及心跳/租约失效进入 recovering/suspect；旧执行确认停止前不派发后续任务。隔离容器已清理，原有测试服务和已安装 VOS 未改动。
+- 只读核对运行实例：tc229 的 V-Router 有字段结构可解析的非空调度配置，V-Scheduler 有 V-Router scoped principal 与本地推理 executor；tc192、tc232 的 V-Router 均缺调度配置，对应 V-Scheduler 也缺 scoped principal/executor。此项只证明配置存在与否，未在本轮用 V-ChatCut 的真实模型请求重新验证 permit。V-Router 目前在缺配置时沿旧路径直转，因此 tc192/tc232 的本地 V-Router 请求尚不能宣称受调度；启用需分别准备受保护配置并安排两服务重载、做本地请求/云端绕过与忙碌拒绝验证。
+
+## 完整网关准入与系统余量（2026-10-14，0.0.11 发布门槛）
+
+- tc232 新源码 Rust 13 项、Go 全包测试、前端 4 项与生产构建通过。网关契约覆盖原生 HTTP、SSE、Responses/Messages 转换、双向 WebSocket、异步终态缓存/用户隔离/重启恢复，未知模型、输入/资源参数上限、容量拒绝以及云端范围。网关模型请求饱和时 `/health` 可用，请求结束后容量恢复；multipart 资源参数也不能绕过预算。
+- 真实 PostgreSQL API 验证：错误用户/地址不能借用任务预约，关联子调用总预算不超父任务；父任务终态保留 suspect 预约直到子调用停止，停止前不能派发重试。桥接许可仅移交给匹配的持久业务任务，许可历史按 app 隔离。
+- tc232 隔离运行新版 Controller、Agent、V-Router 和只读共享模型的 Image Studio 执行端，完成真实 sd-turbo CUDA PNG，网关返回原异步工作协议，Scheduler 保留并核验桥接→task 移交，最终预约归零。同次验证通过排队、取消、Controller 重启、Agent 崩溃的独立 watchdog 与 journal 恢复；未重放创建，未修改已安装 VOS 应用。证据目录：`~/dev/build/V-Scheduler/e2e-1791944490755`。
+- 初次真实测试暴露 GPU 遥测可能拖延 Agent 续租的问题。已将单一采样循环移到后台，限制 nvidia-smi 等待，保留采样原时间；遥测失效暂停新工作，独立续租不受采样阻塞。修正后上述真实链路与崩溃恢复均通过。
+- 本轮是发布源码和包的验证，不是全部运行节点的升级验收。旧配置只有 default_local 的节点也须新增逐模型预算、executor upstream_urls；未配置节点升级到强制版后本地请求将明确拒绝。系统余量是保守准入保护，不是针对未纳管进程或错误模型峰值的硬隔离保证。

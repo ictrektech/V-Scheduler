@@ -3,5 +3,5 @@
   "node_id":"gpu-node",
   "token":"REPLACE_WITH_RANDOM_WORKER_TOKEN_32_PLUS",
   "journal":"./journal/agent.json",
-  "executors":[{"id":"image-studio.generate","url":"http://127.0.0.1:38122/api/v1","token":"REPLACE_WITH_RANDOM_EXECUTOR_TOKEN_32_PLUS"}]
+  "executors":[{"id":"image-studio.generate","url":"http://127.0.0.1:38122/api/v1","health_url":"http://127.0.0.1:38122/health","token":"REPLACE_WITH_RANDOM_EXECUTOR_TOKEN_32_PLUS"}]
 }

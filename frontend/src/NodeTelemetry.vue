@@ -22,6 +22,7 @@ function points(key:'cpu'|'gpu'){
  return history.value.map((item,index)=>item[key]==null?null:`${index*100/23},${36-(item[key]??0)*.32}`).filter(Boolean).join(' ')
 }
 function gib(value:number){return (value/1024).toFixed(1)}
+function sampleTime(value?:string|null){return value?new Date(value).toLocaleString():'—'}
 </script>
 <template>
  <div class="resource-observability">
@@ -33,7 +34,7 @@ function gib(value:number){return (value/1024).toFixed(1)}
   </div>
   <div class="resource-history"><div><span>{{t('最近一分钟负载')}}</span><small>{{t('每 2.5 秒采样')}}</small></div><svg viewBox="0 0 100 40" preserveAspectRatio="none" role="img" :aria-label="t('CPU 与 GPU 使用率变化')"><path d="M0 36H100" stroke="#e5ecf1" stroke-width=".5"/><polyline v-if="history.some(x=>x.cpu!=null)" :points="points('cpu')" fill="none" stroke="#078a8c" stroke-width="1.6" vector-effect="non-scaling-stroke"/><polyline v-if="history.some(x=>x.gpu!=null)" :points="points('gpu')" fill="none" stroke="#6964db" stroke-width="1.6" vector-effect="non-scaling-stroke"/></svg><div class="legend"><span><i class="cpu-key"></i>CPU</span><span v-if="gpu"><i class="gpu-key"></i>GPU</span></div></div>
   <p v-if="gpu?.memory_type==='unified'" class="resource-note">{{t('GPU 与 CPU 共用系统内存；只按一份内存计算占用。')}}</p>
-  <div class="resource-related"><span v-if="node.vos_applications?.fresh">{{t('本机已安装应用')}}: {{node.vos_applications.data.map((a:any)=>a.app_id).join(', ')||'—'}}</span><span v-if="node.executors?.length">{{t('已绑定执行器')}}: {{node.executors.map((e:any)=>e.id).join(', ')}}</span><small v-if="node.vos_metrics&&!node.vos_metrics.fresh">{{t('VOS 数据已过期')}}</small></div>
+  <div class="resource-related"><span v-if="node.resident_baseline?.memory_mib||node.resident_baseline?.gpu_memory_mib||node.resident_baseline?.gpu_slots">{{t('常驻基线')}}: {{node.resident_baseline.memory_mib||0}} MiB RAM · {{node.resident_baseline.gpu_memory_mib||0}} MiB GPU · {{node.resident_baseline.gpu_slots||0}} GPU</span><span>{{t('Agent 心跳')}}: {{sampleTime(node.heartbeat)}}</span><span v-if="node.report?.observed_at">{{t('Agent 采样')}}: {{sampleTime(node.report.observed_at)}}</span><span v-if="node.vos_metrics">{{t('VOS 采样')}}: {{sampleTime(node.vos_metrics.observed_at)}} · {{t(node.vos_metrics.fresh?'新鲜':'已过期')}}</span><span v-if="node.vos_applications?.fresh">{{t('本机已安装应用')}}: {{node.vos_applications.data.map((a:any)=>a.app_id).join(', ')||'—'}}</span><span v-if="node.executors?.length">{{t('已绑定执行器')}}: {{node.executors.map((e:any)=>e.id).join(', ')}}</span><span v-for="(probe,id) in node.report?.executor_health||{}" :key="id">{{id}}: {{t(probe.healthy?'探测正常':'探测异常')}} · {{sampleTime(probe.observed_at)}}</span></div>
  </div>
 </template>
 <style scoped>

@@ -3,7 +3,7 @@
   "info": {
     "title": "V-Scheduler Public API",
     "version": "1.0.0",
-    "description": "MVP implementation v0.1.0. Versioned API for VOS and external clients; authenticated app-scoped access. JSON body limit 256 KiB. Framework extraction errors can return plain text. Static executors and one active execution lane per node; no HA or dynamic enrollment."
+    "description": "V-Scheduler controls task execution and resource reservations on managed VOS or remote nodes; it does not proxy model payloads. Cloud provider models bypass local scheduling through V-Router. Synchronous local models use V-Router permits; asynchronous application work uses tasks. MVP implementation v0.1.0. Authenticated app-scoped access; static executors and one active execution lane per node; no HA or dynamic enrollment."
   },
   "servers": [
     {
@@ -114,6 +114,11 @@
           "en": "Submit a task",
           "zh-TW": "提交任務"
         },
+        "x-description": {
+          "zh-CN": "应用身份提交指定执行器；资源由服务器批准的模板确定。",
+          "en": "App-scoped tasks use approved executor templates; callers cannot choose arbitrary resource budgets.",
+          "zh-TW": "應用身分提交指定執行器；資源由伺服器核准的範本確定。"
+        },
         "security": [
           {
             "bearerAuth": []
@@ -156,11 +161,6 @@
             "description": "Temporarily unavailable"
           }
         },
-        "x-description": {
-          "zh-CN": "应用身份提交指定执行器；资源由服务器批准的模板确定。",
-          "en": "App-scoped tasks use approved executor templates; callers cannot choose arbitrary resource budgets.",
-          "zh-TW": "應用身分提交指定執行器；資源由伺服器核准的範本確定。"
-        },
         "description": "App-scoped tasks use approved executor templates; callers cannot choose arbitrary resource budgets.",
         "parameters": [
           {
@@ -201,6 +201,7 @@
       },
       "get": {
         "operationId": "get_tasks",
+        "description": "App-scoped tasks use approved executor templates; callers cannot choose arbitrary resource budgets.",
         "summary": "List tasks",
         "x-title": {
           "zh-CN": "任务列表",
@@ -251,7 +252,6 @@
           "en": "App-scoped tasks use approved executor templates; callers cannot choose arbitrary resource budgets.",
           "zh-TW": "應用身分提交指定執行器；資源由伺服器核准的範本確定。"
         },
-        "description": "App-scoped tasks use approved executor templates; callers cannot choose arbitrary resource budgets.",
         "parameters": [
           {
             "name": "cursor",
@@ -276,6 +276,7 @@
     "/tasks/{id}": {
       "get": {
         "operationId": "get_tasks_id",
+        "description": "Deletion requires a stopped terminal task; audit records and output files remain.",
         "summary": "Get task details",
         "x-title": {
           "zh-CN": "任务详情",
@@ -326,7 +327,6 @@
           "en": "Deletion requires a stopped terminal task; audit records and output files remain.",
           "zh-TW": "刪除僅適用於確認停止的終態任務；保留稽核與輸出檔案。"
         },
-        "description": "Deletion requires a stopped terminal task; audit records and output files remain.",
         "parameters": [
           {
             "name": "id",
@@ -673,6 +673,7 @@
       "get": {
         "operationId": "get_nodes",
         "summary": "Nodes and placements",
+        "description": "Combines Agent heartbeat, approved budgets, VOS observations, local app installations and executor placement with source freshness.",
         "x-title": {
           "zh-CN": "节点与部署位置",
           "en": "Nodes and placements",
@@ -721,8 +722,7 @@
           "zh-CN": "合并 Agent 心跳、批准预算、VOS 清单与观测、本机安装应用和执行器位置；来源带新鲜度。",
           "en": "Combines Agent heartbeat, approved budgets, VOS observations, local app installations and executor placement with source freshness.",
           "zh-TW": "合併 Agent 心跳、核准預算、VOS 清單與觀測、本機安裝應用和執行器位置；來源含新鮮度。"
-        },
-        "description": "Combines Agent heartbeat, approved budgets, VOS observations, local app installations and executor placement with source freshness."
+        }
       }
     },
     "/nodes/{id}/drain": {
@@ -857,6 +857,11 @@
           "en": "Acquire online permit",
           "zh-TW": "申請線上許可"
         },
+        "x-description": {
+          "zh-CN": "网关创建 HTTP、SSE、WebSocket 或异步模型工作前申请资源。executor_id 与 upstream_url 必须匹配已批准执行器及真实节点；model_id 用于审计，预算来自固定模板。节点离线、遥测过期、排空、系统余量或预约不足时拒绝，不得失败后直跑。异步任务确认不是停止证据。云端供应商不调用此接口。",
+          "en": "Admit HTTP, SSE, WebSocket or asynchronous model creation before computation. executor_id and upstream_url must match an approved executor on the actual node; model_id is recorded for audit. Fixed budgets, fresh telemetry and system headroom gate admission. An async receipt is not stop evidence. Cloud providers do not call this API.",
+          "zh-TW": "網關建立 HTTP、SSE、WebSocket 或非同步模型工作前申請資源。executor_id 與 upstream_url 須匹配已核准執行器及實際節點；model_id 用於稽核，預算來自固定範本。節點離線、遙測過期、排空、系統餘量或預約不足時拒絕。非同步任務確認不是停止證據。雲端供應商不呼叫此介面。"
+        },
         "security": [
           {
             "bearerAuth": []
@@ -919,8 +924,83 @@
           }
         },
         "x-example": {
-          "executor_id": "v-router.local.infer"
+          "executor_id": "v-router.local.infer",
+          "upstream_url": "http://model-service:8000",
+          "model_id": "approved-model"
         }
+      },
+      "get": {
+        "operationId": "get_permits",
+        "description": "App-scoped tasks use approved executor templates; callers cannot choose arbitrary resource budgets.",
+        "summary": "List scoped permit history",
+        "x-title": {
+          "zh-CN": "许可历史",
+          "en": "List scoped permit history",
+          "zh-TW": "許可歷史"
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-role": "submitter",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "description": "Role or app scope denied"
+          },
+          "404": {
+            "description": "Not found or not visible"
+          },
+          "409": {
+            "description": "State or idempotency conflict"
+          },
+          "422": {
+            "description": "Invalid request"
+          },
+          "429": {
+            "description": "Resource busy or queue quota"
+          },
+          "503": {
+            "description": "Temporarily unavailable"
+          }
+        },
+        "x-description": {
+          "zh-CN": "按服务 app_id 隔离的许可历史，包含模型、节点、预算、父任务、状态及释放证据；管理员可查看全部。",
+          "en": "App-scoped permit history with model, node, budget, parent task, state and completion evidence. Administrators can inspect all apps.",
+          "zh-TW": "按服務 app_id 隔離的許可歷史，包含模型、節點、預算、父任務、狀態及釋放證據；管理員可查看全部。"
+        },
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            }
+          }
+        ]
       }
     },
     "/permits/{id}/renew": {
@@ -1436,6 +1516,169 @@
           }
         }
       }
+    },
+    "/permits/{id}/delegate": {
+      "post": {
+        "operationId": "post_permits_id_delegate",
+        "summary": "Transfer asynchronous ownership",
+        "x-title": {
+          "zh-CN": "移交异步预约",
+          "en": "Transfer asynchronous ownership",
+          "zh-TW": "移交非同步預約"
+        },
+        "x-description": {
+          "zh-CN": "验证已批准执行器、真实节点与业务 job ID 后原子释放桥接许可，由持久任务承担预算。仅声明 delegated 不构成证明。",
+          "en": "Atomically hand a bridge permit to a durable task after verifying approved executor, actual node and business job ID. A delegated declaration is not proof.",
+          "zh-TW": "驗證已核准執行器、實際節點與業務 job ID 後原子移交橋接許可至持久任務。"
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-role": "submitter",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "description": "Role or app scope denied"
+          },
+          "404": {
+            "description": "Not found or not visible"
+          },
+          "409": {
+            "description": "State or idempotency conflict"
+          },
+          "422": {
+            "description": "Invalid request"
+          },
+          "429": {
+            "description": "Resource busy or queue quota"
+          },
+          "503": {
+            "description": "Temporarily unavailable"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PermitDelegate"
+              }
+            }
+          }
+        },
+        "x-example": {
+          "task_id": "scheduler-task-id",
+          "app_task_id": "business-job-id"
+        }
+      }
+    },
+    "/delegations/verify": {
+      "post": {
+        "operationId": "post_delegations_verify",
+        "summary": "Acquire linked permit",
+        "x-title": {
+          "zh-CN": "申请关联许可",
+          "en": "Acquire linked permit",
+          "zh-TW": "申請關聯許可"
+        },
+        "x-description": {
+          "zh-CN": "网关核验运行任务的用户、批准执行器、节点、地址及父预约剩余预算，申请关联子许可，不重复扣节点资源。须提供幂等键；子调用未证实停止时父预约保持占用。",
+          "en": "Verify running task owner, approved executor, node, endpoint and remaining parent budget before acquiring a linked permit. Requires Idempotency-Key; parent capacity remains held until every child confirms stop.",
+          "zh-TW": "網關驗證執行任務的使用者、已核准執行器、節點、位址及父預約剩餘預算，申請關聯子許可；子呼叫未確認停止時父預約持續占用。"
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-role": "submitter",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "description": "Role or app scope denied"
+          },
+          "404": {
+            "description": "Not found or not visible"
+          },
+          "409": {
+            "description": "State or idempotency conflict"
+          },
+          "422": {
+            "description": "Invalid request"
+          },
+          "429": {
+            "description": "Resource busy or queue quota"
+          },
+          "503": {
+            "description": "Temporarily unavailable"
+          }
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DelegationVerify"
+              }
+            }
+          }
+        },
+        "x-example": {
+          "task_id": "running-task-id",
+          "executor_id": "v-router.local.infer",
+          "owner_id": "verified-owner",
+          "upstream_url": "http://model-service:8000",
+          "model_id": "approved-model"
+        }
+      }
     }
   },
   "components": {
@@ -1599,10 +1842,18 @@
         "properties": {
           "executor_id": {
             "type": "string"
+          },
+          "upstream_url": {
+            "type": "string"
+          },
+          "model_id": {
+            "type": "string",
+            "maxLength": 512
           }
         },
         "required": [
-          "executor_id"
+          "executor_id",
+          "upstream_url"
         ]
       },
       "PermitRelease": {
@@ -1658,6 +1909,49 @@
         "required": [
           "code",
           "data"
+        ]
+      },
+      "PermitDelegate": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "task_id": {
+            "type": "string"
+          },
+          "app_task_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "app_task_id"
+        ]
+      },
+      "DelegationVerify": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "task_id": {
+            "type": "string"
+          },
+          "executor_id": {
+            "type": "string"
+          },
+          "owner_id": {
+            "type": "string"
+          },
+          "upstream_url": {
+            "type": "string"
+          },
+          "model_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "executor_id",
+          "owner_id",
+          "upstream_url"
         ]
       }
     }

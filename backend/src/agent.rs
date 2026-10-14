@@ -1,16 +1,18 @@
 use crate::model::Command;
-use anyhow::{Context, ensure};
+use anyhow::{ensure, Context};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Adapter {
     id: String,
     url: String,
     token: String,
+    #[serde(default)]
+    health_url: Option<String>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -98,6 +100,7 @@ mod tests {
     }
 }
 async fn probe(previous: &mut Option<(u64, u64)>) -> Value {
+    let observed_at = chrono::Utc::now();
     let current = cpu_sample();
     let cpu_used_percent = previous
         .zip(current)
@@ -120,16 +123,22 @@ async fn probe(previous: &mut Option<(u64, u64)>) -> Value {
             .unwrap_or(0)
             / 1024
     };
-    let gpu = tokio::process::Command::new("nvidia-smi")
-        .args([
-            "--query-gpu=uuid,memory.total,memory.free,utilization.gpu",
-            "--format=csv,noheader,nounits",
-        ])
-        .output()
-        .await
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+    let mut gpu_query = tokio::process::Command::new("nvidia-smi");
+    gpu_query.kill_on_drop(true);
+    let gpu = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        gpu_query
+            .args([
+                "--query-gpu=uuid,memory.total,memory.free,utilization.gpu",
+                "--format=csv,noheader,nounits",
+            ])
+            .output(),
+    )
+    .await
+    .ok()
+    .and_then(Result::ok)
+    .filter(|o| o.status.success())
+    .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
     let mut gpus = gpu.map(|lines| lines.lines().filter_map(|line| {
         let columns: Vec<_> = line.split(',').map(str::trim).collect();
         if columns.len() != 4 { return None; }
@@ -155,7 +164,19 @@ async fn probe(previous: &mut Option<(u64, u64)>) -> Value {
             gpus[0]["utilization_source"] = json!("jetson-sysfs");
         }
     }
-    json!({"observed_at":chrono::Utc::now(),"cpu_logical_count":std::thread::available_parallelism().ok().map(|n|n.get()),"cpu_used_percent":cpu_used_percent,"arch":std::env::consts::ARCH,"memory_total_mib":read("MemTotal:"),"memory_available_mib":read("MemAvailable:"),"gpus":gpus,"agent_version":"0.1.0"})
+    let host_cores = std::fs::read_to_string("/proc/stat")
+        .ok()
+        .map(|stat| {
+            stat.lines()
+                .filter(|line| {
+                    line.strip_prefix("cpu")
+                        .and_then(|rest| rest.chars().next())
+                        .is_some_and(|c| c.is_ascii_digit())
+                })
+                .count()
+        })
+        .filter(|n| *n > 0);
+    json!({"observed_at":observed_at,"cpu_logical_count":host_cores,"cpu_count_source":"host-proc-stat","cpu_used_percent":cpu_used_percent,"arch":std::env::consts::ARCH,"memory_total_mib":read("MemTotal:"),"memory_available_mib":read("MemAvailable:"),"gpus":gpus,"agent_version":"0.1.0"})
 }
 pub async fn run(path: PathBuf) -> anyhow::Result<()> {
     let cfg: Config = serde_json::from_slice(&std::fs::read(path)?)?;
@@ -176,14 +197,46 @@ pub async fn run(path: PathBuf) -> anyhow::Result<()> {
     };
     save(&cfg.journal, &journal)?;
     eprintln!("V-Scheduler Agent started for {}", cfg.node_id);
-    let mut previous = cpu_sample();
+    // GPU driver probes can stall during model/context initialization. Keep
+    // telemetry in one background sampler so it cannot starve execution leases.
+    // Preserve the sample timestamp; stale data denies new work, never invents
+    // free resources. A stalled driver creates no additional sampling threads.
+    let sampled = std::sync::Arc::new(tokio::sync::RwLock::new(json!({})));
+    let writer = sampled.clone();
+    let health_client = client.clone();
+    let adapters = cfg.executors.clone();
+    tokio::spawn(async move {
+        let mut previous = cpu_sample();
+        loop {
+            let mut report = probe(&mut previous).await;
+            let mut executor_health = serde_json::Map::new();
+            for adapter in &adapters {
+                if let Some(url) = &adapter.health_url {
+                    let healthy = health_client
+                        .get(url)
+                        .timeout(std::time::Duration::from_secs(2))
+                        .send()
+                        .await
+                        .is_ok_and(|response| response.status().is_success());
+                    executor_health.insert(
+                        adapter.id.clone(),
+                        json!({"healthy":healthy,"observed_at":chrono::Utc::now()}),
+                    );
+                }
+            }
+            report["executor_health"] = Value::Object(executor_health);
+            *writer.write().await = report;
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        }
+    });
     loop {
         let base = cfg.controller.trim_end_matches('/');
+        let report = sampled.read().await.clone();
         let heartbeat = post(
             &client,
             &format!("{base}/workers/{}/heartbeat", cfg.node_id),
             &cfg.token,
-            json!({"session_id":journal.session_id,"report":probe(&mut previous).await}),
+            json!({"session_id":journal.session_id,"report":report}),
         )
         .await;
         if let Err(e) = heartbeat {

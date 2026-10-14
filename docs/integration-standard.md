@@ -22,7 +22,7 @@ submitter 只能请求已注册的执行器和 task type。注册第三方 worke
 - `GET /discovery` 返回协议版本、实际开启的能力、认证模式和本实例 ID；不返回节点地址、任务、密钥或容量细节。
 - HTTP 协议主版本在路径；`protocol_version=1` 标识消息主版本；执行器另有 `contract_version`，模型 ID/版本另行匹配。
 - v1 只增加可选响应字段；客户端忽略未知可选字段，遇到未知状态禁止将其当成成功。新增必需字段、删字段或改变单位需 v2。
-- 本文定义的所有必需端点只有完成实现和 conformance 后才在 discovery 声明；permits、webhook、SDK 不作为第一版已支持能力。
+- 本文定义的所有必需端点只有完成实现和 conformance 后才在 discovery 声明；当前已支持 permits，webhook 和 SDK 不作为第一版已支持能力。
 
 ## 3. 认证与授权
 
@@ -75,6 +75,8 @@ JSON 使用 UTF-8，时间为 RFC3339 UTC，CPU 单位 millicores、内存 MiB�
 | GET `/events` | 基于 cursor 的授权增量事件，含提交时状态与进度快照；至少一次、按任务 version 去重 |
 
 `Idempotency-Key` 与 body 中 `idempotency_key` 若同时给出必须一致；推荐只用 header。去重作用域为 workspace + app + key。相同键不同规范化内容返回 409，网络超时后保留原键查询/重提。手工 retry 另需幂等键以防一次点击产生多个新 attempt。
+
+排队中的任务在 `wait_reasons` 返回当前快照原因：`WAIT_NODE_OFFLINE`、`WAIT_NODE_DRAINING`、`WAIT_TELEMETRY_STALE`、`WAIT_EXECUTOR_UNAVAILABLE`、`WAIT_EXECUTOR_UNHEALTHY`、`WAIT_CAPACITY`、`WAIT_OBSERVED_PRESSURE` 或 `WAIT_PRIOR_EXECUTION`；自动重试退避期间返回 `WAIT_RETRY_BACKOFF`。原因可能随心跳、探测、预约变化而变化，不是事件状态转移。承诺容量由 executor 的 `resources`、节点 `resident_baseline` 和未释放预约共同计算；观测余量只作保守准入检查，不能替代事务预约。
 
 任务至少包含 `protocol_version`、`app_task_id`、`executor`、`parameters`、输入 artifact 列表；resource、timeout、retry 的可选覆盖必须在批准模板范围内。客户端不能任意申报零资源、优先级或任意镜像。完整示例见 [设计第 5 节](design.md#5-任务协议-v1拟新增)。
 
@@ -136,6 +138,29 @@ W3：输入跨机授权、模型/contract 版本、输出数值容差、多 app 
 
 ## 当前 MVP 接入范围
 
-以 OpenAPI 与 discovery 声明为准。controller 当前使用受保护配置中的 admin/submitter/worker 凭据，submitter 按 app_id 隔离，worker 绑定 node_id；没有动态注册、OIDC 管理登录或 artifact 上传 API。任务只引用预先批准的 executor，资源预算来自其模板，inputs 必须为空；应用保留自己授权的任务与文件。原协议中 workspace、artifact、优先级、动态能力注册等属于后续目标，不能发送给当前严格的提交结构。
+接入方不必按“调度器 → V-Router → 原应用”串联。原生异步重任务由原应用提交任务并保留结果所有权；V-Router 为实际经它路由的本地/纳管远端模型计算申请准入。若执行器已持有任务预约，V-Router 的对应上游须经管理员批准为 `delegated`，避免重复扣同一节点预算；云端上游绕过本机资源预约。按 task type 和真实执行位置选择唯一责任方，见[设计第 2.3 节](design.md#23-v-router-不是所有算力应用的必经层)。
 
-Image Studio 用业务任务 ID 作为幂等键，保留原业务入口与输出。Rust Agent 将 command 持久化后通过 start/inspect/cancel 执行契约驱动它。V-Router 对批准的同步本地 upstream 申请短租约 permit，delegated 路径不重复申请，cloud 路径直接请求供应商。两种预约共享节点预算，未知停止不能自动释放。失败重试/人工删除约束见 README，节点与应用位置见节点资源文档。
+以 OpenAPI 与 discovery 声明为准。controller 当前使用受保护配置中的 admin/submitter/worker 凭据，submitter 按 app_id 隔离，worker 绑定 node_id；VOS 管理界面通过平台 `/v1000/user/check` 校验启用的 system_admin；没有动态注册或 artifact 上传 API。任务只引用预先批准的 executor，资源预算来自其模板，inputs 必须为空；应用保留自己授权的任务与文件。原协议中 workspace、artifact、优先级、动态能力注册等属于后续目标，不能发送给当前严格的提交结构。
+
+### 本地与跨节点资源如何选择接口
+
+| 实际资源 | 接入接口 | 预约归属 |
+|---|---|---|
+| 外部云端模型 | V-Router `/v1/*`；不调用本 API | 云端供应商管理，不扣 V-Scheduler 节点容量 |
+| 本 VOS 节点或其他已纳管节点的同步/流式模型 | V-Router `/v1/*`，由网关以其服务身份调用 `POST /permits` | V-Scheduler 按真实执行节点的 Agent 报告、executor 固定模板和未释放预约准入 |
+| 本 VOS 节点或其他已纳管节点的异步长任务 | 业务应用以自己的服务身份调用 `POST /tasks` | V-Scheduler 排队、续租与记录状态，业务应用保留用户授权和结果 |
+| 未纳管的远端自建服务 | 先决定资源责任和纳管方式 | 未纳管时不得声称本 API 已调度；远端 URL 不能自动视为云端 |
+
+V-Router 的 VOS 包声明必需依赖 `com.ictrek.v-scheduler >=0.0.11`，并设置 `V_ROUTER_SCHEDULER_REQUIRED=true`。安装依赖不注入 URL、服务凭据或 executor，管理员还须逐节点配置与验证。缺少有效配置时本地网关请求返回 503，不回退为直连；容量不足返回 429。云端模型在网关跳过许可逻辑。`POST /permits` 的请求是 `{"executor_id":"<批准的执行器>","upstream_url":"<批准的模型服务 base URL>","model_id":"<原生模型 ID>"}`，带服务 Bearer 和稳定的 `Idempotency-Key`；许可 ID 只由网关持有。正常同步结束调用 `/permits/{id}/release` 并提供 `stopped=true` 与证据；断连或执行状态未知用 `stopped=false`，待核实后调用 `/permits/{id}/confirm-stopped`。流式计算不能在首个响应字节后释放。V-Router 的私有配置及 `delegated` 策略见其[接入指南](../../V-Router/docs/resource-scheduling.md)。
+
+异步任务提交 `POST /tasks`，使用业务任务 ID 作为稳定幂等键；返回 `task_id` 后查询 `/tasks/{id}` 或按版本消费 `/events`。取消通过 `/tasks/{id}/cancel` 请求停止，停止证据未确认前保持预约。业务执行器已持有任务预约且经 V-Router 调用同一计算时，上游必须由管理员核准为 `delegated`，通过 `/delegations/verify` 申请关联子许可，不重复扣父任务预算。一个计算只有一个预约所有者；调度器从不转发模型请求体或响应。
+
+Image Studio 用业务任务 ID 作为幂等键，保留原业务入口与输出。Rust Agent 将 command 持久化后通过 start/inspect/cancel 执行契约驱动它。V-Router 对批准的同步本地 upstream 申请短租约 permit，delegated 路径核验父任务及关联子许可或桥接移交，cloud 路径直接请求供应商。两种预约共享节点预算，未知停止不能自动释放。失败重试/人工删除约束见 README，节点与应用位置见节点资源文档。
+
+### 逐模型、异步及系统余量
+
+VOS 网关必须在私有配置 `models[upstreamID/nativeModelID]` 批准输入上限、资源参数与 executor；未知模型不直接执行。executor 的 `upstream_urls` 把资源预约绑定实际服务地址。`GET /permits` 提供 app 隔离的模型许可历史。
+
+异步创建先取得桥接许可，只有 `/permits/{id}/delegate` 核验同节点、批准的业务 executor 与 app_task_id 后才能移交；否则网关持久化 job 并轮询终态。已运行任务的嵌套调用通过 `/delegations/verify` 核验用户、节点、地址与父预算，使用幂等键申请关联子许可。子调用未停止时父任务继续占用资源，也不能重试。WebSocket 仅批准执行端在停止后发送正常关闭码 1000 的契约。
+
+`resident_baseline` 是常驻预算；`safety_reserve` 可增加系统余量。默认至少保留 2 GiB 或系统 RAM 的 10%、一个 CPU 核（单核半核）、独立显存的 256 MiB 或 5%。观测与所有未释放预约保守共同约束准入；CPU 占用达到 95% 暂停新计算。统一内存按 RAM 与 GPU 需求之和校验一次。Controller/Agent/网关容器自身也有内存与 CPU 上限。预算需实测峰值校准，外部未纳管进程与执行端越界仍需要硬限制。

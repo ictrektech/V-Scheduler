@@ -3,6 +3,8 @@ services:
     image: ${V_SCHEDULER_AMD_IMAGE}
     command: [agent, --config, /config/agent.json]
     restart: unless-stopped
+    mem_limit: 256m
+    cpus: '1'
     runtime: ${AGENT_RUNTIME:-runc}
     environment:
       NVIDIA_VISIBLE_DEVICES: ${AGENT_GPU_DEVICES:-all}
