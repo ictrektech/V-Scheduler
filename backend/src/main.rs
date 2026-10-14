@@ -3,6 +3,7 @@ mod bootstrap;
 mod controller;
 mod gpu;
 mod identity;
+mod local;
 mod model;
 mod vos;
 use clap::{Parser, Subcommand};

@@ -9,7 +9,7 @@ V-Scheduler 同时提供任务调度与节点资源管理。VOS / Cluster Manage
 | 集群节点身份、名称、角色、地址 | Cluster Manager `GET <应用前缀>/api/nodes`，`data.nodes[]` | 自动发现、关联已有调度节点、展示仅观察节点 |
 | CPU 逻辑核数、内存/磁盘容量 | 节点 VOS `GET /v1000/nas/device/info` | 自动读取物理容量；不覆盖管理员批准的调度预算 |
 | CPU 使用率、内存/磁盘使用 | 节点 VOS `GET /v1000/nas/device_usage` | 显示实时观测与采集时间；CPU `used` 为百分比，RAM/disk 单位为字节 |
-| 实际内存可用量、设备 UUID、显存总量/可用量、GPU 利用率 | 本应用 Rust Agent，Linux `/proc` / `nvidia-smi` | 调度前压力检查、真实 GPU 监控 |
+| 实际内存可用量、设备 UUID、显存总量/可用量、GPU 利用率 | 本应用 Rust Agent，Linux `/proc`、NVML/CUDA / `nvidia-smi` | 调度前压力检查、真实 GPU 监控 |
 | 预约、执行许可、租约、失联隔离 | V-Scheduler PostgreSQL | 分配资源的权威账本 |
 
 源码已核验：`vos-cluster-manager/backend/src/handlers/nodes.rs::node_list`、`etcd/dto.rs::NodeRecordView`；`vos-platform-backend/src/domain/nas/router.rs::device_info_detail` / `device_usage`。VOS NAS 设备状态接口的 GPU/temp/fan 是占位值，不能当成真实测量。本版 NAS 适配器将 GPU 标为未知；真实 NVIDIA 数据来自 Agent。平台另有 `GET /v1000/device/get_gpu_percentage` / `get_gpu_percentage_by_id?id=<Prometheus-instance>` 及历史接口，查询 `DCGM_FI_DEV_GPU_UTIL`；配置相应 exporter/Prometheus 后可以返回真实利用率。但 `vector_to_used_size` 对无样本也返回零，by_id 仅取第一个 sample、未暴露采集时间和多卡标识，不能将其零值当作已证明空闲，也不能用它决定显存预约。Prometheus instance 与 VOS member ID 需明确映射；本版尚未接入这一路来源。其他加速器需另做采集器与目标机器验证。
@@ -50,8 +50,8 @@ Cluster Manager URL 指向应用根前缀，适配器追加 `/api/nodes`；节�
 ## 节点生命周期与管理边界
 
 1. 清单自动发现的新节点以 `vos:<member_id>` 展示，`managed=false`，调度容量为零，不授予凭据、不自动执行任务。
-2. 管理员通过 `vos_member_id` 映射已有调度节点，配置预算、worker 身份和执行器。在目标节点部署本应用 Agent 后才具备执行条件。
-3. 当前部署为 Rust Agent 程序或服务容器，持久化 journal；只访问 controller 和已注册执行器。后续 VOS 安装包可复用本应用自己的 projects 模板部署，不改 Cluster Manager 的项目。
+2. 管理员通过 `vos_member_id` 映射已有调度节点，配置预算、worker 身份和执行器。VOS 本机采集随应用安装自动运行；其他节点仍需批准中心连接与执行器。
+3. VOS 本机采集内置于控制器，持久化内部身份和 journal；外部 Linux 仍可运行独立 Agent，通过相同协议接入。无需单独部署 VOS project。
 4. “排空”停止接收新预约，已执行任务按协议完成或取消。监控不可达、清单删除或 Agent 失联不会自动删除任务或释放未确认停止的预约。
 5. 成功清单中消失的未纳管节点不再展示；已配置节点保留，`vos_present=false`。此版本的清单变更是观察信息，不自动撤销人工配置的执行授权；Agent 失联仍会阻止新任务领取。后续可加入显式“必须在 VOS 集群内”准入策略。
 
@@ -63,13 +63,13 @@ Cluster Manager URL 指向应用根前缀，适配器追加 `/api/nodes`；节�
 
 准入必须同时满足预算剩余量与 Agent 最新测量的压力约束。不能简单计算“实时使用 + 已预约”：已执行任务可能同时出现在两者中，会重复计数。CPU 使用率不是可预约核数；RAM used 不是 MemAvailable；VOS GPU 占位零不是空闲显存。未接入应用只被观察，不能被调度器强制排队。
 
-本版预算仍由管理员配置，不自动随物理容量扩大。自动生成保守预算建议、系统保留配置、CPU/RAM 预约汇总、每设备多 GPU 预算、VOS caps/profile 展示、自动 Agent 部署和资源历史曲线进入后续阶段，不能混同为当前已支持能力。
+首次安装自动为本机生成扣除系统余量后的保守容量；人工配置的既有预算保持原值。支持系统保留与 CPU/RAM 预约汇总，逐核 CPU 可展开查看；Thor 使用一份 CPU/GPU 共享 RAM。每设备多 GPU 分配与资源历史曲线尚未实现。
 
 ## 验收与实施顺序
 
 - 当前增量：解析真实 DTO 形状，单位转换正确，未知 GPU 保持未知；脱敏字段白名单；来源失败保持缓存；发现节点不能获得执行权限；既有任务/预约行为不变。
 - 部署核验：在实际 VOS 版本上验证只读认证、应用前缀、节点 ID 映射及监控数据，与同机 Agent 采样对照。源码和模拟契约测试通过不代表已完成这一项。
-- 下一阶段：VOS projects Agent 部署、节点接入向导、预算/系统保留编辑、按设备资源、外部负载保护与资源历史；分别验证 AMD、ARM、L4T/Thor，其他加速器按采集器逐项验收。
+- 下一阶段：远端节点接入向导、按设备资源与资源历史；分别验证 AMD、ARM、L4T/Thor，其他加速器按采集器逐项验收。
 
 此增量不改变任务重试和删除规则：先确认旧执行停止才重试；仅已停止的终态任务允许人工软删除，输出文件保持原应用管理。
 

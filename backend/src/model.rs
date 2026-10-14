@@ -105,7 +105,13 @@ impl Resources {
             return false;
         };
         if unified {
-            return gpu["total_mib"].as_i64().is_some_and(|n| n > 0);
+            return observed["memory_total_mib"]
+                .as_i64()
+                .or_else(|| gpu["total_mib"].as_i64())
+                .is_some_and(|n| n > 0);
+        }
+        if gpu["memory_type"] != "dedicated" {
+            return false;
         }
         gpu["free_mib"].as_i64().is_some_and(|free| {
             free >= committed
@@ -205,6 +211,19 @@ mod tests {
         assert!(request.fits_guarded(&Resources::default(), &report, &Resources::default()));
     }
     #[test]
+    fn thor_uses_host_pool_without_cuda_memory_counters() {
+        let resources = Resources {
+            cpu_millicores: 1000,
+            memory_mib: 1024,
+            gpu_slots: 1,
+            gpu_memory_mib: 2048,
+        };
+        let mut report = serde_json::json!({"memory_total_mib":16384,"memory_available_mib":8192,"cpu_logical_count":14,"gpus":[{"memory_type":"unified","total_mib":null,"free_mib":null}]});
+        assert!(resources.fits_guarded(&Resources::default(), &report, &Resources::default()));
+        report["memory_available_mib"] = serde_json::json!(5000);
+        assert!(!resources.fits_guarded(&Resources::default(), &report, &Resources::default()));
+    }
+    #[test]
     fn unified_memory_shares_the_observed_host_budget() {
         let resources = Resources {
             memory_mib: 1024,
@@ -298,6 +317,8 @@ pub struct Config {
     pub executors: Vec<Executor>,
     #[serde(default)]
     pub vos_cluster: Option<VosEndpoint>,
+    #[serde(default)]
+    pub local_agent: Option<Value>,
 }
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]

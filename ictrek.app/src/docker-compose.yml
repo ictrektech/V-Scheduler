@@ -3,7 +3,10 @@ x-controller: &controller
   mem_limit: 512m
   cpus: '1'
   command: [controller, --config, /config/controller.json, --listen, '0.0.0.0:38120', --ui-dir, /opt/v-scheduler/ui]
-  environment:
+  environment: &controller-env
+    SCHEDULER_EMBEDDED_AGENT: "true"
+    NVIDIA_VISIBLE_DEVICES: all
+    NVIDIA_DRIVER_CAPABILITIES: compute,utility
     VOS_HOST_GW_IP: ${VOS_HOST_GW_IP}
     VOS_APP_VERSION: __APP_VERSION__
     SCHEDULER_PGV_BOOTSTRAP_PASSWORD: ${VOS_POSTGRES_PASSWORD:?VOS_POSTGRES_PASSWORD is required}
@@ -37,10 +40,20 @@ services:
   controller-amd:
     <<: *controller
     profiles: [amd]
+    runtime: nvidia
     image: ${V_SCHEDULER_AMD_IMAGE}
   controller-arm:
     <<: *controller
-    profiles: [arm]
+    profiles: [arm, l4t, thor-spark]
+    runtime: nvidia
+    image: ${V_SCHEDULER_ARM_IMAGE}
+  controller-amd-cpu:
+    <<: *controller
+    profiles: [amd-without-cuda]
+    image: ${V_SCHEDULER_AMD_IMAGE}
+  controller-arm-cpu:
+    <<: *controller
+    profiles: [arm-without-cuda]
     image: ${V_SCHEDULER_ARM_IMAGE}
 networks:
   vos_default:

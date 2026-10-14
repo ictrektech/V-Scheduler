@@ -24,30 +24,53 @@ dependencies:
   apps:
     - id: com.ictrek.pgv
       version: '>=0.0.21'
-      optional: true
+      optional: false
 profiles:
   - name: amd
-    title: {zh-CN: AMD64, en: AMD64, zh-TW: AMD64}
-    description: {zh-CN: AMD64 节点资源调度服务, en: Resource scheduler for AMD64 nodes, zh-TW: AMD64 節點資源調度服務}
-    caps: {arch: amd64}
-    conflicts: [arm]
+    title: {zh-CN: "AMD64 NVIDIA", en: "AMD64 NVIDIA", zh-TW: "AMD64 NVIDIA"}
+    description: {zh-CN: "内置本机资源采集，安装后自动启动", en: "Built-in host resource collection starts automatically", zh-TW: "內建本機資源取樣，安裝後自動啟動"}
+    caps:
+      arch: amd64
+      software: [cuda]
+    conflicts: [amd-without-cuda, arm, arm-without-cuda, l4t, thor-spark]
+  - name: amd-without-cuda
+    title: {zh-CN: "AMD64 CPU", en: "AMD64 CPU", zh-TW: "AMD64 CPU"}
+    description: {zh-CN: "内置本机资源采集，安装后自动启动", en: "Built-in host resource collection starts automatically", zh-TW: "內建本機資源取樣，安裝後自動啟動"}
+    caps:
+      arch: amd64
+    conflicts: [amd, arm, arm-without-cuda, l4t, thor-spark]
   - name: arm
-    title: {zh-CN: ARM64, en: ARM64, zh-TW: ARM64}
-    description: {zh-CN: ARM64 节点资源调度服务, en: Resource scheduler for ARM64 nodes, zh-TW: ARM64 節點資源調度服務}
-    caps: {arch: arm64}
-    conflicts: [amd]
+    title: {zh-CN: "ARM64 NVIDIA", en: "ARM64 NVIDIA", zh-TW: "ARM64 NVIDIA"}
+    description: {zh-CN: "内置本机资源采集，安装后自动启动", en: "Built-in host resource collection starts automatically", zh-TW: "內建本機資源取樣，安裝後自動啟動"}
+    caps:
+      arch: arm64
+      software: [cuda]
+    conflicts: [amd, amd-without-cuda, arm-without-cuda, l4t, thor-spark]
+  - name: arm-without-cuda
+    title: {zh-CN: "ARM64 CPU", en: "ARM64 CPU", zh-TW: "ARM64 CPU"}
+    description: {zh-CN: "内置本机资源采集，安装后自动启动", en: "Built-in host resource collection starts automatically", zh-TW: "內建本機資源取樣，安裝後自動啟動"}
+    caps:
+      arch: arm64
+    conflicts: [amd, amd-without-cuda, arm, l4t, thor-spark]
+  - name: l4t
+    title: {zh-CN: "Jetson / L4T", en: "Jetson / L4T", zh-TW: "Jetson / L4T"}
+    description: {zh-CN: "内置本机资源采集，安装后自动启动", en: "Built-in host resource collection starts automatically", zh-TW: "內建本機資源取樣，安裝後自動啟動"}
+    caps:
+      arch: arm64
+      software: [cuda]
+      device-type:
+        - any-of: [l4t, jetson]
+    conflicts: [amd, amd-without-cuda, arm, arm-without-cuda, thor-spark]
+  - name: thor-spark
+    title: {zh-CN: "Jetson Thor / Spark", en: "Jetson Thor / Spark", zh-TW: "Jetson Thor / Spark"}
+    description: {zh-CN: "内置本机资源采集，安装后自动启动", en: "Built-in host resource collection starts automatically", zh-TW: "內建本機資源取樣，安裝後自動啟動"}
+    caps:
+      arch: arm64
+      software: [cuda]
+      device-type:
+        - any-of: [thor-spark, thor]
+    conflicts: [amd, amd-without-cuda, arm, arm-without-cuda, l4t]
 require-profiles: true
-projects:
-  - name: resource-agent-amd
-    title: {zh-CN: AMD64 节点 Agent, en: AMD64 Node Agent, zh-TW: AMD64 節點 Agent}
-    description:
-      zh-CN: 使用受保护配置部署节点执行 Agent；GPU 节点指定 NVIDIA runtime。
-      en: Node execution Agent with protected configuration; select NVIDIA runtime for GPU nodes.
-  - name: resource-agent-arm
-    title: {zh-CN: ARM64 节点 Agent, en: ARM64 Node Agent, zh-TW: ARM64 節點 Agent}
-    description:
-      zh-CN: 使用受保护配置部署节点执行 Agent；GPU 节点指定 NVIDIA runtime。
-      en: Node execution Agent with protected configuration; select NVIDIA runtime for GPU nodes.
 storage:
   directories:
     - path: config

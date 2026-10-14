@@ -1,4 +1,10 @@
 export const messages:Record<string,[string,string]>={
+'逐逻辑处理器占用':['Per logical processor usage','逐邏輯處理器占用'],
+'来自宿主机的逐逻辑处理器采样':['Per logical processor samples from the host','來自宿主機的逐邏輯處理器取樣'],
+'逐核心采样暂不可用':['Per processor samples temporarily unavailable','逐核心取樣暫時無法取得'],
+'采集心跳':['Collection heartbeat','取樣心跳'],
+'资源采样':['Resource sample','資源取樣'],
+'内存类型未知':['Memory type unavailable','記憶體類型未知'],
 '连接 VOS':['Connect to VOS','連接 VOS'],
 '使用当前 VOS 管理员身份连接，首次使用自动准备 PGV 数据库。':['Use your current VOS administrator session. PGV is prepared automatically on first use.','使用目前 VOS 管理員身分連接，首次使用自動準備 PGV 資料庫。'],
 '重试连接':['Retry connection','重試連接'],

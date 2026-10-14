@@ -1,17 +1,17 @@
 use crate::model::*;
-use anyhow::{ensure, Context};
+use anyhow::{Context, ensure};
 use axum::{
+    Json, Router,
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
-    Json, Router,
 };
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use sqlx::{postgres::PgPoolOptions, PgPool, Postgres, Row, Transaction};
+use sqlx::{PgPool, Postgres, Row, Transaction, postgres::PgPoolOptions};
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use tower_http::services::ServeDir;
 use uuid::Uuid;
@@ -113,7 +113,16 @@ fn node_state(view: &Value) -> &'static str {
     let degraded_probe = report["executor_health"]
         .as_object()
         .is_some_and(|probes| probes.iter().any(|(id, _)| !probe_ready(report, id)));
-    if degraded_probe || !report_fresh(report) || view["vos_metrics"]["fresh"] == false {
+    let gpu_unknown = view["capacities"]["gpu_slots"].as_i64().unwrap_or(0) > 0
+        && !report["gpus"]
+            .as_array()
+            .and_then(|g| g.first())
+            .is_some_and(|g| g["memory_type"] == "unified" || g["memory_type"] == "dedicated");
+    if degraded_probe
+        || gpu_unknown
+        || !report_fresh(report)
+        || view["vos_metrics"]["fresh"] == false
+    {
         "degraded"
     } else {
         "ready"
@@ -240,6 +249,7 @@ pub async fn serve(
     listen: String,
     ui: Option<PathBuf>,
 ) -> anyhow::Result<()> {
+    let embedded = crate::local::prepare(&path, &listen).await?;
     let config: Config = serde_json::from_slice(&std::fs::read(path)?)?;
     ensure!(
         !config.principals.is_empty(),
@@ -313,6 +323,7 @@ pub async fn serve(
         config: Arc::new(config),
     };
     crate::vos::spawn(a.db.clone(), a.config.clone())?;
+    crate::local::start(embedded);
     let ticker = a.clone();
     tokio::spawn(async move {
         loop {
@@ -377,12 +388,13 @@ async fn discovery() -> Json<Value> {
 async fn executors(State(a): State<App>, h: HeaderMap) -> Api<Json<Value>> {
     let p = auth(&a, &h).await?;
     require(&p, "submitter")?;
-    Ok(ok(json!(a
-        .config
-        .executors
-        .iter()
-        .filter(|e| visible(&p, &e.app_id))
-        .collect::<Vec<_>>())))
+    Ok(ok(json!(
+        a.config
+            .executors
+            .iter()
+            .filter(|e| visible(&p, &e.app_id))
+            .collect::<Vec<_>>()
+    )))
 }
 async fn submit(State(a): State<App>, h: HeaderMap, Json(body): Json<TaskSubmit>) -> Api<Response> {
     let p = auth(&a, &h).await?;
@@ -597,9 +609,21 @@ async fn heartbeat(
 ) -> Api<Json<Value>> {
     let p = auth(&a, &h).await?;
     worker(&p, &id)?;
-    let changed=sqlx::query("UPDATE vrs_nodes SET heartbeat=now(),session=$2,report=$3 WHERE id=$1 AND (session IS NULL OR session=$2)").bind(id).bind(b.session_id).bind(b.report).execute(&a.db).await.map_err(unavailable)?.rows_affected();
+    let changed=sqlx::query("UPDATE vrs_nodes SET heartbeat=now(),session=$2,report=$3 WHERE id=$1 AND (session IS NULL OR session=$2)").bind(&id).bind(b.session_id).bind(&b.report).execute(&a.db).await.map_err(unavailable)?.rows_affected();
     if changed == 0 {
         return Err(Error(StatusCode::CONFLICT, "WORKER_SESSION_CONFLICT"));
+    }
+    if a.config.local_agent.as_ref().is_some_and(|local| {
+        local["node_id"].as_str() == Some(id.as_str()) && local["automatic_capacity"] == true
+    }) {
+        if let Some(resources) = crate::local::capacity(&b.report) {
+            sqlx::query("UPDATE vrs_nodes SET capacities=$2 WHERE id=$1")
+                .bind(&id)
+                .bind(json!(resources))
+                .execute(&a.db)
+                .await
+                .map_err(unavailable)?;
+        }
     }
     Ok(ok(json!({"lease_seconds":30})))
 }

@@ -107,7 +107,7 @@ V-Scheduler/
 ├── frontend/             # 独立管理 UI
 ├── agent/                # 节点资源、journal、执行器适配
 ├── adapters/             # 通用 HTTP/进程适配器
-└── ictrek.app/           # manifest/compose/configs/routers、Agent project、发布脚本
+└── ictrek.app/           # manifest/compose/configs/routers、内置采集配置、发布脚本
 ```
 
 独立应用的 UI 管理节点、资源、任务、配额和审计；不把集群初始化、数据库故障切换、etcd 成员管理复制进本应用。
@@ -133,7 +133,7 @@ V-Scheduler/
 
 第一版指定一个 controller 实例启用调度循环。node 模式仅提供本机 Agent 部署/状态引导，不运行第二份 Scheduler，也不复制队列数据库；安装角色采用应用配置，不与 CPU/GPU profile 混同。单机可 controller 加本机 Agent，无需创建 VOS 集群。
 
-拟新增配置：`SCHEDULER_ROLE=controller|node`、`SCHEDULER_ENDPOINT`、`SCHEDULER_CLUSTER_ID` 和专用数据库连接配置。controller 与 node 使用同一 V-Scheduler 包，node 不需要连接调度 DB。controller 的本机计算也显式部署 Agent，而不是绕过资源协议。
+拟新增配置：`SCHEDULER_ROLE=controller|node`、`SCHEDULER_ENDPOINT`、`SCHEDULER_CLUSTER_ID` 和专用数据库连接配置。controller 与 node 使用同一 V-Scheduler 包，node 不需要连接调度 DB。controller 内置的本机采集器随应用自动运行，通过相同资源协议登记与上报。
 
 数据库保存 V-Scheduler 登记的资源节点身份；已有集群成员信息只是外部只读引用。资源任务归属由调度应用自己的 workspace/app/principal 命名空间管理，不要求平台先提供多租户功能。现有 cluster ID 与 scheduler cluster ID 分别保存，避免把两个概念强行等同。
 
@@ -158,16 +158,11 @@ flowchart TB
 
 #### 3.4.1 VOS 节点的默认部署方式
 
-Agent 是 V-Scheduler 自己的 `resource-agent` project，包内包含项目模板、镜像引用、健康检查与数据路径；不安装或修改 vos-cluster-manager。
+本机采集器已内置于 V-Scheduler 应用，安装后随控制器自动启动，不需要单独部署 project、填写采集凭据或运行终端命令。
 
-1. 每台纳管 VOS 节点先安装 V-Scheduler 兼容包，中心选 controller，其他节点选 node。
-2. 管理员在目标节点打开 V-Scheduler 本机引导页，使用该节点现有授权/应用上下文调用本机 `/v1000/app/projects/manifest` 检查模板，再调用 deploy_async 部署 Agent。
-3. 部署参数使用 `app_id=com.ictrek.v-scheduler`、`project_name=resource-agent`；compose_project_name 按现有 DTO 规则生成。第一次部署采用本机操作，不假定中心已获每台 VOS 的管理员权限。
-4. 管理员在中心创建一次性、短期、绑定节点的 enrollment 授权，安全输入目标节点；成功登记后换成 V-Scheduler 节点身份。凭据不放在 URL、公开日志或公开状态返回值中。
-5. 目标节点轮询平台 async-task/get 核验部署结束，再检查 projects/status；Agent 主动连接中心核验身份、协议和资源，完成 observing → ready。容器 healthy 不等于可调度。
-6. 模板/安装版本/资产缺失则明确阻止部署，提示先安装兼容的 V-Scheduler 包；不尝试修改平台或借用其他应用模板。
+首次初始化自动登记本机节点、保守容量和内部 worker 身份；重启复用节点身份与持久 journal。现有人工批准的容量不被物理容量自动覆盖。NVIDIA 配置自动启用对应容器 runtime，CPU 配置使用普通 runtime；Jetson Thor 通过 CUDA/NVML 识别统一内存。
 
-后续中心自动批量部署仅在管理员明确提供逐节点授权及现有接口可用时添加 V-Scheduler 自有连接器；它不是第一版必需能力，不依赖集群管理私有远程实现。
+其他执行节点的接入仍需管理员批准其身份、执行器和中心入口；网络发现不意味着获得执行权限。旧版外置采集器迁移时先保存执行器与 journal，再停止外置进程，避免两个采集会话竞争同一节点。
 
 #### 3.4.2 非 VOS 节点与第三方 worker
 
@@ -531,7 +526,7 @@ VOS 和非 VOS 新应用均可按公开协议接入耗时入口；已有轻应�
 | 阶段 | 工作与交付物 | 验收门槛 | 回退方式 |
 |---|---|---|---|
 | Phase 0：契约冻结 | 核验现有接口、V-Scheduler 包契约、OIDC/服务身份；选试点；冻结公开 API、worker 协议、模板、数据/停止方式 | 无需修改平台或集群管理代码；明确 L2/L3、部署矩阵和所有未知项 | 只读核验 |
-| Phase 1：观察与台账 | 独立 V-Scheduler 后端/UI、controller/node 模式、自己的 Agent project；外部 Agent 启动说明、服务身份登记 | 包/模板未安装时正确拒绝；持久 journal；ready 与 healthy 区分；外部节点不依赖 VOS | 停 Agent，保留数据 |
+| Phase 1：观察与台账 | 独立 V-Scheduler 后端/UI、controller/node 模式、内置本机采集；外部 Agent 启动说明、服务身份登记 | 包/模板未安装时正确拒绝；持久 journal；ready 与 healthy 区分；外部节点不依赖 VOS | 停 Agent，保留数据 |
 | Phase 2：单机接入 | 先在 V-Router 的本地模型入口验证 permit/delegated、服务身份及忙碌拒绝；再对 Image Studio 自有异步任务实现 DB/outbox、公开提交、停止 watchdog 与应用内 drain；不改平台 dispatcher | V-ChatCut 等经 V-Router 选择本地模型时有唯一预约，云端仍直达；异步试点 20 并发串行、重复提交/命令只启动一次、取消/超时确认停止再释放、禁旁路启动 | 按第 12 节 drain；未确认停止的预约继续保留 |
 | Phase 3：恢复与跨机 | Agent journal、故障注入、租约/fence、两节点执行；输入输出传输；必要 Temporal 编排 | 不同能力节点正确选择；分区不重复运行；控制器/Agent 重启恢复；旧结果不能覆盖；跨架构输出合格 | 禁用远程候选，保留单机纳管 |
 | Phase 4：公平与多来源 | 第二个应用、非 VOS 提交者/worker、接入认证测试、配额/aging/排空、常驻预算 | 无 VAI 路径/VOS JWT 依赖；版本/权限/幂等/取消 conformance 通过；公平与容量成立 | 按接入方 drain 回退，保留基础配额 |

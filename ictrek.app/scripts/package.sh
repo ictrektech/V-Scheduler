@@ -307,7 +307,7 @@ with tarfile.open(sys.argv[1], "r:gz") as archive:
 section = re.search(r"^profiles:\n((?:[ \t].*\n|\n)+)", text, re.M)
 assert section, "manifest profiles missing"
 profiles = re.split(r"^  - name:\s*", section[1], flags=re.M)[1:]
-assert len(profiles) == 2, "expected AMD64 and ARM64 profiles"
+assert {p.splitlines()[0].strip() for p in profiles} == {"amd","arm","amd-without-cuda","arm-without-cuda","l4t","thor-spark"}, "missing hardware profile"
 for profile in profiles:
     assert re.search(r"^    description:\s*\S", profile, re.M), "profile description is required by VOS"
 PYPROFILES
@@ -456,12 +456,6 @@ TAR_FILES=(.env manifest.yml docker-compose.yml configs.yml routers.yml icon.png
 [[ -f "${STAGE_DIR}/README.en.md" ]] && TAR_FILES+=(README.en.md)
 render_text_file "${SRC_DIR}/README.zh-TW.md" "${STAGE_DIR}/README.zh-TW.md"
 TAR_FILES+=(README.zh-TW.md)
-mkdir -p "$STAGE_DIR/projects"
-for project in resource-agent-amd resource-agent-arm; do
-  mkdir -p "$STAGE_DIR/projects/$project"
-  render_compose_file "$SRC_DIR/projects/$project/docker-compose.yml" "$STAGE_DIR/projects/$project/docker-compose.yml" "$ENV_FILE"
-done
-TAR_FILES+=(projects)
 tar czf "$APP_TARBALL" -C "$STAGE_DIR" "${TAR_FILES[@]}"
 cp "$APP_TARBALL" "${PACKAGE_ROOT}/app.tar.gz"
 tar cf "$PACKAGE_PATH" -C "$PACKAGE_ROOT" app.tar.gz

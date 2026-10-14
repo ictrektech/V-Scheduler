@@ -1,8 +1,8 @@
 use crate::model::Command;
-use anyhow::{ensure, Context};
+use anyhow::{Context, ensure};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 #[derive(Clone, Deserialize)]
@@ -52,21 +52,53 @@ async fn post(c: &Client, url: &str, token: &str, body: Value) -> anyhow::Result
     let data: Value = response.json().await?;
     Ok(data.get("data").cloned().unwrap_or(data))
 }
-fn cpu_sample() -> Option<(u64, u64)> {
-    let stat = std::fs::read_to_string("/proc/stat").ok()?;
-    let values: Vec<u64> = stat
-        .lines()
-        .next()?
-        .split_whitespace()
-        .skip(1)
-        .take(8)
-        .map(str::parse)
-        .collect::<Result<_, _>>()
-        .ok()?;
-    if values.len() < 5 {
-        return None;
-    }
-    Some((values.iter().sum(), values[3] + values[4]))
+#[derive(Clone, Copy)]
+pub(crate) struct CpuCounters {
+    total: u64,
+    idle: u64,
+}
+pub(crate) type CpuSnapshot = std::collections::BTreeMap<String, CpuCounters>;
+fn parse_cpu_sample(stat: &str) -> CpuSnapshot {
+    stat.lines()
+        .filter_map(|line| {
+            let mut fields = line.split_whitespace();
+            let id = fields.next()?;
+            if id != "cpu"
+                && !id
+                    .strip_prefix("cpu")
+                    .is_some_and(|n| !n.is_empty() && n.parse::<u32>().is_ok())
+            {
+                return None;
+            }
+            let values = fields
+                .take(8)
+                .map(str::parse::<u64>)
+                .collect::<Result<Vec<_>, _>>()
+                .ok()?;
+            if values.len() < 5 {
+                return None;
+            }
+            Some((
+                id.to_owned(),
+                CpuCounters {
+                    total: values.iter().sum(),
+                    idle: values[3] + values[4],
+                },
+            ))
+        })
+        .collect()
+}
+fn cpu_sample() -> Option<CpuSnapshot> {
+    Some(parse_cpu_sample(
+        &std::fs::read_to_string("/proc/stat").ok()?,
+    ))
+}
+fn cpu_load(previous: Option<&CpuSnapshot>, current: &CpuSnapshot, id: &str) -> Option<f64> {
+    let old = previous?.get(id)?;
+    let now = current.get(id)?;
+    let delta = now.total.checked_sub(old.total)?;
+    let idle = now.idle.checked_sub(old.idle)?;
+    (delta > 0 && idle <= delta).then(|| 100.0 * (delta - idle) as f64 / delta as f64)
 }
 fn jetson_load_percent(raw: &str) -> Option<u64> {
     let load = raw.trim().parse::<u64>().ok()?;
@@ -89,7 +121,21 @@ fn jetson_gpu_utilization() -> Option<u64> {
 }
 #[cfg(test)]
 mod tests {
-    use super::jetson_load_percent;
+    use super::{cpu_load, jetson_load_percent, parse_cpu_sample};
+    #[test]
+    fn per_core_usage_is_measured_individually_and_reset_is_unknown() {
+        let before = parse_cpu_sample(
+            "cpu 100 0 0 100 0 0 0 0\ncpu0 100 0 0 0 0 0 0 0\ncpu1 0 0 0 100 0 0 0 0\n",
+        );
+        let after = parse_cpu_sample(
+            "cpu 200 0 0 200 0 0 0 0\ncpu0 200 0 0 0 0 0 0 0\ncpu1 0 0 0 200 0 0 0 0\n",
+        );
+        assert_eq!(cpu_load(Some(&before), &after, "cpu"), Some(50.0));
+        assert_eq!(cpu_load(Some(&before), &after, "cpu0"), Some(100.0));
+        assert_eq!(cpu_load(Some(&before), &after, "cpu1"), Some(0.0));
+        assert_eq!(cpu_load(None, &after, "cpu1"), None);
+        assert_eq!(cpu_load(Some(&after), &before, "cpu0"), None);
+    }
     #[test]
     fn jetson_load_is_per_mille_and_invalid_values_stay_unknown() {
         assert_eq!(jetson_load_percent("0\n"), Some(0));
@@ -99,21 +145,20 @@ mod tests {
         assert_eq!(jetson_load_percent("[N/A]\n"), None);
     }
 }
-async fn probe(previous: &mut Option<(u64, u64)>) -> Value {
+pub(crate) async fn probe(previous: &mut Option<CpuSnapshot>) -> Value {
     let observed_at = chrono::Utc::now();
-    let current = cpu_sample();
-    let cpu_used_percent = previous
-        .zip(current)
-        .and_then(|((total, idle), (next, next_idle))| {
-            let delta = next.checked_sub(total)?;
-            let free = next_idle.checked_sub(idle)?;
-            if delta == 0 || free > delta {
-                None
-            } else {
-                Some(100.0 * (delta - free) as f64 / delta as f64)
-            }
-        });
-    *previous = current;
+    let current = cpu_sample().unwrap_or_default();
+    let cpu_used_percent = cpu_load(previous.as_ref(), &current, "cpu");
+    let mut cpu_cores = current
+        .keys()
+        .filter_map(|id| {
+            let number = id.strip_prefix("cpu")?.parse::<u32>().ok()?;
+            Some(json!({"id":number,"utilization_percent":cpu_load(previous.as_ref(),&current,id)}))
+        })
+        .collect::<Vec<_>>();
+    cpu_cores.sort_by_key(|core| core["id"].as_u64());
+    let host_cores = cpu_cores.len();
+    *previous = Some(current);
     let mem = std::fs::read_to_string("/proc/meminfo").unwrap_or_default();
     let read = |key: &str| {
         mem.lines()
@@ -129,7 +174,7 @@ async fn probe(previous: &mut Option<(u64, u64)>) -> Value {
         std::time::Duration::from_secs(5),
         gpu_query
             .args([
-                "--query-gpu=uuid,memory.total,memory.free,utilization.gpu",
+                "--query-gpu=uuid,name,memory.total,memory.free,utilization.gpu",
                 "--format=csv,noheader,nounits",
             ])
             .output(),
@@ -141,21 +186,34 @@ async fn probe(previous: &mut Option<(u64, u64)>) -> Value {
     .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
     let mut gpus = gpu.map(|lines| lines.lines().filter_map(|line| {
         let columns: Vec<_> = line.split(',').map(str::trim).collect();
-        if columns.len() != 4 { return None; }
-        Some(json!({"uuid":columns[0],"total_mib":columns[1].parse::<u64>().ok(),"free_mib":columns[2].parse::<u64>().ok(),"utilization_percent":columns[3].parse::<u64>().ok(),"memory_source":"nvidia-smi"}))
+        if columns.len() != 5 { return None; }
+        Some(json!({"uuid":columns[0],"name":columns[1],"total_mib":columns[2].parse::<u64>().ok(),"free_mib":columns[3].parse::<u64>().ok(),"utilization_percent":columns[4].parse::<u64>().ok(),"memory_source":"nvidia-smi"}))
     }).collect::<Vec<_>>()).unwrap_or_default();
-    // The MVP supports one GPU per node. Keep unavailable values unknown;
-    // a missing driver or failed query must never fabricate a free-memory budget.
-    if gpus.len() == 1
-        && (gpus[0]["total_mib"].as_u64().is_none() || gpus[0]["free_mib"].as_u64().is_none())
-    {
-        if let Ok(Some((total, free, integrated))) =
-            tokio::task::spawn_blocking(crate::gpu::memory).await
+    if gpus.len() <= 1 {
+        let missing_memory = gpus.first().is_none_or(|gpu| {
+            gpu["total_mib"].as_u64().is_none() || gpu["free_mib"].as_u64().is_none()
+        });
+        if let Ok(Some(info)) =
+            tokio::task::spawn_blocking(move || crate::gpu::telemetry(missing_memory)).await
         {
-            gpus[0]["total_mib"] = json!(total);
-            gpus[0]["free_mib"] = json!(free);
-            gpus[0]["memory_source"] = json!("cuda-driver");
-            gpus[0]["memory_type"] = json!(if integrated { "unified" } else { "dedicated" });
+            if gpus.is_empty() {
+                gpus.push(json!({"total_mib":null,"free_mib":null,"utilization_percent":null}));
+            }
+            if gpus[0]["name"].is_null() {
+                gpus[0]["name"] = json!(info.name);
+            }
+            if let Some(integrated) = info.integrated {
+                gpus[0]["memory_type"] = json!(if integrated { "unified" } else { "dedicated" });
+                gpus[0]["memory_type_source"] = json!("cuda-device-attribute");
+                if integrated {
+                    gpus[0]["memory_pool_id"] = json!("system");
+                }
+            }
+            if let Some((total, free)) = info.memory {
+                gpus[0]["total_mib"] = json!(total);
+                gpus[0]["free_mib"] = json!(free);
+                gpus[0]["memory_source"] = json!("cuda-driver");
+            }
         }
     }
     if gpus.len() == 1 && gpus[0]["utilization_percent"].as_u64().is_none() {
@@ -164,19 +222,7 @@ async fn probe(previous: &mut Option<(u64, u64)>) -> Value {
             gpus[0]["utilization_source"] = json!("jetson-sysfs");
         }
     }
-    let host_cores = std::fs::read_to_string("/proc/stat")
-        .ok()
-        .map(|stat| {
-            stat.lines()
-                .filter(|line| {
-                    line.strip_prefix("cpu")
-                        .and_then(|rest| rest.chars().next())
-                        .is_some_and(|c| c.is_ascii_digit())
-                })
-                .count()
-        })
-        .filter(|n| *n > 0);
-    json!({"observed_at":observed_at,"cpu_logical_count":host_cores,"cpu_count_source":"host-proc-stat","cpu_used_percent":cpu_used_percent,"arch":std::env::consts::ARCH,"memory_total_mib":read("MemTotal:"),"memory_available_mib":read("MemAvailable:"),"gpus":gpus,"agent_version":"0.1.0"})
+    json!({"observed_at":observed_at,"cpu_logical_count":host_cores,"cpu_count_source":"host-proc-stat","cpu_used_percent":cpu_used_percent,"cpu_cores":cpu_cores,"arch":std::env::consts::ARCH,"memory_total_mib":read("MemTotal:"),"memory_available_mib":read("MemAvailable:"),"gpus":gpus,"agent_version":"0.1.0"})
 }
 pub async fn run(path: PathBuf) -> anyhow::Result<()> {
     let cfg: Config = serde_json::from_slice(&std::fs::read(path)?)?;
