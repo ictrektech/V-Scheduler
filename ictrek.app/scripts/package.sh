@@ -25,7 +25,7 @@ PROFILES=(
 )
 COMPONENTS=(
   "V_SCHEDULER|v-scheduler|swr.cn-southwest-2.myhuaweicloud.com/ictrek/v-scheduler"
-  "V_ROUTER_BACKEND|v-router-backend|swr.cn-southwest-2.myhuaweicloud.com/ictrek/v-router-backend"
+  "V_ROUTER_BACKEND|v_router_backend|swr.cn-southwest-2.myhuaweicloud.com/ictrek/v-router-backend"
 )
 
 usage() {
