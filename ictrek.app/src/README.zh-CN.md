@@ -1,6 +1,6 @@
 # V-Scheduler 资源调度
 
-统一包包含原 V-Router 全部网关功能与调度控制器。模型调用继续使用宿主端口 22888 的 /v1；调度管理使用 /scheduler/api/v1。合并安装前卸载独立 V-Router 并保留数据，将旧 /data 的宿主目录填入 V_ROUTER_DATA_PATH 即可原位挂载，留空使用本应用 gateway 目录。两个应用不能同时占用原端口。
+统一包包含模型网关与调度控制器。模型调用使用宿主端口 22888 的 /v1；调度管理使用 /scheduler/api/v1。安装后自动发现 Model Hub、Image Studio、V-Voice、V-Music、ML Server 和视频结构化服务的可用模型。V-Voice 就绪后主动接入，自动绑定已校准的执行器与模型映射；详见界面的“应用接入”。
 
 版本 __APP_VERSION__。
 

@@ -58,7 +58,15 @@ const app = {
     if (raw) return res;
     const text = await res.text();
     let data = null;
-    try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+    try { data = text ? JSON.parse(text) : null; } catch {
+      if (res.ok) {
+        const sourceMessage = "网关返回了无效的 JSON 响应，请检查服务和访问路径。";
+        const err = new Error(VRouterI18n.t(sourceMessage));
+        err.sourceMessage = sourceMessage;
+        throw err;
+      }
+      data = null;
+    }
     if (!res.ok) {
       const err = new Error((data && data.error && data.error.message) || `${method} ${path} -> ${res.status}`);
       err.status = res.status;
@@ -164,7 +172,7 @@ const app = {
         await this.diagnoseAuthFailure();
         return;
       }
-      this.showError(() => VRouterI18n.t("加载失败：") + esc(err.message));
+      this.showError(() => VRouterI18n.t("加载失败：") + esc(VRouterI18n.t(err.sourceMessage || err.message)));
     }
   },
 
@@ -939,7 +947,7 @@ const app = {
       if (request !== this.apiDocRequest) return;
     } catch (err) {
       if (request !== this.apiDocRequest) return;
-      VRouterI18n.bind(container, "innerHTML", () => `<div class="empty">${VRouterI18n.t("文档加载失败")}：${esc(err.message)}</div>`);
+      VRouterI18n.bind(container, "innerHTML", () => `<div class="empty">${VRouterI18n.t("文档加载失败")}：${esc(VRouterI18n.t(err.sourceMessage || err.message))}</div>`);
       return;
     }
 

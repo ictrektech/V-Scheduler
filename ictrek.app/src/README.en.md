@@ -1,6 +1,6 @@
 # V-Scheduler Resource Scheduling
 
-The unified package includes the original V-Router gateway and scheduling controller. Model clients keep port 22888 /v1; scheduling uses /scheduler/api/v1. Before consolidation, uninstall standalone V-Router while retaining its data, then set V_ROUTER_DATA_PATH to its former host /data directory. Leave blank for this app’s gateway directory. Both installations cannot own the same port.
+The unified package includes the model gateway and scheduling controller. Model clients use host port 22888 /v1; scheduling uses /scheduler/api/v1. It discovers available models from Model Hub, Image Studio, V-Voice, V-Music, ML Server, and Video Structure. Once ready, V-Voice connects automatically and binds calibrated executors and model mappings. See Application integration in the UI.
 
 Version __APP_VERSION__
 

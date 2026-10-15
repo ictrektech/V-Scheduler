@@ -1,5 +1,6 @@
 "use strict";
 export const VRouterMessages = {
+  "网关返回了无效的 JSON 响应，请检查服务和访问路径。": {"en": "The gateway returned invalid JSON. Check the service and request path.", "zh-TW": "閘道回傳了無效的 JSON 回應，請檢查服務和存取路徑。"},
   "文档加载中…": {"en": "Loading documentation…", "zh-TW": "文件載入中…"},
   "跟随 VOS": {"en": "Follow VOS", "zh-TW": "跟隨 VOS"},
   "界面语言": {"en": "Interface language", "zh-TW": "介面語言"},
