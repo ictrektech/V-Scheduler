@@ -158,6 +158,15 @@ func (t *scheduledTransport) RoundTrip(r *http.Request) (*http.Response, error) 
 		return nil, &AdmissionError{503, "model redirect left its approved resource endpoint"}
 	}
 	t.once.Do(t.load)
+	// 自动绑定使用独立且受限的网关身份，逐请求读原子快照，使重试/轮换无需重启。
+	if u.ID == "app-v-voice" {
+		if cfg, exists, err := voiceSchedulerConfig(); exists {
+			if err != nil {
+				return nil, &AdmissionError{503, "V-Voice scheduler binding invalid"}
+			}
+			return t.withConfig(r, u, cfg)
+		}
+	}
 	if t.err != nil {
 		return nil, &AdmissionError{503, "local scheduler configuration invalid"}
 	}
@@ -167,7 +176,42 @@ func (t *scheduledTransport) RoundTrip(r *http.Request) (*http.Response, error) 
 		}
 		return t.base.RoundTrip(r)
 	}
-	cfg := t.config
+	return t.withConfig(r, u, t.config)
+}
+
+func voiceSchedulerConfig() (*SchedulerConfig, bool, error) {
+	state := os.Getenv("V_ROUTER_STATE_PATH")
+	if state == "" {
+		state = "/data/state.json"
+	}
+	path := filepath.Join(filepath.Dir(state), "voice-scheduler.local.json")
+	info, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, true, err
+	}
+	if !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 || info.Size() > 262144 {
+		return nil, true, errors.New("binding file must be private and bounded")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, true, err
+	}
+	var cfg SchedulerConfig
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err = decoder.Decode(&cfg); err != nil {
+		return nil, true, err
+	}
+	if len(cfg.Token) < 32 || cfg.URL == "" || !cfg.RequireModelPolicy {
+		return nil, true, errors.New("invalid scoped binding")
+	}
+	return &cfg, true, nil
+}
+
+func (t *scheduledTransport) withConfig(r *http.Request, u registry.Upstream, cfg *SchedulerConfig) (*http.Response, error) {
 	model, _ := r.Context().Value(modelKey{}).(string)
 	policy, configured := cfg.Upstreams[u.ID]
 	if model != "" {

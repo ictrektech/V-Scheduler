@@ -10,6 +10,11 @@ V-Router 的同一次预算。配置独立的 `permit_executors` 权限，后端
 地址和执行器；参见[应用接入指南](docs/application-integration.md)及
 [完整契约](docs/integration-standard.md)。
 
+VOS 安装中的 V-Voice 可由现有发现器主动接入：控制器核验同一 VOS 的应用身份，
+仅为匹配已校准硬件与运行设置、且模型文件已就绪的模型建立受限服务身份和执行器，
+自动推送持久化的绑定版本。网关与内置 Agent 热更新配置，无需用户分发令牌。
+未校准模型继续拒绝，资源不足继续排队或拒绝；见 [V-Voice 主动接入](docs/v-voice-auto-binding.md)。
+
 面向 VOS 应用、其他服务、脚本和第三方 worker 的独立资源调度应用。统一管理耗时任务的排队、资源预约、执行许可、取消与故障恢复。
 
 **当前状态：Rust controller、节点后台服务、Vue 管理界面及 Image Studio / V-Router 适配已完成最小版本。tc192、tc229 的实际 VOS 登录与节点资源页面，以及 tc229 的真实业务任务已验证。正式安装包见 [GitHub Releases](https://github.com/ictrektech/V-Scheduler/releases)。完整设计的后续能力不代表当前已支持。**

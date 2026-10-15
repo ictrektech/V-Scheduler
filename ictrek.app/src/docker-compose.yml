@@ -12,6 +12,8 @@ x-controller: &controller
     SCHEDULER_PGV_BOOTSTRAP_PASSWORD: ${VOS_POSTGRES_PASSWORD:?VOS_POSTGRES_PASSWORD is required}
   volumes:
     - ${VOS_APP_STORAGE_PATH}/config:/config
+    - ${V_ROUTER_DATA_PATH:-${VOS_APP_STORAGE_PATH}/gateway}:/gateway-data
+    - ${VOS_APP_CONTEXT_PATH}:/var/lib/vos-context:ro
   networks:
     vos_default:
       aliases: [v-scheduler, v-scheduler-backend, v-scheduler-frontend]

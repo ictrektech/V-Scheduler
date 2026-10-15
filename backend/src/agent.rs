@@ -291,7 +291,7 @@ pub(crate) async fn probe(previous: &mut Option<CpuSnapshot>) -> Value {
     report
 }
 pub async fn run(path: PathBuf) -> anyhow::Result<()> {
-    let cfg: Config = serde_json::from_slice(&std::fs::read(path)?)?;
+    let mut cfg: Config = serde_json::from_slice(&std::fs::read(&path)?)?;
     ensure!(
         cfg.token.len() >= 32 && !cfg.token.contains("REPLACE"),
         "invalid worker credential"
@@ -316,12 +316,17 @@ pub async fn run(path: PathBuf) -> anyhow::Result<()> {
     let sampled = std::sync::Arc::new(tokio::sync::RwLock::new(json!({})));
     let writer = sampled.clone();
     let health_client = client.clone();
-    let adapters = cfg.executors.clone();
+    let adapters_path = path.clone();
     tokio::spawn(async move {
         let mut previous = cpu_sample();
         loop {
             let mut report = probe(&mut previous).await;
             let mut executor_health = serde_json::Map::new();
+            let adapters = std::fs::read(&adapters_path)
+                .ok()
+                .and_then(|bytes| serde_json::from_slice::<Config>(&bytes).ok())
+                .map(|config| config.executors)
+                .unwrap_or_default();
             for adapter in &adapters {
                 if let Some(url) = &adapter.health_url {
                     let healthy = health_client
@@ -342,6 +347,14 @@ pub async fn run(path: PathBuf) -> anyhow::Result<()> {
         }
     });
     loop {
+        // 只热更新执行器，保留节点身份、会话及当前命令；原子交接不会中断在途任务。
+        if let Ok(bytes) = std::fs::read(&path) {
+            if let Ok(updated) = serde_json::from_slice::<Config>(&bytes) {
+                if updated.node_id == cfg.node_id && updated.token == cfg.token {
+                    cfg.executors = updated.executors;
+                }
+            }
+        }
         let base = cfg.controller.trim_end_matches('/');
         let report = sampled.read().await.clone();
         let heartbeat = post(

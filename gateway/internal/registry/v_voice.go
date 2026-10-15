@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -22,10 +24,11 @@ type VVoicePoller struct {
 }
 
 type vVoiceDiscovery struct {
-	Name       string        `json:"name"`
-	Protocol   string        `json:"protocol"`
-	Visibility string        `json:"visibility"`
-	Models     []vVoiceModel `json:"models"`
+	Name       string          `json:"name"`
+	Protocol   string          `json:"protocol"`
+	Visibility string          `json:"visibility"`
+	Models     []vVoiceModel   `json:"models"`
+	Scheduler  json.RawMessage `json:"scheduler,omitempty"`
 }
 
 type vVoiceModel struct {
@@ -68,6 +71,7 @@ func (p *VVoicePoller) pollOnce(ctx context.Context) {
 		baseURL := candidate + "/v1"
 		if p.reg.HasNonModelHubBaseURL(baseURL, vVoiceUpstreamID) {
 			p.reg.Delete(vVoiceUpstreamID)
+			p.publishScheduler("", nil, nil)
 			return
 		}
 		name := strings.TrimSpace(discovery.Name)
@@ -77,9 +81,31 @@ func (p *VVoicePoller) pollOnce(ctx context.Context) {
 		u := &Upstream{ID: vVoiceUpstreamID, Name: name, Kind: KindLocal, Source: SourceVVoice, BaseURL: baseURL, Protocol: vVoiceProtocol(discovery.Protocol), Visibility: vVoiceVisibility(discovery.Visibility), ModelPrefix: SourceVVoice, Healthy: true}
 		p.reg.Put(u)
 		p.reg.SetModels(u.ID, vVoiceModels(discovery.Models))
+		p.publishScheduler(candidate, discovery.Scheduler, discovery.Models)
 		return
 	}
 	p.reg.Delete(vVoiceUpstreamID)
+	p.publishScheduler("", nil, nil)
+}
+
+// 复用发现结果交给同一安装包内的控制器；此文件不包含任何服务凭据。
+func (p *VVoicePoller) publishScheduler(candidate string, contract json.RawMessage, models []vVoiceModel) {
+	if os.Getenv("V_ROUTER_CONTROLLER_URL") == "" {
+		return
+	}
+	state := os.Getenv("V_ROUTER_STATE_PATH")
+	if state == "" {
+		state = "/data/state.json"
+	}
+	path := filepath.Join(filepath.Dir(state), "v-voice-discovery.json")
+	data, err := json.Marshal(map[string]any{"source": candidate, "observed_at": time.Now().UTC(), "scheduler": contract, "models": models})
+	if err != nil {
+		return
+	}
+	tmp := path + ".pending"
+	if err = os.WriteFile(tmp, data, 0600); err == nil {
+		_ = os.Rename(tmp, path)
+	}
 }
 
 // vVoiceProtocol honors a declared protocol the gateway can serve; anything

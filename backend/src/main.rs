@@ -7,6 +7,7 @@ mod local;
 mod model;
 mod statistics;
 mod vos;
+mod voice;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 #[derive(Parser)]

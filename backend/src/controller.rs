@@ -1,5 +1,6 @@
 use crate::model::*;
 use anyhow::{Context, ensure};
+use axum::extract::FromRef;
 use axum::{
     Json, Router,
     extract::{Path, Query, State},
@@ -19,6 +20,23 @@ use uuid::Uuid;
 struct App {
     db: PgPool,
     config: Arc<Config>,
+    voice_ready: Arc<std::sync::atomic::AtomicBool>,
+    voice_config: crate::voice::Runtime,
+}
+#[derive(Clone)]
+struct SharedApp {
+    app: App,
+    config: crate::voice::Runtime,
+}
+impl FromRef<SharedApp> for App {
+    fn from_ref(shared: &SharedApp) -> Self {
+        Self {
+            db: shared.app.db.clone(),
+            config: shared.config.snapshot(),
+            voice_ready: shared.config.ready.clone(),
+            voice_config: shared.config.clone(),
+        }
+    }
 }
 struct Error(StatusCode, &'static str);
 impl IntoResponse for Error {
@@ -82,6 +100,18 @@ fn worker(p: &Principal, node: &str) -> Api<()> {
 fn visible(p: &Principal, app: &str) -> bool {
     p.role == "admin" || (p.role == "submitter" && p.app_id == app)
 }
+fn voice_admission(a: &App, executor: &str) -> Api<()> {
+    if (executor.starts_with("v-voice.auto.") || executor.starts_with("v-scheduler.voice."))
+        && (!a.voice_ready.load(std::sync::atomic::Ordering::Acquire)
+            || !a.voice_config.is_current(&a.config))
+    {
+        return Err(Error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "APPLICATION_BINDING_UNAVAILABLE",
+        ));
+    }
+    Ok(())
+}
 fn timestamp_fresh(value: &Value, seconds: i64) -> bool {
     value
         .as_str()
@@ -94,6 +124,11 @@ fn report_fresh(report: &Value) -> bool {
     report["observed_at"].is_null() || timestamp_fresh(&report["observed_at"], 30)
 }
 fn probe_ready(report: &Value, executor: &str) -> bool {
+    if (executor.starts_with("v-voice.auto.") || executor.starts_with("v-scheduler.voice."))
+        && report["executor_health"][executor].is_null()
+    {
+        return false;
+    }
     report["executor_health"][executor].is_null()
         || (report["executor_health"][executor]["healthy"] == true
             && timestamp_fresh(&report["executor_health"][executor]["observed_at"], 15))
@@ -250,7 +285,9 @@ pub async fn serve(
     ui: Option<PathBuf>,
 ) -> anyhow::Result<()> {
     let embedded = crate::local::prepare(&path, &listen).await?;
-    let config: Config = serde_json::from_slice(&std::fs::read(path)?)?;
+    let config: Config = serde_json::from_slice(&std::fs::read(&path)?)?;
+    let runtime = crate::voice::Runtime::restore(&path, config)?;
+    let config = runtime.snapshot();
     ensure!(
         !config.principals.is_empty(),
         "at least one principal is required"
@@ -320,18 +357,26 @@ pub async fn serve(
     }
     let a = App {
         db,
-        config: Arc::new(config),
+        config,
+        voice_ready: runtime.ready.clone(),
+        voice_config: runtime.clone(),
     };
     crate::vos::spawn(a.db.clone(), a.config.clone())?;
     crate::local::start(embedded);
-    let ticker = a.clone();
+    let shared = SharedApp {
+        app: a.clone(),
+        config: runtime.clone(),
+    };
+    crate::voice::start(path, runtime, a.db.clone());
+    let ticker_state = shared.clone();
     tokio::spawn(async move {
         loop {
+            let ticker = App::from_ref(&ticker_state);
             let _ = expire(&ticker).await;
             tokio::time::sleep(std::time::Duration::from_secs(2)).await;
         }
     });
-    let api = Router::new()
+    let api = Router::<SharedApp>::new()
         .route("/setup", get(|| async { ok(json!({"ready":true,"version":std::env::var("VOS_APP_VERSION").unwrap_or_else(|_| env!("CARGO_PKG_VERSION").into())})) }))
         .route("/discovery", get(discovery))
         .route(
@@ -371,7 +416,7 @@ pub async fn serve(
         .nest("/api/v1", api.clone())
         .nest("/scheduler/api/v1", api)
         .layer(axum::extract::DefaultBodyLimit::max(262144))
-        .with_state(a);
+        .with_state(shared);
     if let Some(path) = ui {
         router = router.fallback_service(ServeDir::new(path));
     }
@@ -431,6 +476,7 @@ async fn submit(State(a): State<App>, h: HeaderMap, Json(body): Json<TaskSubmit>
     if e.task_type == "model.infer" {
         return Err(invalid());
     }
+    voice_admission(&a, &e.id)?;
     let mut value = json!(body);
     let hash = format!(
         "{:x}",
@@ -732,6 +778,9 @@ async fn claim(
         else {
             continue;
         };
+        if voice_admission(&a, &e.id).is_err() {
+            continue;
+        }
         if !probe_ready(&node.get::<Value, _>("report"), &e.id) {
             continue;
         }
@@ -963,6 +1012,7 @@ async fn permit_acquire(
 ) -> Api<Json<Value>> {
     let p = auth(&a, &h).await?;
     require(&p, "submitter")?;
+    voice_admission(&a, &b.executor_id)?;
     if !b.execution_token.is_empty() && !(32..=128).contains(&b.execution_token.len()) {
         return Err(invalid());
     }
@@ -982,6 +1032,7 @@ async fn permit_acquire(
     }
     let mut tx = a.db.begin().await.map_err(unavailable)?;
     let node=sqlx::query("SELECT *,heartbeat>now()-interval '12 seconds' AS fresh FROM vrs_nodes WHERE id=$1 FOR UPDATE").bind(&e.node_id).fetch_one(&mut *tx).await.map_err(unavailable)?;
+    voice_admission(&a, &e.id)?;
     if let Some(old) =
         sqlx::query("SELECT *,lease_until>now() AS valid FROM vrs_permits WHERE app=$1 AND idem=$2")
             .bind(&p.app_id)
