@@ -343,7 +343,7 @@ docker run --rm --network none "$IMAGE" --help > "$BUILD_DIR/runtime-help.txt"
 docker run --rm --network none --entrypoint /bin/sh "$IMAGE" -c 'test -s /opt/v-scheduler/ui/index.html'
 docker push "$IMAGE"
 # Check the actual registry publication before recording a tag.
-docker manifest inspect "$IMAGE" > "$BUILD_DIR/manifest.json"
+docker buildx imagetools inspect --raw "$IMAGE" > "$BUILD_DIR/manifest.json"
 COL="$(find_component_column_letter "$FEISHU_TOKEN" "$FEISHU_SPREADSHEET_TOKEN" "$SHEET_ID" "$COMPONENT_NAME")"
 write_cell "$FEISHU_TOKEN" "$FEISHU_SPREADSHEET_TOKEN" "$SHEET_ID" "${COL}1" "$COMPONENT_NAME"
 write_cell "$FEISHU_TOKEN" "$FEISHU_SPREADSHEET_TOKEN" "$SHEET_ID" "${COL}2" "$REPOSITORY"

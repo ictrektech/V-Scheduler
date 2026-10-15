@@ -10,6 +10,8 @@ A single `v-scheduler` service image contains the Rust controller/Agent and comp
 
 The workflow runs protocol/frontend checks, reads images from Feishu, renders the package, creates release notes/public tag/release and publishes through the existing App Store SSH tunnel. Required secrets: `FEISHU_APP_ID`, `FEISHU_APP_SECRET`, `APPSTORE_IP`, `APPSTORE_TOKEN`. The spreadsheet ID is a fixed identifier in code, never a secret.
 
+Registry verification uses `docker buildx imagetools inspect --raw` for both Docker schema 2 and OCI manifests, including on build hosts whose older `docker manifest inspect` command cannot read OCI images.
+
 Configure these as repository-level Actions secrets when organization secrets are unavailable to the private repository. App Store publication runs in a separate job that downloads the published GitHub asset. If only that job fails, rerun the failed job. For an already published GitHub version, resume without rebuilding or bumping:
 
 ```sh
