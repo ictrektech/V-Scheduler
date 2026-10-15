@@ -99,6 +99,8 @@ Content-Type: application/json
 
 ## 6. worker 公开接入标准
 
+0.0.20 的内部组件登记协议由 VOS App 实现方使用，用户仍只安装 App，见[节点管理](node-management.md)。内部协议中：一次性邀请绑定 node_id，Agent 自行持久保存 worker_token 与 session_id，`POST /workers/register` 只创建 pending 申请，管理员批准后才开始心跳和执行。下表是完整协议目标；尚未落地的独立 ACK、cursor 等字段不能发送给当前严格结构，精确字段以 OpenAPI 为准。
+
 管理员在中心批准 worker 登记并发放受限身份；worker 主动出站连接，不要求中心对外部机器开任意 SSH/管理端口。
 
 | 方法/路径 | 必需字段/行为 |
@@ -143,7 +145,7 @@ W3：输入跨机授权、模型/contract 版本、输出数值容差、多 app 
 
 接入方不必按“调度器 → V-Router → 原应用”串联。原生异步重任务由原应用提交任务并保留结果所有权；V-Router 为实际经它路由的本地/纳管远端模型计算申请准入。若执行器已持有任务预约，V-Router 的对应上游须经管理员批准为 `delegated`，避免重复扣同一节点预算；云端上游绕过本机资源预约。按 task type 和真实执行位置选择唯一责任方，见[设计第 2.3 节](design.md#23-v-router-不是所有算力应用的必经层)。
 
-以 OpenAPI 与 discovery 声明为准。controller 当前使用受保护配置中的 admin/submitter/worker 凭据，submitter 按 app_id 隔离，worker 绑定 node_id；VOS 管理界面通过平台 `/v1000/user/check` 校验启用的 system_admin；没有动态注册或 artifact 上传 API。任务只引用预先批准的 executor，资源预算来自其模板，inputs 必须为空；应用保留自己授权的任务与文件。原协议中 workspace、artifact、优先级、动态能力注册等属于后续目标，不能发送给当前严格的提交结构。
+以 OpenAPI 与 discovery 声明为准。controller 当前使用受保护配置中的 admin/submitter/worker 凭据，submitter 按 app_id 隔离，worker 绑定 node_id；VOS 管理界面通过平台 `/v1000/user/check` 校验启用的 system_admin；0.0.20 已提供受控动态登记与管理 API，artifact 上传仍不支持。任务只引用预先批准的 executor，资源预算来自其模板，inputs 必须为空；应用保留自己授权的任务与文件。原协议中 workspace、artifact、优先级等仍属于后续目标，不能发送给当前严格的提交结构。动态登记使用当前 OpenAPI 的邀请、worker 登记及执行器审批结构，不能提交任意命令。
 
 ### 本地与跨节点资源如何选择接口
 
@@ -200,3 +202,15 @@ VOS 网关必须在私有配置 `models[upstreamID/nativeModelID]` 批准输入�
 ## 单任务状态时间线
 
 `GET /tasks/{id}/events` 复用任务可见性与服务认证。查询参数 `limit` 为 1–200，默认 50；`cursor=0` 或省略时返回最新事件，传入 `next_cursor` 时读取严格早于该游标的下一页。记录含 `cursor`、`task_id`、`status`、`version`、保存的 `progress` 和实际 `created_at`，按 cursor 降序排列；`next_cursor=null` 表示没有更早页。普通服务不能查询其他 app 的任务，返回 404。旧事件没有进度快照时仍为空对象。此接口用于详情时间线，不改变全局 `/events` 的正向增量协议。
+
+## 多节点在线许可与管理 API（0.0.20）
+
+`GET /management` 供管理员读取待审批节点、执行器、邀请和凭据元数据、近期操作记录；不会返回存储的令牌或哈希。`POST /enrollments` 创建有期限的单次邀请，登记使用邀请 Bearer；worker 无管理员权限。节点/执行器审批与预算更新使用版本号，资源未确认停止时拒绝修改或撤销。服务身份仍按 app_id 隔离。原有静态身份和 V-Voice 专用自动绑定保持兼容。
+
+`model.infer` 执行器的 `node_id/resources` 是主执行节点，`placements` 是其余计算节点与各自固定预算（总计最多 32 个节点，不重复主节点）。普通 `POST /permits` 无需由客户端提交预算；控制器按管理员模板原子检查并预约全部节点。许可历史附带 placements，资源台账逐节点列出。任意参与节点的未知停止保留整项预约，不能仅释放 head 节点。
+
+此能力不提供模型分片或多节点异步 task：含 placements 的执行器仅可为 model.infer，多节点许可不能 `/delegate` 给单节点业务任务，也不能用作单节点父任务的关联子许可。正在运行的 ModelInfer 部署不被自动重启或接管；来源清单只用于观察与管理员核验。见[完整流程与维护边界](node-management.md)。
+
+### VOS App 管理约束
+
+最终用户只通过 VOS 安装和管理应用，不手工部署外部 Agent。登记协议是应用内部组件接口，不能据此要求用户到计算节点执行命令。ModelInfer 的发现与监控复用现有 VOS App；`POST /node-sources/modelinfer/{id}` 只保存规划，`POST /node-sources/modelinfer/{id}/control` 当前返回 501 `VOS_NODE_CONTROL_PENDING_VERIFICATION`。规划节点不会创建 worker、心跳或预约能力。真实远端调度须完成管理适配器的执行/停止/故障恢复验证后启用。

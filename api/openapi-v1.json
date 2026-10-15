@@ -3,7 +3,7 @@
   "info": {
     "title": "V-Scheduler Controller API",
     "version": "1.0.0",
-    "description": "The unified V-Scheduler VOS app contains the V-Router model gateway and this controller. This API controls task execution and resource reservations on managed VOS or remote nodes; it does not proxy model payloads. Cloud provider models bypass local scheduling through V-Router. Synchronous local models use V-Router permits; asynchronous application work uses tasks. VOS package versions are separate from this v1 controller contract. Authenticated app-scoped access; static executors and one active execution lane per node; no HA or dynamic enrollment."
+    "description": "The unified V-Scheduler VOS app contains the V-Router model gateway and this controller. This API controls task execution and resource reservations on managed VOS or remote nodes; it does not proxy model payloads. Cloud provider models bypass local scheduling through V-Router. Synchronous local models use V-Router permits; asynchronous application work uses tasks. VOS package versions are separate from this v1 controller contract. Authenticated app-scoped access; operator-approved dynamic enrollment, node budgets, executor approval and scoped service credentials; one active execution lane per node; no HA or multi-node gang execution."
   },
   "servers": [
     {
@@ -935,7 +935,8 @@
           "executor_id": "v-router.local.infer",
           "upstream_url": "http://model-service:8000",
           "model_id": "approved-model"
-        }
+        },
+        "description": " Fixed multi-node model.infer templates reserve every participant in one transaction; unavailable peers reject the entire request. The response data.node_ids lists all participants, while node_id remains the primary node."
       },
       "get": {
         "operationId": "get_permits",
@@ -1057,19 +1058,62 @@
       "post": {
         "operationId": "post_permits_id_verify",
         "summary": "Claim or verify a bound backend execution permit",
-        "security": [{"bearerAuth": []}],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "x-role": "submitter",
         "description": "Backend-scoped verification. Requires an approved permit_executors grant (or own executor), exact executor/node/upstream/model binding and a private execution token. claim=true atomically consumes the initial claim; claim=false checks the same execution. Does not reserve again, renew, transfer or release ownership.",
-        "parameters": [{"name":"id","in":"path","required":true,"schema":{"type":"string"}}],
-        "requestBody": {"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/PermitVerify"}}}},
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PermitVerify"
+              }
+            }
+          }
+        },
         "responses": {
-          "200":{"description":"Active bound permit","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Envelope"}}}},
-          "401":{"description":"Missing or invalid bearer token"},
-          "403":{"description":"Executor or execution binding denied"},
-          "404":{"description":"Permit not visible"},
-          "409":{"description":"Inactive or already claimed permit"},
-          "422":{"description":"Invalid request"},
-          "503":{"description":"Controller unavailable"}
+          "200": {
+            "description": "Active bound permit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "description": "Executor or execution binding denied"
+          },
+          "404": {
+            "description": "Permit not visible"
+          },
+          "409": {
+            "description": "Inactive or already claimed permit"
+          },
+          "422": {
+            "description": "Invalid request"
+          },
+          "503": {
+            "description": "Controller unavailable"
+          }
         }
       }
     },
@@ -1932,6 +1976,947 @@
           "zh-TW": "按最新事件在前查詢單一任務已儲存的狀態與進度快照。cursor 為查詢更早事件的排他游標，0 或省略表示最新頁；next_cursor 為 null 表示沒有更早紀錄。原 /events 的正向游標語意不變。"
         }
       }
+    },
+    "/management": {
+      "get": {
+        "operationId": "get_management",
+        "summary": "Read node management",
+        "x-title": {
+          "zh-CN": "节点管理概览",
+          "en": "Read node management",
+          "zh-TW": "節點管理概覽"
+        },
+        "description": "Administrator-only, bounded node/executor registrations, invitations, credential metadata and recent audit events. Never returns token hashes or stored credentials.",
+        "x-role": "admin",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "description": "Role or app scope denied"
+          },
+          "404": {
+            "description": "Not found or not visible"
+          },
+          "409": {
+            "description": "State or idempotency conflict"
+          },
+          "422": {
+            "description": "Invalid request"
+          },
+          "429": {
+            "description": "Resource busy or queue quota"
+          },
+          "503": {
+            "description": "Temporarily unavailable"
+          }
+        }
+      }
+    },
+    "/enrollments": {
+      "post": {
+        "operationId": "post_enrollments",
+        "summary": "Create enrollment invitation",
+        "description": "Internal App-owned component enrollment contract. Not a user installation workflow. VOS users install and manage Apps only. Invitation grants registration only; administrator approval and fresh telemetry are required for execution.",
+        "x-title": {
+          "zh-CN": "创建一次性接入凭据",
+          "en": "Create enrollment invitation",
+          "zh-TW": "建立一次性接入憑據"
+        },
+        "x-description": {
+          "zh-CN": "Node-bound invitation; 60–86400 seconds (default 900). Only a hash is persisted; the secret response has Cache-Control: no-store. A new invitation revokes unused prior invitations for this node.",
+          "en": "Node-bound invitation; 60–86400 seconds (default 900). Only a hash is persisted; the secret response has Cache-Control: no-store. A new invitation revokes unused prior invitations for this node.",
+          "zh-TW": "Node-bound invitation; 60–86400 seconds (default 900). Only a hash is persisted; the secret response has Cache-Control: no-store. A new invitation revokes unused prior invitations for this node."
+        },
+        "x-role": "admin",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid, revoked or expired credential"
+          },
+          "403": {
+            "description": "Role, node or application scope denied"
+          },
+          "409": {
+            "description": "Version, identity or unfinished-execution conflict"
+          },
+          "422": {
+            "description": "Invalid fields or unapproved resource budget"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "node_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 96,
+                    "pattern": "^[A-Za-z0-9_.-]+$"
+                  },
+                  "ttl_seconds": {
+                    "type": "integer",
+                    "minimum": 60,
+                    "maximum": 86400,
+                    "default": 900
+                  },
+                  "discovery_source": {
+                    "type": "string",
+                    "enum": [
+                      "",
+                      "modelinfer"
+                    ],
+                    "description": "Optional read-only inventory association; both source fields must be set together."
+                  },
+                  "discovery_id": {
+                    "type": "string",
+                    "maxLength": 96,
+                    "description": "ID from fresh ModelInfer inventory; association does not grant execution access."
+                  }
+                },
+                "required": [
+                  "node_id"
+                ]
+              }
+            }
+          }
+        },
+        "x-example": {
+          "node_id": "spark-01",
+          "ttl_seconds": 900
+        }
+      }
+    },
+    "/enrollments/{id}/revoke": {
+      "post": {
+        "operationId": "post_enrollments_id_revoke",
+        "summary": "Revoke enrollment invitation",
+        "description": "Revoke an unused invitation. Consumed invitations cannot be reused to grant a second worker.",
+        "x-title": {
+          "zh-CN": "撤销接入凭据",
+          "en": "Revoke enrollment invitation",
+          "zh-TW": "撤銷接入憑據"
+        },
+        "x-description": {
+          "zh-CN": "Revoke an unused invitation. Consumed invitations cannot be reused to grant a second worker.",
+          "en": "Revoke an unused invitation. Consumed invitations cannot be reused to grant a second worker.",
+          "zh-TW": "Revoke an unused invitation. Consumed invitations cannot be reused to grant a second worker."
+        },
+        "x-role": "admin",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid, revoked or expired credential"
+          },
+          "403": {
+            "description": "Role, node or application scope denied"
+          },
+          "409": {
+            "description": "Version, identity or unfinished-execution conflict"
+          },
+          "422": {
+            "description": "Invalid fields or unapproved resource budget"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/workers/register": {
+      "post": {
+        "operationId": "post_workers_register",
+        "summary": "Register external worker",
+        "description": "Use an enrollment Bearer, not an admin token. Agent generates and durably saves its worker token/session before submitting. The node remains pending without execution rights until administrator approval. Identical retries are idempotent; different worker identity cannot consume a used invitation.",
+        "x-title": {
+          "zh-CN": "登记外部工作节点",
+          "en": "Register external worker",
+          "zh-TW": "登記外部工作節點"
+        },
+        "x-description": {
+          "zh-CN": "Use an enrollment Bearer, not an admin token. Agent generates and durably saves its worker token/session before submitting. The node remains pending without execution rights until administrator approval. Identical retries are idempotent; different worker identity cannot consume a used invitation.",
+          "en": "Use an enrollment Bearer, not an admin token. Agent generates and durably saves its worker token/session before submitting. The node remains pending without execution rights until administrator approval. Identical retries are idempotent; different worker identity cannot consume a used invitation.",
+          "zh-TW": "Use an enrollment Bearer, not an admin token. Agent generates and durably saves its worker token/session before submitting. The node remains pending without execution rights until administrator approval. Identical retries are idempotent; different worker identity cannot consume a used invitation."
+        },
+        "x-role": "enrollment",
+        "security": [
+          {
+            "enrollmentBearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid, revoked or expired credential"
+          },
+          "403": {
+            "description": "Role, node or application scope denied"
+          },
+          "409": {
+            "description": "Version, identity or unfinished-execution conflict"
+          },
+          "422": {
+            "description": "Invalid fields or unapproved resource budget"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "protocol_version": {
+                    "const": 1
+                  },
+                  "node_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 96,
+                    "pattern": "^[A-Za-z0-9_.-]+$"
+                  },
+                  "instance_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 96,
+                    "pattern": "^[A-Za-z0-9_.-]+$"
+                  },
+                  "boot_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 96,
+                    "pattern": "^[A-Za-z0-9_.-]+$"
+                  },
+                  "session_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 96,
+                    "pattern": "^[A-Za-z0-9_.-]+$"
+                  },
+                  "display_name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "worker_token": {
+                    "type": "string",
+                    "minLength": 32,
+                    "maxLength": 128,
+                    "writeOnly": true
+                  }
+                },
+                "required": [
+                  "protocol_version",
+                  "node_id",
+                  "instance_id",
+                  "boot_id",
+                  "session_id",
+                  "display_name",
+                  "worker_token"
+                ]
+              }
+            }
+          }
+        },
+        "x-example": {
+          "protocol_version": 1,
+          "node_id": "spark-01",
+          "display_name": "Spark 01",
+          "instance_id": "durable-agent-instance",
+          "boot_id": "boot-id",
+          "session_id": "durable-agent-session",
+          "worker_token": "REPLACE_WITH_RANDOM_WORKER_TOKEN_32_PLUS"
+        }
+      }
+    },
+    "/nodes/{id}/approve": {
+      "post": {
+        "operationId": "post_nodes_id_approve",
+        "summary": "Approve node and budget",
+        "description": "Approve a pending registration with its current registration version. Budgets must be measured on the real device. Binds the saved worker session; enables future heartbeats. No active/suspect reservations may be displaced.",
+        "x-title": {
+          "zh-CN": "批准节点与资源预算",
+          "en": "Approve node and budget",
+          "zh-TW": "核准節點與資源預算"
+        },
+        "x-description": {
+          "zh-CN": "Approve a pending registration with its current registration version. Budgets must be measured on the real device. Binds the saved worker session; enables future heartbeats. No active/suspect reservations may be displaced.",
+          "en": "Approve a pending registration with its current registration version. Budgets must be measured on the real device. Binds the saved worker session; enables future heartbeats. No active/suspect reservations may be displaced.",
+          "zh-TW": "Approve a pending registration with its current registration version. Budgets must be measured on the real device. Binds the saved worker session; enables future heartbeats. No active/suspect reservations may be displaced."
+        },
+        "x-role": "admin",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid, revoked or expired credential"
+          },
+          "403": {
+            "description": "Role, node or application scope denied"
+          },
+          "409": {
+            "description": "Version, identity or unfinished-execution conflict"
+          },
+          "422": {
+            "description": "Invalid fields or unapproved resource budget"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManagementNodeEdit"
+              }
+            }
+          }
+        },
+        "x-example": {
+          "version": 1,
+          "display_name": "Spark 01",
+          "capacities": {
+            "cpu_millicores": 8000,
+            "memory_mib": 65536,
+            "gpu_slots": 1,
+            "gpu_memory_mib": 65536
+          },
+          "resident_baseline": {
+            "memory_mib": 8192
+          },
+          "safety_reserve": {
+            "cpu_millicores": 1000,
+            "memory_mib": 8192
+          },
+          "vos_member_id": ""
+        }
+      }
+    },
+    "/nodes/{id}": {
+      "post": {
+        "operationId": "post_nodes_id",
+        "summary": "Update node budget",
+        "description": "Optimistic version from /management. Applies immediately and survives restart. Refuses changes while node resources are held or budgets cannot cover approved executors. Local automatic sizing is disabled by an explicit operator override.",
+        "x-title": {
+          "zh-CN": "修改节点预算",
+          "en": "Update node budget",
+          "zh-TW": "修改節點預算"
+        },
+        "x-description": {
+          "zh-CN": "Optimistic version from /management. Applies immediately and survives restart. Refuses changes while node resources are held or budgets cannot cover approved executors. Local automatic sizing is disabled by an explicit operator override.",
+          "en": "Optimistic version from /management. Applies immediately and survives restart. Refuses changes while node resources are held or budgets cannot cover approved executors. Local automatic sizing is disabled by an explicit operator override.",
+          "zh-TW": "Optimistic version from /management. Applies immediately and survives restart. Refuses changes while node resources are held or budgets cannot cover approved executors. Local automatic sizing is disabled by an explicit operator override."
+        },
+        "x-role": "admin",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid, revoked or expired credential"
+          },
+          "403": {
+            "description": "Role, node or application scope denied"
+          },
+          "409": {
+            "description": "Version, identity or unfinished-execution conflict"
+          },
+          "422": {
+            "description": "Invalid fields or unapproved resource budget"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManagementNodeEdit"
+              }
+            }
+          }
+        },
+        "x-example": {
+          "version": 1,
+          "display_name": "Spark 01",
+          "capacities": {
+            "cpu_millicores": 8000,
+            "memory_mib": 65536,
+            "gpu_slots": 1,
+            "gpu_memory_mib": 65536
+          },
+          "resident_baseline": {
+            "memory_mib": 8192
+          },
+          "safety_reserve": {
+            "cpu_millicores": 1000,
+            "memory_mib": 8192
+          },
+          "vos_member_id": ""
+        }
+      }
+    },
+    "/nodes/{id}/revoke": {
+      "post": {
+        "operationId": "post_nodes_id_revoke",
+        "summary": "Revoke external node",
+        "description": "Revokes registered worker credentials, disables its executors and drains the node. Refuses while any resource reservation is unconfirmed. Retains history and files. Config-file node credentials are protected; use drain for them.",
+        "x-title": {
+          "zh-CN": "撤销外部节点",
+          "en": "Revoke external node",
+          "zh-TW": "撤銷外部節點"
+        },
+        "x-description": {
+          "zh-CN": "Revokes registered worker credentials, disables its executors and drains the node. Refuses while any resource reservation is unconfirmed. Retains history and files. Config-file node credentials are protected; use drain for them.",
+          "en": "Revokes registered worker credentials, disables its executors and drains the node. Refuses while any resource reservation is unconfirmed. Retains history and files. Config-file node credentials are protected; use drain for them.",
+          "zh-TW": "Revokes registered worker credentials, disables its executors and drains the node. Refuses while any resource reservation is unconfirmed. Retains history and files. Config-file node credentials are protected; use drain for them."
+        },
+        "x-role": "admin",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid, revoked or expired credential"
+          },
+          "403": {
+            "description": "Role, node or application scope denied"
+          },
+          "409": {
+            "description": "Version, identity or unfinished-execution conflict"
+          },
+          "422": {
+            "description": "Invalid fields or unapproved resource budget"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/workers/{id}/executors": {
+      "post": {
+        "operationId": "post_workers_id_executors",
+        "summary": "Propose executors",
+        "description": "Approved worker may propose up to 64 definitions bound to its own node; declarations grant no execution rights. Repeat identical definitions are idempotent; changing approved definitions requires administrator editing.",
+        "x-title": {
+          "zh-CN": "申请登记执行器",
+          "en": "Propose executors",
+          "zh-TW": "申請登記執行器"
+        },
+        "x-description": {
+          "zh-CN": "Approved worker may propose up to 64 definitions bound to its own node; declarations grant no execution rights. Repeat identical definitions are idempotent; changing approved definitions requires administrator editing.",
+          "en": "Approved worker may propose up to 64 definitions bound to its own node; declarations grant no execution rights. Repeat identical definitions are idempotent; changing approved definitions requires administrator editing.",
+          "zh-TW": "Approved worker may propose up to 64 definitions bound to its own node; declarations grant no execution rights. Repeat identical definitions are idempotent; changing approved definitions requires administrator editing."
+        },
+        "x-role": "worker",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid, revoked or expired credential"
+          },
+          "403": {
+            "description": "Role, node or application scope denied"
+          },
+          "409": {
+            "description": "Version, identity or unfinished-execution conflict"
+          },
+          "422": {
+            "description": "Invalid fields or unapproved resource budget"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "executors": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 64,
+                    "items": {
+                      "$ref": "#/components/schemas/ManagementExecutor"
+                    }
+                  }
+                },
+                "required": [
+                  "executors"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/executors/{id}": {
+      "post": {
+        "operationId": "post_executors_id",
+        "summary": "Approve or disable executor",
+        "description": "Create with version 0 or edit the current /management version. Fixed node/app/contract/budget, no arbitrary commands. Existing executor node is immutable. Unfinished tasks/permits block edits; app auto-binding executors are protected.",
+        "x-title": {
+          "zh-CN": "批准或停用执行器",
+          "en": "Approve or disable executor",
+          "zh-TW": "核准或停用執行器"
+        },
+        "x-description": {
+          "zh-CN": "Create with version 0 or edit the current /management version. Fixed node/app/contract/budget, no arbitrary commands. Existing executor node is immutable. Unfinished tasks/permits block edits; app auto-binding executors are protected.",
+          "en": "Create with version 0 or edit the current /management version. Fixed node/app/contract/budget, no arbitrary commands. Existing executor node is immutable. Unfinished tasks/permits block edits; app auto-binding executors are protected.",
+          "zh-TW": "Create with version 0 or edit the current /management version. Fixed node/app/contract/budget, no arbitrary commands. Existing executor node is immutable. Unfinished tasks/permits block edits; app auto-binding executors are protected."
+        },
+        "x-role": "admin",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid, revoked or expired credential"
+          },
+          "403": {
+            "description": "Role, node or application scope denied"
+          },
+          "409": {
+            "description": "Version, identity or unfinished-execution conflict"
+          },
+          "422": {
+            "description": "Invalid fields or unapproved resource budget"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManagementExecutorEdit"
+              }
+            }
+          }
+        },
+        "x-example": {
+          "version": 0,
+          "enabled": true,
+          "definition": {
+            "id": "v-router.spark-01.infer",
+            "node_id": "spark-01",
+            "app_id": "v-router",
+            "contract_version": "1",
+            "task_type": "model.infer",
+            "resources": {
+              "cpu_millicores": 1000,
+              "memory_mib": 2048,
+              "gpu_slots": 1,
+              "gpu_memory_mib": 4096
+            },
+            "upstream_urls": [
+              "http://spark-01:8000/v1"
+            ],
+            "retry_mode": "none",
+            "max_attempts": 1
+          }
+        }
+      }
+    },
+    "/service-identities": {
+      "post": {
+        "operationId": "post_service_identities",
+        "summary": "Create scoped service identity",
+        "description": "Create an app-scoped submitter. Token appears once, only its hash persists. Explicit permit_executors/delegated_executors grants must reference approved executors. No admin or worker authority.",
+        "x-title": {
+          "zh-CN": "创建应用服务凭据",
+          "en": "Create scoped service identity",
+          "zh-TW": "建立應用服務憑據"
+        },
+        "x-description": {
+          "zh-CN": "Create an app-scoped submitter. Token appears once, only its hash persists. Explicit permit_executors/delegated_executors grants must reference approved executors. No admin or worker authority.",
+          "en": "Create an app-scoped submitter. Token appears once, only its hash persists. Explicit permit_executors/delegated_executors grants must reference approved executors. No admin or worker authority.",
+          "zh-TW": "Create an app-scoped submitter. Token appears once, only its hash persists. Explicit permit_executors/delegated_executors grants must reference approved executors. No admin or worker authority."
+        },
+        "x-role": "admin",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid, revoked or expired credential"
+          },
+          "403": {
+            "description": "Role, node or application scope denied"
+          },
+          "409": {
+            "description": "Version, identity or unfinished-execution conflict"
+          },
+          "422": {
+            "description": "Invalid fields or unapproved resource budget"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceIdentityCreate"
+              }
+            }
+          }
+        },
+        "x-example": {
+          "app_id": "example-app",
+          "permit_executors": [],
+          "delegated_executors": []
+        }
+      }
+    },
+    "/service-identities/{id}/revoke": {
+      "post": {
+        "operationId": "post_service_identities_id_revoke",
+        "summary": "Revoke scoped service identity",
+        "description": "Immediately rejects future requests using the credential. Refuses while the app has unfinished work or unreleased permits; keeps history.",
+        "x-title": {
+          "zh-CN": "撤销应用服务凭据",
+          "en": "Revoke scoped service identity",
+          "zh-TW": "撤銷應用服務憑據"
+        },
+        "x-description": {
+          "zh-CN": "Immediately rejects future requests using the credential. Refuses while the app has unfinished work or unreleased permits; keeps history.",
+          "en": "Immediately rejects future requests using the credential. Refuses while the app has unfinished work or unreleased permits; keeps history.",
+          "zh-TW": "Immediately rejects future requests using the credential. Refuses while the app has unfinished work or unreleased permits; keeps history."
+        },
+        "x-role": "admin",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid, revoked or expired credential"
+          },
+          "403": {
+            "description": "Role, node or application scope denied"
+          },
+          "409": {
+            "description": "Version, identity or unfinished-execution conflict"
+          },
+          "422": {
+            "description": "Invalid fields or unapproved resource budget"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/node-sources/modelinfer/{id}": {
+      "post": {
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "operationId": "save_vos_source_plan",
+        "summary": "Save VOS App node budget plan",
+        "description": "Administrator-only planning for a known ModelInfer source. Does not create a worker, heartbeat or schedulable node. Version 0 creates; subsequent updates require the current version. Users manage nodes through VOS apps; no manual Agent installation.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManagementNodeEdit"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved with version; execution_enabled=false and control_state=pending_adapter_verification"
+          },
+          "404": {
+            "description": "Unknown source node"
+          },
+          "409": {
+            "description": "Concurrent version conflict"
+          }
+        },
+        "x-title": {
+          "zh-CN": "保存 VOS 应用节点预算规划",
+          "en": "Save VOS App node budget plan",
+          "zh-TW": "儲存 VOS 應用節點預算規劃"
+        },
+        "x-required-scope": "admin"
+      }
+    },
+    "/node-sources/modelinfer/{id}/control": {
+      "post": {
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "operationId": "vos_source_control_reserved",
+        "summary": "Reserved VOS App remote control contract",
+        "description": "Authenticated reserved interface. Remote VOS App execution/stop/recovery is unverified. Returns 501 without running a command or modifying resources.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "action"
+                ],
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "pause",
+                      "resume",
+                      "confirm-stopped"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "501": {
+            "description": "VOS_NODE_CONTROL_PENDING_VERIFICATION; no remote action performed"
+          },
+          "422": {
+            "description": "Invalid action"
+          }
+        },
+        "x-title": {
+          "zh-CN": "预留 VOS 应用远端控制接口",
+          "en": "Reserved VOS App remote control contract",
+          "zh-TW": "預留 VOS 應用遠端控制介面"
+        },
+        "x-required-scope": "admin"
+      }
     }
   },
   "components": {
@@ -1939,6 +2924,11 @@
       "bearerAuth": {
         "type": "http",
         "scheme": "bearer"
+      },
+      "enrollmentBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Administrator-issued, node-bound, expiring single-use invitation. It can only request pending worker registration."
       }
     },
     "schemas": {
@@ -2116,16 +3106,39 @@
         ]
       },
       "PermitVerify": {
-        "type":"object",
-        "additionalProperties":false,
-        "required":["executor_id","upstream_url","model_id","execution_token","execution_id","claim"],
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "executor_id",
+          "upstream_url",
+          "model_id",
+          "execution_token",
+          "execution_id",
+          "claim"
+        ],
         "properties": {
-          "executor_id":{"type":"string"},
-          "upstream_url":{"type":"string"},
-          "model_id":{"type":"string"},
-          "execution_token":{"type":"string","minLength":32,"maxLength":128},
-          "execution_id":{"type":"string","minLength":1,"maxLength":128},
-          "claim":{"type":"boolean"}
+          "executor_id": {
+            "type": "string"
+          },
+          "upstream_url": {
+            "type": "string"
+          },
+          "model_id": {
+            "type": "string"
+          },
+          "execution_token": {
+            "type": "string",
+            "minLength": 32,
+            "maxLength": 128
+          },
+          "execution_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "claim": {
+            "type": "boolean"
+          }
         }
       },
       "PermitRelease": {
@@ -2431,6 +3444,17 @@
           "lease_until": {
             "type": "string",
             "format": "date-time"
+          },
+          "placements": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "maxItems": 31,
+            "items": {
+              "$ref": "#/components/schemas/ExecutorPlacement"
+            },
+            "description": "Additional compute nodes for model.infer only; exclude the primary node and duplicates. Each participant requires positive CPU/RAM and an approved fixed budget. All participants are reserved atomically. Not supported for async task execution or delegated permits."
           }
         },
         "required": [
@@ -2479,6 +3503,323 @@
           "created_at": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "ManagementNodeEdit": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "display_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "capacities": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "cpu_millicores": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "memory_mib": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "gpu_slots": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "gpu_memory_mib": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": []
+          },
+          "resident_baseline": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "cpu_millicores": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "memory_mib": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "gpu_slots": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "gpu_memory_mib": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": []
+          },
+          "safety_reserve": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "cpu_millicores": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "memory_mib": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "gpu_slots": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "gpu_memory_mib": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": []
+          },
+          "vos_member_id": {
+            "type": "string",
+            "maxLength": 96
+          }
+        },
+        "required": [
+          "version",
+          "display_name",
+          "capacities"
+        ]
+      },
+      "ManagementExecutor": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 96,
+            "pattern": "^[A-Za-z0-9_.-]+$"
+          },
+          "node_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 96,
+            "pattern": "^[A-Za-z0-9_.-]+$"
+          },
+          "app_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 96,
+            "pattern": "^[A-Za-z0-9_.-]+$"
+          },
+          "contract_version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 96,
+            "pattern": "^[A-Za-z0-9_.-]+$"
+          },
+          "task_type": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 96,
+            "pattern": "^[A-Za-z0-9_.-]+$"
+          },
+          "resources": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "cpu_millicores": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "memory_mib": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "gpu_slots": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "gpu_memory_mib": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": []
+          },
+          "upstream_urls": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          "retry_mode": {
+            "type": "string",
+            "enum": [
+              "",
+              "none",
+              "idempotent"
+            ]
+          },
+          "max_attempts": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10
+          },
+          "placements": {
+            "type": "array",
+            "maxItems": 31,
+            "items": {
+              "$ref": "#/components/schemas/ExecutorPlacement"
+            },
+            "description": "Additional compute nodes for model.infer only; exclude the primary node and duplicates. Each participant requires positive CPU/RAM and an approved fixed budget. All participants are reserved atomically. Not supported for async task execution or delegated permits."
+          }
+        },
+        "required": [
+          "id",
+          "node_id",
+          "app_id",
+          "contract_version",
+          "task_type",
+          "resources"
+        ]
+      },
+      "ManagementExecutorEdit": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "definition": {
+            "$ref": "#/components/schemas/ManagementExecutor"
+          }
+        },
+        "required": [
+          "version",
+          "enabled",
+          "definition"
+        ]
+      },
+      "WorkerEnrollment": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "protocol_version": {
+            "const": 1
+          },
+          "node_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 96,
+            "pattern": "^[A-Za-z0-9_.-]+$"
+          },
+          "instance_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 96,
+            "pattern": "^[A-Za-z0-9_.-]+$"
+          },
+          "boot_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 96,
+            "pattern": "^[A-Za-z0-9_.-]+$"
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 96,
+            "pattern": "^[A-Za-z0-9_.-]+$"
+          },
+          "display_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "worker_token": {
+            "type": "string",
+            "minLength": 32,
+            "maxLength": 128,
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "protocol_version",
+          "node_id",
+          "instance_id",
+          "boot_id",
+          "session_id",
+          "display_name",
+          "worker_token"
+        ]
+      },
+      "ServiceIdentityCreate": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "app_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 96,
+            "pattern": "^[A-Za-z0-9_.-]+$"
+          },
+          "permit_executors": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 96,
+              "pattern": "^[A-Za-z0-9_.-]+$"
+            }
+          },
+          "delegated_executors": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 96,
+              "pattern": "^[A-Za-z0-9_.-]+$"
+            }
+          }
+        },
+        "required": [
+          "app_id"
+        ]
+      },
+      "ExecutorPlacement": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "node_id",
+          "resources"
+        ],
+        "properties": {
+          "node_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 96,
+            "pattern": "^[A-Za-z0-9_.-]+$"
+          },
+          "resources": {
+            "$ref": "#/components/schemas/ResourceBudget"
           }
         }
       }

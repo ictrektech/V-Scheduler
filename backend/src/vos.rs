@@ -22,7 +22,11 @@ fn base(endpoint: &VosEndpoint) -> anyhow::Result<Url> {
     );
     Ok(url)
 }
-async fn get(client: &Client, endpoint: &VosEndpoint, path: &str) -> anyhow::Result<Value> {
+pub(crate) async fn get(
+    client: &Client,
+    endpoint: &VosEndpoint,
+    path: &str,
+) -> anyhow::Result<Value> {
     let url = format!("{}{}", endpoint.url.trim_end_matches('/'), path);
     let mut req = client.get(url);
     if !endpoint.token.is_empty() {
@@ -87,7 +91,9 @@ fn telemetry(info: &Value, usage: &Value) -> anyhow::Result<Value> {
             .map(str::trim)
             .filter(|value| !value.is_empty() && value.len() <= 128)
     };
-    Ok(json!({"device_name":name("device_name"),"hostname":name("hostname"),"cpu_logical_count":info["cpu_logical_count"],"cpu_used_percent":cpu,"memory_total_mib":total/1048576.0,"memory_used_mib":used/1048576.0,"disk": {"size_bytes":usage["disk"]["size"].as_f64(),"used_bytes":usage["disk"]["used"].as_f64()},"gpu_usage":null,"gpu_status":"UNSUPPORTED_BY_VOS"}))
+    Ok(
+        json!({"device_name":name("device_name"),"hostname":name("hostname"),"cpu_logical_count":info["cpu_logical_count"],"cpu_used_percent":cpu,"memory_total_mib":total/1048576.0,"memory_used_mib":used/1048576.0,"disk": {"size_bytes":usage["disk"]["size"].as_f64(),"used_bytes":usage["disk"]["used"].as_f64()},"gpu_usage":null,"gpu_status":"UNSUPPORTED_BY_VOS"}),
+    )
 }
 fn applications(data: &Value) -> anyhow::Result<Value> {
     let items = data["data"].as_array().context("missing apps")?;
@@ -106,7 +112,7 @@ fn applications(data: &Value) -> anyhow::Result<Value> {
     }
     Ok(json!(views))
 }
-async fn store(db: &PgPool, id: &str, result: anyhow::Result<Value>) {
+pub(crate) async fn store(db: &PgPool, id: &str, result: anyhow::Result<Value>) {
     // Deliberately exclude error text which may embed URLs or credentials.
     let query = match result {
         Ok(value) => sqlx::query("INSERT INTO vrs_observations(id,data,observed_at) VALUES($1,$2,now()) ON CONFLICT(id) DO UPDATE SET data=excluded.data,observed_at=excluded.observed_at,last_error=NULL").bind(id).bind(value),
@@ -158,6 +164,71 @@ fn observation(row: &sqlx::postgres::PgRow) -> Value {
     let error: Option<String> = row.get("last_error");
     json!({"data":row.get::<Value,_>("data"),"observed_at":at,"fresh":error.is_none() && at.is_some_and(|at|(Utc::now()-at).num_seconds()<90),"error_code":error})
 }
+// Native VOS cluster reads use the current verified administrator only for
+// this same-host request. Never persist a browser token or follow member URLs.
+pub async fn refresh_platform_inventory(db: &PgPool, headers: &axum::http::HeaderMap) {
+    let Some(url) = crate::identity::base() else {
+        return;
+    };
+    let fresh:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM vrs_observations WHERE id='vos:platform-inventory-status' AND observed_at>now()-interval '30 seconds')").fetch_one(db).await.unwrap_or(true);
+    if fresh {
+        return;
+    }
+    let Some(token) = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+    else {
+        return;
+    };
+    let endpoint = VosEndpoint {
+        url,
+        token: token.into(),
+    };
+    let result: anyhow::Result<Value> = async {
+        base(&endpoint)?;
+        let client = Client::builder()
+            .timeout(Duration::from_secs(3))
+            .redirect(reqwest::redirect::Policy::none())
+            .build()?;
+        let status = get(&client, &endpoint, "/v1000/cluster/status").await?;
+        let initialized = status["initialized"]
+            .as_bool()
+            .context("missing cluster state")?;
+        let members = if initialized {
+            let topology = get(&client, &endpoint, "/v1000/cluster/topology").await?;
+            let rows = topology["members"]
+                .as_array()
+                .context("missing cluster members")?;
+            inventory(&json!({"nodes":rows}))?
+        } else {
+            json!([])
+        };
+        store(db, "vos:inventory", Ok(members)).await;
+        store(
+            db,
+            "vos:local-member",
+            Ok(json!({"member_id":status["current_member_id"].as_str()})),
+        )
+        .await;
+        Ok(json!({"state":if initialized{"ready"}else{"not_initialized"}}))
+    }
+    .await;
+    let status = match result {
+        Ok(value) => value,
+        Err(_) => {
+            store(
+                db,
+                "vos:inventory",
+                Err(anyhow::anyhow!("source unavailable")),
+            )
+            .await;
+            json!({"state":"unavailable"})
+        }
+    };
+    store(db, "vos:platform-inventory-status", Ok(status)).await;
+}
+
 pub async fn decorate(
     db: &PgPool,
     config: &Config,
@@ -174,7 +245,27 @@ pub async fn decorate(
         let id = view["id"].as_str().unwrap_or_default().to_owned();
         view["managed"] = json!(true);
         let bound = config.nodes.iter().find(|n| n.id == id);
-        let member = bound.map(|n| n.vos_member_id.as_str()).unwrap_or_default();
+        let explicit_member = bound.map(|n| n.vos_member_id.as_str()).unwrap_or_default();
+        let is_local = config
+            .local_agent
+            .as_ref()
+            .is_some_and(|n| n["node_id"] == id);
+        let local_member = if is_local {
+            rows.iter()
+                .find(|r| r.get::<String, _>("id") == "vos:local-member")
+                .and_then(|r| {
+                    r.get::<Value, _>("data")["member_id"]
+                        .as_str()
+                        .map(str::to_owned)
+                })
+        } else {
+            None
+        };
+        let member = if explicit_member.is_empty() {
+            local_member.as_deref().unwrap_or_default()
+        } else {
+            explicit_member
+        };
         if let Some(source) = &source {
             view["vos_inventory"] = json!({"observed_at":source["observed_at"],"fresh":source["fresh"],"error_code":source["error_code"]});
             if !member.is_empty() {
@@ -201,14 +292,20 @@ pub async fn decorate(
             config
                 .executors
                 .iter()
-                .filter(|e| e.node_id == id)
+                .filter(|e| e.node_id == id || e.placements.iter().any(|part| part.node_id == id))
                 .collect::<Vec<_>>()
         );
     }
     if let Some(source) = source {
         if let Some(items) = source["data"].as_array() {
             for item in items {
-                if config
+                let local_member = rows
+                    .iter()
+                    .find(|r| r.get::<String, _>("id") == "vos:local-member")
+                    .map(|r| r.get::<Value, _>("data"));
+                if local_member.as_ref().is_some_and(|m| {
+                    m["member_id"].is_string() && item["member_id"] == m["member_id"]
+                }) || config
                     .nodes
                     .iter()
                     .any(|n| !n.vos_member_id.is_empty() && item["member_id"] == n.vos_member_id)

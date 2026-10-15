@@ -1,5 +1,5 @@
 //! 同一 VOS 内 V-Voice 的受限授权交接。发现声明不能替代资源批准。
-use crate::model::{Config, Executor, Principal, Resources};
+use crate::model::{Config, Executor, ManagedConfig, Principal, Resources};
 use anyhow::{Context, ensure};
 use chrono::{DateTime, Utc};
 use serde_json::{Value, json};
@@ -18,10 +18,18 @@ const ORIGIN: &str = "http://v-voice-backend:7070";
 const UPSTREAM: &str = "http://v-voice-backend:7070/v1";
 const URL: &str = "http://v-router:8080/scheduler/api/v1";
 
+#[derive(Default)]
+struct Overlays {
+    managed: ManagedConfig,
+    binding: Option<Value>,
+}
+
 #[derive(Clone)]
 pub struct Runtime {
     base: Arc<Config>,
     current: Arc<RwLock<Arc<Config>>>,
+    overlays: Arc<RwLock<Overlays>>,
+    pub management_lock: Arc<tokio::sync::Mutex<()>>,
     pub ready: Arc<AtomicBool>,
 }
 impl Runtime {
@@ -30,13 +38,15 @@ impl Runtime {
             base: Arc::new(base.clone()),
             current: Arc::new(RwLock::new(Arc::new(base))),
             ready: Arc::new(AtomicBool::new(false)),
+            overlays: Arc::new(RwLock::new(Overlays::default())),
+            management_lock: Arc::new(tokio::sync::Mutex::new(())),
         };
         let state = path
             .parent()
             .context("missing config directory")?
             .join("voice-binding.json");
         if state.exists() {
-            runtime.install(&read_private(&state)?)?;
+            runtime.overlays.write().expect("overlay lock").binding = Some(read_private(&state)?);
         }
         Ok(runtime)
     }
@@ -46,50 +56,101 @@ impl Runtime {
     pub fn is_current(&self, config: &Arc<Config>) -> bool {
         Arc::ptr_eq(config, &self.snapshot())
     }
-    fn install(&self, state: &Value) -> anyhow::Result<()> {
+    pub fn is_static_node(&self, id: &str) -> bool {
+        self.base.nodes.iter().any(|node| node.id == id)
+    }
+    pub fn is_static_executor(&self, id: &str) -> bool {
+        self.base.executors.iter().any(|executor| executor.id == id)
+    }
+    fn base_with_management(&self, managed: &ManagedConfig) -> Config {
         let mut config = (*self.base).clone();
-        let principals: Vec<Principal> = serde_json::from_value(state["principals"].clone())?;
-        let executors: Vec<Executor> = serde_json::from_value(state["executors"].clone())?;
-        for p in &principals {
-            ensure!(
-                p.role == "submitter"
-                    && [APP, "v-scheduler.voice-gateway"].contains(&p.app_id.as_str()),
-                "invalid binding principal"
-            );
-            ensure!(
-                p.token.len() >= 32
-                    && !config
-                        .principals
-                        .iter()
-                        .any(|existing| existing.token == p.token),
-                "invalid binding credential"
-            );
-        }
-        for executor in &executors {
-            ensure!(
-                [APP, "v-scheduler.voice-gateway"].contains(&executor.app_id.as_str()),
-                "invalid executor owner"
-            );
-            ensure!(
-                !config
-                    .executors
+        for node in &managed.nodes {
+            let mut node = node.clone();
+            if node.vos.is_none() {
+                node.vos = self
+                    .base
+                    .nodes
                     .iter()
-                    .any(|existing| existing.id == executor.id),
-                "duplicate executor"
-            );
-            ensure!(
-                config.nodes.iter().any(|node| node.id == executor.node_id
-                    && executor
-                        .resources
-                        .fits(&node.resident_baseline, &node.capacities)),
-                "unapproved execution node"
-            );
+                    .find(|entry| entry.id == node.id)
+                    .and_then(|entry| entry.vos.clone());
+            }
+            config.nodes.retain(|entry| entry.id != node.id);
+            config.nodes.push(node.clone());
+            if let Some(local) = &mut config.local_agent {
+                if local["node_id"] == node.id {
+                    local["automatic_capacity"] = json!(false);
+                }
+            }
         }
-        config.principals.extend(principals);
-        config.executors.extend(executors);
+        config
+            .executors
+            .retain(|entry| !managed.disabled_executors.contains(&entry.id));
+        for executor in &managed.executors {
+            config.executors.retain(|entry| entry.id != executor.id);
+            config.executors.push(executor.clone());
+        }
+        config
+    }
+    pub fn set_management(&self, managed: ManagedConfig) -> anyhow::Result<()> {
+        let mut overlays = self.overlays.write().expect("overlay lock");
+        let mut config = self.base_with_management(&managed);
+        if let Some(binding) = &overlays.binding {
+            config = with_binding(config, binding)?;
+        }
+        overlays.managed = managed;
         *self.current.write().expect("configuration lock") = Arc::new(config);
         Ok(())
     }
+    fn install(&self, state: &Value) -> anyhow::Result<()> {
+        let mut overlays = self.overlays.write().expect("overlay lock");
+        let config = with_binding(self.base_with_management(&overlays.managed), state)?;
+        overlays.binding = Some(state.clone());
+        *self.current.write().expect("configuration lock") = Arc::new(config);
+        Ok(())
+    }
+}
+
+fn with_binding(mut config: Config, state: &Value) -> anyhow::Result<Config> {
+    let principals: Vec<Principal> = serde_json::from_value(state["principals"].clone())?;
+    let executors: Vec<Executor> = serde_json::from_value(state["executors"].clone())?;
+    for p in &principals {
+        ensure!(
+            p.role == "submitter"
+                && [APP, "v-scheduler.voice-gateway"].contains(&p.app_id.as_str()),
+            "invalid binding principal"
+        );
+        ensure!(
+            p.token.len() >= 32
+                && !config
+                    .principals
+                    .iter()
+                    .any(|existing| existing.token == p.token),
+            "invalid binding credential"
+        );
+    }
+    for executor in &executors {
+        ensure!(
+            [APP, "v-scheduler.voice-gateway"].contains(&executor.app_id.as_str()),
+            "invalid executor owner"
+        );
+        ensure!(
+            !config
+                .executors
+                .iter()
+                .any(|existing| existing.id == executor.id),
+            "duplicate executor"
+        );
+        ensure!(
+            config.nodes.iter().any(|node| node.id == executor.node_id
+                && executor
+                    .resources
+                    .fits(&node.resident_baseline, &node.capacities)),
+            "unapproved execution node"
+        );
+    }
+    config.principals.extend(principals);
+    config.executors.extend(executors);
+    Ok(config)
 }
 
 fn read_private(path: &Path) -> anyhow::Result<Value> {
@@ -365,8 +426,8 @@ fn build(
 
 async fn reconcile(path: &Path, runtime: &Runtime, db: &PgPool) -> anyhow::Result<()> {
     let directory = path.parent().context("missing config directory")?;
-    let gateway = std::env::var("SCHEDULER_GATEWAY_DATA")
-        .unwrap_or_else(|_| "/gateway-data".into());
+    let gateway =
+        std::env::var("SCHEDULER_GATEWAY_DATA").unwrap_or_else(|_| "/gateway-data".into());
     let snapshot: Value = serde_json::from_slice(&std::fs::read(
         Path::new(&gateway).join("v-voice-discovery.json"),
     )?)?;
@@ -542,10 +603,38 @@ mod tests {
             base: Arc::new(base.clone()),
             current: Arc::new(RwLock::new(Arc::new(base))),
             ready: Arc::new(AtomicBool::new(false)),
+            overlays: Arc::new(RwLock::new(Overlays::default())),
+            management_lock: Arc::new(tokio::sync::Mutex::new(())),
         };
         let contract = json!({"protocol_version":1,"app_id":APP,"executor_base_url":ORIGIN,"upstream_url":UPSTREAM,"binding_endpoint":"/api/v1/scheduler/binding","provider":"cpu","cpu_models":[],"num_threads":4,"max_concurrent_inference":2,"_execution_hardware":[],"_ready_sync":["asr","speaker"],"_ready_async":["tts"],"sync_models":[{"id":"asr","task_type":"model.infer"},{"id":"speaker","task_type":"model.infer"}],"async_models":[{"id":"tts","task_type":"voice.generate","weight_bytes":1}]});
         let approvals = json!({"protocol_version":1,"approvals":[{"id":"measured","architecture":std::env::consts::ARCH,"provider":"cpu","cpu_models":[],"num_threads":4,"max_concurrent_inference":2,"hardware":[],"calibration":{"evidence_id":"unit-fixture","peak_memory_mib":1024},"resources":{"cpu_millicores":4000,"memory_mib":2048},"max_input_bytes":1048576,"limits":{},"sync_models":["asr","speaker"],"async_models":["tts"],"secondary_models":{"asr":["speaker"]}}]});
         (runtime, contract, approvals)
+    }
+    #[test]
+    fn management_and_voice_bindings_preserve_each_other() {
+        let (runtime, contract, approvals) = fixtures();
+        let state = build(&runtime, &contract, &approvals, None).unwrap();
+        runtime.install(&state).unwrap();
+        let initial = runtime.snapshot().executors.len();
+        let mut managed = ManagedConfig::default();
+        managed.nodes.push(
+            serde_json::from_value(
+                json!({"id":"remote","capacities":{"cpu_millicores":4000,"memory_mib":8192}}),
+            )
+            .unwrap(),
+        );
+        managed.executors.push(serde_json::from_value(json!({"id":"remote.task","node_id":"remote","app_id":"example","contract_version":"1","task_type":"example.run","resources":{"cpu_millicores":1000,"memory_mib":1024}})).unwrap());
+        runtime.set_management(managed).unwrap();
+        assert_eq!(runtime.snapshot().executors.len(), initial + 1);
+        runtime.install(&state).unwrap();
+        assert_eq!(runtime.snapshot().executors.len(), initial + 1);
+        assert!(
+            runtime
+                .snapshot()
+                .nodes
+                .iter()
+                .any(|node| node.id == "remote")
+        );
     }
     #[test]
     fn binding_is_scoped_idempotent_and_revision_survives_restart() {

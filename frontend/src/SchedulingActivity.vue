@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import {computed,onMounted,onUnmounted,ref,watch} from 'vue'
 import Icon from './Icon.vue'
-import {duration,occupancyMs,type Permit,type Resources,type Statistics,type Timing} from './activity'
+import {duration,occupancyMs,permitBudget,type Permit,type Resources,type Statistics,type Timing} from './activity'
 const props=defineProps<{request:(path:string)=>Promise<any>,connected:boolean,demo:boolean,t:(text:string)=>string,nodeName:(id:string)=>string,locale:string}>()
 const statistics=ref<Statistics|null>(null),permits=ref<Permit[]>([]),state=ref(''),cursor=ref('0'),nextCursor=ref<string|null>(null)
 const historyBusy=ref(false),statsBusy=ref(false),historyError=ref(false),statsError=ref(false),sampleAt=ref(Date.now())
@@ -40,7 +40,7 @@ function pretty(value:string){const ms=Date.parse(value);return Number.isFinite(
 function timingLabel(value?:Timing){return `P50 ${duration(value?.p50_ms)} · P95 ${duration(value?.p95_ms)}`}
 function stateLabel(p:Permit){return props.t(p.state==='active'?'许可占用中':p.state==='suspect'?'停止待核验':p.evidence?.startsWith('delegated_task:')?'已移交任务':'已释放')}
 function evidence(p:Permit){if(p.state==='active')return props.t('等待执行完成');if(p.state==='suspect')return props.t('尚未确认停止');if(p.evidence?.startsWith('delegated_task:'))return props.t('资源已移交至持久任务');if(p.evidence==='synchronous_response_completed')return props.t('同步响应结束');if(p.evidence==='async_terminal_state_confirmed')return props.t('异步执行已停止');return props.t('已确认停止')}
-function budget(p:Permit):Resources{return p.parent_task_id&&p.delegated_resources?p.delegated_resources:p.resources}
+const budget=permitBudget
 </script>
 <template>
  <section class="section panel activity-statistics" :aria-busy="statsBusy">
@@ -59,7 +59,7 @@ function budget(p:Permit):Resources{return p.parent_task_id&&p.delegated_resourc
   <div class="table-toolbar"><select v-model="state" :disabled="historyBusy" :aria-label="t('筛选许可状态')"><option value="">{{t('全部状态')}}</option><option value="active">{{t('许可占用中')}}</option><option value="suspect">{{t('停止待核验')}}</option><option value="released">{{t('已释放')}}</option></select><small>{{t('每页 50 条；每 2.5 秒刷新。')}}</small></div>
   <p v-if="historyError" class="activity-error" role="alert">{{t('许可记录暂不可用；上次数据可能已过期。')}}</p>
   <div class="table-wrap"><table><thead><tr><th>{{t('模型 / 应用')}}</th><th>{{t('执行节点')}}</th><th>{{t('状态')}}</th><th>{{t('预约资源')}}</th><th>{{t('创建时间')}}</th><th>{{t('占用时长')}}</th><th>{{t('释放依据')}}</th></tr></thead><tbody>
-   <tr v-for="permit in displayedPermits" :key="permit.permit_id"><td><strong>{{permit.model_id||t('未记录模型')}}</strong><small>{{permit.app_id}}</small><small :title="permit.permit_id">{{permit.permit_id.slice(0,8)}}</small></td><td>{{nodeName(permit.node_id)}}</td><td><span class="status" :class="permit.state">{{stateLabel(permit)}}</span></td><td class="permit-budget"><span>{{(budget(permit).cpu_millicores||0)/1000}} vCPU · {{((budget(permit).memory_mib||0)/1024).toFixed(1)}} GiB RAM</span><small>{{budget(permit).gpu_slots||0}} GPU · {{((budget(permit).gpu_memory_mib||0)/1024).toFixed(1)}} GiB {{t('GPU 内存预算')}}</small><small v-if="permit.parent_task_id">{{t('共享父任务预约')}}</small></td><td><time :datetime="permit.created_at">{{pretty(permit.created_at)}}</time></td><td :title="permit.state==='released'&&!permit.released_at?t('旧记录未保存释放时间'):''">{{duration(occupancyMs(permit,sampleAt))}}</td><td>{{evidence(permit)}}</td></tr>
+   <tr v-for="permit in displayedPermits" :key="permit.permit_id"><td><strong>{{permit.model_id||t('未记录模型')}}</strong><small>{{permit.app_id}}</small><small :title="permit.permit_id">{{permit.permit_id.slice(0,8)}}</small></td><td>{{nodeName(permit.node_id)}}<small v-for="part in permit.placements||[]" :key="part.node_id">+ {{nodeName(part.node_id)}}</small></td><td><span class="status" :class="permit.state">{{stateLabel(permit)}}</span></td><td class="permit-budget"><span>{{(budget(permit).cpu_millicores||0)/1000}} vCPU · {{((budget(permit).memory_mib||0)/1024).toFixed(1)}} GiB RAM</span><small>{{budget(permit).gpu_slots||0}} GPU · {{((budget(permit).gpu_memory_mib||0)/1024).toFixed(1)}} GiB {{t('GPU 内存预算')}}</small><small v-if="permit.placements?.length">{{t('跨节点合计，按各节点独立核算')}}</small><small v-if="permit.parent_task_id">{{t('共享父任务预约')}}</small></td><td><time :datetime="permit.created_at">{{pretty(permit.created_at)}}</time></td><td :title="permit.state==='released'&&!permit.released_at?t('旧记录未保存释放时间'):''">{{duration(occupancyMs(permit,sampleAt))}}</td><td>{{evidence(permit)}}</td></tr>
    <tr v-if="!displayedPermits.length"><td colspan="7" class="empty">{{t(historyBusy?'正在加载许可记录':'没有匹配的许可记录')}}</td></tr>
   </tbody></table></div>
   <div class="permit-pages"><button class="quiet" :disabled="historyBusy||cursor==='0'||demo" @click="move(String(Math.max(0,Number(cursor)-50)))">{{t('上一页')}}</button><span>{{t('第 {page} 页').replace('{page}',String(Math.floor(Number(cursor)/50)+1))}}</span><button class="quiet" :disabled="historyBusy||!nextCursor||demo" @click="move(nextCursor||'0')">{{t('下一页')}}</button></div>

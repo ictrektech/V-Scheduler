@@ -1,13 +1,13 @@
-# vLLM 推理实例与外部算力接入（0.0.19）
+# vLLM 推理实例与外部算力接入（0.0.20）
 
-统一应用同时提供模型网关和资源控制器。**模型注册只把 API 加入目录；节点纳管才提供资源观测和预约。** 本文针对当前 0.0.19 实现，适用于已经提供兼容模型 API 的 vLLM 等服务，不负责安装模型或替它实现执行契约。
+统一应用同时提供模型网关和资源控制器。**模型注册只把 API 加入目录；节点纳管才提供资源观测和预约。** 本文针对当前 0.0.20 实现，适用于已经提供兼容模型 API 的 vLLM 等服务，不负责安装模型或替它实现执行契约。
 
 | 需求 | 当前接法 | 资源责任 |
 |---|---|---|
-| 经统一模型入口调用，并让 Scheduler 准入 | 注册模型 + 批准真实节点、executor 和逐模型策略 + 运行该节点 Agent | 网关在实际节点申请 permit；同步请求不进入持久任务队列，忙时返回 429 |
+| 经统一模型入口调用，并让 Scheduler 准入 | 由所属 VOS App 完成受控接入 + 批准真实节点、executor 和逐模型策略 | 网关在实际节点申请 permit；同步请求不进入持久任务队列，忙时返回 429 |
 | 经统一模型入口调用，不让本 Scheduler 调度 | 管理员明确批准该服务为外部独立资源，注册时携带 `scheduler.mode=cloud` | 外部运行方负责容量、并发与停止，不计入本 Scheduler 预约 |
 | 直接调用模型服务 | 使用服务自身 API；无需注册 | 完全由模型运行方管理，不能宣称受本 Scheduler 调度 |
-| 只观察其他机器资源 | 管理员批准 node / worker，运行空 executor 的 Agent | 显示测量，不启动任务 |
+| 只观察其他机器资源 | 在 VOS 安装本应用，复用所属应用已有监控 | 显示测量，不启动任务 |
 | 调度其他机器的异步任务 | 在资源纳管之上增加业务 executor 适配器并提交 `/tasks` | Scheduler 排队，节点 Agent 驱动执行、续租与停止确认 |
 
 `cloud` 是现有协议中的外部资源策略名。远程自建 vLLM 也必须由管理员确认其资源独立、由其他运行方管理，才能用这项显式豁免；远端 URL、公开模型或 `visibility=public` 都不会自动豁免。将本机或同一纳管资源池伪装成外部资源，会使预算失真。
@@ -60,7 +60,7 @@ TTL 支持 30–3600 秒，默认 90 秒。心跳返回 404 时重新执行注�
 
 ## 2. 让 Scheduler 调度该推理实例
 
-先按第 4 节批准并运行 `compute-a` 节点 Agent；本机则复用内置 Agent。管理员将下列 executor 合并进控制器 `/config/controller.json` 的 `executors`，保留原有条目。数字仅用于展示字段，必须用该硬件、模型和最大输入的实测峰值替换：
+以下是应用开发者的受控集成协议；本机复用内置组件。ModelInfer 远端控制未验证时不能据此手工激活真实计算节点，最终用户不需要安装 Agent。管理员将下列 executor 合并进控制器 `/config/controller.json` 的 `executors`，保留原有条目。数字仅用于展示字段，必须用该硬件、模型和最大输入的实测峰值替换：
 
 ```json
 {
@@ -124,66 +124,17 @@ curl --fail-with-body "$GATEWAY/v1/chat/completions" \
 
 若希望完全自行管理且不使用统一模型目录，直接访问原服务即可，不需要关闭统一应用的 `V_ROUTER_SCHEDULER_REQUIRED`。这个全局开关不能作为单个实例的豁免方式。
 
-## 4. 其他机器的资源纳管
+## 4. 通过 VOS App 管理外部节点
 
-0.0.19 **没有通用 `POST /workers/register` 或动态 executor 注册接口**。接入标准第 6 节描述的是目标协议；当前可执行的方法是管理员配置批准 + 标准 Agent 心跳。Cluster Manager 发现仅提供观察，安装另一份 Scheduler 也不会自动合并两个控制器的资源账本。
+用户只通过 VOS 安装和管理应用。0.0.20 自动读取已安装 ModelInfer 的远端节点清单与现有监控，不要求登录远端机器或运行第二套 Agent。页面提供“预算规划”和所属应用管理入口；规划不会授予执行权限，也不会改变已有推理部署。
 
-选一个控制器管理目标资源池；同一实际资源不能由两个独立控制器各自承诺全部容量。在中心 `/config/controller.json` 合并 worker 身份与 node，保留已有配置。下列数值只是结构示例：
+多机 vLLM 的真实执行、停止与故障恢复契约尚待 VOS App 管理适配器验证。已预留来源规划与控制接口；控制请求当前返回 501，并保持不可调度。待管理链路恢复后由应用实现方验证，用户不承担手工部署工作。详情见[节点管理](node-management.md)。
 
-```json
-{
-  "principals": [{
-    "token": "REPLACE_WITH_RANDOM_WORKER_TOKEN_32_PLUS",
-    "role": "worker", "app_id": "agent.compute-a", "node_id": "compute-a"
-  }],
-  "nodes": [{
-    "id": "compute-a",
-    "capacities": {
-      "cpu_millicores": 8000, "memory_mib": 32768,
-      "gpu_slots": 1, "gpu_memory_mib": 24576
-    },
-    "resident_baseline": {"memory_mib": 4096, "gpu_memory_mib": 12288},
-    "safety_reserve": {
-      "cpu_millicores": 1000, "memory_mib": 4096, "gpu_memory_mib": 1024
-    }
-  }]
-}
-```
-
-为 worker 生成独立的至少 32 字符随机令牌，将相同值安全交付到外部节点，权限 `0600`；worker 不能用管理员或网关令牌。保存 `/secure/agent.json`：
-
-```json
-{
-  "controller": "https://scheduler.example/scheduler/api/v1",
-  "node_id": "compute-a",
-  "token": "REPLACE_WITH_RANDOM_WORKER_TOKEN_32_PLUS",
-  "journal": "/var/lib/v-scheduler/compute-a-agent.json",
-  "executors": []
-}
-```
-
-运行与节点架构匹配、从本仓库构建的二进制：
-
-```bash
-/path/to/v-scheduler agent --config /secure/agent.json
-```
-
-Agent 主动连接中心 HTTP API，不需要中心 SSH 登录节点。以受控后台服务运行，持久保留配置与 journal，不能每次启动删除 journal 生成新 session。首次心跳绑定 session；丢失 journal 的旧节点重建不能靠伪造心跳接管，应先停止旧执行并人工核验。空 `executors` 只采集资源、不领取异步任务，足以为第 2 节同步 permit 提供节点测量；GPU 测量仍需要该主机可见的驱动与采集权限。不要在缺失 `/proc` 或 GPU 驱动的普通容器里伪造空闲值。
-
-管理员重载中心配置后，以调度器管理员身份检查：
-
-```bash
-curl --fail-with-body "$SCHEDULER/nodes" \
-  -H "Authorization: Bearer $SCHEDULER_ADMIN_TOKEN"
-curl --fail-with-body "$SCHEDULER/executors" \
-  -H "Authorization: Bearer $SCHEDULER_ADMIN_TOKEN"
-```
-
-此处 `SCHEDULER` 是完整 `/scheduler/api/v1` base。检查实际 node ID、心跳、观测时间、GPU、批准预算与 executor 位置；仅看到 Cluster Manager 的 `managed=false` 条目不能算纳管成功。当前 worker 心跳超过 12 秒即不能新准入，旧的未知停止预约保持占用。VOS 来源与成员映射是可选观察补充，见[节点资源](node-resources.md)。
+底层 `model.infer` 的主节点和 `placements` 协议可原子预约多个独立资源池，已用隔离协议环境验证；这不等于已接管 ModelInfer 的多机推理。观察节点不能作为执行器位置，未经验证不能把它们伪装成已纳管资源。
 
 ## 5. 在外部节点执行异步业务任务
 
-在第 4 节基础上：中心增加业务 submitter 和它所属的 executor（`task_type` 使用真实业务类型），executor 绑定 `node_id=compute-a`；节点 Agent 的 `executors` 增加同 ID 的 `{id,url,health_url,token}` 适配器。URL 指向实现当前 start/inspect/cancel、持久句柄、fence、租约 watchdog 与停止证据的业务服务，**不能填写 vLLM `/v1` 作为这种适配器地址**。完整字段示例见 [controller](../config/controller.example.json) 与 [Agent](../config/agent.example.json)。
+本节仅面向业务 App 的集成开发；远端 VOS 管理适配器完成验证后才能启用，不是用户安装流程。中心增加业务 submitter 和它所属的 executor（`task_type` 使用真实业务类型），executor 绑定 `node_id=compute-a`；节点 Agent 的 `executors` 增加同 ID 的 `{id,url,health_url,token}` 适配器。URL 指向实现当前 start/inspect/cancel、持久句柄、fence、租约 watchdog 与停止证据的业务服务，**不能填写 vLLM `/v1` 作为这种适配器地址**。完整字段示例见 [controller](../config/controller.example.json) 与 [Agent](../config/agent.example.json)。
 
 业务应用先持久保存自己的任务和待提交记录，再用自己的 submitter 令牌提交 `POST /tasks`，携带稳定 `Idempotency-Key`。当前 body 使用 `protocol_version`、`app_task_id`、`executor`、`parameters` 与空 `inputs: []`；参数格式由批准的业务 executor 定义。按[当前接入契约](integration-standard.md#当前-mvp-接入范围)查询、取消与跟踪状态。模型和输入必须预先在实际节点可达；当前没有跨节点模型/文件复制、任意远程命令或多 GPU 设备级调度。原生同步 permit 不会自动变成这个异步队列。
 

@@ -277,6 +277,13 @@ fn one() -> i64 {
 
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
+pub struct Placement {
+    pub node_id: String,
+    pub resources: Resources,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct Executor {
     pub id: String,
     pub contract_version: String,
@@ -287,11 +294,37 @@ pub struct Executor {
     #[serde(default)]
     pub upstream_urls: Vec<String>,
     #[serde(default)]
+    pub placements: Vec<Placement>,
+    #[serde(default)]
     pub retry_mode: String,
     #[serde(default = "one")]
     pub max_attempts: i64,
 }
-#[derive(Clone, Deserialize)]
+impl Executor {
+    pub fn allocations(&self) -> Vec<Placement> {
+        let mut result = vec![Placement {
+            node_id: self.node_id.clone(),
+            resources: self.resources.clone(),
+        }];
+        result.extend(self.placements.clone());
+        result.sort_by(|a, b| a.node_id.cmp(&b.node_id));
+        result
+    }
+    pub fn valid_placements(&self) -> bool {
+        let mut seen = std::collections::HashSet::new();
+        seen.insert(self.node_id.as_str());
+        self.placements.len() <= 31
+            && (self.placements.is_empty() || self.task_type == "model.infer")
+            && self.placements.iter().all(|p| {
+                seen.insert(&p.node_id)
+                    && p.resources.valid()
+                    && p.resources.cpu_millicores > 0
+                    && p.resources.memory_mib > 0
+                    && (p.resources.gpu_memory_mib == 0 || p.resources.gpu_slots > 0)
+            })
+    }
+}
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Node {
     pub id: String,
@@ -303,9 +336,13 @@ pub struct Node {
     #[serde(default)]
     pub vos_member_id: String,
     #[serde(default)]
+    pub discovery_source: String,
+    #[serde(default)]
+    pub discovery_id: String,
+    #[serde(default)]
     pub vos: Option<VosEndpoint>,
 }
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct VosEndpoint {
     pub url: String,
@@ -353,4 +390,12 @@ pub struct Command {
     pub parameters: Value,
     pub lease_seconds: u64,
     pub cancel: bool,
+}
+
+// Operator-approved persistent overlays; credentials remain in their own stores.
+#[derive(Clone, Default)]
+pub struct ManagedConfig {
+    pub nodes: Vec<Node>,
+    pub executors: Vec<Executor>,
+    pub disabled_executors: Vec<String>,
 }

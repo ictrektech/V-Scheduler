@@ -5,6 +5,7 @@ mod gpu;
 mod identity;
 mod local;
 mod model;
+mod modelinfer;
 mod statistics;
 mod vos;
 mod voice;

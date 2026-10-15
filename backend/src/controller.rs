@@ -1,3 +1,5 @@
+mod allocations;
+mod management;
 use crate::model::*;
 use anyhow::{Context, ensure};
 use axum::extract::FromRef;
@@ -70,7 +72,21 @@ async fn auth(a: &App, h: &HeaderMap) -> Api<Principal> {
         .iter()
         .find(|p| Sha256::digest(p.token.as_bytes()) == digest)
     {
+        if p.role == "worker" {
+            let enabled: Option<bool> =
+                sqlx::query_scalar("SELECT management_enabled FROM vrs_nodes WHERE id=$1")
+                    .bind(&p.node_id)
+                    .fetch_optional(&a.db)
+                    .await
+                    .map_err(unavailable)?;
+            if enabled == Some(false) {
+                return Err(Error(StatusCode::UNAUTHORIZED, "CREDENTIAL_REVOKED"));
+            }
+        }
         return Ok(p.clone());
+    }
+    if let Some(p) = management::authenticate(a, token).await? {
+        return Ok(p);
     }
     crate::identity::verify(h).await.map_err(|status| {
         Error(
@@ -134,6 +150,9 @@ fn probe_ready(report: &Value, executor: &str) -> bool {
             && timestamp_fresh(&report["executor_health"][executor]["observed_at"], 15))
 }
 fn node_state(view: &Value) -> &'static str {
+    if view["management_enabled"] == false {
+        return "revoked";
+    }
     if view["managed"] == false {
         return "observing";
     }
@@ -222,7 +241,7 @@ async fn task_values(a: &App, rows: &[sqlx::postgres::PgRow]) -> Api<Vec<Value>>
         let id: String = node.get("id");
         node_map.insert(id, json!({"capacities":node.get::<Value,_>("capacities"),"resident_baseline":node.get::<Value,_>("resident_baseline"),"safety_reserve":node.get::<Value,_>("safety_reserve"),"report":node.get::<Value,_>("report"),"heartbeat":node.get::<Option<DateTime<Utc>>,_>("heartbeat"),"draining":node.get::<bool,_>("draining")}));
     }
-    let reservations = sqlx::query("SELECT node,resources FROM vrs_reservations WHERE state<>'released' UNION ALL SELECT node,resources FROM vrs_permits WHERE state<>'released'").fetch_all(&a.db).await.map_err(unavailable)?;
+    let reservations = sqlx::query("SELECT node,resources FROM vrs_reservations WHERE state<>'released' UNION ALL SELECT node,resources FROM vrs_permits WHERE state<>'released' UNION ALL SELECT x.node_id AS node,x.resources FROM vrs_permit_placements x JOIN vrs_permits p ON p.id=x.permit_id WHERE p.state<>'released'").fetch_all(&a.db).await.map_err(unavailable)?;
     let mut used = HashMap::<String, Resources>::new();
     for row in reservations {
         let resources: Resources =
@@ -265,7 +284,7 @@ async fn expire(a: &App) -> Api<()> {
         event(&mut tx, &r.get::<String, _>("id")).await?;
     }
     sqlx::query(
-        "UPDATE vrs_permits SET state='suspect' WHERE state='active' AND lease_until<now()",
+        "UPDATE vrs_permits p SET state='suspect' WHERE p.state='active' AND (p.lease_until<now() OR (EXISTS(SELECT 1 FROM vrs_permit_placements x WHERE x.permit_id=p.id) AND EXISTS(SELECT 1 FROM vrs_nodes n WHERE (n.id=p.node OR EXISTS(SELECT 1 FROM vrs_permit_placements x WHERE x.permit_id=p.id AND x.node_id=n.id)) AND (n.heartbeat IS NULL OR n.heartbeat<now()-interval '12 seconds'))))",
     )
     .execute(&mut *tx)
     .await
@@ -328,6 +347,22 @@ pub async fn serve(
             ["", "none", "idempotent"].contains(&e.retry_mode.as_str()),
             "invalid retry policy"
         );
+        ensure!(
+            e.valid_placements(),
+            "invalid distributed inference placements"
+        );
+        for part in &e.placements {
+            let node = config
+                .nodes
+                .iter()
+                .find(|node| node.id == part.node_id)
+                .context("unknown placement node")?;
+            ensure!(
+                part.resources
+                    .fits(&node.resident_baseline, &node.capacities),
+                "placement exceeds node capacity"
+            );
+        }
         let n = config
             .nodes
             .iter()
@@ -355,6 +390,8 @@ pub async fn serve(
     for n in &config.nodes {
         sqlx::query("INSERT INTO vrs_nodes(id,capacities,resident_baseline,safety_reserve) VALUES($1,$2,$3,$4) ON CONFLICT(id) DO UPDATE SET capacities=excluded.capacities,resident_baseline=excluded.resident_baseline,safety_reserve=excluded.safety_reserve").bind(&n.id).bind(json!(n.capacities)).bind(json!(n.resident_baseline)).bind(json!(n.safety_reserve)).execute(&db).await?;
     }
+    management::restore(&db, &runtime).await?;
+    let config = runtime.snapshot();
     let a = App {
         db,
         config,
@@ -388,6 +425,19 @@ pub async fn serve(
                 )
             }),
         )
+        .route("/management", get(management::overview))
+        .route("/node-sources/modelinfer/{id}", post(management::source_settings))
+        .route("/node-sources/modelinfer/{id}/control", post(management::source_control))
+        .route("/enrollments", post(management::enrollment))
+        .route("/enrollments/{id}/revoke", post(management::revoke_enrollment))
+        .route("/workers/register", post(management::register))
+        .route("/workers/{id}/executors", post(management::propose_executors))
+        .route("/service-identities", post(management::create_identity))
+        .route("/service-identities/{id}/revoke", post(management::revoke_identity))
+        .route("/executors/{id}", post(management::update_executor))
+        .route("/nodes/{id}", post(management::update_node))
+        .route("/nodes/{id}/approve", post(management::approve_node))
+        .route("/nodes/{id}/revoke", post(management::revoke_node))
         .route("/executors", get(executors))
         .route("/statistics", get(statistics))
         .route("/tasks", post(submit).get(tasks))
@@ -431,7 +481,7 @@ pub async fn serve(
 }
 async fn discovery() -> Json<Value> {
     ok(
-        json!({"protocol_version":1,"implementation_version":"0.1.0","features":["tasks","idempotency","reservations","events","static-executors","agent-image-studio","permits","backend-permit-verification","permit-history","statistics","permit-release-times","task-timeline","delegated-permits","safety-headroom","retry","manual-delete","attempt-history"],"unsupported":["artifacts","dynamic-enrollment","ha"],"authentication":"scoped-bearer","max_body_bytes":262144,"openapi_url":"openapi.json"}),
+        json!({"protocol_version":1,"implementation_version":"0.1.0","features":["tasks","idempotency","reservations","events","static-executors","dynamic-enrollment","node-management","modelinfer-discovery","vos-app-source-metrics","source-budget-planning","multi-node-permits","executor-approval","service-identities","agent-image-studio","permits","backend-permit-verification","permit-history","statistics","permit-release-times","task-timeline","delegated-permits","safety-headroom","retry","manual-delete","attempt-history"],"unsupported":["artifacts","ha","vos-remote-control"],"authentication":"scoped-bearer","max_body_bytes":262144,"openapi_url":"openapi.json"}),
     )
 }
 async fn executors(State(a): State<App>, h: HeaderMap) -> Api<Json<Value>> {
@@ -490,6 +540,12 @@ async fn submit(State(a): State<App>, h: HeaderMap, Json(body): Json<TaskSubmit>
         .await
         .map_err(unavailable)?;
     let id = Uuid::new_v4().to_string();
+    sqlx::query("SELECT id FROM vrs_nodes WHERE id=$1 FOR UPDATE")
+        .bind(&e.node_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(unavailable)?;
+    management::admit(&mut tx, e, &p).await?;
     let insert=sqlx::query("INSERT INTO vrs_tasks(id,app,idem,hash,body,node) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(app,idem) DO NOTHING RETURNING *").bind(&id).bind(&p.app_id).bind(key).bind(&hash).bind(value).bind(&e.node_id).fetch_optional(&mut *tx).await.map_err(unavailable)?;
     let fresh = insert.is_some();
     if fresh {
@@ -622,14 +678,28 @@ async fn task_events(
 async fn nodes(State(a): State<App>, h: HeaderMap) -> Api<Json<Value>> {
     let p = auth(&a, &h).await?;
     require(&p, "admin")?;
+    if p.app_id == "vos-administrator" {
+        if a.config.vos_cluster.is_none() {
+            tokio::join!(
+                crate::vos::refresh_platform_inventory(&a.db, &h),
+                crate::modelinfer::refresh(&a.db, &h)
+            );
+        } else {
+            crate::modelinfer::refresh(&a.db, &h).await;
+        }
+    }
     let rs = sqlx::query("SELECT * FROM vrs_nodes ORDER BY id")
         .fetch_all(&a.db)
         .await
         .map_err(unavailable)?;
-    let mut views: Vec<Value> = rs.iter().map(|r|json!({"id":r.get::<String,_>("id"),"capacities":r.get::<Value,_>("capacities"),"resident_baseline":r.get::<Value,_>("resident_baseline"),"safety_reserve":r.get::<Value,_>("safety_reserve"),"report":r.get::<Value,_>("report"),"draining":r.get::<bool,_>("draining"),"heartbeat":r.get::<Option<DateTime<Utc>>,_>("heartbeat")})).collect();
+    let mut views: Vec<Value> = rs.iter().map(|r|json!({"id":r.get::<String,_>("id"),"capacities":r.get::<Value,_>("capacities"),"resident_baseline":r.get::<Value,_>("resident_baseline"),"safety_reserve":r.get::<Value,_>("safety_reserve"),"report":r.get::<Value,_>("report"),"management_enabled":r.get::<bool,_>("management_enabled"),"draining":r.get::<bool,_>("draining"),"heartbeat":r.get::<Option<DateTime<Utc>>,_>("heartbeat")})).collect();
     crate::vos::decorate(&a.db, &a.config, &mut views)
         .await
         .map_err(unavailable)?;
+    crate::modelinfer::decorate(&a.db, &a.config, &mut views)
+        .await
+        .map_err(unavailable)?;
+    management::decorate(&a, &mut views).await?;
     for view in &mut views {
         view["health_state"] = json!(node_state(view));
         let reserve: Resources =
@@ -642,7 +712,7 @@ async fn reservations(State(a): State<App>, h: HeaderMap) -> Api<Json<Value>> {
     let p = auth(&a, &h).await?;
     require(&p, "admin")?;
     let rs =
-        sqlx::query("SELECT attempt,task,node,resources,state,lease_until,created_at FROM vrs_reservations WHERE state<>'released' UNION ALL SELECT id AS attempt, 'permit:' || id AS task,node,resources,state,lease_until,created_at FROM vrs_permits WHERE state<>'released' ORDER BY created_at")
+        sqlx::query("SELECT attempt,task,node,resources,state,lease_until,created_at FROM vrs_reservations WHERE state<>'released' UNION ALL SELECT id AS attempt, 'permit:' || id AS task,node,resources,state,lease_until,created_at FROM vrs_permits WHERE state<>'released' UNION ALL SELECT p.id AS attempt,'permit:' || p.id AS task,x.node_id AS node,x.resources,p.state,p.lease_until,p.created_at FROM vrs_permit_placements x JOIN vrs_permits p ON p.id=x.permit_id WHERE p.state<>'released' ORDER BY created_at")
             .fetch_all(&a.db)
             .await
             .map_err(unavailable)?;
@@ -654,17 +724,32 @@ async fn drain(
     Path(id): Path<String>,
     Json(body): Json<Value>,
 ) -> Api<Json<Value>> {
-    require(&auth(&a, &h).await?, "admin")?;
+    let p = auth(&a, &h).await?;
+    require(&p, "admin")?;
+    let mut tx = a.db.begin().await.map_err(unavailable)?;
     let d = body
         .get("draining")
         .and_then(Value::as_bool)
         .ok_or(invalid())?;
-    sqlx::query("UPDATE vrs_nodes SET draining=$2 WHERE id=$1")
-        .bind(id)
-        .bind(d)
-        .execute(&a.db)
-        .await
-        .map_err(unavailable)?;
+    let changed =
+        sqlx::query("UPDATE vrs_nodes SET draining=$2 WHERE id=$1 AND management_enabled=true")
+            .bind(&id)
+            .bind(d)
+            .execute(&mut *tx)
+            .await
+            .map_err(unavailable)?
+            .rows_affected();
+    if changed == 0 {
+        return Err(Error(StatusCode::CONFLICT, "NODE_NOT_APPROVED"));
+    }
+    management::audit(
+        &mut tx,
+        &p,
+        if d { "node.draining" } else { "node.resumed" },
+        &id,
+    )
+    .await?;
+    tx.commit().await.map_err(unavailable)?;
     Ok(ok(json!({"draining":d})))
 }
 #[derive(Deserialize)]
@@ -738,7 +823,8 @@ async fn claim(
             json!({"commands":existing.iter().map(command).collect::<Vec<_>>()}),
         ));
     }
-    if node.get::<bool, _>("draining")
+    if !node.get::<bool, _>("management_enabled")
+        || node.get::<bool, _>("draining")
         || !node.get::<Option<bool>, _>("fresh").unwrap_or(false)
         || !report_fresh(&node.get::<Value, _>("report"))
     {
@@ -749,7 +835,7 @@ async fn claim(
     let mut used: Resources =
         serde_json::from_value(node.get("resident_baseline")).map_err(|_| invalid())?;
     for r in
-        sqlx::query("SELECT resources FROM vrs_reservations WHERE node=$1 AND state<>'released' UNION ALL SELECT resources FROM vrs_permits WHERE node=$1 AND state<>'released'")
+        sqlx::query("SELECT resources FROM vrs_reservations WHERE node=$1 AND state<>'released' UNION ALL SELECT resources FROM vrs_permits WHERE node=$1 AND state<>'released' UNION ALL SELECT x.resources FROM vrs_permit_placements x JOIN vrs_permits p ON p.id=x.permit_id WHERE x.node_id=$1 AND p.state<>'released'")
             .bind(&id)
             .fetch_all(&mut *tx)
             .await
@@ -778,6 +864,9 @@ async fn claim(
         else {
             continue;
         };
+        if management::admit(&mut tx, e, &p).await.is_err() {
+            continue;
+        }
         if voice_admission(&a, &e.id).is_err() {
             continue;
         }
@@ -1031,7 +1120,8 @@ async fn permit_acquire(
         return Err(Error(StatusCode::FORBIDDEN, "UPSTREAM_NOT_APPROVED"));
     }
     let mut tx = a.db.begin().await.map_err(unavailable)?;
-    let node=sqlx::query("SELECT *,heartbeat>now()-interval '12 seconds' AS fresh FROM vrs_nodes WHERE id=$1 FOR UPDATE").bind(&e.node_id).fetch_one(&mut *tx).await.map_err(unavailable)?;
+    let nodes = allocations::lock_nodes(&mut tx, e).await?;
+    management::admit(&mut tx, e, &p).await?;
     voice_admission(&a, &e.id)?;
     if let Some(old) =
         sqlx::query("SELECT *,lease_until>now() AS valid FROM vrs_permits WHERE app=$1 AND idem=$2")
@@ -1058,35 +1148,12 @@ async fn permit_acquire(
             json!({"permit_id":old.get::<String,_>("id"),"lease_seconds":30,"node_id":e.node_id}),
         ));
     }
-    if node.get::<bool, _>("draining")
-        || !node.get::<Option<bool>, _>("fresh").unwrap_or(false)
-        || !report_fresh(&node.get::<Value, _>("report"))
-        || !probe_ready(&node.get::<Value, _>("report"), &e.id)
-    {
-        return Err(Error(
-            StatusCode::TOO_MANY_REQUESTS,
-            "WAIT_RESOURCE_OR_NODE",
-        ));
-    }
-    let cap: Resources = serde_json::from_value(node.get("capacities")).map_err(|_| invalid())?;
-    let mut used: Resources =
-        serde_json::from_value(node.get("resident_baseline")).map_err(|_| invalid())?;
-    for r in sqlx::query("SELECT resources FROM vrs_reservations WHERE node=$1 AND state<>'released' UNION ALL SELECT resources FROM vrs_permits WHERE node=$1 AND state<>'released'").bind(&e.node_id).fetch_all(&mut *tx).await.map_err(unavailable)?{used.add(&serde_json::from_value(r.get("resources")).map_err(|_|invalid())?);}
-    let queued: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM vrs_tasks WHERE node=$1 AND status='queued')",
-    )
-    .bind(&e.node_id)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(unavailable)?;
-    let observed: Value = node.get("report");
-    let reserve: Resources =
-        serde_json::from_value(node.get("safety_reserve")).map_err(|_| invalid())?;
-    if queued
-        || !e.resources.fits(&used, &cap)
-        || !e.resources.fits_guarded(&used, &observed, &reserve)
-    {
-        return Err(Error(StatusCode::TOO_MANY_REQUESTS, "WAIT_RESOURCE"));
+    for part in e.allocations() {
+        let node = nodes
+            .iter()
+            .find(|node| node.get::<String, _>("id") == part.node_id)
+            .ok_or(invalid())?;
+        allocations::room(&mut tx, node, &part.resources, &e.id).await?;
     }
     let id = Uuid::new_v4().to_string();
     sqlx::query(
@@ -1098,13 +1165,24 @@ async fn permit_acquire(
     .bind(&e.id)
     .bind(&e.node_id)
     .bind(json!(e.resources))
-    .bind(json!({"model_id":b.model_id,"upstream_url":b.upstream_url,"execution_token_hash":format!("{:x}",Sha256::digest(b.execution_token.as_bytes()))}))
+    .bind(json!({"model_id":b.model_id,"upstream_url":b.upstream_url,"placements":e.placements,"execution_token_hash":format!("{:x}",Sha256::digest(b.execution_token.as_bytes()))}))
     .execute(&mut *tx)
     .await
     .map_err(unavailable)?;
+    for part in &e.placements {
+        sqlx::query(
+            "INSERT INTO vrs_permit_placements(permit_id,node_id,resources) VALUES($1,$2,$3)",
+        )
+        .bind(&id)
+        .bind(&part.node_id)
+        .bind(json!(part.resources))
+        .execute(&mut *tx)
+        .await
+        .map_err(unavailable)?;
+    }
     tx.commit().await.map_err(unavailable)?;
     Ok(ok(
-        json!({"permit_id":id,"lease_seconds":30,"node_id":e.node_id}),
+        json!({"permit_id":id,"lease_seconds":30,"node_id":e.node_id,"node_ids":e.allocations().iter().map(|p|p.node_id.clone()).collect::<Vec<_>>()}),
     ))
 }
 #[derive(Deserialize)]
@@ -1145,7 +1223,7 @@ async fn permits(
         .bind(p.role=="admin").bind(&p.app_id).bind(q.state.as_deref()).bind(limit).bind(offset).fetch_all(&a.db).await.map_err(unavailable)?;
     let items:Vec<Value>=rows.iter().map(|r|{
         let metadata:Value=r.get("metadata");
-        json!({"permit_id":r.get::<String,_>("id"),"app_id":r.get::<String,_>("app"),"executor_id":r.get::<String,_>("executor"),"node_id":r.get::<String,_>("node"),"state":r.get::<String,_>("state"),"resources":r.get::<Value,_>("resources"),"delegated_resources":r.get::<Value,_>("delegated_resources"),"model_id":metadata["model_id"],"parent_task_id":metadata["parent_task_id"],"evidence":r.get::<Option<String>,_>("evidence"),"created_at":r.get::<DateTime<Utc>,_>("created_at"),"released_at":r.get::<Option<DateTime<Utc>>,_>("released_at"),"lease_until":r.get::<DateTime<Utc>,_>("lease_until")})
+        json!({"permit_id":r.get::<String,_>("id"),"app_id":r.get::<String,_>("app"),"executor_id":r.get::<String,_>("executor"),"node_id":r.get::<String,_>("node"),"state":r.get::<String,_>("state"),"resources":r.get::<Value,_>("resources"),"delegated_resources":r.get::<Value,_>("delegated_resources"),"placements":metadata["placements"],"model_id":metadata["model_id"],"parent_task_id":metadata["parent_task_id"],"evidence":r.get::<Option<String>,_>("evidence"),"created_at":r.get::<DateTime<Utc>,_>("created_at"),"released_at":r.get::<Option<DateTime<Utc>>,_>("released_at"),"lease_until":r.get::<DateTime<Utc>,_>("lease_until")})
     }).collect();
     Ok(ok(
         json!({"items":items,"next_cursor":if rows.len()==limit as usize{Some((offset+limit).to_string())}else{None}}),
@@ -1191,6 +1269,7 @@ async fn permit_verify(
     let row=sqlx::query("SELECT p.*,p.lease_until>now() AS valid FROM vrs_permits p WHERE id=$1 AND executor=$2 AND node=$3 AND (parent_attempt IS NULL OR EXISTS(SELECT 1 FROM vrs_tasks t JOIN vrs_reservations r ON r.attempt=t.attempt WHERE t.attempt=p.parent_attempt AND t.status='running' AND r.state='active' AND r.lease_until>now())) FOR UPDATE OF p")
         .bind(&id).bind(&executor.id).bind(&executor.node_id).fetch_optional(&mut *tx).await.map_err(unavailable)?
         .ok_or(Error(StatusCode::NOT_FOUND,"NOT_FOUND"))?;
+    management::principal_active(&mut tx, &p).await?;
     let mut metadata: Value = row.get("metadata");
     if row.get::<String, _>("state") != "active" || !row.get::<bool, _>("valid") {
         return Err(Error(StatusCode::CONFLICT, "PERMIT_NOT_ACTIVE"));
@@ -1207,22 +1286,9 @@ async fn permit_verify(
         if !metadata["execution_id"].is_null() {
             return Err(Error(StatusCode::CONFLICT, "PERMIT_ALREADY_CLAIMED"));
         }
-        let node = sqlx::query(
-            "SELECT *,heartbeat>now()-interval '12 seconds' AS fresh FROM vrs_nodes WHERE id=$1",
-        )
-        .bind(&executor.node_id)
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(unavailable)?;
-        if node.get::<bool, _>("draining")
-            || !node.get::<Option<bool>, _>("fresh").unwrap_or(false)
-            || !report_fresh(&node.get::<Value, _>("report"))
-            || !probe_ready(&node.get::<Value, _>("report"), &executor.id)
-        {
-            return Err(Error(
-                StatusCode::TOO_MANY_REQUESTS,
-                "WAIT_RESOURCE_OR_NODE",
-            ));
+        for part in executor.allocations() {
+            let node=sqlx::query("SELECT *,heartbeat>now()-interval '12 seconds' AS fresh FROM vrs_nodes WHERE id=$1").bind(&part.node_id).fetch_one(&mut *tx).await.map_err(unavailable)?;
+            allocations::ready(&node, &executor.id)?;
         }
         metadata["execution_id"] = json!(b.execution_id);
         sqlx::query("UPDATE vrs_permits SET metadata=$2 WHERE id=$1")
@@ -1344,6 +1410,18 @@ async fn permit_delegate(
             .await
             .map_err(unavailable)?;
     let node_id = node_id.ok_or(Error(StatusCode::NOT_FOUND, "NOT_FOUND"))?;
+    let multi: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM vrs_permit_placements WHERE permit_id=$1)")
+            .bind(&id)
+            .fetch_one(&a.db)
+            .await
+            .map_err(unavailable)?;
+    if multi {
+        return Err(Error(
+            StatusCode::CONFLICT,
+            "MULTI_NODE_HANDOFF_NOT_SUPPORTED",
+        ));
+    }
     let mut tx = a.db.begin().await.map_err(unavailable)?;
     sqlx::query("SELECT id FROM vrs_nodes WHERE id=$1 FOR UPDATE")
         .bind(&node_id)
@@ -1426,6 +1504,12 @@ async fn delegation_verify(
         .iter()
         .find(|e| e.id == b.executor_id && e.app_id == p.app_id && e.task_type == "model.infer")
         .ok_or(Error(StatusCode::FORBIDDEN, "DELEGATION_NOT_ALLOWED"))?;
+    if !infer.placements.is_empty() {
+        return Err(Error(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "MULTI_NODE_HANDOFF_NOT_SUPPORTED",
+        ));
+    }
     if !approved_upstream(infer, &b.upstream_url) || b.model_id.len() > 512 {
         return Err(Error(StatusCode::FORBIDDEN, "UPSTREAM_NOT_APPROVED"));
     }
@@ -1437,6 +1521,7 @@ async fn delegation_verify(
     let mut tx = a.db.begin().await.map_err(unavailable)?;
     let node = sqlx::query("SELECT *,heartbeat>now()-interval '12 seconds' AS fresh FROM vrs_nodes WHERE id=$1 FOR UPDATE")
         .bind(&infer.node_id).fetch_one(&mut *tx).await.map_err(unavailable)?;
+    management::admit(&mut tx, infer, &p).await?;
     let row = sqlx::query("SELECT t.body,t.node,t.attempt,r.resources FROM vrs_tasks t JOIN vrs_reservations r ON r.attempt=t.attempt WHERE t.id=$1 AND t.status='running' AND t.deleted_at IS NULL AND r.state='active' AND r.lease_until>now() FOR UPDATE OF t,r")
         .bind(&b.task_id).fetch_optional(&mut *tx).await.map_err(unavailable)?
         .ok_or(Error(StatusCode::FORBIDDEN, "DELEGATION_NOT_ALLOWED"))?;

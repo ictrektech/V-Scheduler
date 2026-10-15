@@ -1,4 +1,4 @@
-use crate::model::Command;
+use crate::model::{Command, Executor};
 use anyhow::{Context, ensure};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -18,10 +18,19 @@ struct Adapter {
 #[serde(deny_unknown_fields)]
 struct Config {
     controller: String,
+    #[serde(default)]
+    ca_certificate: Option<PathBuf>,
     node_id: String,
+    #[serde(default)]
     token: String,
+    #[serde(default)]
+    enrollment_token: Option<String>,
+    #[serde(default)]
+    display_name: Option<String>,
     journal: PathBuf,
     executors: Vec<Adapter>,
+    #[serde(default)]
+    registrations: Vec<Executor>,
 }
 #[derive(Serialize, Deserialize)]
 struct Journal {
@@ -33,13 +42,39 @@ fn save(path: &Path, journal: &Journal) -> anyhow::Result<()> {
         std::fs::create_dir_all(dir)?;
     }
     let tmp = path.with_extension("tmp");
-    let file = std::fs::File::create(&tmp)?;
+    use std::os::unix::fs::OpenOptionsExt;
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .mode(0o600)
+        .open(&tmp)?;
     serde_json::to_writer(&file, journal)?;
     file.sync_all()?;
     std::fs::rename(tmp, path)?;
     if let Some(dir) = path.parent() {
         std::fs::File::open(dir)?.sync_all()?;
     }
+    Ok(())
+}
+#[derive(Serialize, Deserialize)]
+struct EnrollmentIdentity {
+    enrollment_hash: String,
+    token: String,
+    registered: bool,
+}
+fn save_identity(path: &Path, identity: &EnrollmentIdentity) -> anyhow::Result<()> {
+    use std::{io::Write, os::unix::fs::OpenOptionsExt};
+    let temporary = path.with_extension(format!("{}.pending", Uuid::new_v4().simple()));
+    let mut file = std::fs::OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .mode(0o600)
+        .open(&temporary)?;
+    file.write_all(&serde_json::to_vec(identity)?)?;
+    file.sync_all()?;
+    std::fs::rename(&temporary, path)?;
+    std::fs::File::open(path.parent().context("missing identity directory")?)?.sync_all()?;
     Ok(())
 }
 async fn post(c: &Client, url: &str, token: &str, body: Value) -> anyhow::Result<Value> {
@@ -292,13 +327,14 @@ pub(crate) async fn probe(previous: &mut Option<CpuSnapshot>) -> Value {
 }
 pub async fn run(path: PathBuf) -> anyhow::Result<()> {
     let mut cfg: Config = serde_json::from_slice(&std::fs::read(&path)?)?;
-    ensure!(
-        cfg.token.len() >= 32 && !cfg.token.contains("REPLACE"),
-        "invalid worker credential"
-    );
-    let client = Client::builder()
-        .timeout(std::time::Duration::from_secs(8))
-        .build()?;
+
+    let mut builder = Client::builder().timeout(std::time::Duration::from_secs(8));
+    if let Some(path) = &cfg.ca_certificate {
+        let bytes = std::fs::read(path)?;
+        ensure!(bytes.len() <= 1_048_576, "CA certificate is too large");
+        builder = builder.add_root_certificate(reqwest::Certificate::from_pem(&bytes)?);
+    }
+    let client = builder.build()?;
     let mut journal = if cfg.journal.exists() {
         serde_json::from_slice(&std::fs::read(&cfg.journal)?)?
     } else {
@@ -308,6 +344,75 @@ pub async fn run(path: PathBuf) -> anyhow::Result<()> {
         }
     };
     save(&cfg.journal, &journal)?;
+    let identity_path = cfg.journal.with_extension("identity.json");
+    let mut enrollment = if let Some(ticket) = &cfg.enrollment_token {
+        use sha2::{Digest, Sha256};
+        use std::os::unix::fs::PermissionsExt;
+        ensure!(
+            ticket.len() >= 32 && !ticket.contains("REPLACE"),
+            "invalid enrollment credential"
+        );
+        let digest = format!("{:x}", Sha256::digest(ticket.as_bytes()));
+        let old = if identity_path.exists() {
+            ensure!(
+                std::fs::symlink_metadata(&identity_path)?.is_file()
+                    && std::fs::metadata(&identity_path)?.permissions().mode() & 0o077 == 0,
+                "worker identity must be a private regular file"
+            );
+            Some(serde_json::from_slice::<EnrollmentIdentity>(
+                &std::fs::read(&identity_path)?,
+            )?)
+        } else {
+            None
+        };
+        let identity = match old {
+            Some(old) if old.enrollment_hash == digest => old,
+            _ => {
+                ensure!(
+                    journal.command.is_none(),
+                    "finish existing execution before changing worker identity"
+                );
+                EnrollmentIdentity {
+                    enrollment_hash: digest,
+                    token: format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple()),
+                    registered: false,
+                }
+            }
+        };
+        save_identity(&identity_path, &identity)?;
+        cfg.token = identity.token.clone();
+        Some(identity)
+    } else {
+        None
+    };
+    ensure!(
+        cfg.token.len() >= 32 && !cfg.token.contains("REPLACE"),
+        "invalid worker credential"
+    );
+    // Registration proposals have their own loop and cannot delay execution leases.
+    let proposal_path = path.clone();
+    let proposal_client = client.clone();
+    let proposal_base = cfg.controller.trim_end_matches('/').to_owned();
+    let proposal_node = cfg.node_id.clone();
+    let proposal_token = cfg.token.clone();
+    tokio::spawn(async move {
+        loop {
+            if let Ok(bytes) = std::fs::read(&proposal_path) {
+                if let Ok(latest) = serde_json::from_slice::<Config>(&bytes) {
+                    if latest.node_id == proposal_node && !latest.registrations.is_empty() {
+                        let _ = post(
+                            &proposal_client,
+                            &format!("{proposal_base}/workers/{proposal_node}/executors"),
+                            &proposal_token,
+                            json!({"executors":latest.registrations}),
+                        )
+                        .await;
+                    }
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+        }
+    });
     eprintln!("V-Scheduler Agent started for {}", cfg.node_id);
     // GPU driver probes can stall during model/context initialization. Keep
     // telemetry in one background sampler so it cannot starve execution leases.
@@ -347,10 +452,29 @@ pub async fn run(path: PathBuf) -> anyhow::Result<()> {
         }
     });
     loop {
+        if let Some(identity) = &mut enrollment {
+            if !identity.registered {
+                let boot = std::fs::read_to_string("/proc/sys/kernel/random/boot_id")
+                    .unwrap_or_else(|_| "unknown".into());
+                let result=post(&client,&format!("{}/workers/register",cfg.controller.trim_end_matches('/')),cfg.enrollment_token.as_deref().unwrap_or_default(),json!({"protocol_version":1,"node_id":cfg.node_id,"display_name":cfg.display_name.as_deref().unwrap_or(&cfg.node_id),"instance_id":journal.session_id,"boot_id":boot.trim(),"session_id":journal.session_id,"worker_token":identity.token})).await;
+                if result.is_ok() {
+                    identity.registered = true;
+                    save_identity(&identity_path, identity)?;
+                } else {
+                    eprintln!("worker enrollment unavailable; waiting for valid invitation");
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                    continue;
+                }
+            }
+        }
         // 只热更新执行器，保留节点身份、会话及当前命令；原子交接不会中断在途任务。
         if let Ok(bytes) = std::fs::read(&path) {
             if let Ok(updated) = serde_json::from_slice::<Config>(&bytes) {
-                if updated.node_id == cfg.node_id && updated.token == cfg.token {
+                if updated.node_id == cfg.node_id
+                    && (updated.token == cfg.token
+                        || (cfg.enrollment_token.is_some()
+                            && updated.enrollment_token == cfg.enrollment_token))
+                {
                     cfg.executors = updated.executors;
                 }
             }

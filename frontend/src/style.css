@@ -7,3 +7,7 @@
 
 .task-stage{display:block;color:#58718b;overflow-wrap:anywhere;line-height:1.45}
 .node-state i.degraded{background:#d5a02d}
+
+.source-observation-note{grid-column:1/-1;border-top:1px solid #e5edf3;padding-top:16px;color:#53718b;font-size:12px;line-height:1.8}.source-observation-note p{margin:6px 0 0;color:#7c8fa3}
+
+@media(max-width:540px){aside nav{overflow-x:auto}aside nav button{flex:0 0 auto}}
