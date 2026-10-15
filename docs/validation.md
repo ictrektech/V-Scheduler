@@ -74,3 +74,12 @@
 - 内部协议覆盖 pending 身份不能执行、单次邀请与幂等恢复、真实受控任务执行、固定四节点许可整单预约/拒绝、单个非主节点阻塞、未知停止保持全部预约、撤销与预算冲突保护，以及网关与后端核验不重复扣减。脚本：`scripts/e2e-node-management.mjs`。
 - Rust 25 项单元测试和前端 10 项测试通过；前端类型检查、生产构建通过。桌面页面验证预算规划保存与重读，并检查简中、英文、繁中及手机宽度。
 - ModelInfer 真实远端调度仍待 VOS App 管理适配器的执行、停止、租约和故障恢复验证；来源节点在此之前保持仅观察/规划，不宣称已受调度。
+
+## 0.0.21 同日镜像缓存修复
+
+- 实际 VOS 升级到 0.0.20 后仍只显示本机：安装 manifest 已是新版，但运行中的 `/discovery` 缺少新版能力、`/management` 返回 404。同期 ModelInfer 节点接口正常返回四台节点，排除来源缺失。
+- 根因是同日日期标签复用，而 controller 没有继承 `pull_policy: always`。平台预拉取使用 `pull --policy missing`；已有旧镜像不会在该步骤更新。controller 现与 gateway 一样，创建容器时检查并拉取标签的当前镜像。
+- 回归测试修复前四种 controller 服务均失败；修复后 11 项打包/依赖检查通过，实际 Docker Compose 对六种 profile 解析得到的服务均为 `pull_policy: always`。本次只改包配置，复用已核验的 AMD/ARM 镜像。
+- 通过 VOS 应用商店升级接口完成实际 0.0.21 升级，继承原存储、运行配置和用户设置；升级前确认无未完成任务和资源预约。运行中的新版接口返回本机加四台 ModelInfer 来源节点，发现状态 ready；四台 GB10 的 CPU、内存、GPU 指标均有新鲜样本，实际提供的前端也包含节点管理与预算规划。
+- 四台来源节点保持观察/规划状态。ModelInfer 的现有部署状态与节点分配保持一致；未安装额外 Agent、未改动远端推理部署。真实远端调度控制仍待后续适配器验证。
+- [发布与应用商店 workflow](https://github.com/ictrektech/V-Scheduler/actions/runs/38760077103) 的 release、appstore 均成功；[v0.0.21](https://github.com/ictrektech/V-Scheduler/releases/tag/v0.0.21) 下载包的 SHA-256 与 GitHub asset digest 匹配，包内 controller/gateway 的拉取策略已核验。
