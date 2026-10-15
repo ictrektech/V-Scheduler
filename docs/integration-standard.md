@@ -173,6 +173,22 @@ VOS 网关必须在私有配置 `models[upstreamID/nativeModelID]` 批准输入�
 
 `GET /permits` 可用 `state=active|suspect|released` 过滤并复用 `cursor` / `limit` 分页；权限隔离先于筛选和分页。`released_at` 为首次确认停止或移交时间，续租、重复释放、重复移交都不能延长它，旧记录没有时间时为 null。所有功能使用 PostgreSQL 内置能力，不要求安装搜索或向量扩展。
 
+## 同步执行端许可核验
+
+`POST /permits/{id}/verify` 不新增预约。网关申请许可时可提供 32–128 字符的随机
+`execution_token`，调度器只保存哈希。执行端使用自己的 submitter 身份；管理员须在
+该 principal 的 `permit_executors` 中明确批准允许核验的网关执行器，不能借此查询、
+续租或释放网关的其他许可。
+
+请求包含 `executor_id`、`upstream_url`、原生 `model_id`、`execution_token`、
+执行端生成的稳定 `execution_id` 和 `claim`。首次 `claim: true` 原子认领，重复启动
+返回 409；运行中的 `claim: false` 仅核验同一执行的有效租约，返回剩余
+`lease_seconds`。错误模型、节点、地址、凭据、执行 ID、已释放或过期许可均拒绝。
+已认领的许可不能再移交异步任务。凭据只能服务间传输，不进入浏览器、日志或结果。
+
+执行端必须阻止重复执行并落实租约失效后的停止或未知隔离。核验成功不证明执行完成，
+原许可所有者仍负责续租和确认停止后的释放。
+
 ## 单任务状态时间线
 
 `GET /tasks/{id}/events` 复用任务可见性与服务认证。查询参数 `limit` 为 1–200，默认 50；`cursor=0` 或省略时返回最新事件，传入 `next_cursor` 时读取严格早于该游标的下一页。记录含 `cursor`、`task_id`、`status`、`version`、保存的 `progress` 和实际 `created_at`，按 cursor 降序排列；`next_cursor=null` 表示没有更早页。普通服务不能查询其他 app 的任务，返回 404。旧事件没有进度快照时仍为空对象。此接口用于详情时间线，不改变全局 `/events` 的正向增量协议。

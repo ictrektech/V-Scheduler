@@ -8,7 +8,7 @@ import assert from 'node:assert/strict'
 const root=process.env.SCHEDULER_SOURCE||path.resolve(import.meta.dirname,'..')
 const build=process.env.SCHEDULER_BUILD||path.join(process.env.HOME,'dev/build/V-Scheduler')
 const run=path.join(build,'e2e-'+Date.now());mkdirSync(run,{recursive:true,mode:0o700})
-const tokens=Object.fromEntries(['admin','service','worker','executor','other','db','router','protocol'].map(k=>[k,randomBytes(32).toString('hex')]))
+const tokens=Object.fromEntries(['admin','service','worker','executor','other','db','router','protocol','backend','proof'].map(k=>[k,randomBytes(32).toString('hex')]))
 function file(name,value){const p=path.join(run,name);writeFileSync(p,typeof value==='string'?value:JSON.stringify(value),{mode:0o600});return p}
 const port=Number(process.env.SCHEDULER_TEST_BASE_PORT||38220)
 assert(Number.isInteger(port)&&port>=1024&&port<=65528)
@@ -16,6 +16,7 @@ const nodeId='tc232-test';const api=`http://127.0.0.1:${port}/api/v1`;const imag
 const dbName='v-scheduler-e2e-pg-'+process.pid;const imageName='v-scheduler-e2e-image-'+process.pid
 const config={principals:[{token:tokens.admin,role:'admin',app_id:'admin'},{token:tokens.service,role:'submitter',app_id:'image-studio'},{token:tokens.other,role:'submitter',app_id:'other'},{token:tokens.worker,role:'worker',app_id:'agent',node_id:nodeId}],nodes:[{id:nodeId,capacities:{cpu_millicores:4000,memory_mib:16384,gpu_slots:1,gpu_memory_mib:16384}}],executors:[{id:'image-studio.generate',contract_version:'1',task_type:'image.generate',node_id:nodeId,app_id:'image-studio',resources:{cpu_millicores:2000,memory_mib:8192,gpu_slots:1,gpu_memory_mib:8192}}]}
 config.principals.push({token:tokens.router,role:'submitter',app_id:'v-router',delegated_executors:['image-studio.generate','protocol-test']})
+config.principals.push({token:tokens.backend,role:'submitter',app_id:'v-voice',permit_executors:['v-router.protocol.infer']})
 config.executors.push({id:'v-router.local.infer',contract_version:'1',task_type:'model.infer',node_id:nodeId,app_id:'v-router',upstream_urls:[`http://127.0.0.1:${port+4}`],resources:{cpu_millicores:1000,memory_mib:1024,gpu_slots:1,gpu_memory_mib:1024}})
 let sourceFailed=false
 const vos=createServer((req,res)=>{assert.equal(req.method,'GET');res.setHeader('Content-Type','application/json');if(sourceFailed){res.statusCode=503;res.end('{}');return}const data=req.url==='/api/nodes'?{nodes:[{member_id:'member-bound',display_name:'Test GPU',role:'worker',node_ip:'127.0.0.1'},{member_id:'member-observe',display_name:'Observe',role:'worker',node_ip:'192.0.2.1'}]}:req.url==='/v1000/nas/device/info'?{cpu_logical_count:8,memory:{size:17179869184,unit:'B'}}:req.url==='/v1000/nas/device_usage'?{cpu:{used:25},ram:{size:17179869184,used:2147483648,unit:'B'},gpu:{used:0}}:req.url==='/v1000/app/list'?{total:1,data:[{app_id:'com.ictrek.image-studio',installed_app_id:'local-instance',state:'installed',version:'test',owner_user_id:'redacted'}]}:{};res.end(JSON.stringify({code:0,data}))})
@@ -64,12 +65,16 @@ try{
  assert.deepEqual((await task(waiting)).wait_reasons,['WAIT_CAPACITY'])
  await call(api+'/tasks/'+waiting+'/cancel',tokens.other,'POST',{});await call(api+'/tasks/'+waiting,tokens.other,'DELETE')
  const running=await call(api+'/attempts/'+cmd.attempt_id+'/report',tokens.protocol,'POST',{...session,fence:cmd.fence,status:'running',stopped:false,progress:{percent:0.5},stage:'decode',message:'segment 2/4'})
- const verifyBody={task_id:job,executor_id:'v-router.protocol.infer',owner_id:'test-owner',upstream_url:`http://127.0.0.1:${port+5}`,model_id:'cpu-test'}
+ const verifyBody={task_id:job,executor_id:'v-router.protocol.infer',owner_id:'test-owner',upstream_url:`http://127.0.0.1:${port+5}`,model_id:'cpu-test',execution_token:tokens.proof}
  const linked=(body,key)=>call(api+'/delegations/verify',tokens.router,'POST',body,{'Idempotency-Key':key})
  assert.equal((await linked({...verifyBody,owner_id:'wrong-owner'},'wrong-owner')).status,403)
  assert.equal((await linked({...verifyBody,upstream_url:'http://127.0.0.1:1'},'wrong-url')).status,403)
  const child=await linked(verifyBody,'linked-child');assert.equal(child.status,200,JSON.stringify(child));const childId=child.data.permit_id
  assert.equal((await linked(verifyBody,'linked-child')).data.permit_id,childId)
+ assert.equal((await linked({...verifyBody,execution_token:tokens.other},'linked-child')).status,409)
+ const childProof={executor_id:verifyBody.executor_id,upstream_url:verifyBody.upstream_url,model_id:verifyBody.model_id,execution_token:tokens.proof,execution_id:'nested-backend-execution',claim:true}
+ assert.equal((await call(api+'/permits/'+childId+'/verify',tokens.backend,'POST',childProof)).status,200)
+ assert.equal((await call(api+'/permits/'+childId+'/verify',tokens.backend,'POST',childProof)).status,409)
  assert.equal((await linked(verifyBody,'over-budget')).status,429)
  assert.equal((await call(api+'/permits',tokens.other)).data.items.length,0)
  assert.equal((await call(api+'/permits',tokens.router)).data.items.find(p=>p.permit_id===childId).model_id,'cpu-test')
@@ -79,6 +84,7 @@ try{
  const failure=c=>call(api+'/attempts/'+c.attempt_id+'/report',tokens.protocol,'POST',{...session,fence:c.fence,status:'failed',stopped:true,result:{retryable:true,code:'TEST_TRANSIENT'}})
  await failure(cmd);assert.equal((await task(job)).status,'retry_wait');assert.equal((await call(api+'/reservations',tokens.admin)).data.find(r=>r.task_id===job).state,'suspect')
  assert.equal((await call(api+'/permits/'+childId+'/renew',tokens.router,'POST',{})).status,409)
+ assert.equal((await call(api+'/permits/'+childId+'/verify',tokens.backend,'POST',{...childProof,claim:false})).status,404)
  await beat(true);assert.equal((await call(api+'/workers/protocol-node/commands/claim',tokens.protocol,'POST',session)).data.commands.length,0)
  assert.equal((await call(api+'/permits/'+childId+'/release',tokens.router,'POST',{stopped:true,evidence:'test_child_stopped'})).status,200)
  await delay(2500);assert.equal((await call(api+'/reservations',tokens.admin)).data.length,0)
@@ -111,6 +117,21 @@ try{
  assert.equal((await fetch(`http://127.0.0.1:${port}/health`)).status,200)
  await beat(true)
  console.log('PASS: system RAM headroom and CPU pressure deny compute while health remains available')
+ const proofPermit=await call(api+'/permits',tokens.router,'POST',{...bridgeBody,execution_token:tokens.proof},{'Idempotency-Key':'backend-proof'})
+ assert.equal(proofPermit.status,200)
+ const proofPath=api+'/permits/'+proofPermit.data.permit_id+'/verify'
+ const proofBody={...bridgeBody,execution_token:tokens.proof,execution_id:'backend-execution-1',claim:true}
+ assert.equal((await call(proofPath,tokens.other,'POST',proofBody)).status,403)
+ assert.equal((await call(proofPath,tokens.backend,'POST',{...proofBody,execution_token:tokens.other})).status,403)
+ assert.equal((await call(proofPath,tokens.backend,'POST',{...proofBody,model_id:'wrong-model'})).status,403)
+ assert.equal((await call(proofPath,tokens.backend,'POST',proofBody)).status,200)
+ assert.equal((await call(proofPath,tokens.backend,'POST',proofBody)).status,409)
+ assert.equal((await call(proofPath,tokens.backend,'POST',{...proofBody,claim:false})).status,200)
+ assert.equal((await call(proofPath,tokens.backend,'POST',{...proofBody,claim:false,execution_id:'replay'})).status,403)
+ assert.equal((await call(api+'/permits/'+proofPermit.data.permit_id+'/release',tokens.backend,'POST',{stopped:true,evidence:'not_owner'})).status,404)
+ assert.equal((await call(api+'/permits/'+proofPermit.data.permit_id+'/release',tokens.router,'POST',{stopped:true,evidence:'fixture_backend_confirmed_stopped'})).status,200)
+ assert.equal((await call(proofPath,tokens.backend,'POST',{...proofBody,claim:false})).status,409)
+ console.log('PASS: scoped backend permit claim, binding/token verification, replay rejection and no ownership transfer')
  const bridge=await call(api+'/permits',tokens.router,'POST',bridgeBody,{'Idempotency-Key':'bridge'});assert.equal(bridge.status,200,JSON.stringify(bridge))
  const queued=(await call(api+'/tasks',tokens.other,'POST',{protocol_version:1,app_task_id:'handoff-proof',executor:{id:'protocol-test',contract_version:'1',task_type:'protocol.test'},parameters:{},inputs:[]},{'Idempotency-Key':'handoff-proof'})).data.task_id
  assert.equal((await call(api+'/permits/'+bridge.data.permit_id+'/delegate',tokens.router,'POST',{task_id:queued,app_task_id:'wrong'})).status,403)

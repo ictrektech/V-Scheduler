@@ -58,6 +58,7 @@ pub async fn verify(h: &HeaderMap) -> Result<Principal, StatusCode> {
         app_id: "vos-administrator".into(),
         node_id: String::new(),
         delegated_executors: Vec::new(),
+        permit_executors: Vec::new(),
     })
 }
 

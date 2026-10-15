@@ -1045,6 +1045,26 @@
         ]
       }
     },
+    "/permits/{id}/verify": {
+      "post": {
+        "operationId": "post_permits_id_verify",
+        "summary": "Claim or verify a bound backend execution permit",
+        "security": [{"bearerAuth": []}],
+        "x-role": "submitter",
+        "description": "Backend-scoped verification. Requires an approved permit_executors grant (or own executor), exact executor/node/upstream/model binding and a private execution token. claim=true atomically consumes the initial claim; claim=false checks the same execution. Does not reserve again, renew, transfer or release ownership.",
+        "parameters": [{"name":"id","in":"path","required":true,"schema":{"type":"string"}}],
+        "requestBody": {"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/PermitVerify"}}}},
+        "responses": {
+          "200":{"description":"Active bound permit","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Envelope"}}}},
+          "401":{"description":"Missing or invalid bearer token"},
+          "403":{"description":"Executor or execution binding denied"},
+          "404":{"description":"Permit not visible"},
+          "409":{"description":"Inactive or already claimed permit"},
+          "422":{"description":"Invalid request"},
+          "503":{"description":"Controller unavailable"}
+        }
+      }
+    },
     "/permits/{id}/renew": {
       "post": {
         "operationId": "post_permits_id_renew",
@@ -2074,12 +2094,31 @@
           "model_id": {
             "type": "string",
             "maxLength": 512
+          },
+          "execution_token": {
+            "type": "string",
+            "minLength": 32,
+            "maxLength": 128,
+            "description": "Optional private random capability for backend verification; never return it to a browser or log it."
           }
         },
         "required": [
           "executor_id",
           "upstream_url"
         ]
+      },
+      "PermitVerify": {
+        "type":"object",
+        "additionalProperties":false,
+        "required":["executor_id","upstream_url","model_id","execution_token","execution_id","claim"],
+        "properties": {
+          "executor_id":{"type":"string"},
+          "upstream_url":{"type":"string"},
+          "model_id":{"type":"string"},
+          "execution_token":{"type":"string","minLength":32,"maxLength":128},
+          "execution_id":{"type":"string","minLength":1,"maxLength":128},
+          "claim":{"type":"boolean"}
+        }
       },
       "PermitRelease": {
         "type": "object",
@@ -2170,6 +2209,11 @@
           },
           "model_id": {
             "type": "string"
+          },
+          "execution_token": {
+            "type": "string",
+            "minLength": 32,
+            "maxLength": 128
           }
         },
         "required": [

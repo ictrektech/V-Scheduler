@@ -1,5 +1,11 @@
 # V-Scheduler · 资源调度
 
+同步模型后端现在可通过 `POST /api/v1/permits/{id}/verify` 核验并原子认领
+V-Router 的同一次预算。配置独立的 `permit_executors` 权限，后端不需要、也不能
+复用网关令牌或再预约一份资源。普通与 delegated 子许可均绑定执行令牌、模型、
+地址和执行器；参见[应用接入指南](docs/application-integration.md)及
+[完整契约](docs/integration-standard.md)。
+
 面向 VOS 应用、其他服务、脚本和第三方 worker 的独立资源调度应用。统一管理耗时任务的排队、资源预约、执行许可、取消与故障恢复。
 
 **当前状态：Rust controller、节点后台服务、Vue 管理界面及 Image Studio / V-Router 适配已完成最小版本。tc192、tc229 的实际 VOS 登录与节点资源页面，以及 tc229 的真实业务任务已验证。正式安装包见 [GitHub Releases](https://github.com/ictrektech/V-Scheduler/releases)。完整设计的后续能力不代表当前已支持。**

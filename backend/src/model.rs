@@ -267,6 +267,9 @@ pub struct Principal {
     pub node_id: String,
     #[serde(default)]
     pub delegated_executors: Vec<String>,
+    /// 可核验的同步许可执行器；不授予创建、续租或释放其他应用许可的权限。
+    #[serde(default)]
+    pub permit_executors: Vec<String>,
 }
 fn one() -> i64 {
     1

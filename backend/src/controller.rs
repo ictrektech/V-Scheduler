@@ -354,6 +354,7 @@ pub async fn serve(
         .route("/events", get(events))
         .route("/permits", post(permit_acquire).get(permits))
         .route("/permits/{id}/renew", post(permit_renew))
+        .route("/permits/{id}/verify", post(permit_verify))
         .route("/permits/{id}/release", post(permit_release))
         .route("/permits/{id}/delegate", post(permit_delegate))
         .route("/permits/{id}/confirm-stopped", post(permit_confirm))
@@ -384,7 +385,7 @@ pub async fn serve(
 }
 async fn discovery() -> Json<Value> {
     ok(
-        json!({"protocol_version":1,"implementation_version":"0.1.0","features":["tasks","idempotency","reservations","events","static-executors","agent-image-studio","permits","permit-history","statistics","permit-release-times","task-timeline","delegated-permits","safety-headroom","retry","manual-delete","attempt-history"],"unsupported":["artifacts","dynamic-enrollment","ha"],"authentication":"scoped-bearer","max_body_bytes":262144,"openapi_url":"openapi.json"}),
+        json!({"protocol_version":1,"implementation_version":"0.1.0","features":["tasks","idempotency","reservations","events","static-executors","agent-image-studio","permits","backend-permit-verification","permit-history","statistics","permit-release-times","task-timeline","delegated-permits","safety-headroom","retry","manual-delete","attempt-history"],"unsupported":["artifacts","dynamic-enrollment","ha"],"authentication":"scoped-bearer","max_body_bytes":262144,"openapi_url":"openapi.json"}),
     )
 }
 async fn executors(State(a): State<App>, h: HeaderMap) -> Api<Json<Value>> {
@@ -550,15 +551,26 @@ async fn events(State(a): State<App>, h: HeaderMap, Query(q): Query<Page>) -> Ap
         json!({"items":rs.iter().map(|r|json!({"cursor":r.get::<i64,_>("cursor"),"task_id":r.get::<String,_>("task"),"status":r.get::<String,_>("status"),"version":r.get::<i64,_>("version"),"progress":r.get::<Value,_>("progress")})).collect::<Vec<_>>(),"next_cursor":cursor.to_string()}),
     ))
 }
-async fn task_events(State(a): State<App>, h: HeaderMap, Path(id): Path<String>, Query(q): Query<Page>) -> Api<Json<Value>> {
+async fn task_events(
+    State(a): State<App>,
+    h: HeaderMap,
+    Path(id): Path<String>,
+    Query(q): Query<Page>,
+) -> Api<Json<Value>> {
     let p = auth(&a, &h).await?;
     require(&p, "submitter")?;
     get_task(&a, &p, &id).await?;
     let (before, limit) = page(&q)?;
     let rows = sqlx::query("SELECT cursor,status,version,progress,created_at FROM vrs_events WHERE task=$1 AND ($2=0 OR cursor<$2) ORDER BY cursor DESC LIMIT $3")
         .bind(&id).bind(before).bind(limit).fetch_all(&a.db).await.map_err(unavailable)?;
-    let next = if rows.len() == limit as usize { rows.last().map(|r| r.get::<i64,_>("cursor").to_string()) } else { None };
-    Ok(ok(json!({"items":rows.iter().map(|r|json!({"cursor":r.get::<i64,_>("cursor"),"task_id":id,"status":r.get::<String,_>("status"),"version":r.get::<i64,_>("version"),"progress":r.get::<Value,_>("progress"),"created_at":r.get::<DateTime<Utc>,_>("created_at")})).collect::<Vec<_>>(),"next_cursor":next})))
+    let next = if rows.len() == limit as usize {
+        rows.last().map(|r| r.get::<i64, _>("cursor").to_string())
+    } else {
+        None
+    };
+    Ok(ok(
+        json!({"items":rows.iter().map(|r|json!({"cursor":r.get::<i64,_>("cursor"),"task_id":id,"status":r.get::<String,_>("status"),"version":r.get::<i64,_>("version"),"progress":r.get::<Value,_>("progress"),"created_at":r.get::<DateTime<Utc>,_>("created_at")})).collect::<Vec<_>>(),"next_cursor":next}),
+    ))
 }
 async fn nodes(State(a): State<App>, h: HeaderMap) -> Api<Json<Value>> {
     let p = auth(&a, &h).await?;
@@ -919,6 +931,8 @@ struct PermitRequest {
     upstream_url: String,
     #[serde(default)]
     model_id: String,
+    #[serde(default)]
+    execution_token: String,
 }
 fn approved_upstream(executor: &Executor, value: &str) -> bool {
     let canonical = |value: &str| -> Option<String> {
@@ -948,6 +962,9 @@ async fn permit_acquire(
 ) -> Api<Json<Value>> {
     let p = auth(&a, &h).await?;
     require(&p, "submitter")?;
+    if !b.execution_token.is_empty() && !(32..=128).contains(&b.execution_token.len()) {
+        return Err(invalid());
+    }
     let key = h
         .get("idempotency-key")
         .and_then(|s| s.to_str().ok())
@@ -976,6 +993,9 @@ async fn permit_acquire(
         if old.get::<String, _>("executor") != b.executor_id
             || metadata["upstream_url"] != b.upstream_url
             || metadata["model_id"] != b.model_id
+            || (!b.execution_token.is_empty()
+                && metadata["execution_token_hash"]
+                    != format!("{:x}", Sha256::digest(b.execution_token.as_bytes())))
         {
             return Err(Error(StatusCode::CONFLICT, "IDEMPOTENCY_CONFLICT"));
         }
@@ -1026,7 +1046,7 @@ async fn permit_acquire(
     .bind(&e.id)
     .bind(&e.node_id)
     .bind(json!(e.resources))
-    .bind(json!({"model_id":b.model_id,"upstream_url":b.upstream_url}))
+    .bind(json!({"model_id":b.model_id,"upstream_url":b.upstream_url,"execution_token_hash":format!("{:x}",Sha256::digest(b.execution_token.as_bytes()))}))
     .execute(&mut *tx)
     .await
     .map_err(unavailable)?;
@@ -1044,13 +1064,29 @@ struct PermitPage {
 async fn statistics(State(a): State<App>, h: HeaderMap) -> Api<Json<Value>> {
     let p = auth(&a, &h).await?;
     require(&p, "submitter")?;
-    Ok(ok(crate::statistics::read(&a.db, p.role == "admin", &p.app_id).await.map_err(unavailable)?))
+    Ok(ok(crate::statistics::read(
+        &a.db,
+        p.role == "admin",
+        &p.app_id,
+    )
+    .await
+    .map_err(unavailable)?))
 }
-async fn permits(State(a): State<App>, h: HeaderMap, Query(q): Query<PermitPage>) -> Api<Json<Value>> {
+async fn permits(
+    State(a): State<App>,
+    h: HeaderMap,
+    Query(q): Query<PermitPage>,
+) -> Api<Json<Value>> {
     let p = auth(&a, &h).await?;
     require(&p, "submitter")?;
-    let (offset, limit) = page(&Page { cursor: q.cursor, limit: q.limit })?;
-    if q.state.as_deref().is_some_and(|state| !["active", "suspect", "released"].contains(&state)) {
+    let (offset, limit) = page(&Page {
+        cursor: q.cursor,
+        limit: q.limit,
+    })?;
+    if q.state
+        .as_deref()
+        .is_some_and(|state| !["active", "suspect", "released"].contains(&state))
+    {
         return Err(invalid());
     }
     let rows=sqlx::query("SELECT * FROM vrs_permits WHERE ($1 OR app=$2) AND ($3::text IS NULL OR state=$3) ORDER BY created_at DESC,id LIMIT $4 OFFSET $5")
@@ -1063,6 +1099,97 @@ async fn permits(State(a): State<App>, h: HeaderMap, Query(q): Query<PermitPage>
         json!({"items":items,"next_cursor":if rows.len()==limit as usize{Some((offset+limit).to_string())}else{None}}),
     ))
 }
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PermitVerify {
+    executor_id: String,
+    upstream_url: String,
+    model_id: String,
+    execution_token: String,
+    execution_id: String,
+    claim: bool,
+}
+
+async fn permit_verify(
+    State(a): State<App>,
+    h: HeaderMap,
+    Path(id): Path<String>,
+    Json(b): Json<PermitVerify>,
+) -> Api<Json<Value>> {
+    let p = auth(&a, &h).await?;
+    require(&p, "submitter")?;
+    if !(32..=128).contains(&b.execution_token.len())
+        || b.execution_id.is_empty()
+        || b.execution_id.len() > 128
+    {
+        return Err(invalid());
+    }
+    let executor = a
+        .config
+        .executors
+        .iter()
+        .find(|e| e.id == b.executor_id && e.task_type == "model.infer")
+        .ok_or(Error(StatusCode::FORBIDDEN, "EXECUTOR_NOT_ALLOWED"))?;
+    if (executor.app_id != p.app_id && !p.permit_executors.contains(&executor.id))
+        || !approved_upstream(executor, &b.upstream_url)
+    {
+        return Err(Error(StatusCode::FORBIDDEN, "EXECUTOR_NOT_ALLOWED"));
+    }
+    let mut tx = a.db.begin().await.map_err(unavailable)?;
+    let row=sqlx::query("SELECT p.*,p.lease_until>now() AS valid FROM vrs_permits p WHERE id=$1 AND executor=$2 AND node=$3 AND (parent_attempt IS NULL OR EXISTS(SELECT 1 FROM vrs_tasks t JOIN vrs_reservations r ON r.attempt=t.attempt WHERE t.attempt=p.parent_attempt AND t.status='running' AND r.state='active' AND r.lease_until>now())) FOR UPDATE OF p")
+        .bind(&id).bind(&executor.id).bind(&executor.node_id).fetch_optional(&mut *tx).await.map_err(unavailable)?
+        .ok_or(Error(StatusCode::NOT_FOUND,"NOT_FOUND"))?;
+    let mut metadata: Value = row.get("metadata");
+    if row.get::<String, _>("state") != "active" || !row.get::<bool, _>("valid") {
+        return Err(Error(StatusCode::CONFLICT, "PERMIT_NOT_ACTIVE"));
+    }
+    if metadata["upstream_url"] != b.upstream_url
+        || metadata["model_id"] != b.model_id
+        || metadata["execution_token_hash"]
+            != format!("{:x}", Sha256::digest(b.execution_token.as_bytes()))
+    {
+        return Err(Error(StatusCode::FORBIDDEN, "PERMIT_BINDING_MISMATCH"));
+    }
+    // 首次调用原子认领；相同许可不能启动第二个执行。后续核验只确认原执行仍有租约。
+    if b.claim {
+        if !metadata["execution_id"].is_null() {
+            return Err(Error(StatusCode::CONFLICT, "PERMIT_ALREADY_CLAIMED"));
+        }
+        let node = sqlx::query(
+            "SELECT *,heartbeat>now()-interval '12 seconds' AS fresh FROM vrs_nodes WHERE id=$1",
+        )
+        .bind(&executor.node_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(unavailable)?;
+        if node.get::<bool, _>("draining")
+            || !node.get::<Option<bool>, _>("fresh").unwrap_or(false)
+            || !report_fresh(&node.get::<Value, _>("report"))
+            || !probe_ready(&node.get::<Value, _>("report"), &executor.id)
+        {
+            return Err(Error(
+                StatusCode::TOO_MANY_REQUESTS,
+                "WAIT_RESOURCE_OR_NODE",
+            ));
+        }
+        metadata["execution_id"] = json!(b.execution_id);
+        sqlx::query("UPDATE vrs_permits SET metadata=$2 WHERE id=$1")
+            .bind(&id)
+            .bind(&metadata)
+            .execute(&mut *tx)
+            .await
+            .map_err(unavailable)?;
+    } else if metadata["execution_id"] != b.execution_id {
+        return Err(Error(StatusCode::FORBIDDEN, "PERMIT_BINDING_MISMATCH"));
+    }
+    let until: DateTime<Utc> = row.get("lease_until");
+    tx.commit().await.map_err(unavailable)?;
+    Ok(ok(
+        json!({"permit_id":id,"executor_id":executor.id,"node_id":executor.node_id,"model_id":b.model_id,
+        "state":"active","lease_seconds":(until-Utc::now()).num_seconds().max(0)}),
+    ))
+}
+
 async fn permit_renew(
     State(a): State<App>,
     h: HeaderMap,
@@ -1171,13 +1298,17 @@ async fn permit_delegate(
         .fetch_one(&mut *tx)
         .await
         .map_err(unavailable)?;
-    let permit =
-        sqlx::query("SELECT state,evidence FROM vrs_permits WHERE id=$1 AND app=$2 FOR UPDATE")
-            .bind(&id)
-            .bind(&p.app_id)
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(unavailable)?;
+    let permit = sqlx::query(
+        "SELECT state,evidence,metadata FROM vrs_permits WHERE id=$1 AND app=$2 FOR UPDATE",
+    )
+    .bind(&id)
+    .bind(&p.app_id)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(unavailable)?;
+    if !permit.get::<Value, _>("metadata")["execution_id"].is_null() {
+        return Err(Error(StatusCode::CONFLICT, "PERMIT_ALREADY_CLAIMED"));
+    }
     let task = sqlx::query(
         "SELECT body,node,app,status FROM vrs_tasks WHERE id=$1 AND deleted_at IS NULL FOR UPDATE",
     )
@@ -1224,6 +1355,8 @@ struct DelegationVerify {
     upstream_url: String,
     #[serde(default)]
     model_id: String,
+    #[serde(default)]
+    execution_token: String,
 }
 async fn delegation_verify(
     State(a): State<App>,
@@ -1232,6 +1365,9 @@ async fn delegation_verify(
 ) -> Api<Json<Value>> {
     let p = auth(&a, &h).await?;
     require(&p, "submitter")?;
+    if !b.execution_token.is_empty() && !(32..=128).contains(&b.execution_token.len()) {
+        return Err(invalid());
+    }
     let infer = a
         .config
         .executors
@@ -1270,9 +1406,14 @@ async fn delegation_verify(
         return Err(Error(StatusCode::FORBIDDEN, "DELEGATION_NOT_ALLOWED"));
     }
     let attempt: String = row.get("attempt");
-    if let Some(old) = sqlx::query("SELECT id,executor,parent_attempt,state,lease_until>now() AS valid FROM vrs_permits WHERE app=$1 AND idem=$2")
+    if let Some(old) = sqlx::query("SELECT id,executor,parent_attempt,state,metadata,lease_until>now() AS valid FROM vrs_permits WHERE app=$1 AND idem=$2")
         .bind(&p.app_id).bind(key).fetch_optional(&mut *tx).await.map_err(unavailable)? {
         if old.get::<String,_>("executor")!=infer.id || old.get::<Option<String>,_>("parent_attempt").as_deref()!=Some(&attempt) {return Err(Error(StatusCode::CONFLICT,"IDEMPOTENCY_CONFLICT"));}
+        let metadata:Value=old.get("metadata");
+        if metadata["model_id"]!=b.model_id || metadata["upstream_url"]!=b.upstream_url
+            || (!b.execution_token.is_empty() && metadata["execution_token_hash"]!=format!("{:x}",Sha256::digest(b.execution_token.as_bytes()))) {
+            return Err(Error(StatusCode::CONFLICT,"IDEMPOTENCY_CONFLICT"));
+        }
         if old.get::<String,_>("state")!="active"||!old.get::<bool,_>("valid"){return Err(Error(StatusCode::CONFLICT,"PERMIT_NOT_ACTIVE"));}
         return Ok(ok(json!({"permit_id":old.get::<String,_>("id"),"lease_seconds":30,"node_id":infer.node_id,"parent_task_id":b.task_id})));
     }
@@ -1308,7 +1449,7 @@ async fn delegation_verify(
     }
     let id = Uuid::new_v4().to_string();
     sqlx::query("INSERT INTO vrs_permits(id,app,idem,executor,node,resources,parent_attempt,delegated_resources,metadata) VALUES($1,$2,$3,$4,$5,'{}',$6,$7,$8)")
-        .bind(&id).bind(&p.app_id).bind(key).bind(&infer.id).bind(&infer.node_id).bind(&attempt).bind(json!(infer.resources)).bind(json!({"model_id":b.model_id,"upstream_url":b.upstream_url,"parent_task_id":b.task_id})).execute(&mut *tx).await.map_err(unavailable)?;
+        .bind(&id).bind(&p.app_id).bind(key).bind(&infer.id).bind(&infer.node_id).bind(&attempt).bind(json!(infer.resources)).bind(json!({"model_id":b.model_id,"upstream_url":b.upstream_url,"parent_task_id":b.task_id,"execution_token_hash":format!("{:x}",Sha256::digest(b.execution_token.as_bytes()))})).execute(&mut *tx).await.map_err(unavailable)?;
     tx.commit().await.map_err(unavailable)?;
     Ok(ok(
         json!({"permit_id":id,"lease_seconds":30,"node_id":infer.node_id,"parent_task_id":b.task_id}),

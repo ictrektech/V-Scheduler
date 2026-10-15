@@ -28,7 +28,7 @@ Image Studio 的原生图片任务是上述流程的参考实现：用户仍经�
 
 将模型登记到 V-Router，按 `upstreamID/nativeModelID` 在私有 `scheduler.local.json` 中批准模型、真实计算地址、`executor_id`、输入和输出限制。V-Router 在转发前以受限服务身份调用 `POST /permits`，运行中续租，完整终态响应后提供停止证据并释放。资源忙返回 429，配置缺失或 Scheduler 不可用返回 503；不得在错误时直连执行端。客户端断开、续租失败或停止状态不明时保留 suspect，待执行端核验。WebSocket 还需明确执行端在停止后正常关闭的契约。
 
-A 若同时提供直接调用和 V-Router 调用的同步入口，必须让两条入口使用同一授权和交接契约；不能让 A 在网关已预约时再次独立申请完整预算。当前参考实现覆盖已列出的 permit、异步任务和批准的 delegated 流程；新协议或同步执行端的交接细节须逐应用实现并验收，不能仅凭入口已注册就宣称安全。
+A 若同时提供直接调用和 V-Router 调用的同步入口，必须让两条入口使用同一授权和交接契约；不能让 A 在网关已预约时再次独立申请完整预算。V-Router 为同步 permit 或 delegated 子许可绑定随机 execution_token，通过私有头交给后端；后端用自己的 submitter 身份调用 `POST /permits/{id}/verify` 原子认领，核验模型、真实地址、执行器和租约。后端只获明确的 permit_executors 核验权限，不获网关许可的续租/释放权。后续核验保持相同 execution_id；重复认领、错误绑定、过期许可和已终止父任务均不能启动新计算。详见[接入标准](integration-standard.md)。新协议仍须逐应用实测，不能仅凭入口已注册就宣称安全。
 
 ## 安装、权限与逐节点验收
 
