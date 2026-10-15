@@ -551,7 +551,7 @@ const app = {
       [VRouterI18n.t("VOS 内调用"), "http://v-router:8080/v1"],
       [VRouterI18n.t("局域网调用"), "http://<vos-host>:22888/v1"],
       [VRouterI18n.t("API 文档"), VRouterI18n.t("本页面「API 文档」页签，由网关实时生成")],
-      [VRouterI18n.t("项目仓库"), "github.com/ictrektech/V-Router"],
+      [VRouterI18n.t("项目仓库"), "github.com/ictrektech/V-Scheduler"],
     ].map(([k, v]) => `<div class="about-row"><span class="k">${k}</span><span class="v">${esc(v)}</span></div>`).join(""));
     $("aboutDialog").showModal();
   },

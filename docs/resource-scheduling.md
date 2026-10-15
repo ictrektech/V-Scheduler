@@ -8,7 +8,7 @@
 
 在私有数据目录创建 `scheduler.local.json`（容器内 `/data/scheduler.local.json`），权限 `0600`；也可用 `V_ROUTER_SCHEDULER_CONFIG` 指定路径。使用调度控制器 URL（同一包内直连 `http://v-scheduler:38120/api/v1`；经网关则使用 `http://v-router:8080/scheduler/api/v1`）和受限 `v-router` submitter 令牌。修改后重启网关。安装依赖不会自动注入凭据或资源模板。
 
-参照 [网关配置示例](https://github.com/ictrektech/V-Router/blob/main/config/scheduler.example.json)，在 `models` 中按 `upstreamID/nativeModelID` 逐模型批准 `executor_id`、`max_input_bytes`（最高 32 MiB）、`limits`。VOS 强制逐模型策略：未批准模型返回 503，超输入预算返回 413，未批准或超限的资源参数返回 422。limits 包括输出 token、上下文、批量、图像尺寸、视频长度等实际支持字段；带 `speaker_model` 时还须在 `secondary_models` 明确批准联合预算。模板须覆盖服务默认参数、装载峰值和允许的最大输入，示例值不是生产容量承诺。
+参照 [网关配置示例](../config/scheduler.example.json)，在 `models` 中按 `upstreamID/nativeModelID` 逐模型批准 `executor_id`、`max_input_bytes`（最高 32 MiB）、`limits`。VOS 强制逐模型策略：未批准模型返回 503，超输入预算返回 413，未批准或超限的资源参数返回 422。limits 包括输出 token、上下文、批量、图像尺寸、视频长度等实际支持字段；带 `speaker_model` 时还须在 `secondary_models` 明确批准联合预算。模板须覆盖服务默认参数、装载峰值和允许的最大输入，示例值不是生产容量承诺。
 
 V-Scheduler 的 executor 指定真实节点、固定 CPU/RAM/GPU 增量预算及 `upstream_urls`；地址必须与网关上游 base URL 相符。常驻模型记入节点 `resident_baseline`，不逐请求重复记账。未知节点、过期遥测、排空或资源不足时拒绝；网关不会绕过拒绝直跑。VOS 本机 Agent 随控制器内置运行，不需另装采集服务；外部 worker 仍须纳管。自动发现不自动批准新模型。
 

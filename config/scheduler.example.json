@@ -1,0 +1,35 @@
+{
+  "url": "http://v-scheduler:38120/api/v1",
+  "token": "REPLACE_WITH_V_ROUTER_SCOPED_TOKEN_32_PLUS",
+  "require_model_policy": true,
+  "default_local": {
+    "mode": "permit",
+    "executor_id": "v-router.local.infer",
+    "completion": "synchronous"
+  },
+  "models": {
+    "app-example/example-model": {
+      "mode": "permit",
+      "executor_id": "v-router.local.infer",
+      "completion": "synchronous",
+      "max_input_bytes": 1048576,
+      "limits": {
+        "max_tokens": 1024,
+        "max_output_tokens": 1024,
+        "n": 1
+      }
+    },
+    "app-image-studio/sd-turbo": {
+      "mode": "delegated",
+      "executor_id": "v-router.image.bridge",
+      "max_input_bytes": 1048576,
+      "limits": {
+        "width": 512,
+        "height": 512,
+        "n": 1,
+        "steps": 4,
+        "batch_count": 1
+      }
+    }
+  }
+}
