@@ -1,6 +1,8 @@
 # V-Scheduler 公开 API 与接入标准 v1
 
-日期：2026-10-13。状态：完整目标协议与 MVP 实现范围。适用于所有接入方，不以是否位于 VAI `apps/` 或是否运行 VOS 为前提。[设计](design.md)规定资源与恢复不变量；[OpenAPI](../api/openapi-v1.json)描述当前已实现的 v1 HTTP 路由。三者变更必须一起维护。
+日期：2026-10-15。状态：完整目标协议与 MVP 实现范围。适用于所有接入方，不以是否位于 VAI `apps/` 或是否运行 VOS 为前提。[设计](design.md)规定资源与恢复不变量；[OpenAPI](../api/openapi-v1.json)描述当前已实现的 v1 HTTP 路由。三者变更必须一起维护。
+
+本文的 V-Scheduler 指包含 V-Router 网关与调度控制器的统一 VOS 应用；以下协议属于调度控制器。模型请求仍由网关 `/v1/*` 转发。安装迁移见[统一应用](unified-application.md)，选型见[应用接入指南](application-integration.md)。
 
 ## 1. 接入角色和保证等级
 
@@ -61,7 +63,7 @@ JSON 使用 UTF-8，时间为 RFC3339 UTC，CPU 单位 millicores、内存 MiB�
 
 ## 5. submitter 接口
 
-所有路径以下以 `/api/v1` 为基准：
+下列短路径均相对于第 2 节的调度 base URL；统一网关为 `/scheduler/api/v1`，旧控制器直连才使用 `/api/v1`：
 
 | 方法/路径 | 行为 |
 |---|---|
@@ -84,7 +86,7 @@ JSON 使用 UTF-8，时间为 RFC3339 UTC，CPU 单位 millicores、内存 MiB�
 幂等提交示意（所有域名/令牌为占位）：
 
 ```http
-POST /api/v1/tasks HTTP/1.1
+POST /scheduler/api/v1/tasks HTTP/1.1
 Host: scheduler.example.invalid
 Authorization: Bearer <service-access-token>
 Idempotency-Key: business-job-001
@@ -152,9 +154,9 @@ W3：输入跨机授权、模型/contract 版本、输出数值容差、多 app 
 | 本 VOS 节点或其他已纳管节点的异步长任务 | 业务应用以自己的服务身份调用 `POST /tasks` | V-Scheduler 排队、续租与记录状态，业务应用保留用户授权和结果 |
 | 未纳管的远端自建服务 | 先决定资源责任和纳管方式 | 未纳管时不得声称本 API 已调度；远端 URL 不能自动视为云端 |
 
-V-Router 的 VOS 包声明必需依赖 `com.ictrek.v-scheduler >=0.0.11`，并设置 `V_ROUTER_SCHEDULER_REQUIRED=true`。安装依赖不注入 URL、服务凭据或 executor，管理员还须逐节点配置与验证。缺少有效配置时本地网关请求返回 503，不回退为直连；容量不足返回 429。云端模型在网关跳过许可逻辑。`POST /permits` 的请求是 `{"executor_id":"<批准的执行器>","upstream_url":"<批准的模型服务 base URL>","model_id":"<原生模型 ID>"}`，带服务 Bearer 和稳定的 `Idempotency-Key`；许可 ID 只由网关持有。正常同步结束调用 `/permits/{id}/release` 并提供 `stopped=true` 与证据；断连或执行状态未知用 `stopped=false`，待核实后调用 `/permits/{id}/confirm-stopped`。流式计算不能在首个响应字节后释放。V-Router 的私有配置及 `delegated` 策略见其[接入指南](../../V-Router/docs/resource-scheduling.md)。
+VOS 只安装统一的 `com.ictrek.v-scheduler`；其他应用依赖该 app ID，打包时解析当前已发布依赖版本，不再强制依赖独立 V-Router。包内网关设置 `V_ROUTER_SCHEDULER_REQUIRED=true`。本机 Agent 内置，但服务凭据、固定预算和 executor 仍须逐节点批准与验证。缺少有效配置时本地网关请求返回 503，不回退为直连；容量不足返回 429。云端模型在网关跳过许可逻辑。`POST /permits` 的请求是 `{"executor_id":"<批准的执行器>","upstream_url":"<批准的模型服务 base URL>","model_id":"<原生模型 ID>"}`，带服务 Bearer 和稳定的 `Idempotency-Key`；许可 ID 只由网关持有。正常同步结束调用 `/permits/{id}/release` 并提供 `stopped=true` 与证据；断连或执行状态未知用 `stopped=false`，待核实后调用 `/permits/{id}/confirm-stopped`。流式计算不能在首个响应字节后释放。V-Router 的私有配置及 `delegated` 策略见[网关资源准入指南](resource-scheduling.md)。
 
-异步任务提交 `POST /tasks`，使用业务任务 ID 作为稳定幂等键；返回 `task_id` 后查询 `/tasks/{id}` 或按版本消费 `/events`。取消通过 `/tasks/{id}/cancel` 请求停止，停止证据未确认前保持预约。业务执行器已持有任务预约且经 V-Router 调用同一计算时，上游必须由管理员核准为 `delegated`，通过 `/delegations/verify` 申请关联子许可，不重复扣父任务预算。一个计算只有一个预约所有者；调度器从不转发模型请求体或响应。
+异步任务提交 `POST /tasks`，使用业务任务 ID 作为稳定幂等键；返回 `task_id` 后查询 `/tasks/{id}` 或按版本消费 `/events`。取消通过 `/tasks/{id}/cancel` 请求停止，停止证据未确认前保持预约。业务执行器已持有任务预约且经 V-Router 调用同一计算时，上游必须由管理员核准为 `delegated`，通过 `/delegations/verify` 申请关联子许可，不重复扣父任务预算。一个计算只有一个预约所有者；调度控制器不转发模型请求体或响应，数据转发由同一应用内的网关负责。
 
 Image Studio 用业务任务 ID 作为幂等键，保留原业务入口与输出。Rust Agent 将 command 持久化后通过 start/inspect/cancel 执行契约驱动它。V-Router 对批准的同步本地 upstream 申请短租约 permit，delegated 路径核验父任务及关联子许可或桥接移交，cloud 路径直接请求供应商。两种预约共享节点预算，未知停止不能自动释放。失败重试/人工删除约束见 README，节点与应用位置见节点资源文档。
 

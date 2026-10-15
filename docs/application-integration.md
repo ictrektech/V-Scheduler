@@ -2,6 +2,20 @@
 
 V-Scheduler 统一应用内保留网关与调度控制器。普通模型客户端调用原 V-Router `/v1/*`：网关负责目录、鉴权、协议转换与转发，并为本地/纳管计算申请调度授权。控制器管理节点容量、预约、队列和执行状态，公开前缀为 `/scheduler/api/v1`。业务应用仍负责用户、业务任务、结果文件及其权限；自有受控异步执行器继续使用任务契约。旧端口与数据迁移见[统一应用](unified-application.md)。
 
+## 统一应用的地址与依赖
+
+VOS 只依赖并安装 `com.ictrek.v-scheduler`；打包时从当前已发布 Release / App Store 解析依赖版本，不再声明必需依赖独立 `com.ictrek.v-router`。升级旧部署时先卸载独立 Router 并保留、原位挂载其数据，避免 `22888` 端口、别名和数据写入冲突。
+
+| 调用方 | 模型 API base | 调度 API base |
+|---|---|---|
+| VOS 后端容器 | `http://v-router:8080/v1` | `http://v-router:8080/scheduler/api/v1` |
+| 同域前端 | `/api/com.ictrek.v-scheduler/v1` | `/api/com.ictrek.v-scheduler/scheduler/api/v1` |
+| 局域网服务 | `http://<vos-host>:22888/v1` | `http://<vos-host>:22888/scheduler/api/v1` |
+
+下文 `/tasks`、`/permits`、`/executors` 等短路径均相对于调度 API base。网关 `/api/v1/*` 保留模型与上游管理含义。旧网关别名、旧同域路径及控制器直连 `/api/v1` 仅为已有客户端保留兼容。
+
+VOS 本机资源采集内置于应用，无需应用开发者部署独立 Agent；外部纳管节点才需配置独立 worker。自动发现模型不等于批准计算，仍需实际峰值预算与执行器授权。
+
 ## 先确认计算发生在哪里
 
 | 调用链路 | 应由谁取得调度授权 | 当前可用接法 |
@@ -34,4 +48,4 @@ A 若同时提供直接调用和 V-Router 调用的同步入口，必须让两�
 
 - VOS 包依赖只检查应用安装及运行，不提供 Scheduler URL、令牌、节点容量或执行器。服务令牌放在 A 或 V-Router 的私有数据目录，权限 `0600`；浏览器与普通用户不能持有它。为不同应用绑定各自 `app_id` 和允许的 executor。
 - 对每个节点分别验证：真实模型完成一项任务、重复提交仅执行一次、忙碌/过期遥测/排空时请求不能到达执行端、取消后有停止证据、断连与重启后资源状态正确。云端请求不产生本地 permit。检查实际执行节点，而非仅看另一个节点的成功结果。
-- 当前实现的精确字段和能力以 [`GET /discovery`、公开 API 与接入标准](integration-standard.md)和 [OpenAPI](../api/openapi-v1.json)为准；V-Router 的具体配置和桥接协议见其[资源准入指南](../../V-Router/docs/resource-scheduling.md)。
+- 当前实现的精确字段和能力以 [`GET /discovery`、公开 API 与接入标准](integration-standard.md)和 [OpenAPI](../api/openapi-v1.json)为准；V-Router 的具体配置和桥接协议见[网关资源准入指南](resource-scheduling.md)。

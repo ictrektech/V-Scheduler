@@ -20,6 +20,7 @@ V-Router 的同一次预算。配置独立的 `permit_executors` 权限，后端
 ## 设计与接入标准
 
 - [详细设计](docs/design.md)：任务协议、资源预约、公平排队、故障恢复、分阶段实施。
+- [网关资源准入](docs/resource-scheduling.md)：统一应用内的逐模型授权、许可交接与停止证据。
 - [公开 API 与接入标准](docs/integration-standard.md)：VOS/非 VOS 客户端、服务身份、提交与 worker 接入、兼容性验收。
 - [其他应用接入指南](docs/application-integration.md)：三条调用链路、同步许可与异步任务示例、云端放行、安装配置和验收清单。
 - [OpenAPI v1](api/openapi-v1.json)：对应当前 MVP 路由的机器可读 HTTP 接口。

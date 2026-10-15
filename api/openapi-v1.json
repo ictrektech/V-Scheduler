@@ -1,14 +1,18 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "V-Scheduler Public API",
+    "title": "V-Scheduler Controller API",
     "version": "1.0.0",
-    "description": "V-Scheduler controls task execution and resource reservations on managed VOS or remote nodes; it does not proxy model payloads. Cloud provider models bypass local scheduling through V-Router. Synchronous local models use V-Router permits; asynchronous application work uses tasks. MVP implementation v0.1.0. Authenticated app-scoped access; static executors and one active execution lane per node; no HA or dynamic enrollment."
+    "description": "The unified V-Scheduler VOS app contains the V-Router model gateway and this controller. This API controls task execution and resource reservations on managed VOS or remote nodes; it does not proxy model payloads. Cloud provider models bypass local scheduling through V-Router. Synchronous local models use V-Router permits; asynchronous application work uses tasks. VOS package versions are separate from this v1 controller contract. Authenticated app-scoped access; static executors and one active execution lane per node; no HA or dynamic enrollment."
   },
   "servers": [
     {
       "url": "/scheduler/api/v1",
-      "description": "Unified application gateway (append the VOS API prefix when applicable)"
+      "description": "Unified gateway host-port entry; gateway model APIs remain under /v1"
+    },
+    {
+      "url": "/api/com.ictrek.v-scheduler/scheduler/api/v1",
+      "description": "VOS same-origin unified application entry"
     },
     {
       "url": "/api/v1",
