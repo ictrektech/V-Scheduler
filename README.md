@@ -1,6 +1,6 @@
 # V-Scheduler · 资源调度
 
-V-Scheduler 统一安装包包含 V-Router 网关与调度控制器，提供一个界面和文档入口。模型目录、上游、自动发现、试聊、协议适配、用量和原有模型 API 由原网关实现保留；任务、许可、节点和资源统计由控制器管理。现有 V-Router 数据可通过 `V_ROUTER_DATA_PATH` 原位挂载。API、端口和保留数据卸载步骤见[统一应用与迁移](docs/unified-application.md)。
+V-Scheduler 统一安装包包含 V-Router 网关与调度控制器，提供一个界面和文档入口。模型目录、上游、自动发现、试聊、协议适配、用量和原有模型 API 由原网关实现保留；任务、许可、节点和资源统计由控制器管理。顶部登录身份使用随主题变化的文字颜色。现有 V-Router 数据可通过 `V_ROUTER_DATA_PATH` 原位挂载。API、端口和保留数据卸载步骤见[统一应用与迁移](docs/unified-application.md)。
 
 同步模型后端现在可通过 `POST /api/v1/permits/{id}/verify` 核验并原子认领
 V-Router 的同一次预算。配置独立的 `permit_executors` 权限，后端不需要、也不能
