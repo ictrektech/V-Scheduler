@@ -1,5 +1,6 @@
 x-controller: &controller
   restart: unless-stopped
+  pull_policy: always
   mem_limit: 512m
   cpus: '1'
   command: [controller, --config, /config/controller.json, --listen, '0.0.0.0:38120', --ui-dir, /opt/v-scheduler/ui]

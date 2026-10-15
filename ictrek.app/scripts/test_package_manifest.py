@@ -33,6 +33,14 @@ class PackageManifestValidationTests(unittest.TestCase):
                 input=self.validator, text=True, capture_output=True,
             )
 
+    def test_mutable_dated_images_are_refreshed_for_every_profile(self):
+        compose = yaml.safe_load((self.root / 'src/docker-compose.yml').read_text())
+        # All architecture/profile variants inherit their own service anchor.
+        # A same-day image publication must replace an older cached image.
+        for name, service in compose['services'].items():
+            with self.subTest(service=name):
+                self.assertEqual(service.get('pull_policy'), 'always')
+
     def test_resolved_manifest_format_is_accepted(self):
         result = self.validate(self.manifest)
         self.assertEqual(result.returncode, 0, result.stderr)
