@@ -1,0 +1,311 @@
+
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <img class="brand-mark" src="__GATEWAY_ICON__" alt="V-Router" />
+        <div class="brand-text">
+          <div class="brand-name">V-Router</div>
+          <div class="brand-sub">本地 AI 网关</div>
+        </div>
+      </div>
+
+      <nav id="nav">
+        <button data-tab="overview" class="active">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+          <span>总览</span>
+        </button>
+        <button data-tab="models">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 3 7l9 5 9-5-9-5z"/><path d="M3 12l9 5 9-5"/><path d="M3 17l9 5 9-5"/></svg>
+          <span>模型</span>
+        </button>
+        <button data-tab="upstreams">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><path d="M7 7.5h.01M7 16.5h.01"/></svg>
+          <span>上游</span>
+        </button>
+        <button data-tab="playground">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-8 8H4l2.5-2.5A8 8 0 1 1 21 12z"/></svg>
+          <span>试聊</span>
+        </button>
+        <button data-tab="apidoc">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V2H6.5A2.5 2.5 0 0 0 4 4.5v15z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/></svg>
+          <span>API 文档</span>
+        </button>
+      </nav>
+
+      <div class="side-footer">
+        <div id="userChip" class="user-chip" hidden>
+          <div class="avatar" id="userAvatar">?</div>
+          <div class="user-meta">
+            <div class="user-name" id="userName">…</div>
+            <div class="user-role" id="userRole"></div>
+          </div>
+        </div>
+        <div id="userOffline" class="user-chip offline" title="未运行在 VOS 内或未登录；管理接口需要 VOS 用户或网关 Key">
+          <div class="avatar">–</div>
+          <div class="user-meta"><div class="user-name">未登录</div><div class="user-role">外部访问模式</div></div>
+        </div>
+      </div>
+    </aside>
+
+    <div class="main">
+      <header class="topbar">
+        <div><div class="eyebrow">WORKSPACE / AI GATEWAY</div><h1 id="pageTitle">总览</h1></div>
+        <div class="top-actions">
+          <select id="localeSelect" class="locale-select" aria-label="界面语言">
+            <option value="auto">跟随 VOS</option>
+            <option value="zh-CN">简中</option>
+            <option value="zh-TW">繁中</option>
+            <option value="en">English</option>
+          </select>
+          <input id="apiKeyInput" type="password" placeholder="网关 API Key（可选）" hidden />
+          <button class="btn" title="关于 V-Router" onclick="app.openAbout()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
+            关于 <span id="brandVersion">版本读取中</span>
+          </button>
+          <button class="btn" id="refreshBtn" onclick="app.refresh()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg>
+            刷新
+          </button>
+        </div>
+      </header>
+
+      <div id="errorBanner" class="error-banner" hidden></div>
+
+      <main class="content">
+        <!-- 总览 -->
+        <div id="tab-overview" class="tab">
+          <div class="hero" id="overviewHero"></div>
+          <div class="stats" id="overviewStats"></div>
+          <section class="card usage-overview">
+            <div class="usage-head">
+              <div>
+                <h2>Token 用量</h2>
+                <div class="usage-caption" id="usageCoverage">暂无请求</div>
+              </div>
+              <div class="usage-period" role="group" aria-label="统计时间范围">
+                <button type="button" data-period="day" onclick="app.changeUsagePeriod('day')">今天</button>
+                <button type="button" data-period="week" onclick="app.changeUsagePeriod('week')">本周</button>
+                <button type="button" data-period="month" onclick="app.changeUsagePeriod('month')">本月</button>
+                <button type="button" data-period="all" onclick="app.changeUsagePeriod('all')">全部</button>
+              </div>
+            </div>
+            <div class="usage-kpis" id="usageSummary"></div>
+            <div class="usage-filters">
+              <label class="usage-search">
+                <span class="sr-only">筛选模型或上游</span>
+                <input id="usageQuery" type="search" placeholder="筛选模型或上游…" oninput="app.changeUsageQuery(this.value)">
+              </label>
+              <label class="usage-sort">
+                <span>排序</span>
+                <select id="usageSort" onchange="app.changeUsageSort(this.value)">
+                  <option value="total_tokens">总 Token</option>
+                  <option value="input_tokens">输入 Token</option>
+                  <option value="output_tokens">输出 Token</option>
+                  <option value="requests">请求数</option>
+                  <option value="name">名称</option>
+                </select>
+              </label>
+            </div>
+          </section>
+          <div class="usage-grid">
+          <section class="card">
+            <h2>用量 · 按模型 <span class="muted" id="usageSince"></span></h2>
+            <div id="usagePerModel"></div>
+          </section>
+          <section class="card">
+            <h2>用量 · 按上游</h2>
+            <div id="usagePerUpstream"></div>
+          </section>
+          <section class="card">
+            <h2>请求 · 按用户</h2>
+            <div id="usagePerUser"></div>
+          </section>
+          </div>
+          <section class="card">
+            <h2>最近请求</h2>
+            <div id="usageRecent"></div>
+          </section>
+        </div>
+
+        <!-- 模型 -->
+        <div id="tab-models" class="tab" hidden>
+          <section class="card">
+            <div id="modelsTable"></div>
+          </section>
+        </div>
+
+        <!-- 上游 -->
+        <div id="tab-upstreams" class="tab" hidden>
+          <section class="card">
+            <h2>上游
+              <span class="spacer"></span>
+              <button class="btn" onclick="app.openUpstreamDialog()">＋ 添加手动上游</button>
+              <button class="btn" onclick="app.openRegistrationDialog()">＋ 注册模型服务</button>
+              <button class="btn primary" onclick="app.openCloudDialog()">＋ 添加云端算力 API</button>
+            </h2>
+            <div id="upstreamsTable"></div>
+          </section>
+        </div>
+
+        <!-- 试聊 -->
+        <div id="tab-playground" class="tab" hidden>
+          <section class="card">
+            <div class="pg-layout">
+              <div class="pg-side">
+                <div class="field">
+                  <label>模型</label>
+                  <select id="pgModel"></select>
+                </div>
+                <div class="field">
+                  <label>接口</label>
+                  <select id="pgEndpoint"></select>
+                  <div class="hint">接口按当前模型的健康上游和 V-Router 转换能力生成。</div>
+                </div>
+                <div class="field"><label>调用上游</label><select id="pgUpstream"><option value="">自动分配</option></select><div class="hint">自动模式按进行中请求和权重分配；指定后不切换。</div>
+                </div>
+                <div class="field">
+                  <label class="check"><input type="checkbox" id="pgStream" checked /> 流式输出</label>
+                </div>
+                <div class="pg-note muted">
+                  通过所选 <span class="mono">/v1/*</span> 接口发送真实请求，用于验证模型和协议路由。
+                </div>
+              </div>
+              <div>
+                <div class="chat-box" id="pgChat"><div class="chat-empty">选择模型后开始对话</div></div>
+                <div class="pg-input">
+                  <textarea id="pgInput" placeholder="输入消息，Enter 发送，Shift+Enter 换行"></textarea>
+                  <button class="btn primary" id="pgSend" onclick="app.pgSend()">发送</button>
+                </div>
+                <div class="pg-meta" id="pgMeta"></div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <!-- API 文档 -->
+        <div id="tab-apidoc" class="tab" hidden>
+          <section class="card">
+            <h2>接入方式<span class="spacer"></span><button class="btn" onclick="app.downloadOpenAPI()">下载 OpenAPI</button></h2>
+            <div id="apidocIntro"></div>
+          </section>
+          <section class="card">
+            <h2>身份与访问权限</h2>
+            <div id="apidocIdentity"></div>
+          </section>
+          <div id="apidocGroups"></div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <dialog id="routingDialog">
+    <h3>上游调度</h3>
+    <form onsubmit="return app.saveRouting(event)">
+      <input type="hidden" id="routingId" />
+      <div class="field"><label for="routingWeight">分配权重</label><input id="routingWeight" type="number" min="1" max="1000" required /><div class="hint">默认 1；权重越大，自动分配的请求越多。</div></div>
+      <div class="field"><label for="routingMax">最大进行中请求</label><input id="routingMax" type="number" min="0" max="100000" required /><div class="hint">0 表示不限；统计本网关请求，流式结束才释放，不是 GPU 实际槽位。</div></div>
+      <div class="field"><label class="check"><input id="routingDisabled" type="checkbox" /> 暂停接收新推理请求</label></div>
+      <div id="routingError" class="form-error"></div>
+      <div class="form-actions"><button type="button" class="btn" onclick="app.element('routingDialog').close()">取消</button><button class="btn primary" type="submit">保存</button></div>
+    </form>
+  </dialog>
+
+  <!-- 上游编辑对话框 -->
+  <dialog id="upstreamDialog">
+    <h3 id="upstreamDialogTitle">添加上游</h3>
+    <form id="upstreamForm" autocomplete="off" onsubmit="return app.submitUpstream(event)">
+      <input type="hidden" id="ufId" />
+      <input type="hidden" id="ufKind" value="manual" />
+      <div class="field">
+        <label for="ufName">名称</label>
+        <input type="text" id="ufName" autocomplete="off" placeholder="例如 ICTrek AI / OpenAI / Anthropic" />
+      </div>
+      <div class="field">
+        <label for="ufProtocol">上游协议</label>
+        <select id="ufProtocol" onchange="app.updateUpstreamProtocol()"><option value="openai">OpenAI 原生透传</option><option value="chat_completions">仅 Chat Completions（转换 Responses / Messages）</option><option value="anthropic">Anthropic 原生</option><option value="offline_asr">离线 ASR（/transcribe 适配）</option><option value="image_studio">Image Studio（生图/生视频适配）</option><option value="async_task">通用异步图片任务（创建 + 轮询）</option></select>
+        <label for="ufBaseURL">Base URL</label>
+        <input type="text" id="ufBaseURL" autocomplete="off" placeholder="https://api.example.com/v1" />
+        <div class="hint" id="ufBaseHint">可填 OpenAI 兼容 /v1、Anthropic API 地址；未写协议时默认 https，未写路径时默认 /v1。</div>
+      </div>
+      <div class="field">
+        <label for="ufAPIKey">API Key</label>
+        <input type="password" id="ufAPIKey" autocomplete="off" placeholder="sk-..." />
+        <div class="hint" id="ufKeyHint">密钥保存在本机状态文件中，接口永不回显。</div>
+      </div>
+      <div class="field">
+        <label for="ufVisibility">可见范围</label>
+        <select id="ufVisibility"><option value="public">共享（所有用户可见可用）</option><option value="private">私有（仅我和管理员可见可用）</option></select>
+        <div class="hint">私有时其他用户在模型列表看不到该上游也不能调用；修改、刷新、删除和调度配置仅限本人和管理员。已有上游保持共享。</div>
+      </div>
+      <div id="ufAsyncFields" hidden>
+        <div class="field"><label for="ufAsyncModel">模型 ID</label><input id="ufAsyncModel" type="text" placeholder="例如 nano-banana-2" /><div class="hint">该上游只登记这个模型，并通过 OpenAI <span class="mono">/v1/images/generations</span> 调用。</div></div>
+        <div class="field"><label for="ufAsyncCreatePath">创建任务路径</label><input id="ufAsyncCreatePath" type="text" placeholder="/api/v1/jobs/createTask" /></div>
+        <div class="field"><label for="ufAsyncQueryPath">查询任务路径</label><input id="ufAsyncQueryPath" type="text" placeholder="/api/v1/jobs/recordInfo" /></div>
+        <div class="field"><label for="ufAsyncQueryParam">任务 ID 查询参数</label><input id="ufAsyncQueryParam" type="text" value="taskId" /></div>
+        <div class="field"><label for="ufAsyncTaskIDPath">创建响应中的任务 ID 路径</label><input id="ufAsyncTaskIDPath" type="text" placeholder="data.taskId" /></div>
+        <div class="field"><label for="ufAsyncStatusPath">查询响应中的状态路径</label><input id="ufAsyncStatusPath" type="text" placeholder="data.state" /></div>
+        <div class="field"><label for="ufAsyncResultPath">查询响应中的结果路径</label><input id="ufAsyncResultPath" type="text" placeholder="data.resultJson" /></div>
+        <div class="field"><label for="ufAsyncResultJSONPath">结果 JSON 内的 URL 列表路径（可选）</label><input id="ufAsyncResultJSONPath" type="text" placeholder="resultUrls" /><div class="hint">若“结果路径”取得的是 JSON 字符串，会先解析再读取这里的路径；若直接取得 URL 数组则留空。</div></div>
+        <div class="field"><label for="ufAsyncInputPath">请求输入对象路径（可选）</label><input id="ufAsyncInputPath" type="text" placeholder="input" /><div class="hint">V-Router 会发送模型 ID，并把 prompt 和默认参数放入此对象；留空则放在请求顶层。</div></div>
+        <div class="field"><label for="ufAsyncSuccessStates">成功状态</label><input id="ufAsyncSuccessStates" type="text" placeholder="success" /></div>
+        <div class="field"><label for="ufAsyncFailureStates">失败状态</label><input id="ufAsyncFailureStates" type="text" placeholder="fail, failed" /></div>
+        <div class="field"><label for="ufAsyncDefaultInput">默认输入参数（JSON，可选）</label><textarea id="ufAsyncDefaultInput" rows="3" placeholder='{"aspect_ratio":"auto","resolution":"1K","output_format":"png"}'></textarea></div>
+        <div class="field"><label for="ufAsyncPollMS">轮询间隔（毫秒）</label><input id="ufAsyncPollMS" type="number" min="100" max="60000" value="1000" /></div>
+        <div class="field"><label for="ufAsyncTimeout">超时（秒）</label><input id="ufAsyncTimeout" type="number" min="1" max="3600" value="300" /></div>
+      </div>
+      <div class="field">
+        <label for="ufTestModel">联通测试模型（可选）</label>
+        <input type="text" id="ufTestModel" placeholder="例如 gpt-4o / claude-sonnet-4-5" />
+        <div class="hint">点击“测试”会先取模型列表；填写模型名时再发一次轻量调用。</div>
+      </div>
+      <div class="field">
+        <label class="check"><input type="checkbox" id="ufAllowProbeFailure" /> 模型列表探测失败也允许保存</label>
+        <div class="hint">适合暂时没有 key、协议模型列表不标准，或想先保存后运行时看上游错误的云端 API。</div>
+      </div>
+      <div class="probe-result" id="ufProbeResult" hidden></div>
+      <div class="form-error" id="ufError"></div>
+      <div class="form-actions">
+        <button type="button" class="btn" onclick="app.closeUpstreamDialog()">取消</button>
+        <button type="button" class="btn" id="ufProbe" onclick="app.probeUpstream()">测试</button>
+        <button type="submit" class="btn primary" id="ufSubmit">保存</button>
+      </div>
+    </form>
+  </dialog>
+
+
+  <!-- 注册模型服务对话框 -->
+  <dialog id="registrationDialog">
+    <h3>注册模型服务</h3>
+    <form id="registrationForm" onsubmit="return app.submitRegistration(event)">
+      <div class="field"><label for="regServiceId">服务 ID</label><input id="regServiceId" type="text" required placeholder="例如 vllm-node-1" /><div class="hint">稳定 ID 会生成上游 <span class="mono">registered-&lt;service_id&gt;</span>；同一服务续租/更新请保持不变。</div></div>
+      <div class="field"><label for="regName">显示名称</label><input id="regName" type="text" placeholder="例如 VLLM Node 1" /></div>
+      <div class="field"><label for="regVisibility">可见范围</label><select id="regVisibility"><option value="public">Public：所有 VOS 用户和匿名内网调用可见</option><option value="private">Private：仅当前注册用户和管理员可见</option></select></div>
+      <div class="field"><label for="regProtocol">上游协议</label><select id="regProtocol" onchange="app.updateRegistrationProtocol()"><option value="openai">OpenAI 原生透传</option><option value="chat_completions">仅 Chat Completions（转换 Responses / Messages）</option><option value="anthropic">Anthropic 原生</option><option value="offline_asr">离线 ASR（/transcribe 适配）</option><option value="image_studio">Image Studio（生图/生视频适配）</option></select></div>
+      <div class="field"><label for="regBaseURL">Base URL</label><input id="regBaseURL" type="text" required placeholder="http://host:8000/v1" /></div>
+      <div class="field"><label for="regAPIKey">上游 API Key（可选）</label><input id="regAPIKey" type="password" autocomplete="off" placeholder="供应商或模型服务自己的 key" /></div>
+      <div class="field"><label for="regMode">注册方式</label><select id="regMode" onchange="app.updateRegistrationMode()"><option value="api">模型 API：从 /models 拉取列表（默认按上游协议放开接口）</option><option value="single">单个模型：选择模型能力和接口</option></select></div>
+      <div class="field" id="regModelPickField" hidden><label for="regModelPick">从探测列表选择模型</label><select id="regModelPick" onchange="app.pickRegistrationModel()"></select><div class="hint">先点“测试”获取模型列表；选择后会切换到单模型注册，可再选择能力预设。</div></div>
+      <div id="regSingleFields" hidden>
+        <div class="field"><label for="regModel">模型 ID</label><input id="regModel" type="text" placeholder="例如 qwen3:8b / text-embedding-3-small" /></div>
+        <div class="field"><label for="regCapabilityPreset">模型能力预设</label><select id="regCapabilityPreset" onchange="app.applyRegistrationPreset()"><option value="chat">对话 / 生成（Chat + Responses + Messages）</option><option value="chat_completions">仅 Chat Completions</option><option value="responses">Responses</option><option value="messages">Anthropic Messages</option><option value="completions">文本补全 Completions</option><option value="embedding">Embedding</option><option value="rerank">重排序 Rerank</option><option value="image_generation">图片生成</option><option value="image_edit">图片编辑</option><option value="image_variation">图片变体</option><option value="video_generation">视频生成</option><option value="asr">语音识别 ASR</option><option value="audio_translation">语音翻译</option><option value="tts">语音合成 TTS</option><option value="moderation">内容审核 Moderation</option><option value="custom">自定义</option></select><div class="hint">单个模型只能按模型真实能力选择；不要给单个模型声明它实际不支持的接口。</div></div>
+        <div class="field"><label for="regEndpoints">支持接口</label><input id="regEndpoints" type="text" placeholder="chat_completions, responses, embeddings" /><div class="hint">单模型注册必须填写。常用值：chat_completions、responses、messages、completions、embeddings、images/generations、images/edits、videos/generations、audio/speech、audio/transcriptions、moderations、rerank。离线 ASR 服务请选 offline_asr，并声明 audio/transcriptions；Image Studio 请选择 image_studio，可声明 images/generations、images/edits 或 videos/generations。</div></div>
+        <div class="field"><label for="regCapabilities">模型能力（可选）</label><input id="regCapabilities" type="text" placeholder="completion, tools, embedding" /></div>
+        <div class="field"><label for="regModelKind">模型类型兜底</label><select id="regModelKind"><option value="unknown">由接口/能力决定</option><option value="chat">对话</option><option value="embedding">Embedding</option></select></div>
+      </div>
+      <div class="field"><label for="regTTL">租约秒数</label><input id="regTTL" type="number" min="30" max="3600" value="90" /><div class="hint">后端服务应在过期前调用 heartbeat。界面注册适合静态服务；动态副本建议用 API 自动注册。</div></div>
+      <div class="probe-result" id="regProbeResult" hidden></div>
+      <div class="form-error" id="regError"></div>
+      <div class="form-actions"><button type="button" class="btn" onclick="app.element('registrationDialog').close()">取消</button><button type="button" class="btn" onclick="app.testRegistration()">测试</button><button type="submit" class="btn primary" id="regSubmit">注册</button></div>
+    </form>
+  </dialog>
+
+  <!-- 关于对话框 -->
+  <dialog id="aboutDialog">
+    <h3>关于 V-Router</h3>
+    <div id="aboutBody"></div>
+    <div class="form-actions">
+      <button class="btn primary" onclick="app.element('aboutDialog').close()">关闭</button>
+    </div>
+  </dialog>
+
+  <div class="toast" id="toast"></div>

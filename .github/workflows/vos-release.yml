@@ -50,11 +50,64 @@ jobs:
           }
           EOF
 
+      - name: Install dependency resolver
+        run: python3 -m pip install 'PyYAML==6.0.3'
+
       - name: Build pull-mode package
+        env:
+          APPSTORE_IP: ${{ secrets.APPSTORE_IP }}
+          APPSTORE_TOKEN: ${{ secrets.APPSTORE_TOKEN }}
         run: |
           set -euo pipefail
           VERSION="${GITHUB_REF_NAME#vos-v-scheduler-v}"
           test "$(cat ictrek.app/VERSION)" = "$VERSION"
+          mkdir -p "$HOME/.ssh"
+          chmod 700 "$HOME/.ssh"
+          ssh-keyscan -H -p 32222 "$APPSTORE_IP" >> "$HOME/.ssh/known_hosts"
+
+          askpass="$RUNNER_TEMP/vos-appstore-askpass.sh"
+          cat > "$askpass" <<'EOF'
+          #!/bin/sh
+          printf '%s\n' "$APPSTORE_TOKEN"
+          EOF
+          chmod 700 "$askpass"
+          export SSH_ASKPASS="$askpass"
+          export SSH_ASKPASS_REQUIRE=force
+          export DISPLAY=:0
+
+          control_socket="$RUNNER_TEMP/vos-appstore-ssh.sock"
+          trap 'ssh -S "$control_socket" -O exit -p 32222 tunneluser@"$APPSTORE_IP" >/dev/null 2>&1 || true' EXIT
+
+          ssh \
+            -M \
+            -S "$control_socket" \
+            -f \
+            -N \
+            -L 18899:127.0.0.1:18090 \
+            -p 32222 \
+            -o BatchMode=no \
+            -o ExitOnForwardFailure=yes \
+            -o PreferredAuthentications=password \
+            -o PubkeyAuthentication=no \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=3 \
+            tunneluser@"$APPSTORE_IP" </dev/null
+
+          ready=false
+          for _ in $(seq 1 30); do
+            if curl -fsS "http://127.0.0.1:18899/api/health" >/dev/null; then
+              ready=true
+              break
+            fi
+            if ! ssh -S "$control_socket" -O check -p 32222 tunneluser@"$APPSTORE_IP" >/dev/null 2>&1; then
+              echo "VOS App Store SSH tunnel exited before becoming ready." >&2
+              exit 1
+            fi
+            sleep 1
+          done
+          [[ "$ready" == true ]] || { echo "VOS App Store SSH tunnel did not become ready." >&2; exit 1; }
+
+          export VOS_DEPENDENCY_CATALOG_URL="http://127.0.0.1:18899"
           PACKAGE_VERSION="$VERSION" ./ictrek.app/scripts/package.sh
           test -f "ictrek.app/dist/v_scheduler_${VERSION}_pull.tar"
 

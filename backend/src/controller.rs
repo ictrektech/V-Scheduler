@@ -368,7 +368,8 @@ pub async fn serve(
         .route("/attempts/{id}/report", post(report));
     let mut router = Router::new()
         .route("/health", get(|| async { Json(json!({"status":"ok"})) }))
-        .nest("/api/v1", api)
+        .nest("/api/v1", api.clone())
+        .nest("/scheduler/api/v1", api)
         .layer(axum::extract::DefaultBodyLimit::max(262144))
         .with_state(a);
     if let Some(path) = ui {

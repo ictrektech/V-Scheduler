@@ -17,8 +17,9 @@ submitter 只能请求已注册的执行器和 task type。注册第三方 worke
 
 ## 2. 地址、发现和版本
 
-- 核心 base URL：`https://<controller>/api/v1`。
-- VOS 包挂载：`https://<vos-host>/app/com.ictrek.v-scheduler/api/v1`；内网可经已有 VOS 网关访问同一路径。
+- 统一应用公开 base URL：`http://<vos-host>:22888/scheduler/api/v1`，或 VOS 网关 `/api/com.ictrek.v-scheduler/scheduler/api/v1`。
+- 控制器内部与旧客户端兼容 base URL：`https://<controller>/api/v1`；保留已有 Agent、执行器和服务客户端。
+- 旧 VOS 包挂载 `/app/com.ictrek.v-scheduler/api/v1` 保留兼容；新客户端使用上面的显式调度前缀。普通模型调用使用网关 `/v1/*`。
 - `GET /discovery` 返回协议版本、实际开启的能力、认证模式和本实例 ID；不返回节点地址、任务、密钥或容量细节。
 - HTTP 协议主版本在路径；`protocol_version=1` 标识消息主版本；执行器另有 `contract_version`，模型 ID/版本另行匹配。
 - v1 只增加可选响应字段；客户端忽略未知可选字段，遇到未知状态禁止将其当成成功。新增必需字段、删字段或改变单位需 v2。

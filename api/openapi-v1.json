@@ -7,8 +7,12 @@
   },
   "servers": [
     {
+      "url": "/scheduler/api/v1",
+      "description": "Unified application gateway (append the VOS API prefix when applicable)"
+    },
+    {
       "url": "/api/v1",
-      "description": "Standalone controller; use application prefix when mounted in VOS"
+      "description": "Legacy direct controller compatibility endpoint"
     }
   ],
   "paths": {

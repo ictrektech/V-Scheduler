@@ -1,12 +1,12 @@
 id: com.ictrek.v-scheduler
 name:
-  zh-CN: V-Scheduler 资源调度
+  zh-CN: V-Scheduler 模型与算力
   en: V-Scheduler
-  zh-TW: V-Scheduler 資源調度
+  zh-TW: V-Scheduler 模型與算力
 description:
-  zh-CN: 任务排队、资源预约、受控重试与节点资源观察。
-  en: Task queues, reservations, controlled retries and node resource monitoring.
-  zh-TW: 任務排隊、資源預約、受控重試與節點資源觀察。
+  zh-CN: 模型路由、协议适配、用量统计、任务排队与资源调度。
+  en: Model routing, protocol adapters, usage, task queues and resource scheduling.
+  zh-TW: 模型路由、協定適配、用量統計、任務佇列與資源調度。
 version: __APP_VERSION__
 author: ictrek
 category: [system]
@@ -23,7 +23,7 @@ platform:
 dependencies:
   apps:
     - id: com.ictrek.pgv
-      version: '>=0.0.21'
+      version: latest
       optional: false
 profiles:
   - name: amd
@@ -74,4 +74,7 @@ require-profiles: true
 storage:
   directories:
     - path: config
+      mode: '0700'
+
+    - path: gateway
       mode: '0700'

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import GatewayWorkspace from './GatewayWorkspace.vue'
+import IntegrationGuide from './IntegrationGuide.vue'
 import {ref,computed,onMounted,onUnmounted,watch} from 'vue'
 import Icon from './Icon.vue'
 import {getVOSBearerToken,clearCachedVOSBearerToken} from './vos-auth'
@@ -19,7 +21,8 @@ const t=(source:string)=>locale.value==='zh-CN'?source:messages[source]?.[locale
 const demo=ref(false)
 const appVersion=ref('')
 const vosEmbedded=window.parent!==window||location.pathname.startsWith('/app/com.ictrek.v-scheduler')
-const page=ref(location.hash==='#api'?'api':'resources'),credential=ref(''),connected=ref(false),busy=ref(false),error=ref(''),tasks=ref<Task[]>([]),nodes=ref<Node[]>([]),reservations=ref<Reservation[]>([]),filter=ref('all'),search=ref(''),selected=ref<Task|null>(null),deleting=ref<Task|null>(null),confirmPermit=ref<Reservation|null>(null),stopEvidence=ref(''),copied=ref(false)
+const initialPage=location.hash.slice(1)
+const page=ref(['models','upstreams','playground','api','resources'].includes(initialPage)?initialPage:'overview'),docMode=ref('gateway'),credential=ref(''),connected=ref(false),busy=ref(false),error=ref(''),tasks=ref<Task[]>([]),nodes=ref<Node[]>([]),reservations=ref<Reservation[]>([]),filter=ref('all'),search=ref(''),selected=ref<Task|null>(null),deleting=ref<Task|null>(null),confirmPermit=ref<Reservation|null>(null),stopEvidence=ref(''),copied=ref(false)
 const pendingTasks=ref(new Set<string>())
 const appFilter=ref(''),nodeFilter=ref(''),taskPages=ref(1),taskCursor=ref<string|null>(null)
 const appOptions=computed(()=>[...new Set(tasks.value.map(task=>task.app_id))].sort())
@@ -28,7 +31,11 @@ const shown=computed(()=>tasks.value.filter(task=>(filter.value==='all'||task.st
 const active=computed(()=>tasks.value.filter(task=>['assigned','running','cancelling','recovering'].includes(task.status)).length)
 const queued=computed(()=>tasks.value.filter(task=>['queued','retry_wait'].includes(task.status)).length)
 const basePath=new URL('./',location.href.split('#')[0]).pathname
-const apiBase=basePath+'api/v1/'
+const apiBase=basePath+'scheduler/api/v1/'
+const gatewayPages=['overview','models','upstreams','playground']
+const gatewayTab=computed(()=>page.value==='api'?'apidoc':page.value)
+const gatewayVisible=computed(()=>gatewayPages.includes(page.value)||(page.value==='api'&&docMode.value==='gateway'))
+const pageTitle=computed(()=>(({overview:'模型与调用',models:'模型',upstreams:'上游',playground:'试聊',api:'API 文档',resources:'资源与任务'} as Record<string,string>)[page.value]||page.value))
 const spec=ref<any>(null),operationKey=ref('GET /discovery'),exampleTab=ref('curl'),discoveryResult=ref<unknown>(null)
 const operations=computed(()=>Object.entries(spec.value?.paths||{}).flatMap(([path,methods])=>Object.entries(methods as any).filter(([method])=>['get','post','delete'].includes(method)).map(([method,op])=>({path,method,key:method.toUpperCase()+' '+path,...op as any}))))
 const operation=computed(()=>operations.value.find(op=>op.key===operationKey.value)||operations.value[0])
@@ -105,18 +112,22 @@ function nodeHealth(node:Node){return node.health_state||(node.managed===false?'
 const healthLabels:Record<string,string>={ready:'可调度',degraded:'降级',unavailable:'不可用',draining:'排空中',observing:'仅观察'}
 async function copy(value:string){try{await navigator.clipboard.writeText(value);copied.value=true;setTimeout(()=>copied.value=false,1500)}catch{error.value='COPY_UNAVAILABLE'}}
 async function tryDiscovery(){try{discoveryResult.value=await (await fetch(apiBase+'discovery')).json()}catch(e){showError(e)}}
-watch(page,value=>{location.hash=value==='api'?'api':'resources';selected.value=null})
-watch(locale,()=>{document.title=`V-Scheduler · ${t('资源调度')}`})
+watch(page,value=>{location.hash=value;selected.value=null})
+watch(locale,()=>{document.title=`V-Scheduler · ${t('模型路由与资源调度')}`},{immediate:true})
 let timer:ReturnType<typeof setInterval>
 onMounted(async()=>{await connect();timer=setInterval(refresh,2500);try{spec.value=await (await fetch(apiBase+'openapi.json')).json()}catch{if(!error.value)error.value='加载接口文档失败'}})
 onUnmounted(()=>{clearInterval(timer);language.dispose()})
 </script>
 <template>
  <div class="shell">
-  <aside><div class="brand"><img :src="logoUrl" alt=""><div>V-Scheduler<small>{{t('资源调度')}}</small></div></div><nav><button :class="{current:page==='resources'}" @click="page='resources'"><Icon name="queue"/>{{t('资源与任务')}}</button><button :class="{current:page==='api'}" @click="page='api'"><Icon name="book"/>{{t('API 文档')}}</button></nav><div class="aside-note"><span class="connection-dot" :class="{on:connected}"></span>{{t(demo?'演示模式':connected?'已连接':'未连接')}}<small>{{t('按能力分配')}}<br>{{t('确认停止后释放')}}</small><small v-if="appVersion">v{{appVersion}}</small></div></aside>
+  <aside><div class="brand"><img :src="logoUrl" alt=""><div>V-Scheduler<small>{{t('模型路由与资源调度')}}</small></div></div><nav><button v-for="item in [{id:'overview',label:'模型与调用'},{id:'models',label:'模型'},{id:'upstreams',label:'上游'},{id:'playground',label:'试聊'}]" :key="item.id" :class="{current:page===item.id}" @click="page=item.id"><Icon name="server"/>{{t(item.label)}}</button><button :class="{current:page==='resources'}" @click="page='resources'"><Icon name="queue"/>{{t('资源与任务')}}</button><button :class="{current:page==='api'}" @click="page='api'"><Icon name="book"/>{{t('API 文档')}}</button></nav><div class="aside-note"><span class="connection-dot" :class="{on:connected}"></span>{{t(error==='FORBIDDEN'?'调度管理需管理员身份':demo?'演示模式':connected?'已连接':'调度未连接')}}<small>{{t('按能力分配')}}<br>{{t('确认停止后释放')}}</small><small v-if="appVersion">v{{appVersion}}</small></div></aside>
   <main>
-   <header><div><h1>{{t(page==='api'?'API 文档':'资源与任务')}}</h1><p>{{t(page==='api'?'接口标准、认证方式与可复制的请求示例。':'查看执行资源、预约与排队任务。')}}</p></div><div class="header-actions"><label class="locale-control"><Icon name="globe"/><select v-model="preference" :aria-label="t('界面语言')" @change="language.setPreference(preference)"><option value="auto">{{t('跟随 VOS')}}</option><option value="zh-CN">简体中文</option><option value="en">English</option><option value="zh-TW">繁體中文</option></select></label></div></header>
-   <div v-if="error" class="error" role="alert">{{t(errors[error]||error)}}<code v-if="errors[error]">{{error}}</code></div>
+   <header><div><h1>{{t(pageTitle)}}</h1><p>{{t(page==='api'?'接口标准、认证方式与可复制的请求示例。':page==='resources'?'查看执行资源、预约与排队任务。':'统一管理模型、上游和调用；本地计算经过资源准入。')}}</p></div><div class="header-actions"><label class="locale-control"><Icon name="globe"/><select v-model="preference" :aria-label="t('界面语言')" @change="language.setPreference(preference)"><option value="auto">{{t('跟随 VOS')}}</option><option value="zh-CN">简体中文</option><option value="en">English</option><option value="zh-TW">繁體中文</option></select></label></div></header>
+   <div v-if="error&&page==='resources'" class="error" role="alert">{{t(errors[error]||error)}}<code v-if="errors[error]">{{error}}</code></div>
+   <section v-if="page==='overview'&&connected" class="unified-summary panel"><button class="quiet" @click="page='resources'">{{t('就绪节点')}} {{nodes.filter(n=>nodeHealth(n)==='ready').length}} / {{nodes.length}}</button><button class="quiet" @click="page='resources'">{{t('正在执行')}} {{active}}</button><button class="quiet" @click="page='resources'">{{t('等待队列')}} {{queued}}</button><span>{{t('外部云模型不占本地资源预约')}}</span></section>
+   <div v-if="page==='api'" class="documentation-tabs"><button :class="{current:docMode==='gateway'}" @click="docMode='gateway'">{{t('模型与网关 API')}}</button><button :class="{current:docMode==='scheduler'}" @click="docMode='scheduler'">{{t('调度管理 API')}}</button><button :class="{current:docMode==='guide'}" @click="docMode='guide'">{{t('接入与迁移')}}</button></div>
+   <IntegrationGuide v-if="page==='api'&&docMode==='guide'" :t="t"/>
+   <GatewayWorkspace v-show="gatewayVisible" :tab="gatewayTab" :locale="locale" :visible="gatewayVisible" @select="page=$event"/>
    <template v-if="page==='resources'">
     <section v-if="!connected&&!demo&&error" class="login"><div class="login-mark"><Icon name="shield"/></div><h2>{{t('连接 VOS')}}</h2><p>{{t('使用当前 VOS 管理员身份连接，首次使用自动准备 PGV 数据库。')}}</p><button :disabled="busy" @click="connect">{{t('重试连接')}}</button></section>
 
@@ -130,7 +141,7 @@ onUnmounted(()=>{clearInterval(timer);language.dispose()})
      <section class="section panel"><div class="section-head"><h2>{{t('预约台账')}}</h2></div><div class="reservation-list"><div v-for="reserved in reservations" :key="reserved.attempt_id"><Icon name="clock"/><div><strong>{{reserved.task_id.startsWith('permit:')?t('在线许可'):reserved.task_id.slice(0,8)}}</strong><small>{{nodeName(reserved.node_id)}} · {{reserved.resources.memory_mib}} MiB · {{reserved.resources.gpu_slots}} GPU</small></div><span class="status" :class="reserved.state==='suspect'?'recovering':'assigned'">{{reserved.state}}</span><button v-if="reserved.state==='suspect'&&reserved.task_id.startsWith('permit:')" class="quiet" @click="confirmPermit=reserved">{{t('确认该执行已停止')}}</button></div><p v-if="!reservations.length" class="empty">{{t('尚无资源预约。')}}</p></div></section>
     </template>
    </template>
-   <template v-else>
+   <template v-if="page==='api'&&docMode==='scheduler'">
     <section class="api-intro"><div><Icon name="code"/><h2>V-Scheduler API <span>v1</span></h2><p>{{t('仅展示当前已实现接口；完整设计中的后续能力不在此处宣称可用。')}}</p><p>{{t('云端模型不预约本地资源；网关的本机/纳管远端 HTTP、SSE、WebSocket 和异步创建先准入。delegated 须核验任务、用户、节点及父预算；未知停止保留预约。系统保留 RAM、CPU 与显存余量，模型须批准输入和资源参数上限。')}}</p></div><a class="quiet button" :href="apiBase+'openapi.json'" target="_blank">{{t('获取 OpenAPI')}}</a></section>
     <div class="api-layout"><div class="api-index"><section v-for="group in groups" :key="group.name"><h3>{{t(group.name)}}</h3><button v-for="op in group.items" :class="{active:operationKey===op.key}" @click="operationKey=op.key;discoveryResult=null"><span class="method" :class="op.method">{{op.method.toUpperCase()}}</span><code>{{op.path}}</code></button></section></div><div class="api-content" v-if="operation"><div class="endpoint-title"><span class="method" :class="operation.method">{{operation.method.toUpperCase()}}</span><code>{{operation.path}}</code></div><h2>{{docTitle}}</h2><p>{{docDescription}}</p><section class="doc-section"><h3>{{t('认证')}}</h3><p>{{t(operation.security?.length?'使用服务身份的 Bearer token。工作节点使用独立身份，管理员令牌只用于管理操作。':'此接口公开，无需访问令牌。')}}</p><div class="auth-line"><Icon name="shield"/><code>{{operation['x-required-scope']||'public'}}</code></div></section><section v-if="fields.length" class="doc-section"><h3>{{t('请求参数')}}</h3><table class="fields"><thead><tr><th>{{t('字段')}}</th><th>{{t('类型')}}</th><th></th></tr></thead><tbody><tr v-for="field in fields"><td><code>{{field.name}}</code></td><td>{{field.type||'object'}}</td><td><span :class="{required:field.required}">{{t(field.required?'必填':'可选')}}</span></td></tr></tbody></table></section><section class="doc-section"><div class="section-head"><h3>{{t('请求示例')}}</h3><button class="quiet small" @click="copy(code)"><Icon name="copy"/>{{t(copied?'已复制':'复制')}}</button></div><div class="code-tabs"><button :class="{active:exampleTab==='curl'}" @click="exampleTab='curl'">cURL</button><button :class="{active:exampleTab==='json'}" @click="exampleTab='json'">JSON</button></div><pre class="code-block">{{code}}</pre><p class="doc-note">{{t('每个提交使用稳定的 Idempotency-Key；超时后保留原键重试。')}}</p></section><section class="doc-section"><h3>{{t('响应')}}</h3><p>{{t('成功受理不代表计算完成。取消受理后，须等待停止确认。')}}</p><div class="response-codes"><code v-for="(value,status) in operation.responses" :key="status">{{status}}</code></div><button v-if="operation.path==='/discovery'" class="quiet" @click="tryDiscovery"><Icon name="play"/>{{t('试调用发现接口')}}</button><pre v-if="discoveryResult" class="code-block">{{JSON.stringify(discoveryResult,null,2)}}</pre></section></div></div>
    </template>
@@ -142,4 +153,5 @@ onUnmounted(()=>{clearInterval(timer);language.dispose()})
 
 <style scoped>
 .table-toolbar{flex-wrap:wrap}.table-toolbar .search{flex:1;min-width:220px}.task-list-footer{display:flex;align-items:center;gap:14px;flex-wrap:wrap}.task-list-footer>span{flex:1;min-width:180px}
+.unified-summary{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:16px;margin-bottom:20px}.unified-summary>span{margin-left:auto;color:#64748b;font-size:12px}.documentation-tabs{display:flex;gap:8px;margin-bottom:20px}.documentation-tabs button{background:transparent;color:#64748b}.documentation-tabs button.current{background:#e7effc;color:#265cc2}
 </style>

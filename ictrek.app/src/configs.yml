@@ -1,1 +1,93 @@
-configs: []
+configs:
+  - name: V_ROUTER_DATA_PATH
+    title: {zh-CN: "已有 V-Router 数据目录（可选）", en: "Existing V-Router data directory (optional)", zh-TW: "既有 V-Router 資料目錄（可選）"}
+    description:
+      zh-CN: "升级合并时填写旧 V-Router 的 /data 对应宿主目录。卸载旧应用须保留数据。留空使用本应用的 gateway 目录。"
+      en: "For consolidation, use the host directory previously mounted at V-Router /data. Retain data when uninstalling the old app. Leave blank for this app's gateway directory."
+      zh-TW: "合併升級時填寫舊 V-Router /data 對應的宿主目錄。解除安裝舊應用須保留資料。留空使用本應用 gateway 目錄。"
+    type: string
+    default: ""
+    required: false
+  - name: V_ROUTER_HOST_PORT
+    type: integer
+    title:
+      zh-CN: 网关宿主机端口
+      en: Gateway Host Port
+    description:
+      zh-CN: 把 V-Router 的 OpenAI 兼容 API（/v1）和管理 API（/api/v1）暴露到宿主机的端口，供局域网内 Cursor、ChatBox 等客户端使用，例如 http://<vos-host>:22888/v1。
+      en: Host port that exposes the OpenAI-compatible API (/v1) and management API (/api/v1) for LAN clients such as Cursor or ChatBox, e.g. http://<vos-host>:22888/v1.
+    default: 22888
+    minimum: 1024
+    maximum: 65535
+
+  - name: V_ROUTER_MODEL_HUB_URL
+    type: string
+    title:
+      zh-CN: Model Hub 后端地址
+      en: Model Hub Backend URL
+    description:
+      zh-CN: V-Router 轮询该地址自动发现本地推理服务和模型。默认使用 VOS 内部服务名；Model Hub 未安装在 vos_default 网络时可改成 http://<vos-host>:35005 形式，留空则禁用自动发现。
+      en: URL polled for local inference services and models. Defaults to the VOS internal service name; switch to http://<vos-host>:35005 if Model Hub is not on the vos_default network, or leave empty to disable discovery.
+    default: http://model-hub-backend:5005
+
+  - name: V_ROUTER_IMAGE_STUDIO_URL
+    type: string
+    title:
+      zh-CN: Image Studio 后端地址
+      en: Image Studio Backend URL
+    description:
+      zh-CN: V-Router 轮询该地址自动发现同 VOS 内 Image Studio 的生图/生视频模型。默认使用 VOS 内部服务名；留空则禁用 Image Studio 自动发现。
+      en: URL polled for same-VOS Image Studio image/video generation models. Defaults to the VOS internal service name; leave empty to disable Image Studio discovery.
+    default: http://image-studio-backend:5000
+
+  - name: V_ROUTER_V_MUSIC_URLS
+    type: string
+    title:
+      zh-CN: V-Music 发现地址
+      en: V-Music Discovery URLs
+    description:
+      zh-CN: 按顺序尝试的 V-Music 地址，逗号分隔。默认先使用同 VOS 的内部服务名，再回退宿主机端口；留空则禁用 V-Music 自动发现。
+      en: Ordered comma-separated V-Music URLs. Defaults to the same-VOS service alias followed by the host port fallback; leave empty to disable V-Music discovery.
+    default: http://v-music-backend:7080,http://host.docker.internal:22701
+
+  - name: V_ROUTER_ML_SERVER_URLS
+    type: string
+    title:
+      zh-CN: ML Server 发现地址
+      en: ML Server Discovery URLs
+    description:
+      zh-CN: 按顺序尝试的 Immich ML Server 地址，逗号分隔。默认先使用同 VOS 的内部服务名，再回退宿主机 3003 端口；留空则禁用自动发现。
+      en: Ordered comma-separated Immich ML Server URLs. Defaults to the same-VOS service alias followed by host port 3003; leave empty to disable discovery.
+    default: http://ml-server:3003,http://host.docker.internal:3003
+
+  - name: V_ROUTER_DISCOVERY_INTERVAL
+    type: integer
+    title:
+      zh-CN: 自动发现间隔（秒）
+      en: Discovery Interval (seconds)
+    description:
+      zh-CN: 轮询 Model Hub、Image Studio、V-Voice、V-Music、ML Server 和视频结构化服务的间隔。新启动的模型或服务最迟在这个间隔后可用。
+      en: Interval for polling Model Hub, Image Studio, V-Voice, V-Music, ML Server, and Video Structure. Newly started models or services become available within this interval at the latest.
+    default: 30
+    minimum: 5
+    maximum: 3600
+
+  - name: V_ROUTER_REQUIRE_KEY
+    type: boolean
+    title:
+      zh-CN: 启用 API Key 校验
+      en: Require API Key
+    description:
+      zh-CN: "开启后，推理 API 必须携带有效 VOS OIDC token 或 Authorization: Bearer <V_ROUTER_API_KEY>；管理 API 始终要求身份。默认关闭，仅依赖 VOS 内网隔离；宿主机端口暴露到不可信网络时应开启。"
+      en: "When enabled, inference requires a valid VOS OIDC token or Authorization: Bearer <V_ROUTER_API_KEY>; management always requires identity. Disabled by default and relies on VOS network isolation; enable it whenever the host port is exposed to untrusted networks."
+    default: false
+
+  - name: V_ROUTER_API_KEY
+    type: string
+    title:
+      zh-CN: 网关 API Key
+      en: Gateway API Key
+    description:
+      zh-CN: 启用 API Key 校验时使用的密钥。仅在“启用 API Key 校验”为真时生效；请使用足够长的随机字符串。
+      en: Key checked when API key validation is enabled. Only effective when Require API Key is on; use a long random string.
+    default: ""

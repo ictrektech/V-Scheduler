@@ -1,5 +1,7 @@
 # V-Scheduler 資源調度
 
+統一包包含原 V-Router 全部閘道功能與調度控制器。模型呼叫繼續使用宿主連接埠 22888 的 /v1；調度管理使用 /scheduler/api/v1。合併安裝前解除安裝獨立 V-Router 並保留資料，將舊 /data 的宿主目錄填入 V_ROUTER_DATA_PATH 即可原位掛載，留空使用本應用 gateway 目錄。兩個應用不能同時占用原連接埠。
+
 版本 __APP_VERSION__。
 
 安裝時會檢查 PGV 依賴。首次開啟應用並以 VOS 管理員登入後，自動建立專用資料庫、一般資料庫角色和本機資源取樣身分；設定保存在應用專屬 ${VOS_APP_STORAGE_PATH}/config 中。無需準備設定檔或執行終端命令。PGV 無法連線時頁面顯示初始化狀態。

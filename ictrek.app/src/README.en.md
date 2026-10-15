@@ -1,5 +1,7 @@
 # V-Scheduler Resource Scheduling
 
+The unified package includes the original V-Router gateway and scheduling controller. Model clients keep port 22888 /v1; scheduling uses /scheduler/api/v1. Before consolidation, uninstall standalone V-Router while retaining its data, then set V_ROUTER_DATA_PATH to its former host /data directory. Leave blank for this app’s gateway directory. Both installations cannot own the same port.
+
 Version __APP_VERSION__
 
 Installation checks the PGV dependency. On first opening, sign in as a VOS administrator to automatically initialize a dedicated database, ordinary database role and internal collector identity. Configuration lives in the private ${VOS_APP_STORAGE_PATH}/config directory. No configuration files or terminal commands are required. The page shows initialization status while PGV is unavailable.

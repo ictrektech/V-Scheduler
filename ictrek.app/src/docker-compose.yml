@@ -25,7 +25,8 @@ x-controller: &controller
     - "traefik.http.middlewares.v-scheduler-top-open-redirect.redirectregex.regex=^(https?://[^/]+)/app/com\\.ictrek\\.v-scheduler/?(?:\\?.*)?$"
     - "traefik.http.middlewares.v-scheduler-top-open-redirect.redirectregex.replacement=$${1}/#/app/com.ictrek.v-scheduler/v-scheduler"
     - "traefik.http.middlewares.v-scheduler-top-open-redirect.redirectregex.permanent=false"
-    - "traefik.http.routers.v-scheduler-web.rule=PathPrefix(`/app/com.ictrek.v-scheduler`)"
+    - "traefik.http.routers.v-scheduler-web.rule=PathPrefix(`/app/com.ictrek.v-scheduler/api/v1`)"
+    - "traefik.http.routers.v-scheduler-web.priority=1300"
     - "traefik.http.routers.v-scheduler-web.service=v-scheduler-web"
     - "traefik.http.routers.v-scheduler-web.middlewares=v-scheduler-strip"
     - "traefik.http.middlewares.v-scheduler-strip.stripprefix.prefixes=/app/com.ictrek.v-scheduler"
@@ -36,6 +37,77 @@ x-controller: &controller
     timeout: 5s
     start_period: 20s
     retries: 3
+x-gateway: &gateway
+  restart: unless-stopped
+  mem_limit: 768m
+  cpus: '2'
+  pull_policy: always
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  networks:
+    vos_default:
+      aliases:
+        - v-router-backend
+        - v-router
+  environment:
+    V_ROUTER_CONTROLLER_URL: http://v-scheduler:38120
+    V_ROUTER_ADDR: :8080
+    V_ROUTER_HOST_PORT: "${V_ROUTER_HOST_PORT:-22888}"
+    V_ROUTER_STATE_PATH: /data/state.json
+    V_ROUTER_SCHEDULER_CONFIG: "${V_ROUTER_SCHEDULER_CONFIG:-}"
+    V_ROUTER_SCHEDULER_REQUIRED: "true"
+    GOMEMLIMIT: 576MiB
+    V_ROUTER_MAX_ACTIVE_REQUESTS: "${V_ROUTER_MAX_ACTIVE_REQUESTS:-8}"
+    V_ROUTER_MAX_BUFFERED_INPUT_MIB: "${V_ROUTER_MAX_BUFFERED_INPUT_MIB:-64}"
+    V_ROUTER_USAGE_PATH: /data/usage.jsonl
+    VOS_APP_VERSION: "__APP_VERSION__"
+    # Platform-injected host gateway IP; the backend derives the userinfo
+    # URL from it (VOS_OIDC_USERINFO_URL overrides when set).
+    VOS_HOST_GW_IP: "${VOS_HOST_GW_IP:-}"
+    VOS_OIDC_USERINFO_URL: "${VOS_OIDC_USERINFO_URL:-}"
+    V_ROUTER_AUTH_DISABLED: "${V_ROUTER_AUTH_DISABLED:-false}"
+    V_ROUTER_MODEL_HUB_URL: "${V_ROUTER_MODEL_HUB_URL:-http://model-hub-backend:5005}"
+    V_ROUTER_IMAGE_STUDIO_URL: "${V_ROUTER_IMAGE_STUDIO_URL:-http://image-studio-backend:5000}"
+    V_ROUTER_V_SUB_URLS: "${V_ROUTER_V_SUB_URLS:-http://v-sub-backend:7090,http://host.docker.internal:22703}"
+    V_ROUTER_V_VOICE_URLS: "${V_ROUTER_V_VOICE_URLS:-http://v-voice-backend:7070,http://host.docker.internal:22700}"
+    V_ROUTER_V_MUSIC_URLS: "${V_ROUTER_V_MUSIC_URLS-http://v-music-backend:7080,http://host.docker.internal:22701}"
+    V_ROUTER_ML_SERVER_URLS: "${V_ROUTER_ML_SERVER_URLS:-http://ml-server:3003,http://host.docker.internal:3003}"
+    V_ROUTER_VIDEO_STRUCTURE_DETECT_URLS: "${V_ROUTER_VIDEO_STRUCTURE_DETECT_URLS:-http://video-structure-detect:8910,http://host.docker.internal:48910}"
+    V_ROUTER_VIDEO_STRUCTURE_URLS: "${V_ROUTER_VIDEO_STRUCTURE_URLS:-http://video-structure:8911,http://host.docker.internal:48911}"
+    V_ROUTER_DISCOVERY_INTERVAL: "${V_ROUTER_DISCOVERY_INTERVAL:-30s}"
+    V_ROUTER_REQUIRE_KEY: "${V_ROUTER_REQUIRE_KEY:-false}"
+    V_ROUTER_API_KEY: "${V_ROUTER_API_KEY:-}"
+  volumes:
+    - ${V_ROUTER_DATA_PATH:-${VOS_APP_STORAGE_PATH}/gateway}:/data
+  ports:
+    - "${V_ROUTER_HOST_PORT:-22888}:8080"
+  labels:
+    - "traefik.enable=true"
+    - "traefik.docker.network=vos_default"
+    - "traefik.http.routers.v-router-api.rule=PathPrefix(`/api/com.ictrek.v-router`)"
+    - "traefik.http.routers.v-router-api.service=v-router-api"
+    - "traefik.http.routers.v-router-api.middlewares=v-router-api-strip"
+    - "traefik.http.middlewares.v-router-api-strip.stripprefix.prefixes=/api/com.ictrek.v-router"
+    - "traefik.http.services.v-router-api.loadbalancer.server.port=8080"
+    - "traefik.http.routers.v-scheduler-unified.rule=PathPrefix(`/app/com.ictrek.v-scheduler`)"
+    - "traefik.http.routers.v-scheduler-unified.priority=100"
+    - "traefik.http.routers.v-scheduler-unified.service=v-router-api"
+    - "traefik.http.routers.v-scheduler-unified.middlewares=v-scheduler-strip"
+    - "traefik.http.routers.v-scheduler-api.rule=PathPrefix(`/api/com.ictrek.v-scheduler`)"
+    - "traefik.http.routers.v-scheduler-api.service=v-router-api"
+    - "traefik.http.routers.v-scheduler-api.middlewares=v-scheduler-api-strip"
+    - "traefik.http.middlewares.v-scheduler-api-strip.stripprefix.prefixes=/api/com.ictrek.v-scheduler"
+    - "traefik.http.routers.v-router-legacy-ui.rule=PathPrefix(`/app/com.ictrek.v-router`)"
+    - "traefik.http.routers.v-router-legacy-ui.service=v-router-api"
+    - "traefik.http.routers.v-router-legacy-ui.middlewares=v-router-legacy-ui-strip"
+    - "traefik.http.middlewares.v-router-legacy-ui-strip.stripprefix.prefixes=/app/com.ictrek.v-router"
+  healthcheck:
+    test: ["CMD-SHELL", "wget --no-verbose --tries=1 -qO- http://127.0.0.1:8080/healthz > /dev/null 2>&1 || exit 1"]
+    interval: 30s
+    timeout: 10s
+    start_period: 10s
+    retries: 3
+
 services:
   controller-amd:
     <<: *controller
@@ -55,6 +127,14 @@ services:
     <<: *controller
     profiles: [arm-without-cuda]
     image: ${V_SCHEDULER_ARM_IMAGE}
+  gateway-amd:
+    <<: *gateway
+    profiles: [amd, amd-without-cuda]
+    image: ${V_ROUTER_BACKEND_AMD_IMAGE}
+  gateway-arm:
+    <<: *gateway
+    profiles: [arm, arm-without-cuda, l4t, thor-spark]
+    image: ${V_ROUTER_BACKEND_ARM_IMAGE}
 networks:
   vos_default:
     external: true

@@ -25,6 +25,7 @@ PROFILES=(
 )
 COMPONENTS=(
   "V_SCHEDULER|v-scheduler|swr.cn-southwest-2.myhuaweicloud.com/ictrek/v-scheduler"
+  "V_ROUTER_BACKEND|v-router-backend|swr.cn-southwest-2.myhuaweicloud.com/ictrek/v-router-backend"
 )
 
 usage() {
@@ -439,6 +440,8 @@ for file in manifest.yml configs.yml routers.yml; do
     render_text_file "${SRC_DIR}/${file}" "${STAGE_DIR}/${file}"
   fi
 done
+python3 "${ROOT_DIR}/scripts/resolve_dependencies.py" "${STAGE_DIR}/manifest.yml" \
+  --repositories "${ROOT_DIR}/dependency-releases.json"
 cp "${SRC_DIR}/icon.png" "${STAGE_DIR}/icon.png"
 render_text_file "${SRC_DIR}/README.zh-CN.md" "${STAGE_DIR}/README.zh-CN.md"
 if [[ -f "${SRC_DIR}/README.en.md" ]]; then

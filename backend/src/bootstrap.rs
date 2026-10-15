@@ -225,6 +225,8 @@ pub async fn wait(config: PathBuf, listen: &str, ui: Option<PathBuf>) -> anyhow:
         .route("/health", get(|| async { Json(json!({"status":"setup_required"})) }))
         .route("/api/v1/setup", get(|| async { Json(json!({"code":"OK","data":{"ready":false,"version":std::env::var("VOS_APP_VERSION").unwrap_or_else(|_| env!("CARGO_PKG_VERSION").into())}})) }).post(initialize))
         .route("/api/v1/openapi.json", get(|| async { Json(serde_json::from_str::<Value>(include_str!("../../api/openapi-v1.json")).expect("valid OpenAPI")) }))
+        .route("/scheduler/api/v1/setup", get(|| async { Json(json!({"code":"OK","data":{"ready":false,"version":std::env::var("VOS_APP_VERSION").unwrap_or_else(|_| env!("CARGO_PKG_VERSION").into())}})) }).post(initialize))
+        .route("/scheduler/api/v1/openapi.json", get(|| async { Json(serde_json::from_str::<Value>(include_str!("../../api/openapi-v1.json")).expect("valid OpenAPI")) }))
         .with_state(state);
     if let Some(ui) = ui {
         router = router.fallback_service(ServeDir::new(ui));

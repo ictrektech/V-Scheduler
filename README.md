@@ -1,5 +1,7 @@
 # V-Scheduler · 资源调度
 
+V-Scheduler 统一安装包包含 V-Router 网关与调度控制器，提供一个界面和文档入口。模型目录、上游、自动发现、试聊、协议适配、用量和原有模型 API 由原网关实现保留；任务、许可、节点和资源统计由控制器管理。现有 V-Router 数据可通过 `V_ROUTER_DATA_PATH` 原位挂载。API、端口和保留数据卸载步骤见[统一应用与迁移](docs/unified-application.md)。
+
 同步模型后端现在可通过 `POST /api/v1/permits/{id}/verify` 核验并原子认领
 V-Router 的同一次预算。配置独立的 `permit_executors` 权限，后端不需要、也不能
 复用网关令牌或再预约一份资源。普通与 delegated 子许可均绑定执行令牌、模型、
@@ -35,7 +37,7 @@ VOS 上只需安装本应用，本机资源采集作为应用内部组件自动�
 
 V-Router 不是所有本地算力应用的必经层。自有异步执行器由原应用直接提交 V-Scheduler 任务；通过 V-Router 的本地同步/流式模型由 V-Router 申请短期 permit；已持有任务预约的执行端若再调用 V-Router，须核验父任务与关联许可，避免重复扣预算。云端上游不占本机 GPU。按真实计算入口确定唯一预约责任，详见[设计中的路径判定](docs/design.md#23-v-router-不是所有算力应用的必经层)。
 
-已纳管的其他节点与本 VOS 节点按各自的资源池预约；外部云端模型不申请本地许可。上游位于其他机器并不自动等于云端，接入步骤见 [VAI 总览](../../docs/vos-compute-access.md)和[公开 API 与接入标准](docs/integration-standard.md)。
+已纳管的其他节点与本 VOS 节点按各自的资源池预约；外部云端模型不申请本地许可。上游位于其他机器并不自动等于云端，接入步骤见[应用接入指南](docs/application-integration.md)和[公开 API 与接入标准](docs/integration-standard.md)。
 
 ## 运行实现
 
