@@ -30,6 +30,7 @@ VOS 安装中的 V-Voice 可由现有发现器主动接入：控制器核验同�
 - [网关资源准入](docs/resource-scheduling.md)：统一应用内的逐模型授权、许可交接与停止证据。
 - [公开 API 与接入标准](docs/integration-standard.md)：VOS/非 VOS 客户端、服务身份、提交与 worker 接入、兼容性验收。
 - [其他应用接入指南](docs/application-integration.md)：三条调用链路、同步许可与异步任务示例、云端放行、安装配置和验收清单。
+- [vLLM 与外部算力接入](docs/vllm-and-remote-nodes.md)：主动注册实例、启用准入或批准外部资源豁免、远程 Agent 纳管与异步执行边界。
 - [OpenAPI v1](api/openapi-v1.json)：对应当前 MVP 路由的机器可读 HTTP 接口。
 - [现有架构证据](docs/architecture-evidence.md)：只读核验的 VOS 能力及限制。
 - [节点发现与资源管理](docs/node-resources.md)：只读同步 VOS 节点与监控、Agent 真实 GPU 数据、观察与调度权限的边界及配置。
