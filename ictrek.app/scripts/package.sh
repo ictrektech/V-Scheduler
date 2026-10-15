@@ -281,7 +281,6 @@ verify_package() {
   local app_listing
   local package_listing
   local package_text
-  local manifest_text
   local routers_text
   local compose_text
   local sidebar_route
@@ -297,36 +296,20 @@ verify_package() {
   if printf '%s' "$package_text" | grep -q '__[A-Z0-9_]\+__'; then
     die "unrendered placeholder remains"
   fi
-  manifest_text="$(tar xOf "$app_tarball" manifest.yml)"
-  if ! printf '%s\n' "$manifest_text" | grep -Eq '^category:[[:space:]]*\[system\][[:space:]]*$'; then
-    die "V-Scheduler must use the VOS-supported system category"
-  fi
-  python3 - "$app_tarball" <<'PYPROFILES'
-import re, sys, tarfile
+  python3 - "$app_tarball" "$FRONTEND_BASE_PATH" <<'PYPROFILES'
+import sys, tarfile, yaml
 with tarfile.open(sys.argv[1], "r:gz") as archive:
-    text = archive.extractfile("manifest.yml").read().decode()
-section = re.search(r"^profiles:\n((?:[ \t].*\n|\n)+)", text, re.M)
-assert section, "manifest profiles missing"
-profiles = re.split(r"^  - name:\s*", section[1], flags=re.M)[1:]
-assert {p.splitlines()[0].strip() for p in profiles} == {"amd","arm","amd-without-cuda","arm-without-cuda","l4t","thor-spark"}, "missing hardware profile"
-for profile in profiles:
-    assert re.search(r"^    description:\s*\S", profile, re.M), "profile description is required by VOS"
+    manifest = yaml.safe_load(archive.extractfile("manifest.yml"))
+assert manifest.get("category") == ["system"], "V-Scheduler must use the VOS-supported system category"
+profiles = manifest.get("profiles", [])
+assert {profile["name"] for profile in profiles} == {"amd","arm","amd-without-cuda","arm-without-cuda","l4t","thor-spark"}, "missing hardware profile"
+assert all(profile.get("description") for profile in profiles), "profile description is required by VOS"
+frontend = manifest.get("frontend", {})
+assert frontend.get("enabled") is True, "manifest.yml frontend.enabled must be true"
+assert frontend.get("basePath") == sys.argv[2], "unexpected frontend.basePath"
+assert manifest.get("icon") == "icon.png", "manifest.yml must declare icon.png"
+assert manifest.get("require-profiles") is True, "manifest.yml must require at least one profile"
 PYPROFILES
-  if ! printf '%s\n' "$manifest_text" | grep -q '^[[:space:]]*frontend:[[:space:]]*$'; then
-    die "manifest.yml must declare frontend for VOS open button compatibility"
-  fi
-  if ! printf '%s\n' "$manifest_text" | grep -q '^[[:space:]]*enabled:[[:space:]]*true[[:space:]]*$'; then
-    die "manifest.yml frontend.enabled must be true"
-  fi
-  if ! printf '%s\n' "$manifest_text" | grep -Fq "  basePath: ${FRONTEND_BASE_PATH}"; then
-    die "manifest.yml frontend.basePath must be ${FRONTEND_BASE_PATH}"
-  fi
-  if ! printf '%s\n' "$manifest_text" | grep -q '^[[:space:]]*icon:[[:space:]]*icon.png[[:space:]]*$'; then
-    die "manifest.yml must declare icon.png"
-  fi
-  if ! printf '%s\n' "$manifest_text" | grep -q '^require-profiles:[[:space:]]*true[[:space:]]*$'; then
-    die "manifest.yml must require at least one profile"
-  fi
   compose_text="$(tar xOf "$app_tarball" docker-compose.yml)"
   if printf '%s\n' "$compose_text" | grep -Eq '\$\{[A-Z0-9_]*_IMAGE(:-[^}]*)?\}'; then
     die "unrendered image variable remains in docker-compose.yml"

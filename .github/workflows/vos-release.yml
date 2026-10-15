@@ -51,7 +51,9 @@ jobs:
           EOF
 
       - name: Install dependency resolver
-        run: python3 -m pip install 'PyYAML==6.0.3'
+        run: |
+          python3 -m pip install 'PyYAML==6.0.3'
+          python3 -m unittest discover -s ictrek.app/scripts -p 'test_*.py'
 
       - name: Build pull-mode package
         env:
