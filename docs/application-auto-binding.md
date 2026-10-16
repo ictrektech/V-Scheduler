@@ -14,7 +14,7 @@
 
 控制器读取自己由 VOS 挂载的应用 context，向 VOS 核验 `sub=com.ictrek.v-scheduler`，再确认目标应用在同一 VOS 已安装。发现请求不携带服务令牌；只向表中固定服务的 `/api/v1/scheduler/binding` 下发凭据，禁止跟随 HTTP 重定向。浏览器、模型共享目录和 discovery 不包含这些凭据。
 
-模型必须同时满足：文件和后端已就绪、声明的原生 ID 与任务类型匹配、目标应用实际安装 profile 匹配、节点实际架构与 GPU/内存类型匹配、`execution_settings` 完整对象与实测配置一致。硬件取自 Scheduler 遥测，profile 取自 VOS 安装记录；不信任应用自报预算。
+模型首次授权必须同时满足：文件和后端已就绪、声明的原生 ID 与任务类型匹配、目标应用实际安装 profile 匹配、节点实际架构与 GPU/内存类型匹配、`execution_settings` 完整对象与实测配置一致。硬件取自 Scheduler 遥测，profile 取自 VOS 安装记录；不信任应用自报预算。
 
 校准还须保存实测峰值、已确认停止的证据、固定 CPU/RAM/GPU 资源、输入字节上限和 `model_limits`。缺少任意必要条件不建立相应执行器。内置清单由发行方实测后发布，普通用户不需要 SSH 或逐模型手动批准。管理员私有覆盖文件为控制器 `/config/app-approvals.json`，须为普通文件、0600、最大 256 KiB。
 
@@ -36,7 +36,7 @@
 
 内容相同时保留 revision 和凭据。变更必须等待本应用活动任务、许可及停止未知的预约结束；提高 `credential_epoch` 才轮换凭据，并撤销旧身份。管理员已禁用的执行器和已撤销的身份不会被同一配置重新启用。运行配置不再匹配时，旧自动执行器退出可执行集合；即使客户端尚持旧快照，也不能据此取得执行授权。
 
-V-Sub 的每用户 worker/root broker 和动态 namespace 上游、HybRAG 的独立后台网关凭据不属于本固定三应用模块，仍须分别完成契约及验证，见[迁移协同契约](client-migration-contract.md)。
+[V-Sub 每用户 worker / Root broker](v-sub-auto-binding.md) 和 [HybRAG 后台网关凭据](hybrag-gateway-identity.md) 使用各自契约，不属于本固定三应用模块。协议测试与真实任务验收分别记录，见[迁移协同契约](client-migration-contract.md)。
 
 ## 当前实测清单（尚未发布）
 
@@ -57,3 +57,9 @@ AMD Music 记录进程 `ru_maxrss` 内核高水位、NVML 按进程显存采样�
 校准匹配目标应用自己的安装 profile，不能直接套用 Scheduler 的同平台名称：Music / Image 的 CUDA profile 为 `amd-cuda` / `arm-cuda` / `thor`，Desensitize 则为 `amd` / `arm` / `thor-spark`。目标 profile 从 VOS 安装记录读取，再与各自清单及真实运行设置一起精确匹配。
 
 Image Studio 使用原生 `/api/v1` 适配，上游资源身份固定为 `http://image-studio-backend:5000` 根地址；不能附加不存在的 OpenAI `/v1`。Music / Desensitize 的 OpenAI 上游身份仍为各自根地址加 `/v1`。发现、绑定、网关 origin 和许可中的上游身份须一致。
+
+模型下载/更新可能短暂从就绪发现中消失：仅保留该模型完全相同的既有校准执行器，不因瞬时缺项永久停用它；不会据此给尚未就绪的新模型或变更后的预算首次授权。运行设置、硬件、实际 profile、资源/输入校准改变时仍须匹配新批准，管理员已禁用的同 ID 也不会被重新启用。
+
+系统自动停用与人工禁用使用现有审计表区分：仅存在本模块针对该执行器当前版本的 `executor.auto-retired` 记录、定义/节点完全相同且校准重新匹配时，才恢复系统自己停用的执行器。管理员 API（包括旧版）修改会推进版本号，使旧自动记录失效；人工禁用不被恢复。该机制不新增 schema、表或字段，回退旧版时仍是原有数据形状。
+
+Thor 候选实例已通过可信 VOS 安装身份到真实客户端的隔离端到端验收：Music 直调和网关各生成真实 WAV，每次仅占一份许可，超出 10 秒先行拒绝；Image 直调和网关各生成 512×512 PNG，超出 4 步不创建任务，业务取消在观察到原生子进程后确认退出并释放预约。证据目录分别为 `actual-binding/246ce55a6a9b4c5dbb50f77e3def99a8` 和 `actual-binding/d031abd040f844ed936e71a4e98673cf`。这些结果不替代正式包升级后的逐机验收。

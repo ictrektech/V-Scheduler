@@ -21,5 +21,6 @@ COPY --from=backend /build/target/release/v-scheduler /usr/local/bin/v-scheduler
 COPY --from=ui /build/frontend/dist /opt/v-scheduler/ui
 COPY config/voice-calibrations.json /opt/v-scheduler/voice-calibrations.json
 COPY config/app-calibrations.json /opt/v-scheduler/app-calibrations.json
+COPY config/vsub-calibrations.json /opt/v-scheduler/vsub-calibrations.json
 ENTRYPOINT ["v-scheduler"]
 CMD ["controller", "--config", "/config/controller.json", "--listen", "0.0.0.0:38120", "--ui-dir", "/opt/v-scheduler/ui"]

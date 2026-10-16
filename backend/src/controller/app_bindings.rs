@@ -6,7 +6,7 @@ use std::{os::unix::fs::PermissionsExt, path::Path, time::Duration};
 const CONTROLLER: &str = "http://v-router:8080/scheduler/api/v1";
 
 #[derive(Clone, Copy)]
-struct Application {
+pub(super) struct Application {
     slug: &'static str,
     id: &'static str,
     origin: &'static str,
@@ -41,6 +41,15 @@ const APPLICATIONS: [Application; 3] = [
         asynchronous: true,
     },
 ];
+
+pub(super) const VSUB: Application = Application {
+    slug: "v-sub",
+    id: "com.ictrek.v-sub",
+    origin: "http://v-sub-backend:7090",
+    upstream: "v-sub",
+    discovery: "/api/v1/scheduler/discovery",
+    asynchronous: false,
+};
 
 fn supported_profile(application: Application, profile: &str) -> bool {
     let profiles: &[&str] = if application.slug == "desensitize" {
@@ -91,7 +100,7 @@ fn credential(old: Option<&Value>, field: &str) -> String {
         .unwrap_or_else(|| format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple()))
 }
 
-fn hardware(report: &Value) -> Value {
+pub(super) fn hardware(report: &Value) -> Value {
     let mut devices: Vec<Value> = report["gpus"]
         .as_array()
         .into_iter()
@@ -179,10 +188,18 @@ fn build(
         } else {
             "sync_models"
         };
-        if !contract[list].as_array().is_some_and(|rows| {
+        let fingerprint = json!([application.id, node, approval]);
+        let digest = format!("{:x}", Sha256::digest(serde_json::to_vec(&fingerprint)?));
+        let executor = format!("app-auto-{}-{}", application.slug, &digest[..24]);
+        let declared_ready = contract[list].as_array().is_some_and(|rows| {
             rows.iter()
                 .any(|row| row["id"] == model && row["task_type"] == task_type)
-        }) {
+        });
+        // A download/update may briefly omit a model from ready discovery. Keep
+        // only its exact existing calibrated identity, so a transient snapshot
+        // does not retire it permanently; this never creates an unready grant.
+        let existing = previous.is_some_and(|state| state["binding"]["models"][model] == executor);
+        if !declared_ready && !existing {
             continue;
         }
         let resources: Resources = serde_json::from_value(approval["resources"].clone())?;
@@ -216,9 +233,6 @@ fn build(
                     .is_some_and(|limits| !limits.is_empty()),
             "model input limits required"
         );
-        let fingerprint = json!([application.id, node, approval]);
-        let digest = format!("{:x}", Sha256::digest(serde_json::to_vec(&fingerprint)?));
-        let executor = format!("app-auto-{}-{}", application.slug, &digest[..24]);
         let gateway_executor = format!("app-gateway-{}-{}", application.slug, &digest[..24]);
         ensure!(!models.contains_key(model), "duplicate model calibration");
         models.insert(model.into(), json!(executor));
@@ -238,7 +252,7 @@ fn build(
         gateway_ids.push(gateway_executor.clone());
         if application.asynchronous {
             delegated_ids.push(executor.clone());
-            adapters.push(json!({"id":executor,"url":application.origin,"token":executor_token,"health_url":format!("{}/health",application.origin)}));
+            adapters.push(json!({"id":executor,"url":format!("{}/api/v1",application.origin),"token":executor_token,"health_url":format!("{}/health",application.origin)}));
         }
         policies.insert(format!("{}/{model}",application.upstream),json!({"mode":if application.asynchronous {"delegated"} else {"permit"},"executor_id":gateway_executor,"completion":"synchronous","upstream_url":upstream(application),"max_input_bytes":maximum,"limits":approval["limits"].as_object().cloned().unwrap_or_default()}));
     }
@@ -311,7 +325,7 @@ pub(super) async fn bounded_json(mut response: reqwest::Response) -> anyhow::Res
     Ok(serde_json::from_slice(&bytes)?)
 }
 
-async fn persist(
+pub(super) async fn persist(
     a: &App,
     application: Application,
     state: &Value,
@@ -346,12 +360,25 @@ async fn persist(
     // and bindings belonging to another application remain untouched.
     let prefix = format!("app-auto-{}-", application.slug);
     let gateway_prefix = format!("app-gateway-{}-", application.slug);
-    sqlx::query("UPDATE vrs_executor_settings SET state='disabled',version=version+1,updated_at=now() WHERE (starts_with(id,$1) OR starts_with(id,$2)) AND NOT(id=ANY($3)) AND state='enabled'")
-        .bind(&prefix).bind(&gateway_prefix).bind(&ids).execute(&mut *tx).await?;
+    let actor = format!("v-scheduler.auto.{}", application.slug);
+    let retired = sqlx::query("UPDATE vrs_executor_settings SET state='disabled',version=version+1,updated_at=now() WHERE (starts_with(id,$1) OR starts_with(id,$2)) AND NOT(id=ANY($3)) AND state='enabled' RETURNING id,version")
+        .bind(&prefix).bind(&gateway_prefix).bind(&ids).fetch_all(&mut *tx).await?;
+    for row in retired {
+        let resource = format!(
+            "{}:{}",
+            row.get::<String, _>("id"),
+            row.get::<i64, _>("version")
+        );
+        sqlx::query("INSERT INTO vrs_management_events(actor,action,resource) VALUES($1,'executor.auto-retired',$2)")
+            .bind(&actor).bind(resource).execute(&mut *tx).await?;
+    }
     for definition in definitions {
         let id = definition["id"].as_str().context("executor ID missing")?;
-        sqlx::query("INSERT INTO vrs_executor_settings(id,node_id,definition,state) VALUES($1,$2,$3,'enabled') ON CONFLICT(id) DO NOTHING")
-            .bind(id).bind(node).bind(definition).execute(&mut *tx).await?;
+        // Only our own exact retirement at the current row version can recover.
+        // All existing admin writers increment version, including old releases;
+        // a manual disable therefore cannot be mistaken for our prior action.
+        sqlx::query("INSERT INTO vrs_executor_settings(id,node_id,definition,state) VALUES($1,$2,$3,'enabled') ON CONFLICT(id) DO UPDATE SET state='enabled',version=vrs_executor_settings.version+1,updated_at=now() WHERE vrs_executor_settings.state='disabled' AND vrs_executor_settings.node_id=excluded.node_id AND vrs_executor_settings.definition=excluded.definition AND EXISTS(SELECT 1 FROM vrs_management_events e WHERE e.actor=$4 AND e.action='executor.auto-retired' AND e.resource=vrs_executor_settings.id||':'||vrs_executor_settings.version::text)")
+            .bind(id).bind(node).bind(definition).bind(&actor).execute(&mut *tx).await?;
         let enabled: bool = sqlx::query_scalar(
             "SELECT state='enabled' AND definition=$2 FROM vrs_executor_settings WHERE id=$1",
         )
@@ -638,6 +665,42 @@ mod tests {
     }
 
     #[test]
+    fn image_native_origin_and_execution_adapter_have_distinct_bases() {
+        let app = APPLICATIONS[2];
+        let capacity = Resources {
+            cpu_millicores: 4000,
+            memory_mib: 8192,
+            ..Default::default()
+        };
+        let contract = json!({"execution_settings":{"runtime":"fixture"},"async_models":[{"id":"fixture-image","task_type":"image.generate"}]});
+        let approvals = json!({"protocol_version":1,"credential_epoch":1,"approvals":[{"app_id":app.id,"architecture":std::env::consts::ARCH,"profile":"thor","hardware":[],"execution_settings":contract["execution_settings"],"model_id":"fixture-image","task_type":"image.generate","resources":{"cpu_millicores":1000,"memory_mib":1024},"evidence":{"id":"unit-only","peak_memory_mib":512,"confirmed_stopped":true},"max_input_bytes":8192,"model_limits":{"width":512},"model_parameters":{"backend":"fixture"}}]});
+        let state = build(
+            app,
+            "node",
+            &capacity,
+            &Resources::default(),
+            "thor",
+            &json!({}),
+            &contract,
+            &approvals,
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            state["executors"][0]["upstream_urls"][0],
+            "http://image-studio-backend:5000"
+        );
+        assert_eq!(
+            state["adapters"][0]["url"],
+            "http://image-studio-backend:5000/api/v1"
+        );
+        assert_eq!(
+            state["adapters"][0]["health_url"],
+            "http://image-studio-backend:5000/health"
+        );
+    }
+
+    #[test]
     fn application_urls_are_fixed_and_settings_are_required() {
         let app = APPLICATIONS[0];
         let mut discovery = json!({"scheduler":{"protocol_version":1,"app_id":app.id,"executor_base_url":app.origin,"upstream_url":upstream(app),"binding_endpoint":"/api/v1/scheduler/binding","execution_settings":{"provider":"cpu"}}});
@@ -695,6 +758,58 @@ mod tests {
         )
         .unwrap();
         assert_eq!(state["executors"].as_array().unwrap().len(), 2);
+        let mut temporarily_missing = contract.clone();
+        temporarily_missing["sync_models"] = json!([]);
+        let retained = build(
+            app,
+            "node",
+            &capacity,
+            &Resources::default(),
+            "amd",
+            &json!({}),
+            &temporarily_missing,
+            &approvals,
+            Some(&state),
+        )
+        .unwrap();
+        assert_eq!(
+            state, retained,
+            "transient readiness cannot retire an unchanged approval"
+        );
+        let initial_missing = build(
+            app,
+            "node",
+            &capacity,
+            &Resources::default(),
+            "amd",
+            &json!({}),
+            &temporarily_missing,
+            &approvals,
+            None,
+        )
+        .unwrap();
+        assert!(
+            initial_missing["executors"].as_array().unwrap().is_empty(),
+            "an unready model cannot receive its first grant"
+        );
+        let mut different = approvals.clone();
+        different["approvals"][0]["resources"]["memory_mib"] = json!(8192);
+        let changed_missing = build(
+            app,
+            "node",
+            &capacity,
+            &Resources::default(),
+            "amd",
+            &json!({}),
+            &temporarily_missing,
+            &different,
+            Some(&state),
+        )
+        .unwrap();
+        assert!(
+            changed_missing["executors"].as_array().unwrap().is_empty(),
+            "readiness retention cannot authorize a different budget"
+        );
         for definition in state["executors"].as_array().unwrap() {
             let parsed: Executor = serde_json::from_value(definition.clone()).unwrap();
             assert_eq!(

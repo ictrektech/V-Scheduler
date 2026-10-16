@@ -125,6 +125,21 @@ try:
  until(lambda:sql("SELECT count(*) FROM vrs_executor_settings WHERE state='enabled';")=='0','runtime drift retained execution grants')
  assert request(fixture_url+'/direct',{'model':'fixture-music','duration':1})[0]==503
  assert request(gw+'/v1/audio/music/generations',{'model':'v-music/fixture-music','duration':1})[0]==503
+ request(fixture_url+'/settings',{'provider':'fixture','threads':1})
+ until(lambda:request(fixture_url+'/direct',{'model':'fixture-music','duration':1})[0]==200,'temporary automatic retirement did not recover',30)
+ management=request(api+'/api/v1/management',token=admin)[1]['data']
+ executor_id=fresh['binding']['models']['fixture-music']
+ owned=next(row for row in management['executors']if row['id']==executor_id)
+ assert request(api+'/api/v1/executors/'+executor_id,{'version':owned['version'],'enabled':False,'definition':owned['definition']},admin)[0]==200
+ request(fixture_url+'/settings',{'provider':'fixture','threads':2})
+ until(lambda:sql("SELECT count(*) FROM vrs_executor_settings WHERE state='enabled';")=='0','drift did not retire remaining gateway executor')
+ request(fixture_url+'/settings',{'provider':'fixture','threads':1});time.sleep(11)
+ assert sql("SELECT state FROM vrs_executor_settings WHERE id='"+executor_id+"';")=='disabled'
+ before=int(sql('SELECT count(*) FROM vrs_permits;'))
+ denied=request(fixture_url+'/direct',{'model':'fixture-music','duration':1})
+ assert denied[0]==403,denied
+ assert int(sql('SELECT count(*) FROM vrs_permits;'))==before
+ print('PASS temporary automatic retirement recovers but administrator disable stays disabled',flush=True)
  print('PASS credential revocation, persistent revisions and runtime drift fail closed',flush=True)
  print('APPLICATION_BINDING_PROTOCOL_ACCEPTANCE_PASSED',flush=True)
 finally:

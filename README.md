@@ -8,6 +8,8 @@
 
 开发中的 [Music / Desensitize / Image Studio 可信绑定](docs/application-auto-binding.md) 按实测运行设置、模型参数和输入限额接入调度；清单现含 Thor MusicGen-small / SD-Turbo 与 AMD RTX 5880 MusicGen-small 实测预算，尚未随 `0.0.26` 发布，不能据此宣称这些应用已完成真实任务迁移。
 
+开发中的 [V-Sub 私有 worker 可信绑定](docs/v-sub-auto-binding.md) 使用完整 namespace、worker generation 和已实测原生模型模板；隔离协议验证已通过，最终 Root worker 真实任务和新版安装仍待验收。
+
 网关源码现位于本仓库 `gateway/`，无需另行检出 V-Router；两个镜像仍使用原飞书列，构建命令见[源码与构建](docs/unified-application.md#source-ownership)。
 
 V-Scheduler 统一安装包包含 V-Router 网关与调度控制器，提供一个界面和文档入口。模型目录、上游、自动发现、试聊、协议适配、用量和原有模型 API 由原网关实现保留；任务、许可、节点和资源统计由控制器管理。顶部登录身份使用随主题变化的文字颜色。安装后自动发现支持的应用与模型；界面“应用接入”说明本地、云端及 V-Voice 主动接入方式。API 与端口兼容说明见[统一应用说明](docs/unified-application.md)。 网关接口若返回 HTML 等无效 JSON，界面会提示检查服务与访问路径，不会将错误响应写入模型列表，切换语言仍可使用。
