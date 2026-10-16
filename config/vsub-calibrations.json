@@ -19,7 +19,7 @@
         "backend": "cpu",
         "parameters": {
           "language": "auto",
-          "model": "/modelhub/export/ms/vivibit/v-sub-whisper-tiny-q5_1/current/ggml-tiny-q5_1.bin",
+          "model": "/modelhub/ms/vivibit/v-sub-whisper-tiny-q5_1/current/ggml-tiny-q5_1.bin",
           "use_gpu": false,
           "flash_attn": false,
           "no_prints": false,

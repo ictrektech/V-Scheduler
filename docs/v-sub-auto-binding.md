@@ -20,7 +20,7 @@
 
 ## 当前实测模板
 
-内置 `config/vsub-calibrations.json` 仅批准 `l4t` / aarch64 / Orin 统一内存的 `builtin/tiny-q5_1`，使用 CPU whisper.cpp、完整默认参数和注册模型导出路径。预算为 4.5 核、2 GiB RAM、不占 GPU；输入最多 1 MiB、20 秒、不附加 prompt。模板中的完整运行设置必须匹配，其他模型、后端或 profile 不自动借用该预算。
+内置 `config/vsub-calibrations.json` 仅批准 `l4t` / aarch64 / Orin 统一内存的 `builtin/tiny-q5_1`，使用 CPU whisper.cpp、完整默认参数和注册模型导出路径。生产只挂载共享根目录的 `export` 子目录到 `/modelhub`，所以稳定引用是 `/modelhub/ms/vivibit/v-sub-whisper-tiny-q5_1/current/ggml-tiny-q5_1.bin`；不额外挂载整个共享仓库。预算为 4.5 核、2 GiB RAM、不占 GPU；输入最多 1 MiB、20 秒、不附加 prompt。模板中的完整运行设置必须匹配，其他模型、后端或 profile 不自动借用该预算。
 
 模型路径通过共享仓库中已就绪注册文件与实际 realpath 一致性核验后，规范为稳定导出引用；相同文件名不足以取得授权。共享目录仍由安装者选择。
 

@@ -6,7 +6,7 @@
 
 开发中的 [HybRAG 后台网关身份](docs/hybrag-gateway-identity.md) 使用同 VOS 可信交接和独立推理凭据；不使用 Scheduler submitter token 代替网关 key，不授予管理权限。此接入及新的 Voice 输入边界尚未随 `0.0.26` 发布。
 
-开发中的 [Music / Desensitize / Image Studio 可信绑定](docs/application-auto-binding.md) 按实测运行设置、模型参数和输入限额接入调度；清单现含 Thor MusicGen-small / SD-Turbo 与 AMD RTX 5880 MusicGen-small 实测预算，尚未随 `0.0.26` 发布，不能据此宣称这些应用已完成真实任务迁移。
+开发中的 [Music / Desensitize / Image Studio 可信绑定](docs/application-auto-binding.md) 按实测运行设置、模型参数和输入限额接入调度；清单现含 Thor MusicGen-small / SD-Turbo 与 AMD RTX 5880 MusicGen-small、Desensitize NER/OCR 实测预算，尚未随 `0.0.26` 发布，不能据此宣称这些应用已完成真实任务迁移。
 
 开发中的 [V-Sub 私有 worker 可信绑定](docs/v-sub-auto-binding.md) 使用完整 namespace、worker generation 和已实测原生模型模板；隔离协议验证已通过，最终 Root worker 真实任务和新版安装仍待验收。
 
