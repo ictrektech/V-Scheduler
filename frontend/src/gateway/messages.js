@@ -1,5 +1,7 @@
 "use strict";
 export const VRouterMessages = {
+ "内置后端":{"en":"Built-in backend","zh-TW":"內建後端"},
+ "请在模型仓库下载模型，或在上游页添加后端。":{"en":"Download models in Model library, or add a backend in Upstreams.","zh-TW":"請在模型儲存庫下載模型，或於上游頁新增後端。"},
   "网关返回了无效的 JSON 响应，请检查服务和访问路径。": {"en": "The gateway returned invalid JSON. Check the service and request path.", "zh-TW": "閘道回傳了無效的 JSON 回應，請檢查服務和存取路徑。"},
   "文档加载中…": {"en": "Loading documentation…", "zh-TW": "文件載入中…"},
   "跟随 VOS": {"en": "Follow VOS", "zh-TW": "跟隨 VOS"},

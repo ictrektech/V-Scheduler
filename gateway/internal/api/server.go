@@ -103,7 +103,7 @@ func (s *Server) spec() []apiRouteSpec {
 			Desc:    "OpenAI 兼容。model 必须使用 /v1/models 返回的带来源前缀名称；请求原样透传到上游，stream=true 时逐 token 转发。",
 			Example: `curl -N http://<vos-host>:22888/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"model":"model-hub/qwen3.5:2b","stream":true,"messages":[{"role":"user","content":"你好"}]}'`,
+  -d '{"model":"v-scheduler/ollama-qa/qwen3.5:2b","stream":true,"messages":[{"role":"user","content":"你好"}]}'`,
 		},
 		{
 			Method: "POST", Path: "/v1/embeddings", Group: "openai", Auth: "inference",
@@ -241,7 +241,7 @@ func (s *Server) handleApidoc(w http.ResponseWriter, r *http.Request) {
 			{
 				"channel": "VOS 内应用 / 管理界面",
 				"method":  "Authorization: Bearer <VOS OIDC access_token>",
-				"effect":  "调用归集到对应 VOS 用户；管理 API 必须以此登录（或使用网关 Key）。其他 VOS 应用的 fastpath token 同样有效：其前端携带自身 token 调用同域 /api/com.ictrek.v-router/v1/* 即按该应用当前用户归集，无需向 V-Router 注册",
+				"effect":  "调用归集到对应 VOS 用户；管理 API 必须以此登录（或使用网关 Key）。其他 VOS 应用的 fastpath token 同样有效：其前端携带自身 token 调用同域 /api/com.ictrek.v-scheduler/v1/* 即按该应用当前用户归集，无需向 V-Router 注册",
 			},
 			{
 				"channel": "局域网 / 外部客户端",
@@ -270,21 +270,21 @@ curl --fail-with-body "$ROUTER/v1/chat/completions" \
 			{"title": "算力路径：云端、本机与其他节点", "example": `云端模型：应用 → V-Router → 云端供应商（无需本地许可）
 本机或已纳管其他节点的同步模型：应用 → V-Router → V-Scheduler permit → 模型服务
 自有异步任务：应用 → V-Scheduler task → 已批准的节点执行器`, "note": "按实际执行节点分类，不按 URL 猜测。云端上游不占 V-Scheduler 的本地 CPU/GPU；其他已纳管节点按目标节点资源池预约。未纳管远端上游不能声称由调度器管理。同一计算只由 permit 或 task 预约一次。"},
-			{"title": "本地模型接入：由网关申请许可", "example": `const result = await fetch('/api/com.ictrek.v-router/v1/chat/completions', {
+			{"title": "本地模型接入：由网关申请许可", "example": `const result = await fetch('/api/com.ictrek.v-scheduler/v1/chat/completions', {
   method: 'POST',
   headers: {Authorization: 'Bearer ' + token, 'Content-Type': 'application/json'},
-  body: JSON.stringify({model: 'model-hub/<model>', messages: [{role: 'user', content: 'Hello'}]})
-});`, "note": "调用方只使用 V-Router 模型 API，不持有 V-Scheduler 服务令牌。管理员须安装 Scheduler、批准真实节点与带 upstream_urls 的 executor，在 scheduler.local.json 的 models[upstreamID/nativeModelID] 批准输入与资源参数上限。VOS 包依赖 Scheduler >=0.0.11；未批准/缺配置返回 503，资源忙返回 429，超输入返回 413，超参数返回 422。HTTP/SSE、WebSocket 和异步创建均先准入；异步接力、运行任务子调用须核验任务、用户、节点及预算，不能凭 delegated 跳过。WebSocket 须批准 server_close 停止契约；未知停止保留预约，异步日志重启恢复轮询。云端绕过本地许可。"},
+  body: JSON.stringify({model: 'v-scheduler/ollama-qa/<model>', messages: [{role: 'user', content: 'Hello'}]})
+});`, "note": "调用方只使用 V-Router 模型 API，不持有 V-Scheduler 服务令牌。管理员须批准真实节点与带 upstream_urls 的 executor，在 scheduler.local.json 的 models[upstreamID/nativeModelID] 批准输入与资源参数上限。未批准/缺配置返回 503，资源忙返回 429，超输入返回 413，超参数返回 422。HTTP/SSE、WebSocket 和异步创建均先准入；异步接力、运行任务子调用须核验任务、用户、节点及预算，不能凭 delegated 跳过。WebSocket 须批准 server_close 停止契约；未知停止保留预约，异步日志重启恢复轮询。云端绕过本地许可。"},
 			{"title": "其他 VOS 应用：用 V-Router 模型列表生成下拉框", "example": `const token = await vosFastpathToken();
-const models = await fetch('/api/com.ictrek.v-router/v1/models', {
+const models = await fetch('/api/com.ictrek.v-scheduler/v1/models', {
   headers: { Authorization: 'Bearer ' + token }
 }).then(r => r.json());
-// 用 models.data[].id 填充模型下拉框；不要在本应用保存云端 key、上游地址或模型清单。`, "note": "推荐方式是用户先在 V-Router 里配置 Model Hub、云端 API、上游 key、权重和并发；其他应用只读取模型列表并调用统一 /v1/*。同一个 VOS 账户在任一应用登录后，其 Fastpath/OIDC token 可直接访问 V-Router，同域路径为 /api/com.ictrek.v-router。"},
-			{"title": "其他 VOS 应用：读取带来源元数据的模型列表", "example": `const detail = await fetch('/api/com.ictrek.v-router/api/v1/models', {
+// 用 models.data[].id 填充模型下拉框；不要在本应用保存云端 key、上游地址或模型清单。`, "note": "推荐方式是用户先在 V-Router 里配置内置 Ollama、云端 API、上游 key、权重和并发；其他应用只读取模型列表并调用统一 /v1/*。同一个 VOS 账户在任一应用登录后，其 Fastpath/OIDC token 可直接访问 V-Router，同域路径为 /api/com.ictrek.v-scheduler。"},
+			{"title": "其他 VOS 应用：读取带来源元数据的模型列表", "example": `const detail = await fetch('/api/com.ictrek.v-scheduler/api/v1/models', {
   headers: { Authorization: 'Bearer ' + token }
 }).then(r => r.json());
 // detail.models 包含 qualified、kind、capabilities、endpoints、upstream_kind、model_prefix，可用于筛选对话/Embedding 下拉。`, "note": "普通下拉框用 /v1/models 即可；需要按能力筛选时用 /api/v1/models。能力未知时不要在应用侧硬拦截，调用后显示 V-Router 或上游返回的具体错误。"},
-			{"title": "指定来源与指定上游", "example": `curl http://<vos-host>:22888/v1/chat/completions -H "Authorization: Bearer $VOS_TOKEN" -H "Content-Type: application/json" -d '{"model":"model-hub/qwen3:0.6b","messages":[{"role":"user","content":"你好"}]}'`, "note": "模型名必须带来源前缀，例如 model-hub/、registered/、com.ictrek.ai/。需要固定实例时附加 X-VRouter-Upstream:<ID> 严格指定后端（模型用上游原生名）。"},
+			{"title": "指定来源与指定上游", "example": `curl http://<vos-host>:22888/v1/chat/completions -H "Authorization: Bearer $VOS_TOKEN" -H "Content-Type: application/json" -d '{"model":"v-scheduler/ollama-qa/qwen3:0.6b","messages":[{"role":"user","content":"你好"}]}'`, "note": "模型名必须带来源前缀，例如 v-scheduler/ollama-qa/、registered/、com.ictrek.ai/。需要固定实例时附加 X-VRouter-Upstream:<ID> 严格指定后端（模型用上游原生名）。"},
 			{"title": "注册模型 API：public 或 private", "example": `curl http://<vos-host>:22888/api/v1/registrations \
   -H "Authorization: Bearer $VOS_TOKEN" -H "Content-Type: application/json" \
   -d '{"service_id":"vllm-node-1","visibility":"public","base_url":"http://<backend>:8000/v1","protocol":"chat_completions","model_kind":"chat","ttl_seconds":90}'`, "note": "visibility=public 时所有 VOS 用户和匿名内网推理都可在 /v1/models 看到；visibility=private 时只对注册者同一 VOS token 和管理员可见。每个实例用稳定且不同的 service_id；模型变化需再次注册。"},

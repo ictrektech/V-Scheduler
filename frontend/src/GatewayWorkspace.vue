@@ -12,6 +12,7 @@ let workspace:ReturnType<typeof mountGateway>|undefined
 onMounted(async()=>{
  const root=host.value!.attachShadow({mode:'open'})
  root.innerHTML=`<style>${css}</style>${markup.replaceAll('__GATEWAY_ICON__',logo)}`
+ const legacyAbout=root.querySelector<HTMLButtonElement>('button[onclick="app.openAbout()"]');if(legacyAbout)legacyAbout.style.display='none'
  const footer=root.querySelector('.side-footer');if(footer)root.querySelector('.top-actions')?.prepend(footer)
  const apiBase=location.pathname.startsWith('/app/')?'/api/com.ictrek.v-scheduler':''
  workspace=mountGateway(root,{apiBase,token:getVOSBearerToken,clearToken:clearCachedVOSBearerToken,locale:()=>props.locale,visible:()=>props.visible,select:(tab:string)=>emit('select',tab)})

@@ -65,3 +65,27 @@ func TestUnifiedControllerFailureDoesNotBlockGateway(t *testing.T) {
 		t.Fatalf("controller API leaked outside prefix: %d", r.Code)
 	}
 }
+
+func TestUnifiedModelManagementHasSeparateTaskNamespace(t *testing.T) {
+	storage := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.RequestURI() != "/api/v1/tasks?x=7" {
+			t.Errorf("changed model management URL: %s", r.URL.RequestURI())
+		}
+		if r.Header.Get("Authorization") != "Bearer caller" {
+			t.Error("header lost")
+		}
+		w.Write([]byte(`[{"task_id":"download-1"}]`))
+	}))
+	defer storage.Close()
+	t.Setenv("V_ROUTER_CONTROLLER_URL", "http://127.0.0.1:1")
+	t.Setenv("V_SCHEDULER_MODEL_MANAGEMENT_URL", storage.URL)
+	mux := http.NewServeMux()
+	unifiedController(mux)
+	req := httptest.NewRequest("GET", "/model-hub/api/v1/tasks?x=7", nil)
+	req.Header.Set("Authorization", "Bearer caller")
+	response := httptest.NewRecorder()
+	mux.ServeHTTP(response, req)
+	if response.Code != 200 || !strings.Contains(response.Body.String(), "download-1") {
+		t.Fatalf("model management proxy: %d %s", response.Code, response.Body.String())
+	}
+}

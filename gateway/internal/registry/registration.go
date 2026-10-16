@@ -110,7 +110,7 @@ func (r *Registry) deleteDiscoveredDuplicatesLocked(baseURL string) {
 }
 
 func isDiscoveredSource(source string) bool {
-	return source == SourceModelHub || source == SourceImageStudio || source == SourceVVoice || source == SourceVMusic || source == SourceMLServer
+	return source == SourceSchedulerOllama || source == SourceModelHub || source == SourceImageStudio || source == SourceVVoice || source == SourceVMusic || source == SourceMLServer
 }
 
 // SetVSubDiscovery atomically replaces one user's private snapshot and removes

@@ -39,6 +39,26 @@ func unifiedController(mux *http.ServeMux) {
 		forward.URL.RawPath = ""
 		proxy.ServeHTTP(w, forward)
 	}))
+	// The unified UI reaches model storage through a distinct prefix. This
+	// forwards management operations only; inference uses the direct Ollama upstreams.
+	storageURL := os.Getenv("V_SCHEDULER_MODEL_MANAGEMENT_URL")
+	if storageURL == "" {
+		storageURL = "http://v-scheduler-model-hub:6005"
+	}
+	storageTarget, storageErr := url.Parse(storageURL)
+	if storageErr == nil && storageTarget.Host != "" && (storageTarget.Scheme == "http" || storageTarget.Scheme == "https") && storageTarget.User == nil && storageTarget.RawQuery == "" && storageTarget.Fragment == "" && (storageTarget.Path == "" || storageTarget.Path == "/") {
+		storageProxy := httputil.NewSingleHostReverseProxy(storageTarget)
+		storageProxy.FlushInterval = -1
+		storageProxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, _ error) {
+			http.Error(w, "model management unavailable", http.StatusServiceUnavailable)
+		}
+		mux.Handle("/model-hub/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			forward := r.Clone(r.Context())
+			forward.URL.Path = strings.TrimPrefix(r.URL.Path, "/model-hub")
+			forward.URL.RawPath = ""
+			storageProxy.ServeHTTP(w, forward)
+		}))
+	}
 	// LAN clients can open the same UI from the existing gateway host port.
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/v1/") {

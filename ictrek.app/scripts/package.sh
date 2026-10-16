@@ -418,6 +418,17 @@ for profile_spec in "${PROFILES[@]}"; do
   done
 done
 
+
+# Ollama stays owned and built by modules/ollama. Resolve its original column
+# from each original platform sheet; never substitute a scheduler image/tag.
+for ollama_spec in "amd|AMD_with_cuda" "arm|ARM_with_cuda" "arm-without-cuda|ARM_without_cuda" "l4t|l4t" "thor-spark|thor_spark"; do
+  IFS='|' read -r profile sheet_title <<< "$ollama_spec"
+  sheet_id="$(get_sheet_id_by_title "$FEISHU_TOKEN" "$sheet_title")"
+  image="$(latest_image "$FEISHU_TOKEN" "$sheet_id" "ollama_server" "swr.cn-southwest-2.myhuaweicloud.com/ictrek/ollama_server")"
+  log "$profile ($sheet_title) ollama_server -> $image"
+  printf 'OLLAMA_SERVER_%s_IMAGE=%s\n' "$(env_key "$profile")" "$image" >> "$ENV_FILE"
+done
+
 for file in manifest.yml configs.yml routers.yml; do
   if [[ -f "${SRC_DIR}/${file}" ]]; then
     render_text_file "${SRC_DIR}/${file}" "${STAGE_DIR}/${file}"

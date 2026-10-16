@@ -55,7 +55,7 @@ func live(u *Upstream) bool {
 func supports(u *Upstream, m Model, path string) bool {
 	// Builtin Ollama instances share the model directory. Model availability
 	// must not let rerank calls consume QA/embedding slots (or vice versa).
-	if u.Source == SourceModelHub {
+	if u.Source == SourceModelHub || u.Source == SourceSchedulerOllama {
 		role := strings.ToLower(strings.TrimSpace(u.Role))
 		if role == "rerank" && path != "/rerank" {
 			return false
@@ -73,11 +73,11 @@ func supports(u *Upstream, m Model, path string) bool {
 	}
 	switch path {
 	case "/chat/completions", "/responses", "/messages", "/completions":
-		if u.Source == SourceModelHub && (strings.EqualFold(u.Role, RoleEmbedding) || strings.EqualFold(u.Role, RoleEmbed)) {
+		if (u.Source == SourceModelHub || u.Source == SourceSchedulerOllama) && (strings.EqualFold(u.Role, RoleEmbedding) || strings.EqualFold(u.Role, RoleEmbed)) {
 			return false
 		}
 	case "/embeddings":
-		if u.Source == SourceModelHub && strings.EqualFold(u.Role, RoleGenerate) {
+		if (u.Source == SourceModelHub || u.Source == SourceSchedulerOllama) && strings.EqualFold(u.Role, RoleGenerate) {
 			return false
 		}
 	}

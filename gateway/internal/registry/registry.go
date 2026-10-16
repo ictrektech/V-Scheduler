@@ -25,14 +25,15 @@ const (
 
 // Sources that create upstreams. Only sourceAPICreated upstreams are persisted.
 const (
-	SourceModelHub    = "model-hub"
-	SourceImageStudio = "image-studio"
-	SourceVVoice      = "v-voice"
-	SourceVSub        = "v-sub"
-	SourceVMusic      = "v-music"
-	SourceMLServer    = "ml-server"
-	SourceAPI         = "api"
-	SourceRegistered  = "registered"
+	SourceModelHub        = "model-hub"
+	SourceSchedulerOllama = "v-scheduler"
+	SourceImageStudio     = "image-studio"
+	SourceVVoice          = "v-voice"
+	SourceVSub            = "v-sub"
+	SourceVMusic          = "v-music"
+	SourceMLServer        = "ml-server"
+	SourceAPI             = "api"
+	SourceRegistered      = "registered"
 )
 
 // Upstream protocols describe how V-Router talks to a provider.

@@ -1,0 +1,2755 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "V-Scheduler model management API",
+    "version": "development",
+    "description": "Model Hub management implemented in Rust. Model download tasks and scheduler execution tasks have separate namespaces. READY describes the requested file scope only."
+  },
+  "servers": [
+    {
+      "url": "http://v-scheduler-model-hub:6005"
+    },
+    {
+      "url": "/app/com.ictrek.v-scheduler/model-hub"
+    }
+  ],
+  "paths": {
+    "/api/v1/models": {
+      "get": {
+        "summary": "List local models; status=ready|all|pulling|failed|deleting",
+        "operationId": "get_models",
+        "tags": [
+          "models"
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all",
+                "ready",
+                "pulling",
+                "failed",
+                "deleting"
+              ],
+              "default": "ready"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Operation succeeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Model"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Record not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "State conflict or upstream/storage unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Safely delete an unreferenced model; model_id query",
+        "operationId": "delete_models",
+        "tags": [
+          "models"
+        ],
+        "parameters": [
+          {
+            "name": "model_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "examples": [
+                "hf://org/repo",
+                "ms://org/repo",
+                "ollama://qwen3.5:2b"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Operation succeeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Record not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "State conflict or upstream/storage unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/models/pull": {
+      "post": {
+        "summary": "Download full model, exact selected files or append files",
+        "operationId": "post_models_pull",
+        "tags": [
+          "models"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Operation succeeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PullResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Record not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "State conflict or upstream/storage unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PullRequest"
+              },
+              "example": {
+                "source": "hf",
+                "model_id": "hf://org/repo",
+                "files": [
+                  "config.json",
+                  "weights/model-Q4_K_M.gguf"
+                ],
+                "append": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/models/update": {
+      "post": {
+        "summary": "Update installed model; preserve old snapshot on failure",
+        "operationId": "post_models_update",
+        "tags": [
+          "models"
+        ],
+        "parameters": [
+          {
+            "name": "model_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "examples": [
+                "hf://org/repo",
+                "ms://org/repo",
+                "ollama://qwen3.5:2b"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Operation succeeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PullResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Record not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "State conflict or upstream/storage unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/models/check-update": {
+      "post": {
+        "summary": "Check one model version",
+        "operationId": "post_models_check_update",
+        "tags": [
+          "models"
+        ],
+        "parameters": [
+          {
+            "name": "model_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "examples": [
+                "hf://org/repo",
+                "ms://org/repo",
+                "ollama://qwen3.5:2b"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Operation succeeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateCheck"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Record not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "State conflict or upstream/storage unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/models/check-updates": {
+      "post": {
+        "summary": "Check all installed model versions",
+        "operationId": "post_models_check_updates",
+        "tags": [
+          "models"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Operation succeeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/UpdateCheck"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Record not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "State conflict or upstream/storage unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/models/sync": {
+      "post": {
+        "summary": "Scan shared model storage",
+        "operationId": "post_models_sync",
+        "tags": [
+          "models"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Operation succeeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Record not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "State conflict or upstream/storage unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/models/cleanup": {
+      "post": {
+        "summary": "Clean inactive download staging",
+        "operationId": "post_models_cleanup",
+        "tags": [
+          "models"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Operation succeeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Record not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "State conflict or upstream/storage unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/models/repository-files": {
+      "get": {
+        "summary": "List remote HF/MS repository files without downloading weights",
+        "operationId": "get_models_repository_files",
+        "tags": [
+          "models"
+        ],
+        "parameters": [
+          {
+            "name": "source",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ollama",
+                "hf",
+                "ms"
+              ]
+            }
+          },
+          {
+            "name": "model_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "examples": [
+                "hf://org/repo",
+                "ms://org/repo",
+                "ollama://qwen3.5:2b"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Operation succeeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Files"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Record not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "State conflict or upstream/storage unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/models/files": {
+      "get": {
+        "summary": "List actual files in the current local snapshot",
+        "operationId": "get_models_files",
+        "tags": [
+          "models"
+        ],
+        "parameters": [
+          {
+            "name": "model_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "examples": [
+                "hf://org/repo",
+                "ms://org/repo",
+                "ollama://qwen3.5:2b"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Operation succeeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Files"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Record not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "State conflict or upstream/storage unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/models/import-archive": {
+      "post": {
+        "summary": "Import zip/tar archive with multipart form",
+        "operationId": "post_models_import_archive",
+        "tags": [
+          "models"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Operation succeeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Model"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Record not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "State conflict or upstream/storage unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "archive": {
+                    "type": "string",
+                    "format": "binary"
+                  },
+                  "source": {
+                    "type": "string",
+                    "enum": [
+                      "hf",
+                      "ms"
+                    ]
+                  },
+                  "model_id": {
+                    "type": "string"
+                  },
+                  "remote_repo": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "string"
+                  },
+                  "replace_existing": {
+                    "type": "boolean",
+                    "default": false
+                  }
+                },
+                "required": [
+                  "archive",
+                  "source"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks": {
+      "get": {
+        "summary": "Latest download task per model",
+        "operationId": "get_tasks",
+        "tags": [
+          "tasks"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Operation succeeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Task"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Record not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "State conflict or upstream/storage unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/detail/{id}": {
+      "get": {
+        "summary": "Download task progress, speed, ETA and failure",
+        "operationId": "get_tasks_detail_id",
+        "tags": [
+          "tasks"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Operation succeeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Record not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "State conflict or upstream/storage unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/{id}": {
+      "delete": {
+        "summary": "Delete task record without deleting model",
+        "operationId": "delete_tasks_id",
+        "tags": [
+          "tasks"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Operation succeeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Record not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "State conflict or upstream/storage unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/{id}/cancel": {
+      "post": {
+        "summary": "Cancel owned download and restore old model",
+        "operationId": "post_tasks_id_cancel",
+        "tags": [
+          "tasks"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Operation succeeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Record not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "State conflict or upstream/storage unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/{id}/retry": {
+      "post": {
+        "summary": "Retry failed download with original file selection",
+        "operationId": "post_tasks_id_retry",
+        "tags": [
+          "tasks"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Operation succeeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PullResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Record not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "State conflict or upstream/storage unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/aliases": {
+      "get": {
+        "summary": "List model aliases",
+        "operationId": "get_aliases",
+        "tags": [
+          "aliases"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Operation succeeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Alias"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Record not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "State conflict or upstream/storage unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create model alias",
+        "operationId": "post_aliases",
+        "tags": [
+          "aliases"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Operation succeeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Alias"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Record not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "State conflict or upstream/storage unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Alias"
+              },
+              "example": {
+                "alias": "qwen",
+                "target_model_id": "hf://org/repo"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/aliases/{id}": {
+      "delete": {
+        "summary": "Delete model alias",
+        "operationId": "delete_aliases_id",
+        "tags": [
+          "aliases"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Operation succeeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Record not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "State conflict or upstream/storage unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/containers": {
+      "get": {
+        "summary": "List model container references",
+        "operationId": "get_containers",
+        "tags": [
+          "containers"
+        ],
+        "parameters": [
+          {
+            "name": "model_id",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "examples": [
+                "hf://org/repo",
+                "ms://org/repo",
+                "ollama://qwen3.5:2b"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Operation succeeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ContainerBinding"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Record not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "State conflict or upstream/storage unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/containers/bind": {
+      "post": {
+        "summary": "Declare container model reference",
+        "operationId": "post_containers_bind",
+        "tags": [
+          "containers"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Operation succeeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Record not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "State conflict or upstream/storage unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContainerBinding"
+              },
+              "example": {
+                "container_id": "my-app",
+                "model_id": "hf://org/repo",
+                "ref_count": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/containers/unbind": {
+      "delete": {
+        "summary": "Remove container reference",
+        "operationId": "delete_containers_unbind",
+        "tags": [
+          "containers"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Operation succeeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Record not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "State conflict or upstream/storage unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "container_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "container_id"
+                ]
+              },
+              "example": {
+                "container_id": "my-app"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/inference-services": {
+      "get": {
+        "summary": "List external inference services; include_builtin optional",
+        "operationId": "get_inference_services",
+        "tags": [
+          "inference-services"
+        ],
+        "parameters": [
+          {
+            "name": "include_builtin",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Operation succeeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/InferenceService"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Record not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "State conflict or upstream/storage unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/inference-services/register": {
+      "post": {
+        "summary": "Register Ollama/OpenAI/custom management contract",
+        "operationId": "post_inference_services_register",
+        "tags": [
+          "inference-services"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Operation succeeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Record not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "State conflict or upstream/storage unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InferenceService"
+              },
+              "example": {
+                "service_id": "external-ollama",
+                "name": "External Ollama",
+                "kind": "ollama",
+                "base_url": "http://ollama:11434",
+                "gateway_url": "http://ollama:11535",
+                "role": "generate"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/inference-services/{id}": {
+      "get": {
+        "summary": "Inspect service health, models, live metrics and slots",
+        "operationId": "get_inference_services_id",
+        "tags": [
+          "inference-services"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Operation succeeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Record not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "State conflict or upstream/storage unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete service registration",
+        "operationId": "delete_inference_services_id",
+        "tags": [
+          "inference-services"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Operation succeeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Record not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "State conflict or upstream/storage unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/inference-services/{id}/models/start": {
+      "post": {
+        "summary": "Start model and confirm running state",
+        "operationId": "post_inference_services_id_models_start",
+        "tags": [
+          "inference-services"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Operation succeeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Record not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "State conflict or upstream/storage unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelAction"
+              },
+              "example": {
+                "model": "qwen3.5:2b",
+                "confirm_timeout_seconds": 8
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/inference-services/{id}/models/stop": {
+      "post": {
+        "summary": "Stop model and confirm stopped state",
+        "operationId": "post_inference_services_id_models_stop",
+        "tags": [
+          "inference-services"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Operation succeeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Record not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "State conflict or upstream/storage unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelAction"
+              },
+              "example": {
+                "model": "qwen3.5:2b",
+                "confirm_timeout_seconds": 8
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ollama/runtime": {
+      "get": {
+        "summary": "Inspect three builtin Ollama instances",
+        "operationId": "get_ollama_runtime",
+        "tags": [
+          "ollama"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Operation succeeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Record not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "State conflict or upstream/storage unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ollama/runtime/start": {
+      "post": {
+        "summary": "Load model in qa/embedding/rerank instance",
+        "operationId": "post_ollama_runtime_start",
+        "tags": [
+          "ollama"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Operation succeeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Record not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "State conflict or upstream/storage unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuntimeAction"
+              },
+              "example": {
+                "runtime": "qa",
+                "model": "qwen3.5:2b",
+                "keep_alive": "-1m"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ollama/runtime/stop": {
+      "post": {
+        "summary": "Unload model",
+        "operationId": "post_ollama_runtime_stop",
+        "tags": [
+          "ollama"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Operation succeeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Record not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "State conflict or upstream/storage unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuntimeAction"
+              },
+              "example": {
+                "runtime": "qa",
+                "model": "qwen3.5:2b",
+                "keep_alive": "-1m"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/integration": {
+      "get": {
+        "summary": "Configured internal endpoints and host port mappings",
+        "operationId": "get_integration",
+        "tags": [
+          "integration"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Operation succeeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Record not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "State conflict or upstream/storage unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/version": {
+      "get": {
+        "operationId": "get_version",
+        "tags": [
+          "system"
+        ],
+        "summary": "Installed VOS app version, profile and every service image/tag",
+        "responses": {
+          "200": {
+            "description": "Actual installation metadata; absent configuration is null",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "version": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "profile": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "images": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "service": {
+                            "type": "string"
+                          },
+                          "image": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "tag": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "PullRequest": {
+        "type": "object",
+        "properties": {
+          "model_id": {
+            "type": "string",
+            "examples": [
+              "hf://org/repo",
+              "ms://org/repo",
+              "ollama://qwen3.5:2b"
+            ]
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "ollama",
+              "hf",
+              "ms"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "force": {
+            "type": "boolean",
+            "default": false
+          },
+          "files": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string",
+              "description": "Exact repository-relative file; no glob, absolute path or parent traversal"
+            },
+            "description": "Omit/null for full repository"
+          },
+          "append": {
+            "type": "boolean",
+            "default": false,
+            "description": "Add selected HF/MS files while retaining existing files"
+          }
+        },
+        "required": [
+          "model_id",
+          "source"
+        ]
+      },
+      "PullResponse": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": "string"
+          },
+          "model_id": {
+            "type": "string",
+            "examples": [
+              "hf://org/repo",
+              "ms://org/repo",
+              "ollama://qwen3.5:2b"
+            ]
+          }
+        },
+        "required": [
+          "task_id",
+          "model_id"
+        ]
+      },
+      "Model": {
+        "type": "object",
+        "properties": {
+          "model_id": {
+            "type": "string",
+            "examples": [
+              "hf://org/repo",
+              "ms://org/repo",
+              "ollama://qwen3.5:2b"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "ollama",
+              "hf",
+              "ms"
+            ]
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pulling",
+              "ready",
+              "failed",
+              "deleting"
+            ]
+          },
+          "path": {
+            "type": "string"
+          },
+          "access_path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "sha256": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "files": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "model_id",
+          "name",
+          "source",
+          "path",
+          "status"
+        ]
+      },
+      "Task": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": "string"
+          },
+          "model_id": {
+            "type": "string",
+            "examples": [
+              "hf://org/repo",
+              "ms://org/repo",
+              "ollama://qwen3.5:2b"
+            ]
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "DOWNLOADING",
+              "VERIFYING",
+              "READY",
+              "FAILED"
+            ]
+          },
+          "progress": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "speed": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "New bytes per second; resumed bytes excluded"
+          },
+          "eta": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Remaining seconds"
+          },
+          "error_msg": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "files": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "append": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "task_id",
+          "model_id",
+          "phase",
+          "progress"
+        ]
+      },
+      "Files": {
+        "type": "object",
+        "properties": {
+          "model_id": {
+            "type": "string",
+            "examples": [
+              "hf://org/repo",
+              "ms://org/repo",
+              "ollama://qwen3.5:2b"
+            ]
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "ollama",
+              "hf",
+              "ms"
+            ]
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "size": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "downloaded": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "path",
+                "downloaded"
+              ]
+            }
+          },
+          "total_size": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "model_id",
+          "source",
+          "files",
+          "total_size"
+        ]
+      },
+      "UpdateCheck": {
+        "type": "object",
+        "properties": {
+          "model_id": {
+            "type": "string",
+            "examples": [
+              "hf://org/repo",
+              "ms://org/repo",
+              "ollama://qwen3.5:2b"
+            ]
+          },
+          "has_update": {
+            "type": "boolean"
+          },
+          "current_version": {
+            "type": "string"
+          },
+          "latest_version": {
+            "type": "string"
+          }
+        }
+      },
+      "Alias": {
+        "type": "object",
+        "properties": {
+          "alias": {
+            "type": "string"
+          },
+          "target_model_id": {
+            "type": "string",
+            "examples": [
+              "hf://org/repo",
+              "ms://org/repo",
+              "ollama://qwen3.5:2b"
+            ]
+          }
+        },
+        "required": [
+          "alias",
+          "target_model_id"
+        ]
+      },
+      "ContainerBinding": {
+        "type": "object",
+        "properties": {
+          "container_id": {
+            "type": "string"
+          },
+          "model_id": {
+            "type": "string",
+            "examples": [
+              "hf://org/repo",
+              "ms://org/repo",
+              "ollama://qwen3.5:2b"
+            ]
+          },
+          "ref_count": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1
+          },
+          "mounted_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "container_id",
+          "model_id"
+        ]
+      },
+      "InferenceServiceApiContract": {
+        "type": "object",
+        "properties": {
+          "health_path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "GET health; any2xx is healthy"
+          },
+          "version_path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "GET JSON version"
+          },
+          "models_path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "GET installed models"
+          },
+          "running_models_path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "GET authoritative running models"
+          },
+          "runtime_status_path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "GET runtime phases, memory and throughput"
+          },
+          "metrics_path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "GET JSON metrics"
+          },
+          "start_model_path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "POST model/mode/keep_alive"
+          },
+          "stop_model_path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "POST model/mode"
+          },
+          "model_action_status_path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "GET with model and action query; return confirmed boolean"
+          }
+        }
+      },
+      "InferenceService": {
+        "type": "object",
+        "properties": {
+          "service_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "ollama",
+              "openai_compatible",
+              "custom"
+            ],
+            "default": "custom"
+          },
+          "base_url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "gateway_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri"
+          },
+          "role": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "api_contract": {
+            "$ref": "#/components/schemas/InferenceServiceApiContract"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "registered_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "service_id",
+          "name",
+          "base_url"
+        ]
+      },
+      "ModelAction": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string"
+          },
+          "mode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "keep_alive": {
+            "type": [
+              "string",
+              "integer",
+              "null"
+            ]
+          },
+          "confirm_timeout_seconds": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 60,
+            "default": 8
+          }
+        },
+        "required": [
+          "model"
+        ]
+      },
+      "RuntimeAction": {
+        "type": "object",
+        "properties": {
+          "runtime": {
+            "type": "string",
+            "enum": [
+              "qa",
+              "embedding",
+              "rerank"
+            ]
+          },
+          "model": {
+            "type": "string"
+          },
+          "mode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "keep_alive": {
+            "type": [
+              "string",
+              "integer",
+              "null"
+            ]
+          },
+          "confirm_timeout_seconds": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 60,
+            "default": 8
+          }
+        },
+        "required": [
+          "runtime",
+          "model"
+        ]
+      },
+      "ActionResult": {
+        "type": "object",
+        "properties": {
+          "service_id": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "accepted": {
+            "type": "boolean"
+          },
+          "confirmed": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "started": {
+            "type": "boolean"
+          },
+          "stopped": {
+            "type": "boolean"
+          },
+          "target_state": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped"
+            ]
+          },
+          "observed_running": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "result": {
+            "type": "object"
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "detail": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "detail"
+        ]
+      }
+    }
+  }
+}

@@ -18,6 +18,8 @@ x-controller: &controller
   networks:
     vos_default:
       aliases: [v-scheduler, v-scheduler-backend, v-scheduler-frontend]
+  ports:
+    - "${SCHEDULER_HOST_PORT:-38120}:38120"
   labels:
     - "traefik.enable=true"
     - "traefik.docker.network=vos_default"
@@ -54,6 +56,7 @@ x-gateway: &gateway
         - v-router
   environment:
     V_ROUTER_CONTROLLER_URL: http://v-scheduler:38120
+    V_SCHEDULER_MODEL_MANAGEMENT_URL: http://v-scheduler-model-hub:6005
     V_ROUTER_ADDR: :8080
     V_ROUTER_HOST_PORT: "${V_ROUTER_HOST_PORT:-22888}"
     V_ROUTER_STATE_PATH: /data/state.json
@@ -69,7 +72,10 @@ x-gateway: &gateway
     VOS_HOST_GW_IP: "${VOS_HOST_GW_IP:-}"
     VOS_OIDC_USERINFO_URL: "${VOS_OIDC_USERINFO_URL:-}"
     V_ROUTER_AUTH_DISABLED: "${V_ROUTER_AUTH_DISABLED:-false}"
-    V_ROUTER_MODEL_HUB_URL: "${V_ROUTER_MODEL_HUB_URL:-http://model-hub-backend:5005}"
+    V_ROUTER_MODEL_HUB_URL: ""
+    V_SCHEDULER_OLLAMA_QA_URL: http://v-scheduler-ollama-qa:11535
+    V_SCHEDULER_OLLAMA_EMBEDDING_URL: http://v-scheduler-ollama-embedding:11535
+    V_SCHEDULER_OLLAMA_RERANK_URL: http://v-scheduler-ollama-rerank:11535
     V_ROUTER_IMAGE_STUDIO_URL: "${V_ROUTER_IMAGE_STUDIO_URL:-http://image-studio-backend:5000}"
     V_ROUTER_V_SUB_URLS: "${V_ROUTER_V_SUB_URLS:-http://v-sub-backend:7090,http://host.docker.internal:22703}"
     V_ROUTER_V_VOICE_URLS: "${V_ROUTER_V_VOICE_URLS:-http://v-voice-backend:7070,http://host.docker.internal:22700}"
@@ -111,6 +117,102 @@ x-gateway: &gateway
     start_period: 10s
     retries: 3
 
+x-model-storage-env: &model-storage-env
+  MODELS_BASE_DIR: /data
+  OLLAMA_DOWNLOAD_TIMEOUT: "${OLLAMA_DOWNLOAD_TIMEOUT:-3600}"
+  OLLAMA_PULL_MAX_ATTEMPTS: "${OLLAMA_PULL_MAX_ATTEMPTS:-5}"
+  OLLAMA_PULL_RETRY_DELAY_SECONDS: "${OLLAMA_PULL_RETRY_DELAY_SECONDS:-15}"
+  OLLAMA_PULL_RETRY_MAX_DELAY_SECONDS: "${OLLAMA_PULL_RETRY_MAX_DELAY_SECONDS:-300}"
+  OLLAMA_PULL_SLOW_WINDOW_SECONDS: "${OLLAMA_PULL_SLOW_WINDOW_SECONDS:-120}"
+  OLLAMA_PULL_MIN_SPEED_BYTES_PER_SECOND: "${OLLAMA_PULL_MIN_SPEED_BYTES_PER_SECOND:-262144}"
+  OLLAMA_REGISTRY_URL: "${OLLAMA_REGISTRY_URL:-https://registry.ollama.ai}"
+  HF_ENDPOINT: "${HF_ENDPOINT:-https://hf-mirror.com}"
+  HF_MIRROR_ENABLED: "${HF_MIRROR_ENABLED:-false}"
+  HF_HUB_DISABLE_XET: "${HF_HUB_DISABLE_XET:-1}"
+  OLLAMA_API_URL: http://v-scheduler-ollama-qa:11434
+  OLLAMA_GATEWAY_URL: http://v-scheduler-ollama-qa:11535
+  OLLAMA_QA_API_URL: http://v-scheduler-ollama-qa:11434
+  OLLAMA_QA_GATEWAY_URL: http://v-scheduler-ollama-qa:11535
+  OLLAMA_EMBEDDING_API_URL: http://v-scheduler-ollama-embedding:11434
+  OLLAMA_EMBEDDING_GATEWAY_URL: http://v-scheduler-ollama-embedding:11535
+  OLLAMA_RERANK_API_URL: http://v-scheduler-ollama-rerank:11434
+  OLLAMA_RERANK_GATEWAY_URL: http://v-scheduler-ollama-rerank:11535
+  OLLAMA_QA_MODEL: "${OLLAMA_QA_MODEL:-qwen3.5:2b}"
+  OLLAMA_EMBEDDING_MODEL: "${OLLAMA_EMBEDDING_MODEL:-bge-m3}"
+  OLLAMA_RERANK_MODEL: "${OLLAMA_RERANK_MODEL:-qllama/bge-reranker-v2-m3:q8_0}"
+  OLLAMA_KEEP_ALIVE: "${OLLAMA_KEEP_ALIVE:--1m}"
+  OLLAMA_QA_NUM_PARALLEL: "${OLLAMA_QA_NUM_PARALLEL:-8}"
+  OLLAMA_EMBEDDING_NUM_PARALLEL: "${OLLAMA_EMBEDDING_NUM_PARALLEL:-4}"
+  OLLAMA_RERANK_NUM_PARALLEL: "${OLLAMA_RERANK_NUM_PARALLEL:-2}"
+  OLLAMA_CONTEXT_LENGTH: "${OLLAMA_CONTEXT_LENGTH:-24576}"
+  OLLAMA_EMBEDDING_CONTEXT_LENGTH: "${OLLAMA_EMBEDDING_CONTEXT_LENGTH:-8192}"
+  OLLAMA_RERANK_CONTEXT_LENGTH: "${OLLAMA_RERANK_CONTEXT_LENGTH:-8192}"
+
+  MODEL_HUB_SHARED_MODELS_PATH: ${MODEL_HUB_SHARED_MODELS_PATH:-/data/vos_workspace/model_hub}
+  MODEL_HUB_BACKEND_HOST_PORT: "${MODEL_HUB_BACKEND_HOST_PORT:-36005}"
+  SCHEDULER_HOST_PORT: "${SCHEDULER_HOST_PORT:-38120}"
+  V_ROUTER_HOST_PORT: "${V_ROUTER_HOST_PORT:-22888}"
+  VOS_APP_VERSION: __APP_VERSION__
+  OLLAMA_QA_HOST_PORT: "${OLLAMA_QA_HOST_PORT:-12434}"
+  OLLAMA_QA_GATEWAY_HOST_PORT: "${OLLAMA_QA_GATEWAY_HOST_PORT:-12535}"
+  OLLAMA_EMBEDDING_HOST_PORT: "${OLLAMA_EMBEDDING_HOST_PORT:-12435}"
+  OLLAMA_EMBEDDING_GATEWAY_HOST_PORT: "${OLLAMA_EMBEDDING_GATEWAY_HOST_PORT:-12536}"
+  OLLAMA_RERANK_HOST_PORT: "${OLLAMA_RERANK_HOST_PORT:-12436}"
+  OLLAMA_RERANK_GATEWAY_HOST_PORT: "${OLLAMA_RERANK_GATEWAY_HOST_PORT:-12537}"
+
+x-model-storage: &model-storage
+  restart: unless-stopped
+  pull_policy: always
+  command: [model-hub, --listen, '0.0.0.0:6005']
+  environment: *model-storage-env
+  volumes:
+    - ${MODEL_HUB_SHARED_MODELS_PATH:-/data/vos_workspace/model_hub}:/data
+  networks:
+    vos_default:
+      aliases: [v-scheduler-model-hub, v-scheduler-model-hub-backend]
+  ports:
+    - "${MODEL_HUB_BACKEND_HOST_PORT:-36005}:6005"
+  labels:
+    - "traefik.enable=true"
+    - "traefik.docker.network=vos_default"
+    - "traefik.http.routers.v-scheduler-model-hub.rule=PathPrefix(`/app/com.ictrek.v-scheduler/model-hub`) || PathPrefix(`/api/com.ictrek.v-scheduler/model-hub`)"
+    - "traefik.http.routers.v-scheduler-model-hub.priority=1500"
+    - "traefik.http.routers.v-scheduler-model-hub.service=v-scheduler-model-hub"
+    - "traefik.http.routers.v-scheduler-model-hub.middlewares=v-scheduler-model-hub-strip"
+    - "traefik.http.middlewares.v-scheduler-model-hub-strip.stripprefix.prefixes=/app/com.ictrek.v-scheduler/model-hub,/api/com.ictrek.v-scheduler/model-hub"
+    - "traefik.http.services.v-scheduler-model-hub.loadbalancer.server.port=6005"
+  healthcheck:
+    test: [CMD, curl, -fsS, 'http://127.0.0.1:6005/health']
+    interval: 30s
+    timeout: 5s
+    start_period: 20s
+    retries: 3
+
+x-ollama-env: &ollama-env
+  MODELS_BASE_DIR: /data
+  MODELS_HOST_DIR: ${MODEL_HUB_SHARED_MODELS_PATH:-/data/vos_workspace/model_hub}
+  NVIDIA_VISIBLE_DEVICES: all
+  NVIDIA_DRIVER_CAPABILITIES: compute,utility
+  OLLAMA_HOST: 0.0.0.0:11434
+  OLLAMA_COMPAT_LISTEN: 0.0.0.0:11535
+  OLLAMA_KEEP_ALIVE: "${OLLAMA_KEEP_ALIVE:--1m}"
+  OLLAMA_MODELS: /data/ollama/models
+  MODEL_HUB_REGISTER_URL: http://v-scheduler-model-hub:6005
+
+x-ollama: &ollama
+  restart: unless-stopped
+  pull_policy: always
+  entrypoint: [/usr/bin/ollama]
+  command: [serve]
+  volumes:
+    - ${MODEL_HUB_SHARED_MODELS_PATH:-/data/vos_workspace/model_hub}:/data
+  healthcheck:
+    test: [CMD-SHELL, 'ollama list > /dev/null 2>&1 || exit 1']
+    interval: 15s
+    timeout: 30s
+    start_period: 60s
+    retries: 12
+
 services:
   controller-amd:
     <<: *controller
@@ -138,6 +240,474 @@ services:
     <<: *gateway
     profiles: [arm, arm-without-cuda, l4t, thor-spark]
     image: ${V_ROUTER_BACKEND_ARM_IMAGE}
+  model-storage-amd:
+    <<: *model-storage
+    profiles: [amd]
+    image: ${V_SCHEDULER_AMD_IMAGE}
+    environment:
+      <<: *model-storage-env
+      MODEL_HUB_PROFILE: amd
+      V_SCHEDULER_IMAGE: ${V_SCHEDULER_AMD_IMAGE}
+      V_ROUTER_BACKEND_IMAGE: ${V_ROUTER_BACKEND_AMD_IMAGE}
+      OLLAMA_SERVER_IMAGE: ${OLLAMA_SERVER_AMD_IMAGE}
+  model-storage-amd-without-cuda:
+    <<: *model-storage
+    profiles: [amd-without-cuda]
+    image: ${V_SCHEDULER_AMD_IMAGE}
+    environment:
+      <<: *model-storage-env
+      MODEL_HUB_PROFILE: amd-without-cuda
+      V_SCHEDULER_IMAGE: ${V_SCHEDULER_AMD_IMAGE}
+      V_ROUTER_BACKEND_IMAGE: ${V_ROUTER_BACKEND_AMD_IMAGE}
+      OLLAMA_SERVER_IMAGE: ${OLLAMA_SERVER_AMD_IMAGE}
+  model-storage-arm:
+    <<: *model-storage
+    profiles: [arm]
+    image: ${V_SCHEDULER_ARM_IMAGE}
+    environment:
+      <<: *model-storage-env
+      MODEL_HUB_PROFILE: arm
+      V_SCHEDULER_IMAGE: ${V_SCHEDULER_ARM_IMAGE}
+      V_ROUTER_BACKEND_IMAGE: ${V_ROUTER_BACKEND_ARM_IMAGE}
+      OLLAMA_SERVER_IMAGE: ${OLLAMA_SERVER_ARM_IMAGE}
+  model-storage-arm-without-cuda:
+    <<: *model-storage
+    profiles: [arm-without-cuda]
+    image: ${V_SCHEDULER_ARM_IMAGE}
+    environment:
+      <<: *model-storage-env
+      MODEL_HUB_PROFILE: arm-without-cuda
+      V_SCHEDULER_IMAGE: ${V_SCHEDULER_ARM_IMAGE}
+      V_ROUTER_BACKEND_IMAGE: ${V_ROUTER_BACKEND_ARM_IMAGE}
+      OLLAMA_SERVER_IMAGE: ${OLLAMA_SERVER_ARM_WITHOUT_CUDA_IMAGE}
+  model-storage-l4t:
+    <<: *model-storage
+    profiles: [l4t]
+    image: ${V_SCHEDULER_ARM_IMAGE}
+    environment:
+      <<: *model-storage-env
+      MODEL_HUB_PROFILE: l4t
+      V_SCHEDULER_IMAGE: ${V_SCHEDULER_ARM_IMAGE}
+      V_ROUTER_BACKEND_IMAGE: ${V_ROUTER_BACKEND_ARM_IMAGE}
+      OLLAMA_SERVER_IMAGE: ${OLLAMA_SERVER_L4T_IMAGE}
+  model-storage-thor-spark:
+    <<: *model-storage
+    profiles: [thor-spark]
+    image: ${V_SCHEDULER_ARM_IMAGE}
+    environment:
+      <<: *model-storage-env
+      MODEL_HUB_PROFILE: thor-spark
+      V_SCHEDULER_IMAGE: ${V_SCHEDULER_ARM_IMAGE}
+      V_ROUTER_BACKEND_IMAGE: ${V_ROUTER_BACKEND_ARM_IMAGE}
+      OLLAMA_SERVER_IMAGE: ${OLLAMA_SERVER_THOR_SPARK_IMAGE}
+  ollama-qa-amd:
+    <<: *ollama
+    profiles: [amd]
+    image: ${OLLAMA_SERVER_AMD_IMAGE}
+    runtime: nvidia
+    networks:
+      vos_default:
+        aliases: [v-scheduler-ollama-qa]
+    ports:
+      - "${OLLAMA_QA_HOST_PORT:-12434}:11434"
+      - "${OLLAMA_QA_GATEWAY_HOST_PORT:-12535}:11535"
+    environment:
+      <<: *ollama-env
+      OLLAMA_PRELOAD_MODEL: "${OLLAMA_QA_MODEL:-qwen3.5:2b}"
+      OLLAMA_PRELOAD_ENABLED: "${OLLAMA_QA_PRELOAD_ENABLED:-false}"
+      OLLAMA_PRELOAD_MODE: generate
+      OLLAMA_NUM_PARALLEL: "${OLLAMA_QA_NUM_PARALLEL:-8}"
+      OLLAMA_CONTEXT_LENGTH: "${OLLAMA_CONTEXT_LENGTH:-24576}"
+      MODEL_HUB_SERVICE_ID: v-scheduler-ollama-qa
+      MODEL_HUB_SERVICE_NAME: V-Scheduler Ollama QA
+      MODEL_HUB_SERVICE_BASE_URL: http://v-scheduler-ollama-qa:11434
+      MODEL_HUB_SERVICE_GATEWAY_URL: http://v-scheduler-ollama-qa:11535
+      MODEL_HUB_SERVICE_ROLE: generate
+  ollama-embedding-amd:
+    <<: *ollama
+    profiles: [amd]
+    image: ${OLLAMA_SERVER_AMD_IMAGE}
+    runtime: nvidia
+    networks:
+      vos_default:
+        aliases: [v-scheduler-ollama-embedding]
+    ports:
+      - "${OLLAMA_EMBEDDING_HOST_PORT:-12435}:11434"
+      - "${OLLAMA_EMBEDDING_GATEWAY_HOST_PORT:-12536}:11535"
+    environment:
+      <<: *ollama-env
+      OLLAMA_PRELOAD_MODEL: "${OLLAMA_EMBEDDING_MODEL:-bge-m3}"
+      OLLAMA_PRELOAD_ENABLED: "${OLLAMA_EMBEDDING_PRELOAD_ENABLED:-false}"
+      OLLAMA_PRELOAD_MODE: embedding
+      OLLAMA_NUM_PARALLEL: "${OLLAMA_EMBEDDING_NUM_PARALLEL:-4}"
+      OLLAMA_CONTEXT_LENGTH: "${OLLAMA_EMBEDDING_CONTEXT_LENGTH:-8192}"
+      MODEL_HUB_SERVICE_ID: v-scheduler-ollama-embedding
+      MODEL_HUB_SERVICE_NAME: V-Scheduler Ollama EMBEDDING
+      MODEL_HUB_SERVICE_BASE_URL: http://v-scheduler-ollama-embedding:11434
+      MODEL_HUB_SERVICE_GATEWAY_URL: http://v-scheduler-ollama-embedding:11535
+      MODEL_HUB_SERVICE_ROLE: embedding
+  ollama-rerank-amd:
+    <<: *ollama
+    profiles: [amd]
+    image: ${OLLAMA_SERVER_AMD_IMAGE}
+    runtime: nvidia
+    networks:
+      vos_default:
+        aliases: [v-scheduler-ollama-rerank]
+    ports:
+      - "${OLLAMA_RERANK_HOST_PORT:-12436}:11434"
+      - "${OLLAMA_RERANK_GATEWAY_HOST_PORT:-12537}:11535"
+    environment:
+      <<: *ollama-env
+      OLLAMA_PRELOAD_MODEL: "${OLLAMA_RERANK_MODEL:-qllama/bge-reranker-v2-m3:q8_0}"
+      OLLAMA_PRELOAD_ENABLED: "${OLLAMA_RERANK_PRELOAD_ENABLED:-false}"
+      OLLAMA_PRELOAD_MODE: rerank
+      OLLAMA_NUM_PARALLEL: "${OLLAMA_RERANK_NUM_PARALLEL:-2}"
+      OLLAMA_CONTEXT_LENGTH: "${OLLAMA_RERANK_CONTEXT_LENGTH:-8192}"
+      MODEL_HUB_SERVICE_ID: v-scheduler-ollama-rerank
+      MODEL_HUB_SERVICE_NAME: V-Scheduler Ollama RERANK
+      MODEL_HUB_SERVICE_BASE_URL: http://v-scheduler-ollama-rerank:11434
+      MODEL_HUB_SERVICE_GATEWAY_URL: http://v-scheduler-ollama-rerank:11535
+      MODEL_HUB_SERVICE_ROLE: rerank
+  ollama-qa-amd-without-cuda:
+    <<: *ollama
+    profiles: [amd-without-cuda]
+    image: ${OLLAMA_SERVER_AMD_IMAGE}
+    networks:
+      vos_default:
+        aliases: [v-scheduler-ollama-qa]
+    ports:
+      - "${OLLAMA_QA_HOST_PORT:-12434}:11434"
+      - "${OLLAMA_QA_GATEWAY_HOST_PORT:-12535}:11535"
+    environment:
+      <<: *ollama-env
+      OLLAMA_PRELOAD_MODEL: "${OLLAMA_QA_MODEL:-qwen3.5:2b}"
+      OLLAMA_PRELOAD_ENABLED: "${OLLAMA_QA_PRELOAD_ENABLED:-false}"
+      OLLAMA_PRELOAD_MODE: generate
+      OLLAMA_NUM_PARALLEL: "${OLLAMA_QA_NUM_PARALLEL:-8}"
+      OLLAMA_CONTEXT_LENGTH: "${OLLAMA_CONTEXT_LENGTH:-24576}"
+      MODEL_HUB_SERVICE_ID: v-scheduler-ollama-qa
+      MODEL_HUB_SERVICE_NAME: V-Scheduler Ollama QA
+      MODEL_HUB_SERVICE_BASE_URL: http://v-scheduler-ollama-qa:11434
+      MODEL_HUB_SERVICE_GATEWAY_URL: http://v-scheduler-ollama-qa:11535
+      MODEL_HUB_SERVICE_ROLE: generate
+  ollama-embedding-amd-without-cuda:
+    <<: *ollama
+    profiles: [amd-without-cuda]
+    image: ${OLLAMA_SERVER_AMD_IMAGE}
+    networks:
+      vos_default:
+        aliases: [v-scheduler-ollama-embedding]
+    ports:
+      - "${OLLAMA_EMBEDDING_HOST_PORT:-12435}:11434"
+      - "${OLLAMA_EMBEDDING_GATEWAY_HOST_PORT:-12536}:11535"
+    environment:
+      <<: *ollama-env
+      OLLAMA_PRELOAD_MODEL: "${OLLAMA_EMBEDDING_MODEL:-bge-m3}"
+      OLLAMA_PRELOAD_ENABLED: "${OLLAMA_EMBEDDING_PRELOAD_ENABLED:-false}"
+      OLLAMA_PRELOAD_MODE: embedding
+      OLLAMA_NUM_PARALLEL: "${OLLAMA_EMBEDDING_NUM_PARALLEL:-4}"
+      OLLAMA_CONTEXT_LENGTH: "${OLLAMA_EMBEDDING_CONTEXT_LENGTH:-8192}"
+      MODEL_HUB_SERVICE_ID: v-scheduler-ollama-embedding
+      MODEL_HUB_SERVICE_NAME: V-Scheduler Ollama EMBEDDING
+      MODEL_HUB_SERVICE_BASE_URL: http://v-scheduler-ollama-embedding:11434
+      MODEL_HUB_SERVICE_GATEWAY_URL: http://v-scheduler-ollama-embedding:11535
+      MODEL_HUB_SERVICE_ROLE: embedding
+  ollama-rerank-amd-without-cuda:
+    <<: *ollama
+    profiles: [amd-without-cuda]
+    image: ${OLLAMA_SERVER_AMD_IMAGE}
+    networks:
+      vos_default:
+        aliases: [v-scheduler-ollama-rerank]
+    ports:
+      - "${OLLAMA_RERANK_HOST_PORT:-12436}:11434"
+      - "${OLLAMA_RERANK_GATEWAY_HOST_PORT:-12537}:11535"
+    environment:
+      <<: *ollama-env
+      OLLAMA_PRELOAD_MODEL: "${OLLAMA_RERANK_MODEL:-qllama/bge-reranker-v2-m3:q8_0}"
+      OLLAMA_PRELOAD_ENABLED: "${OLLAMA_RERANK_PRELOAD_ENABLED:-false}"
+      OLLAMA_PRELOAD_MODE: rerank
+      OLLAMA_NUM_PARALLEL: "${OLLAMA_RERANK_NUM_PARALLEL:-2}"
+      OLLAMA_CONTEXT_LENGTH: "${OLLAMA_RERANK_CONTEXT_LENGTH:-8192}"
+      MODEL_HUB_SERVICE_ID: v-scheduler-ollama-rerank
+      MODEL_HUB_SERVICE_NAME: V-Scheduler Ollama RERANK
+      MODEL_HUB_SERVICE_BASE_URL: http://v-scheduler-ollama-rerank:11434
+      MODEL_HUB_SERVICE_GATEWAY_URL: http://v-scheduler-ollama-rerank:11535
+      MODEL_HUB_SERVICE_ROLE: rerank
+  ollama-qa-arm:
+    <<: *ollama
+    profiles: [arm]
+    image: ${OLLAMA_SERVER_ARM_IMAGE}
+    runtime: nvidia
+    networks:
+      vos_default:
+        aliases: [v-scheduler-ollama-qa]
+    ports:
+      - "${OLLAMA_QA_HOST_PORT:-12434}:11434"
+      - "${OLLAMA_QA_GATEWAY_HOST_PORT:-12535}:11535"
+    environment:
+      <<: *ollama-env
+      OLLAMA_PRELOAD_MODEL: "${OLLAMA_QA_MODEL:-qwen3.5:2b}"
+      OLLAMA_PRELOAD_ENABLED: "${OLLAMA_QA_PRELOAD_ENABLED:-false}"
+      OLLAMA_PRELOAD_MODE: generate
+      OLLAMA_NUM_PARALLEL: "${OLLAMA_QA_NUM_PARALLEL:-8}"
+      OLLAMA_CONTEXT_LENGTH: "${OLLAMA_CONTEXT_LENGTH:-24576}"
+      MODEL_HUB_SERVICE_ID: v-scheduler-ollama-qa
+      MODEL_HUB_SERVICE_NAME: V-Scheduler Ollama QA
+      MODEL_HUB_SERVICE_BASE_URL: http://v-scheduler-ollama-qa:11434
+      MODEL_HUB_SERVICE_GATEWAY_URL: http://v-scheduler-ollama-qa:11535
+      MODEL_HUB_SERVICE_ROLE: generate
+  ollama-embedding-arm:
+    <<: *ollama
+    profiles: [arm]
+    image: ${OLLAMA_SERVER_ARM_IMAGE}
+    runtime: nvidia
+    networks:
+      vos_default:
+        aliases: [v-scheduler-ollama-embedding]
+    ports:
+      - "${OLLAMA_EMBEDDING_HOST_PORT:-12435}:11434"
+      - "${OLLAMA_EMBEDDING_GATEWAY_HOST_PORT:-12536}:11535"
+    environment:
+      <<: *ollama-env
+      OLLAMA_PRELOAD_MODEL: "${OLLAMA_EMBEDDING_MODEL:-bge-m3}"
+      OLLAMA_PRELOAD_ENABLED: "${OLLAMA_EMBEDDING_PRELOAD_ENABLED:-false}"
+      OLLAMA_PRELOAD_MODE: embedding
+      OLLAMA_NUM_PARALLEL: "${OLLAMA_EMBEDDING_NUM_PARALLEL:-4}"
+      OLLAMA_CONTEXT_LENGTH: "${OLLAMA_EMBEDDING_CONTEXT_LENGTH:-8192}"
+      MODEL_HUB_SERVICE_ID: v-scheduler-ollama-embedding
+      MODEL_HUB_SERVICE_NAME: V-Scheduler Ollama EMBEDDING
+      MODEL_HUB_SERVICE_BASE_URL: http://v-scheduler-ollama-embedding:11434
+      MODEL_HUB_SERVICE_GATEWAY_URL: http://v-scheduler-ollama-embedding:11535
+      MODEL_HUB_SERVICE_ROLE: embedding
+  ollama-rerank-arm:
+    <<: *ollama
+    profiles: [arm]
+    image: ${OLLAMA_SERVER_ARM_IMAGE}
+    runtime: nvidia
+    networks:
+      vos_default:
+        aliases: [v-scheduler-ollama-rerank]
+    ports:
+      - "${OLLAMA_RERANK_HOST_PORT:-12436}:11434"
+      - "${OLLAMA_RERANK_GATEWAY_HOST_PORT:-12537}:11535"
+    environment:
+      <<: *ollama-env
+      OLLAMA_PRELOAD_MODEL: "${OLLAMA_RERANK_MODEL:-qllama/bge-reranker-v2-m3:q8_0}"
+      OLLAMA_PRELOAD_ENABLED: "${OLLAMA_RERANK_PRELOAD_ENABLED:-false}"
+      OLLAMA_PRELOAD_MODE: rerank
+      OLLAMA_NUM_PARALLEL: "${OLLAMA_RERANK_NUM_PARALLEL:-2}"
+      OLLAMA_CONTEXT_LENGTH: "${OLLAMA_RERANK_CONTEXT_LENGTH:-8192}"
+      MODEL_HUB_SERVICE_ID: v-scheduler-ollama-rerank
+      MODEL_HUB_SERVICE_NAME: V-Scheduler Ollama RERANK
+      MODEL_HUB_SERVICE_BASE_URL: http://v-scheduler-ollama-rerank:11434
+      MODEL_HUB_SERVICE_GATEWAY_URL: http://v-scheduler-ollama-rerank:11535
+      MODEL_HUB_SERVICE_ROLE: rerank
+  ollama-qa-arm-without-cuda:
+    <<: *ollama
+    profiles: [arm-without-cuda]
+    image: ${OLLAMA_SERVER_ARM_WITHOUT_CUDA_IMAGE}
+    networks:
+      vos_default:
+        aliases: [v-scheduler-ollama-qa]
+    ports:
+      - "${OLLAMA_QA_HOST_PORT:-12434}:11434"
+      - "${OLLAMA_QA_GATEWAY_HOST_PORT:-12535}:11535"
+    environment:
+      <<: *ollama-env
+      OLLAMA_PRELOAD_MODEL: "${OLLAMA_QA_MODEL:-qwen3.5:2b}"
+      OLLAMA_PRELOAD_ENABLED: "${OLLAMA_QA_PRELOAD_ENABLED:-false}"
+      OLLAMA_PRELOAD_MODE: generate
+      OLLAMA_NUM_PARALLEL: "${OLLAMA_QA_NUM_PARALLEL:-8}"
+      OLLAMA_CONTEXT_LENGTH: "${OLLAMA_CONTEXT_LENGTH:-24576}"
+      MODEL_HUB_SERVICE_ID: v-scheduler-ollama-qa
+      MODEL_HUB_SERVICE_NAME: V-Scheduler Ollama QA
+      MODEL_HUB_SERVICE_BASE_URL: http://v-scheduler-ollama-qa:11434
+      MODEL_HUB_SERVICE_GATEWAY_URL: http://v-scheduler-ollama-qa:11535
+      MODEL_HUB_SERVICE_ROLE: generate
+  ollama-embedding-arm-without-cuda:
+    <<: *ollama
+    profiles: [arm-without-cuda]
+    image: ${OLLAMA_SERVER_ARM_WITHOUT_CUDA_IMAGE}
+    networks:
+      vos_default:
+        aliases: [v-scheduler-ollama-embedding]
+    ports:
+      - "${OLLAMA_EMBEDDING_HOST_PORT:-12435}:11434"
+      - "${OLLAMA_EMBEDDING_GATEWAY_HOST_PORT:-12536}:11535"
+    environment:
+      <<: *ollama-env
+      OLLAMA_PRELOAD_MODEL: "${OLLAMA_EMBEDDING_MODEL:-bge-m3}"
+      OLLAMA_PRELOAD_ENABLED: "${OLLAMA_EMBEDDING_PRELOAD_ENABLED:-false}"
+      OLLAMA_PRELOAD_MODE: embedding
+      OLLAMA_NUM_PARALLEL: "${OLLAMA_EMBEDDING_NUM_PARALLEL:-4}"
+      OLLAMA_CONTEXT_LENGTH: "${OLLAMA_EMBEDDING_CONTEXT_LENGTH:-8192}"
+      MODEL_HUB_SERVICE_ID: v-scheduler-ollama-embedding
+      MODEL_HUB_SERVICE_NAME: V-Scheduler Ollama EMBEDDING
+      MODEL_HUB_SERVICE_BASE_URL: http://v-scheduler-ollama-embedding:11434
+      MODEL_HUB_SERVICE_GATEWAY_URL: http://v-scheduler-ollama-embedding:11535
+      MODEL_HUB_SERVICE_ROLE: embedding
+  ollama-rerank-arm-without-cuda:
+    <<: *ollama
+    profiles: [arm-without-cuda]
+    image: ${OLLAMA_SERVER_ARM_WITHOUT_CUDA_IMAGE}
+    networks:
+      vos_default:
+        aliases: [v-scheduler-ollama-rerank]
+    ports:
+      - "${OLLAMA_RERANK_HOST_PORT:-12436}:11434"
+      - "${OLLAMA_RERANK_GATEWAY_HOST_PORT:-12537}:11535"
+    environment:
+      <<: *ollama-env
+      OLLAMA_PRELOAD_MODEL: "${OLLAMA_RERANK_MODEL:-qllama/bge-reranker-v2-m3:q8_0}"
+      OLLAMA_PRELOAD_ENABLED: "${OLLAMA_RERANK_PRELOAD_ENABLED:-false}"
+      OLLAMA_PRELOAD_MODE: rerank
+      OLLAMA_NUM_PARALLEL: "${OLLAMA_RERANK_NUM_PARALLEL:-2}"
+      OLLAMA_CONTEXT_LENGTH: "${OLLAMA_RERANK_CONTEXT_LENGTH:-8192}"
+      MODEL_HUB_SERVICE_ID: v-scheduler-ollama-rerank
+      MODEL_HUB_SERVICE_NAME: V-Scheduler Ollama RERANK
+      MODEL_HUB_SERVICE_BASE_URL: http://v-scheduler-ollama-rerank:11434
+      MODEL_HUB_SERVICE_GATEWAY_URL: http://v-scheduler-ollama-rerank:11535
+      MODEL_HUB_SERVICE_ROLE: rerank
+  ollama-qa-l4t:
+    <<: *ollama
+    profiles: [l4t]
+    image: ${OLLAMA_SERVER_L4T_IMAGE}
+    runtime: nvidia
+    networks:
+      vos_default:
+        aliases: [v-scheduler-ollama-qa]
+    ports:
+      - "${OLLAMA_QA_HOST_PORT:-12434}:11434"
+      - "${OLLAMA_QA_GATEWAY_HOST_PORT:-12535}:11535"
+    environment:
+      <<: *ollama-env
+      OLLAMA_PRELOAD_MODEL: "${OLLAMA_QA_MODEL:-qwen3.5:2b}"
+      OLLAMA_PRELOAD_ENABLED: "${OLLAMA_QA_PRELOAD_ENABLED:-false}"
+      OLLAMA_PRELOAD_MODE: generate
+      OLLAMA_NUM_PARALLEL: "${OLLAMA_QA_NUM_PARALLEL:-8}"
+      OLLAMA_CONTEXT_LENGTH: "${OLLAMA_CONTEXT_LENGTH:-24576}"
+      MODEL_HUB_SERVICE_ID: v-scheduler-ollama-qa
+      MODEL_HUB_SERVICE_NAME: V-Scheduler Ollama QA
+      MODEL_HUB_SERVICE_BASE_URL: http://v-scheduler-ollama-qa:11434
+      MODEL_HUB_SERVICE_GATEWAY_URL: http://v-scheduler-ollama-qa:11535
+      MODEL_HUB_SERVICE_ROLE: generate
+  ollama-embedding-l4t:
+    <<: *ollama
+    profiles: [l4t]
+    image: ${OLLAMA_SERVER_L4T_IMAGE}
+    runtime: nvidia
+    networks:
+      vos_default:
+        aliases: [v-scheduler-ollama-embedding]
+    ports:
+      - "${OLLAMA_EMBEDDING_HOST_PORT:-12435}:11434"
+      - "${OLLAMA_EMBEDDING_GATEWAY_HOST_PORT:-12536}:11535"
+    environment:
+      <<: *ollama-env
+      OLLAMA_PRELOAD_MODEL: "${OLLAMA_EMBEDDING_MODEL:-bge-m3}"
+      OLLAMA_PRELOAD_ENABLED: "${OLLAMA_EMBEDDING_PRELOAD_ENABLED:-false}"
+      OLLAMA_PRELOAD_MODE: embedding
+      OLLAMA_NUM_PARALLEL: "${OLLAMA_EMBEDDING_NUM_PARALLEL:-4}"
+      OLLAMA_CONTEXT_LENGTH: "${OLLAMA_EMBEDDING_CONTEXT_LENGTH:-8192}"
+      MODEL_HUB_SERVICE_ID: v-scheduler-ollama-embedding
+      MODEL_HUB_SERVICE_NAME: V-Scheduler Ollama EMBEDDING
+      MODEL_HUB_SERVICE_BASE_URL: http://v-scheduler-ollama-embedding:11434
+      MODEL_HUB_SERVICE_GATEWAY_URL: http://v-scheduler-ollama-embedding:11535
+      MODEL_HUB_SERVICE_ROLE: embedding
+  ollama-rerank-l4t:
+    <<: *ollama
+    profiles: [l4t]
+    image: ${OLLAMA_SERVER_L4T_IMAGE}
+    runtime: nvidia
+    networks:
+      vos_default:
+        aliases: [v-scheduler-ollama-rerank]
+    ports:
+      - "${OLLAMA_RERANK_HOST_PORT:-12436}:11434"
+      - "${OLLAMA_RERANK_GATEWAY_HOST_PORT:-12537}:11535"
+    environment:
+      <<: *ollama-env
+      OLLAMA_PRELOAD_MODEL: "${OLLAMA_RERANK_MODEL:-qllama/bge-reranker-v2-m3:q8_0}"
+      OLLAMA_PRELOAD_ENABLED: "${OLLAMA_RERANK_PRELOAD_ENABLED:-false}"
+      OLLAMA_PRELOAD_MODE: rerank
+      OLLAMA_NUM_PARALLEL: "${OLLAMA_RERANK_NUM_PARALLEL:-2}"
+      OLLAMA_CONTEXT_LENGTH: "${OLLAMA_RERANK_CONTEXT_LENGTH:-8192}"
+      MODEL_HUB_SERVICE_ID: v-scheduler-ollama-rerank
+      MODEL_HUB_SERVICE_NAME: V-Scheduler Ollama RERANK
+      MODEL_HUB_SERVICE_BASE_URL: http://v-scheduler-ollama-rerank:11434
+      MODEL_HUB_SERVICE_GATEWAY_URL: http://v-scheduler-ollama-rerank:11535
+      MODEL_HUB_SERVICE_ROLE: rerank
+  ollama-qa-thor-spark:
+    <<: *ollama
+    profiles: [thor-spark]
+    image: ${OLLAMA_SERVER_THOR_SPARK_IMAGE}
+    runtime: nvidia
+    networks:
+      vos_default:
+        aliases: [v-scheduler-ollama-qa]
+    ports:
+      - "${OLLAMA_QA_HOST_PORT:-12434}:11434"
+      - "${OLLAMA_QA_GATEWAY_HOST_PORT:-12535}:11535"
+    environment:
+      <<: *ollama-env
+      OLLAMA_PRELOAD_MODEL: "${OLLAMA_QA_MODEL:-qwen3.5:2b}"
+      OLLAMA_PRELOAD_ENABLED: "${OLLAMA_QA_PRELOAD_ENABLED:-false}"
+      OLLAMA_PRELOAD_MODE: generate
+      OLLAMA_NUM_PARALLEL: "${OLLAMA_QA_NUM_PARALLEL:-8}"
+      OLLAMA_CONTEXT_LENGTH: "${OLLAMA_CONTEXT_LENGTH:-24576}"
+      MODEL_HUB_SERVICE_ID: v-scheduler-ollama-qa
+      MODEL_HUB_SERVICE_NAME: V-Scheduler Ollama QA
+      MODEL_HUB_SERVICE_BASE_URL: http://v-scheduler-ollama-qa:11434
+      MODEL_HUB_SERVICE_GATEWAY_URL: http://v-scheduler-ollama-qa:11535
+      MODEL_HUB_SERVICE_ROLE: generate
+  ollama-embedding-thor-spark:
+    <<: *ollama
+    profiles: [thor-spark]
+    image: ${OLLAMA_SERVER_THOR_SPARK_IMAGE}
+    runtime: nvidia
+    networks:
+      vos_default:
+        aliases: [v-scheduler-ollama-embedding]
+    ports:
+      - "${OLLAMA_EMBEDDING_HOST_PORT:-12435}:11434"
+      - "${OLLAMA_EMBEDDING_GATEWAY_HOST_PORT:-12536}:11535"
+    environment:
+      <<: *ollama-env
+      OLLAMA_PRELOAD_MODEL: "${OLLAMA_EMBEDDING_MODEL:-bge-m3}"
+      OLLAMA_PRELOAD_ENABLED: "${OLLAMA_EMBEDDING_PRELOAD_ENABLED:-false}"
+      OLLAMA_PRELOAD_MODE: embedding
+      OLLAMA_NUM_PARALLEL: "${OLLAMA_EMBEDDING_NUM_PARALLEL:-4}"
+      OLLAMA_CONTEXT_LENGTH: "${OLLAMA_EMBEDDING_CONTEXT_LENGTH:-8192}"
+      MODEL_HUB_SERVICE_ID: v-scheduler-ollama-embedding
+      MODEL_HUB_SERVICE_NAME: V-Scheduler Ollama EMBEDDING
+      MODEL_HUB_SERVICE_BASE_URL: http://v-scheduler-ollama-embedding:11434
+      MODEL_HUB_SERVICE_GATEWAY_URL: http://v-scheduler-ollama-embedding:11535
+      MODEL_HUB_SERVICE_ROLE: embedding
+  ollama-rerank-thor-spark:
+    <<: *ollama
+    profiles: [thor-spark]
+    image: ${OLLAMA_SERVER_THOR_SPARK_IMAGE}
+    runtime: nvidia
+    networks:
+      vos_default:
+        aliases: [v-scheduler-ollama-rerank]
+    ports:
+      - "${OLLAMA_RERANK_HOST_PORT:-12436}:11434"
+      - "${OLLAMA_RERANK_GATEWAY_HOST_PORT:-12537}:11535"
+    environment:
+      <<: *ollama-env
+      OLLAMA_PRELOAD_MODEL: "${OLLAMA_RERANK_MODEL:-qllama/bge-reranker-v2-m3:q8_0}"
+      OLLAMA_PRELOAD_ENABLED: "${OLLAMA_RERANK_PRELOAD_ENABLED:-false}"
+      OLLAMA_PRELOAD_MODE: rerank
+      OLLAMA_NUM_PARALLEL: "${OLLAMA_RERANK_NUM_PARALLEL:-2}"
+      OLLAMA_CONTEXT_LENGTH: "${OLLAMA_RERANK_CONTEXT_LENGTH:-8192}"
+      MODEL_HUB_SERVICE_ID: v-scheduler-ollama-rerank
+      MODEL_HUB_SERVICE_NAME: V-Scheduler Ollama RERANK
+      MODEL_HUB_SERVICE_BASE_URL: http://v-scheduler-ollama-rerank:11434
+      MODEL_HUB_SERVICE_GATEWAY_URL: http://v-scheduler-ollama-rerank:11535
+      MODEL_HUB_SERVICE_ROLE: rerank
 networks:
   vos_default:
     external: true

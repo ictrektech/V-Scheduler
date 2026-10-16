@@ -364,7 +364,7 @@ const app = {
             !m.short && m.kind !== "service" ? `<button class="btn" onclick="app.tryModel('${esc(m.qualified)}')">${VRouterI18n.t("测试")}</button>` : "",
           ]),
         )
-      : `<div class="empty">${VRouterI18n.t("暂无模型")}。${VRouterI18n.t("安装")} Model Hub ${VRouterI18n.t("并启动模型后自动发现")}，${VRouterI18n.t("或在")}「${VRouterI18n.t("上游")}」${VRouterI18n.t("页手动添加")}。</div>`);
+      : `<div class="empty">${VRouterI18n.t("暂无模型")}。${VRouterI18n.t("请在模型仓库下载模型，或在上游页添加后端。")}</div>`);
   },
 
   renderUpstreams() {
@@ -382,7 +382,7 @@ const app = {
             return [
               `<span class="mono" title="${esc(u.base_url)}">${esc(u.name)}</span><div class="hint mono">ID: ${esc(u.id)} · ${esc(u.protocol || (u.source === "model-hub" ? "chat_completions" : "openai"))}${u.model_prefix ? ` · ${VRouterI18n.t("前缀")} ${esc(u.model_prefix)}` : ""}${scope}</div><div class="hint">${VRouterI18n.t("进行中")} ${u.inflight || 0} / ${u.routing?.max_inflight || VRouterI18n.t("不限")} · ${VRouterI18n.t("权重")} ${u.routing?.weight || 1}${u.routing?.disabled ? VRouterI18n.t(" · 已暂停") : ""}</div>`,
               `<span class="pill ${u.kind}">${kindLabel(u.kind)}</span>`,
-              u.source === "api" ? (u.kind === "cloud" ? VRouterI18n.t("云端 API") : VRouterI18n.t("手动添加")) : u.source === "registered" ? VRouterI18n.t("后端注册") : u.source === "video-structure" ? VRouterI18n.t("视频结构化") : "Model Hub",
+              u.source === "api" ? (u.kind === "cloud" ? VRouterI18n.t("云端 API") : VRouterI18n.t("手动添加")) : u.source === "registered" ? VRouterI18n.t("后端注册") : u.source === "video-structure" ? VRouterI18n.t("视频结构化") : u.source === "v-scheduler" ? "V-Scheduler" : "Model Hub",
               u.models,
               this.upstreamStatusPill(u),
               (editable
@@ -398,7 +398,9 @@ const app = {
                     ? `<span class="muted" style="font-size:12px">${VRouterI18n.t("后端租约注册")}</span>`
                   : u.source === "video-structure"
                     ? `<span class="muted" style="font-size:12px">${VRouterI18n.t("自动发现")} · ${VRouterI18n.t("只读")}</span>`
-                    : `<span class="muted" style="font-size:12px">${VRouterI18n.t("由")} Model Hub ${VRouterI18n.t("自动管理")}</span>`),
+                    : u.source === "v-scheduler"
+                      ? `<span class="muted" style="font-size:12px">V-Scheduler · ${VRouterI18n.t("内置后端")}</span>`
+                      : `<span class="muted" style="font-size:12px">${VRouterI18n.t("由")} Model Hub ${VRouterI18n.t("自动管理")}</span>`),
             ];
           }),
           [false, false, false, true, false, false],
@@ -488,6 +490,11 @@ const app = {
   },
   upstreamSupportsEndpoint(u, model, path) {
     const source = u.source || (u.kind === "local" ? "model-hub" : "");
+    if (["model-hub", "v-scheduler"].includes(source)) {
+      const role = (u.role || "").toLowerCase();
+      if (role === "rerank" && path !== "/rerank") return false;
+      if (path === "/rerank" && ["generate", "embed", "embedding"].includes(role)) return false;
+    }
     const chatOnly = u.protocol === "chat_completions" || (!u.protocol && source === "model-hub");
     if (path === "/messages") {
       if (!chatOnly && u.protocol !== "anthropic") return false;
@@ -505,12 +512,12 @@ const app = {
     const role = (u.role || "").toLowerCase();
     const knownCaps = this.modelHasKnownCapability(model);
     if (["/chat/completions", "/responses", "/messages", "/completions"].includes(path)) {
-      if (source === "model-hub" && ["embed", "embedding"].includes(role)) return false;
+      if (["model-hub", "v-scheduler"].includes(source) && ["embed", "embedding"].includes(role)) return false;
       if (knownCaps) return this.modelHasAnyCapability(model, ["chat", "completion", "completions", "generate", "generation", "tools", "thinking"]);
       return model.kind !== "embedding";
     }
     if (path === "/embeddings") {
-      if (source === "model-hub" && role === "generate") return false;
+      if (["model-hub", "v-scheduler"].includes(source) && role === "generate") return false;
       if (knownCaps) return this.modelHasAnyCapability(model, ["embedding", "embeddings"]);
       return model.kind !== "chat";
     }

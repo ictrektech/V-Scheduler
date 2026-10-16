@@ -1,4 +1,23 @@
 export const messages:Record<string,[string,string]>={
+"关于":["About", "關於"],
+"关于 V-Scheduler":["About V-Scheduler", "關於 V-Scheduler"],
+"正在读取版本…":["Reading versions…", "正在讀取版本…"],
+"运行配置":["Installation profile", "執行設定"],
+"Scheduler 与界面":["Scheduler and UI", "Scheduler 與介面"],
+"模型管理":["Model management", "模型管理"],
+"Ollama · 聊天":["Ollama · Chat", "Ollama · 聊天"],
+"Ollama · 向量":["Ollama · Embeddings", "Ollama · 向量"],
+"Ollama · 重排":["Ollama · Reranking", "Ollama · 重排"],
+"无法读取当前镜像版本":["Could not read current image versions", "無法讀取目前鏡像版本"],
+"未提供镜像信息":["Image information unavailable", "未提供鏡像資訊"],
+"镜像信息来自当前安装配置；模型管理与界面复用 Scheduler 镜像。":["Image information comes from the current installation settings. Model management and UI share the Scheduler image.", "鏡像資訊來自目前安裝設定；模型管理與介面共用 Scheduler 鏡像。"],
+
+"端口显示当前安装配置。模型管理 API、选定权重文件下载及三个 Ollama 接口的详细说明见「模型管理 API」。":["Ports reflect installation settings. See Model management API for selected-weight downloads and all three Ollama interfaces.", "連接埠反映目前安裝設定。選定權重下載與三個 Ollama 介面詳見「模型管理 API」。"],
+"宿主机地址 : 映射端口":["Host address : published port", "主機位址 : 映射連接埠"],
+"安装支持的应用后，网关会按发现间隔读取其可用模型与服务。内置三个 Ollama 由本应用直接接入；其他应用支持 Image Studio、V-Voice、V-Music、ML Server 和视频结构化服务。":["The three built-in Ollamas connect directly. Discovery also supports Image Studio, V-Voice, V-Music, ML Server and video structure services.", "三個內建 Ollama 直接接入；另支援 Image Studio、V-Voice、V-Music、ML Server 與影片結構化服務探索。"],
+
+"模型仓库":["Model library","模型儲存庫"],
+"模型管理 API":["Model management API","模型管理 API"],
 "应用和模型自动发现":["Application and model discovery", "應用和模型自動發現"],
 "安装支持的应用后，网关会按发现间隔读取其可用模型与服务。当前支持 Model Hub、Image Studio、V-Voice、V-Music、ML Server 和视频结构化服务。":["The gateway discovers available models and services from supported installed apps at the configured interval: Model Hub, Image Studio, V-Voice, V-Music, ML Server, and Video Structure.", "安裝支援的應用後，閘道會依發現間隔讀取其可用模型與服務。目前支援 Model Hub、Image Studio、V-Voice、V-Music、ML Server 和影片結構化服務。"],
 "V-Voice 就绪后会主动接入调度器，自动绑定已校准的执行器与模型映射。外部云端服务可在上游页面配置。":["Once ready, V-Voice connects to the scheduler and automatically binds calibrated executors and model mappings. Configure external cloud services on the Upstreams page.", "V-Voice 就緒後會主動接入調度器，自動綁定已校準的執行器與模型映射。外部雲端服務可在上游頁面設定。"],

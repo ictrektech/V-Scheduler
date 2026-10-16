@@ -54,6 +54,11 @@ func main() {
 		log.Fatalf("open state: %v", err)
 	}
 
+	go registry.NewSchedulerOllama(reg,
+		envOr("V_SCHEDULER_OLLAMA_QA_URL", "http://v-scheduler-ollama-qa:11535"),
+		envOr("V_SCHEDULER_OLLAMA_EMBEDDING_URL", "http://v-scheduler-ollama-embedding:11535"),
+		envOr("V_SCHEDULER_OLLAMA_RERANK_URL", "http://v-scheduler-ollama-rerank:11535"), *discoveryInterval).Run(context.Background())
+
 	if *modelHubURL != "" {
 		poller := registry.NewModelHubPoller(reg, *modelHubURL, *discoveryInterval)
 		go poller.Run(context.Background())

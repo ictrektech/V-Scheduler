@@ -16,7 +16,7 @@ ARG CARGO_OFFLINE=false
 RUN if [ "$CARGO_OFFLINE" = true ]; then cargo build --release --locked --offline; else cargo build --release --locked; fi
 
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl bzip2 xz-utils && rm -rf /var/lib/apt/lists/*
 COPY --from=backend /build/target/release/v-scheduler /usr/local/bin/v-scheduler
 COPY --from=ui /build/frontend/dist /opt/v-scheduler/ui
 COPY config/voice-calibrations.json /opt/v-scheduler/voice-calibrations.json

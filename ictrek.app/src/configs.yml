@@ -20,16 +20,6 @@ configs:
     minimum: 1024
     maximum: 65535
 
-  - name: V_ROUTER_MODEL_HUB_URL
-    type: string
-    title:
-      zh-CN: Model Hub 后端地址
-      en: Model Hub Backend URL
-    description:
-      zh-CN: V-Router 轮询该地址自动发现本地推理服务和模型。默认使用 VOS 内部服务名；Model Hub 未安装在 vos_default 网络时可改成 http://<vos-host>:35005 形式，留空则禁用自动发现。
-      en: URL polled for local inference services and models. Defaults to the VOS internal service name; switch to http://<vos-host>:35005 if Model Hub is not on the vos_default network, or leave empty to disable discovery.
-    default: http://model-hub-backend:5005
-
   - name: V_ROUTER_IMAGE_STUDIO_URL
     type: string
     title:
@@ -91,3 +81,304 @@ configs:
       zh-CN: 启用 API Key 校验时使用的密钥。仅在“启用 API Key 校验”为真时生效；请使用足够长的随机字符串。
       en: Key checked when API key validation is enabled. Only effective when Require API Key is on; use a long random string.
     default: ""
+
+  - name: MODEL_HUB_SHARED_MODELS_PATH
+    type: path
+    title:
+      zh-CN: 模型共享目录
+      en: Shared Models Directory
+    description:
+      zh-CN: V-Scheduler 管理模型的共享根目录。安装时建议从 NAS 公共目录中选择；其他 VOS app 如需复用模型，安装时应选择同一个公共目录。
+      en: Shared root directory for models managed by V-Scheduler. Pick a NAS public directory at install time; other VOS apps should select the same public directory to reuse the models.
+    default: /data/vos_workspace/model_hub
+    hints: [com.ictrek.model.storage]
+
+  - name: MODEL_HUB_BACKEND_HOST_PORT
+    type: integer
+    title:
+      zh-CN: 模型注册宿主机端口
+      en: Model Registry Host Port
+    description:
+      zh-CN: 暴露 Model Hub 后端管理 API 到宿主机的端口，用于宿主机或外部网络中的推理服务注册、状态查询和模型启动/停止管理。
+      en: Host port that exposes the Model Hub backend management API for inference service registration, status queries, and model start/stop management from the host or external network.
+    default: 36005
+    minimum: 1024
+    maximum: 65535
+
+  - name: HF_MIRROR_ENABLED
+    type: boolean
+    title:
+      zh-CN: 启用 HuggingFace 镜像
+      en: Enable HuggingFace Mirror
+    description:
+      zh-CN: 默认关闭，直接访问 huggingface.co。开启后使用下方 HuggingFace 镜像端点。
+      en: Disabled by default; connect directly to huggingface.co. When enabled, use the HuggingFace mirror endpoint below.
+    default: false
+
+  - name: HF_ENDPOINT
+    type: string
+    title:
+      zh-CN: HuggingFace 镜像端点
+      en: HuggingFace Mirror Endpoint
+    description:
+      zh-CN: 仅在启用 HuggingFace 镜像时生效；可使用 hf-mirror.com 或内部代理地址。关闭镜像时始终使用 huggingface.co。
+      en: Used only when the HuggingFace mirror switch is enabled; accepts hf-mirror.com or an internal proxy. With the switch disabled, always use huggingface.co.
+    default: https://hf-mirror.com
+
+  - name: OLLAMA_PULL_MAX_ATTEMPTS
+    type: integer
+    title:
+      zh-CN: Ollama 下载最大尝试次数
+      en: Ollama Pull Max Attempts
+    description:
+      zh-CN: Ollama 模型下载失败后的最大自动尝试次数。Ollama 会复用已落盘内容继续拉取；设为 1 可关闭自动重试。
+      en: Maximum automatic attempts after an Ollama model pull fails. Ollama reuses downloaded content on the next pull; set to 1 to disable automatic retries.
+    default: 5
+    minimum: 1
+    maximum: 50
+
+  - name: OLLAMA_PULL_RETRY_DELAY_SECONDS
+    type: integer
+    title:
+      zh-CN: Ollama 下载重试初始等待秒数
+      en: Ollama Pull Retry Initial Delay
+    description:
+      zh-CN: Ollama 下载失败后首次自动重试前的等待秒数，后续重试按指数退避增长。
+      en: Initial delay before the first automatic retry after an Ollama pull failure. Later retries use exponential backoff.
+    default: 15
+    minimum: 0
+    maximum: 3600
+
+  - name: OLLAMA_PULL_RETRY_MAX_DELAY_SECONDS
+    type: integer
+    title:
+      zh-CN: Ollama 下载重试最大等待秒数
+      en: Ollama Pull Retry Max Delay
+    description:
+      zh-CN: Ollama 下载自动重试指数退避的单次最大等待秒数。
+      en: Maximum single delay for Ollama pull automatic retry exponential backoff.
+    default: 300
+    minimum: 0
+    maximum: 7200
+
+  - name: OLLAMA_PULL_SLOW_WINDOW_SECONDS
+    type: integer
+    title:
+      zh-CN: Ollama 低速检测时长
+      en: Ollama Slow Download Window
+    description:
+      zh-CN: 下载层连续无进展，或从正常速度持续降为低速达到该秒数后，重新连接并续传。
+      en: Reconnect and resume after this many seconds without progress or at a sustained low speed after a healthy transfer.
+    default: 120
+    minimum: 30
+    maximum: 3600
+
+  - name: OLLAMA_PULL_MIN_SPEED_BYTES_PER_SECOND
+    type: integer
+    title:
+      zh-CN: Ollama 低速阈值（字节/秒）
+      en: Ollama Minimum Download Speed (bytes/s)
+    description:
+      zh-CN: 已经达到正常速度后，持续低于此速度会自动重连。设为 0 可关闭低速检测；无进展检测仍生效。
+      en: Reconnect if speed remains below this value after a healthy transfer. Set to 0 to disable low-speed detection; no-progress detection remains enabled.
+    default: 262144
+    minimum: 0
+    maximum: 104857600
+
+  - name: OLLAMA_CONTEXT_LENGTH
+    type: integer
+    title:
+      zh-CN: QA 模型上下文长度
+      en: QA Model Context Length
+    description:
+      zh-CN: QA / 对话 Ollama 实例的默认上下文长度。
+      en: Default context length for the QA/chat Ollama runtime.
+    default: 24576
+    minimum: 1024
+    maximum: 131072
+
+  - name: OLLAMA_QA_MODEL
+    type: string
+    title:
+      zh-CN: QA 预启动模型
+      en: QA Preload Model
+    description:
+      zh-CN: 启动 Model Hub 时下载并常驻到 QA / 对话 Ollama 实例的模型。
+      en: Model downloaded and kept resident in the QA/chat Ollama runtime when Model Hub starts.
+    default: qwen3.5:2b
+
+  - name: OLLAMA_QA_PRELOAD_ENABLED
+    type: boolean
+    title:
+      zh-CN: 启用 QA 预启动
+      en: Enable QA Preload
+    description:
+      zh-CN: 安装后启动 Model Hub 时，是否自动下载并常驻 QA / 对话模型。关闭后仍会启动 QA Ollama 实例，但不会自动拉取模型。
+      en: Whether to automatically download and keep the QA/chat model resident when Model Hub starts. When disabled, the QA Ollama runtime still starts but does not pull a model automatically.
+    default: false
+
+  - name: OLLAMA_EMBEDDING_MODEL
+    type: string
+    title:
+      zh-CN: Embedding 预启动模型
+      en: Embedding Preload Model
+    description:
+      zh-CN: 启动 Model Hub 时下载并常驻到 embedding Ollama 实例的模型。
+      en: Model downloaded and kept resident in the embedding Ollama runtime when Model Hub starts.
+    default: bge-m3
+
+  - name: OLLAMA_RERANK_MODEL
+    type: string
+    title:
+      zh-CN: Rerank 预启动模型
+      en: Rerank Preload Model
+    description:
+      zh-CN: 启动 Model Hub 时下载并常驻到 rerank Ollama 实例的模型。默认模型走 Ollama /api/embed 接口。
+      en: Rerank model downloaded and kept resident in the rerank Ollama runtime when Model Hub starts. The default model uses Ollama /api/embed.
+    default: qllama/bge-reranker-v2-m3:q8_0
+
+  - name: OLLAMA_EMBEDDING_PRELOAD_ENABLED
+    type: boolean
+    title:
+      zh-CN: 启用 Embedding 预启动
+      en: Enable Embedding Preload
+    description:
+      zh-CN: 安装后启动 Model Hub 时，是否自动下载并常驻 embedding 模型。关闭后仍会启动 embedding Ollama 实例，但不会自动拉取模型。
+      en: Whether to automatically download and keep the embedding model resident when Model Hub starts. When disabled, the embedding Ollama runtime still starts but does not pull a model automatically.
+    default: false
+
+  - name: OLLAMA_RERANK_PRELOAD_ENABLED
+    type: boolean
+    title:
+      zh-CN: 启用 Rerank 预启动
+      en: Enable Rerank Preload
+    description:
+      zh-CN: 安装后启动 Model Hub 时，是否自动下载并常驻 rerank 模型。关闭后仍可在运行管理页面手动启动。
+      en: Whether to automatically download and keep the rerank model resident when Model Hub starts. When disabled, it can still be started manually from Runtime Management.
+    default: false
+
+  - name: OLLAMA_QA_NUM_PARALLEL
+    type: integer
+    title:
+      zh-CN: QA 并行槽位
+      en: QA Parallel Slots
+    description:
+      zh-CN: QA / 对话 Ollama 实例的 OLLAMA_NUM_PARALLEL。
+      en: OLLAMA_NUM_PARALLEL for the QA/chat Ollama runtime.
+    default: 8
+    minimum: 1
+    maximum: 64
+
+  - name: OLLAMA_EMBEDDING_NUM_PARALLEL
+    type: integer
+    title:
+      zh-CN: Embedding 并行槽位
+      en: Embedding Parallel Slots
+    description:
+      zh-CN: Embedding Ollama 实例的 OLLAMA_NUM_PARALLEL。默认给 bge-m3 预留 4 个槽位。
+      en: OLLAMA_NUM_PARALLEL for the embedding Ollama runtime. Defaults to 4 reserved slots for bge-m3.
+    default: 4
+    minimum: 1
+    maximum: 64
+
+  - name: OLLAMA_RERANK_NUM_PARALLEL
+    type: integer
+    title:
+      zh-CN: Rerank 并行槽位
+      en: Rerank Parallel Slots
+    description:
+      zh-CN: Rerank Ollama 实例的 OLLAMA_NUM_PARALLEL。默认给 bge-reranker-v2-m3 预留 2 个槽位。
+      en: OLLAMA_NUM_PARALLEL for the rerank Ollama runtime. Defaults to 2 reserved slots for bge-reranker-v2-m3.
+    default: 2
+    minimum: 1
+    maximum: 16
+
+  - name: OLLAMA_EMBEDDING_CONTEXT_LENGTH
+    type: integer
+    title:
+      zh-CN: Embedding 上下文长度
+      en: Embedding Context Length
+    description:
+      zh-CN: Embedding Ollama 实例的上下文长度。bge-m3 默认按 8192 配置。
+      en: Context length for the embedding Ollama runtime. bge-m3 defaults to 8192.
+    default: 8192
+    minimum: 1024
+    maximum: 32768
+
+  - name: OLLAMA_RERANK_CONTEXT_LENGTH
+    type: integer
+    title:
+      zh-CN: Rerank 上下文长度
+      en: Rerank Context Length
+    description:
+      zh-CN: Rerank Ollama 实例的上下文长度。
+      en: Context length for the rerank Ollama runtime.
+    default: 8192
+    minimum: 1024
+    maximum: 32768
+
+  - name: OLLAMA_KEEP_ALIVE
+    type: string
+    title:
+      zh-CN: 模型常驻时间
+      en: Model Keep Alive
+    description:
+      zh-CN: Ollama keep_alive 参数。默认 -1m 表示常驻直到手动停止或容器停止。
+      en: Ollama keep_alive value. The default -1m keeps models resident until stopped manually or the container exits.
+    default: "-1m"
+
+  - name: SCHEDULER_HOST_PORT
+    type: integer
+    title: {zh-CN: "Scheduler management 宿主端口", en: "Scheduler management host port", zh-TW: "Scheduler management 主機連接埠"}
+    description: {zh-CN: "映射到 VOS 宿主机，详见应用接入指南。可修改以避免端口冲突。", en: "Published on the VOS host; see the integration guide. Change to avoid port conflicts.", zh-TW: "映射至 VOS 主機，詳見接入指南。可修改以避免連接埠衝突。"}
+    default: 38120
+    minimum: 1024
+    maximum: 65535
+
+  - name: OLLAMA_QA_HOST_PORT
+    type: integer
+    title: {zh-CN: "Ollama QA HOST_PORT 宿主端口", en: "Ollama QA HOST_PORT host port", zh-TW: "Ollama QA HOST_PORT 主機連接埠"}
+    description: {zh-CN: "映射到 VOS 宿主机，详见应用接入指南。可修改以避免端口冲突。", en: "Published on the VOS host; see the integration guide. Change to avoid port conflicts.", zh-TW: "映射至 VOS 主機，詳見接入指南。可修改以避免連接埠衝突。"}
+    default: 12434
+    minimum: 1024
+    maximum: 65535
+
+  - name: OLLAMA_QA_GATEWAY_HOST_PORT
+    type: integer
+    title: {zh-CN: "Ollama QA GATEWAY_HOST_PORT 宿主端口", en: "Ollama QA GATEWAY_HOST_PORT host port", zh-TW: "Ollama QA GATEWAY_HOST_PORT 主機連接埠"}
+    description: {zh-CN: "映射到 VOS 宿主机，详见应用接入指南。可修改以避免端口冲突。", en: "Published on the VOS host; see the integration guide. Change to avoid port conflicts.", zh-TW: "映射至 VOS 主機，詳見接入指南。可修改以避免連接埠衝突。"}
+    default: 12535
+    minimum: 1024
+    maximum: 65535
+
+  - name: OLLAMA_EMBEDDING_HOST_PORT
+    type: integer
+    title: {zh-CN: "Ollama EMBEDDING HOST_PORT 宿主端口", en: "Ollama EMBEDDING HOST_PORT host port", zh-TW: "Ollama EMBEDDING HOST_PORT 主機連接埠"}
+    description: {zh-CN: "映射到 VOS 宿主机，详见应用接入指南。可修改以避免端口冲突。", en: "Published on the VOS host; see the integration guide. Change to avoid port conflicts.", zh-TW: "映射至 VOS 主機，詳見接入指南。可修改以避免連接埠衝突。"}
+    default: 12435
+    minimum: 1024
+    maximum: 65535
+
+  - name: OLLAMA_EMBEDDING_GATEWAY_HOST_PORT
+    type: integer
+    title: {zh-CN: "Ollama EMBEDDING GATEWAY_HOST_PORT 宿主端口", en: "Ollama EMBEDDING GATEWAY_HOST_PORT host port", zh-TW: "Ollama EMBEDDING GATEWAY_HOST_PORT 主機連接埠"}
+    description: {zh-CN: "映射到 VOS 宿主机，详见应用接入指南。可修改以避免端口冲突。", en: "Published on the VOS host; see the integration guide. Change to avoid port conflicts.", zh-TW: "映射至 VOS 主機，詳見接入指南。可修改以避免連接埠衝突。"}
+    default: 12536
+    minimum: 1024
+    maximum: 65535
+
+  - name: OLLAMA_RERANK_HOST_PORT
+    type: integer
+    title: {zh-CN: "Ollama RERANK HOST_PORT 宿主端口", en: "Ollama RERANK HOST_PORT host port", zh-TW: "Ollama RERANK HOST_PORT 主機連接埠"}
+    description: {zh-CN: "映射到 VOS 宿主机，详见应用接入指南。可修改以避免端口冲突。", en: "Published on the VOS host; see the integration guide. Change to avoid port conflicts.", zh-TW: "映射至 VOS 主機，詳見接入指南。可修改以避免連接埠衝突。"}
+    default: 12436
+    minimum: 1024
+    maximum: 65535
+
+  - name: OLLAMA_RERANK_GATEWAY_HOST_PORT
+    type: integer
+    title: {zh-CN: "Ollama RERANK GATEWAY_HOST_PORT 宿主端口", en: "Ollama RERANK GATEWAY_HOST_PORT host port", zh-TW: "Ollama RERANK GATEWAY_HOST_PORT 主機連接埠"}
+    description: {zh-CN: "映射到 VOS 宿主机，详见应用接入指南。可修改以避免端口冲突。", en: "Published on the VOS host; see the integration guide. Change to avoid port conflicts.", zh-TW: "映射至 VOS 主機，詳見接入指南。可修改以避免連接埠衝突。"}
+    default: 12537
+    minimum: 1024
+    maximum: 65535

@@ -5,10 +5,11 @@ mod gpu;
 mod identity;
 mod local;
 mod model;
+mod modelhub;
 mod modelinfer;
 mod statistics;
-mod vos;
 mod voice;
+mod vos;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 #[derive(Parser)]
@@ -27,6 +28,10 @@ enum Mode {
         listen: String,
         #[arg(long)]
         ui_dir: Option<PathBuf>,
+    },
+    ModelHub {
+        #[arg(long, default_value = "0.0.0.0:6005")]
+        listen: String,
     },
     Agent {
         #[arg(long)]
@@ -55,6 +60,7 @@ async fn main() -> anyhow::Result<()> {
             )
             .await
         }
+        Mode::ModelHub { listen } => modelhub::serve(listen).await,
         Mode::Agent { config } => agent::run(config).await,
     }
 }
