@@ -121,7 +121,7 @@ const app = {
     $("pgInput").addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
         e.preventDefault();
-        if (!e.repeat) this.pgSend();
+        if (!e.repeat && !this.pgRequest) this.pgSend();
       }
     });
     await this.refresh();
@@ -1042,7 +1042,13 @@ const app = {
     return el;
   },
 
+  pgStop() {
+    if (!this.pgRequest || this.pgRequest.signal.aborted) return;
+    this.pgRequest.abort();
+    $("pgSend").disabled = true;
+  },
   async pgSend() {
+    if (this.pgRequest) { this.pgStop(); return; }
     const input = $("pgInput");
     const text = input.value.trim();
     const model = $("pgModel").value;
@@ -1053,7 +1059,9 @@ const app = {
     input.value = "";
     this.pgAppend("user", text);
     const out = this.pgAppend("assistant", "…");
-    $("pgSend").disabled = true;
+    const controller = new AbortController();
+    this.pgRequest = controller;
+    VRouterI18n.bind($("pgSend"), "textContent", () => VRouterI18n.t("停止"));
     const stream = endpoint.stream && $("pgStream").checked;
     const started = performance.now();
     let firstToken = null;
@@ -1077,6 +1085,7 @@ const app = {
         method: "POST",
         headers,
         body: JSON.stringify(body),
+        signal: controller.signal,
       });
       if (!res.ok) {
         let msg = `HTTP ${res.status}`;
@@ -1142,11 +1151,18 @@ const app = {
       VRouterI18n.bind($("pgMeta"), "textContent", () => `${endpoint.label} · ${model} · ${VRouterI18n.t("上游")} ${res.headers.get("X-VRouter-Upstream") || pinned || VRouterI18n.t("未知")}（${VRouterI18n.t("指定")}） · ${VRouterI18n.t("总耗时")} ${(total / 1000).toFixed(2)}s` +
         (firstToken !== null ? ` · ${VRouterI18n.t("首")} token ${(firstToken / 1000).toFixed(2)}s` : ""));
     } catch (err) {
-      out.remove();
-      this.pgAppend("error", String(err));
+      if (controller.signal.aborted) {
+        out.textContent = answer || VRouterI18n.t("已停止生成");
+        VRouterI18n.bind($("pgMeta"), "textContent", () => VRouterI18n.t("已停止生成"));
+      } else {
+        out.remove();
+        this.pgAppend("error", String(err));
+      }
     } finally {
       clearInterval(progressTimer);
+      this.pgRequest = null;
       $("pgSend").disabled = false;
+      VRouterI18n.bind($("pgSend"), "textContent", () => VRouterI18n.t("发送"));
     }
   },
   playgroundRequestBody(endpoint, model, text, stream) {
@@ -1204,6 +1220,6 @@ const localeChanged = () => {
 };
 window.app = app;
 const started = app.start();
-return { started, select: tab => app.switchTab(tab), updateLocale: () => { i18n.apply(); localeChanged(); }, dispose: () => { clearInterval(app.state.timer); if(window.app===app)delete window.app; } };
+return { started, select: tab => app.switchTab(tab), updateLocale: () => { i18n.apply(); localeChanged(); }, dispose: () => { app.pgStop(); clearInterval(app.state.timer); if(window.app===app)delete window.app; } };
 
 }

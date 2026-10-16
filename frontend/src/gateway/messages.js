@@ -137,6 +137,8 @@ export const VRouterMessages = {
   "无可用接口": {"en": "No available endpoints", "zh-TW": "無可用介面"},
   "无可用上游": {"en": "No available upstreams", "zh-TW": "無可用上游"},
   "输入要向量化的文本": {"en": "Enter text to embed", "zh-TW": "輸入要向量化的文字"},
+  "停止": {"en": "Stop", "zh-TW": "停止"},
+  "已停止生成": {"en": "Generation stopped", "zh-TW": "已停止產生"},
   "发送": {"en": "Send", "zh-TW": "傳送"},
   "输入消息": {"en": "Enter a message", "zh-TW": "輸入訊息"},
   "换行": {"en": "New line", "zh-TW": "換行"},
