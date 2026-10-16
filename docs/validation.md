@@ -166,3 +166,22 @@ Router is reimplemented in `backend/src/router/`; Scheduler, Router and model ma
 AMD and ARM each pass 77 Rust tests, including retained Go JSON state/zero timestamps, routing/circuit recovery, private ownership, multipart bytes, Responses/Messages tools and SSE, WebSocket frames/custom close codes, terminal/truncated/cancelled resource lifecycles and persistent consumable async receipts. Model management passes 41 isolated acceptance checks. The 16 packaging/helper tests and frontend tests/build pass. The actual unified-process API fixture passes identity matrices, CRUD/probes/registrations/resources, usage, all six documentation groups, PGV outage/restart and initial PGV unavailability. Browser checks cover all eight pages and shared About, four image rows without registry paths, model-workspace tabs, desktop/mobile and complete streaming/non-streaming chat without JS/request errors.
 
 These candidate checks use isolated data and synthetic model/identity endpoints. Publication, named-machine upgrades and native model/stability results are recorded separately after execution.
+
+
+### v0.0.30 publication and installed acceptance
+
+[Workflow 38917627885](https://github.com/ictrektech/V-Scheduler/actions/runs/38917627885) completed both GitHub Release and VOS App Store publication. The downloaded `v_scheduler_0.0.30_pull.tar` has exactly one outer member, all six profiles select four containers, and each profile retains the original `ollama_server` image mapping. Both unified service images were pushed and their `v-scheduler` Feishu cells read back successfully.
+
+| VOS test machine | Profile | Healthy containers | Original models retained | Original files retained |
+|---|---|---:|---:|---:|
+| 192 | `l4t` | 4 | 10 | 457 |
+| 229 | `thor-spark` | 4 | 28 | 601 |
+| 232 | `amd` | 4 | 18 | 484 |
+
+Every machine is installed at 0.0.30. Original public-directory UUID/mount, model IDs and file inode/size/mtime were preserved; all nine internal alias/host-port pairs passed. Runtime image identities match the published manifests (Docker's containerd image store can report the manifest digest instead of the configuration digest). About returns four image name:tag entries and marks Scheduler's embedded components.
+
+229 and 232 each pass actual QA streaming, BGE-m3 embedding and rerank calls with nonempty/valid native output and exactly one released permit per call. 192 passes a small installed QA model; BGE-m3 and rerank return the expected resource gate under its existing capacity/observed-memory limits. At measurement the model budgets were 3234 MiB and 2238 MiB, while observed free memory minus the 2048 MiB reserve was about 2199 MiB. These two 192 calls are **not** counted as successful inference. No capacity, safety reserve or model policy was weakened.
+
+All three machines pass actual stream cancellation, native stop confirmation, permit release and a subsequent nonempty response. Their five-minute continuous probes completed 891 (192), 900 (229) and 882 (232) successful endpoint checks with four healthy containers, no OOM and no unexpected restart. This is a bounded five-minute check, not a long-duration soak. 229's installed HybRAG 0.1.72 also passed upload, parsing, retrieval and an answer containing the synthetic fact; its test session/knowledge base were deleted and all seven new permits released. All three machines passed unified-container restart recovery after the probes finished: original model workspace, version/profile, built-in model catalog and Scheduler API recovered.
+
+After restart, all three installed HybRAG instances also passed existing gateway binding, real VOS login, built-in model discovery and service-key non-disclosure checks. No client default configuration was changed.
