@@ -12,6 +12,8 @@ V-Scheduler 统一安装包包含 V-Router 网关与调度控制器，提供一�
 
 试聊沿用现有页面。Router 直接连接自带的三个后端，上游名为 `v-scheduler/ollama-qa`、`v-scheduler/ollama-embedding`、`v-scheduler/ollama-rerank`，不通过 Model Hub 发现。模型管理与调度任务使用独立 API 命名空间。内部别名、外部宿主端口、完整 API 与接管说明见[模型管理接入](docs/model-management.md)及应用内「模型管理 API」。
 
+试聊在等待响应、模型思考和接收正文时显示当前阶段与耗时；思考流与正文分别识别，只有正文作为回答。HTTP 成功后的流错误和没有正文的结束会明确报错，避免空白或一直显示省略号。
+
 ## Host alias、内部端口与宿主机端口
 
 以下是所有 profile 共用的默认映射。`<vos-host>` 为安装该应用的 VOS 宿主机 IP 或域名；192、229、232 三台测试机分别使用 `192.168.1.192`、`192.168.1.229`、`192.168.1.232`。内部地址仅在 Docker `vos_default` 网络解析，完整 URL 在地址前加 `http://`。安装时修改端口参数后，以实际安装值为准；应用内「API 文档 → 模型管理 API」显示配置后的地址。

@@ -1,4 +1,5 @@
 import { createGatewayI18n } from './locale.js';
+import { playgroundStreamEvent } from './playground-stream.js';
 export function mountGateway(root, options) {
 const i18n = createGatewayI18n(root, options.locale);
 const VRouterI18n = i18n;
@@ -1052,6 +1053,17 @@ const app = {
     const stream = endpoint.stream && $("pgStream").checked;
     const started = performance.now();
     let firstToken = null;
+    let phase = "等待服务响应";
+    let reasoningLength = 0;
+    let answer = "";
+    const showProgress = () => {
+      const seconds = ((performance.now() - started) / 1000).toFixed(1);
+      const status = `${VRouterI18n.t(phase)} · ${seconds}s` + (reasoningLength ? ` · ${reasoningLength} ${VRouterI18n.t("思考字符")}` : "");
+      $("pgMeta").textContent = status;
+      if (!answer) out.textContent = status;
+    };
+    showProgress();
+    const progressTimer = setInterval(showProgress, 1000);
     try {
       const headers = await this.authHeaders();
       headers["Content-Type"] = "application/json";
@@ -1074,36 +1086,54 @@ const app = {
         this.pgAppend("error", msg);
         return;
       }
-      out.textContent = "";
+      phase = "等待模型输出";
+      showProgress();
       if (!stream) {
         const data = await res.json();
-        out.textContent = this.playgroundText(endpoint.id, data);
+        answer = this.playgroundText(endpoint.id, data);
+        out.textContent = answer;
       } else {
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let buf = "";
+        const consumeLine = line => {
+          line = line.trim();
+          if (!line.startsWith("data:")) return;
+          const payload = line.slice(5).trim();
+          if (!payload || payload === "[DONE]") return;
+          let data;
+          try { data = JSON.parse(payload); } catch { throw new Error(VRouterI18n.t("流式响应包含无效数据")); }
+          const event = playgroundStreamEvent(endpoint.id, data);
+          if (event.reasoning) {
+            reasoningLength += event.reasoning.length;
+            phase = "模型正在思考";
+          }
+          if (event.text) {
+            if (firstToken === null) firstToken = performance.now() - started;
+            phase = "正在接收回复";
+            answer += event.text;
+            out.textContent = answer;
+            $("pgChat").scrollTop = $("pgChat").scrollHeight;
+          }
+          showProgress();
+        };
         for (;;) {
           const { done, value } = await reader.read();
-          if (done) break;
+          if (done) {
+            buf += decoder.decode();
+            if (buf.trim()) consumeLine(buf);
+            break;
+          }
           buf += decoder.decode(value, { stream: true });
           let idx;
           while ((idx = buf.indexOf("\n")) >= 0) {
-            const line = buf.slice(0, idx).trim();
+            const line = buf.slice(0, idx);
             buf = buf.slice(idx + 1);
-            if (!line.startsWith("data: ")) continue;
-            const payload = line.slice(6);
-            if (payload === "[DONE]") continue;
-            try {
-              const delta = this.playgroundStreamDelta(endpoint.id, JSON.parse(payload));
-              if (delta) {
-                if (firstToken === null) firstToken = performance.now() - started;
-                out.textContent += delta;
-                $("pgChat").scrollTop = $("pgChat").scrollHeight;
-              }
-            } catch {}
+            consumeLine(line);
           }
         }
       }
+      if (!answer) throw new Error(VRouterI18n.t(reasoningLength ? "模型仅返回思考内容，未返回正文" : "模型未返回正文"));
       const total = performance.now() - started;
       VRouterI18n.bind($("pgMeta"), "textContent", () => `${endpoint.label} · ${model} · ${VRouterI18n.t("上游")} ${res.headers.get("X-VRouter-Upstream") || pinned || VRouterI18n.t("未知")}（${VRouterI18n.t("指定")}） · ${VRouterI18n.t("总耗时")} ${(total / 1000).toFixed(2)}s` +
         (firstToken !== null ? ` · ${VRouterI18n.t("首")} token ${(firstToken / 1000).toFixed(2)}s` : ""));
@@ -1111,6 +1141,7 @@ const app = {
       out.remove();
       this.pgAppend("error", String(err));
     } finally {
+      clearInterval(progressTimer);
       $("pgSend").disabled = false;
     }
   },
@@ -1129,12 +1160,6 @@ const app = {
     if (endpoint === "embeddings") return `${VRouterI18n.t("向量")} ${data.data?.length || 0} ${VRouterI18n.t("条")} · ${VRouterI18n.t("维度")} ${data.data?.[0]?.embedding?.length || 0}`;
     if (endpoint === "videos") return JSON.stringify(data, null, 2);
     return data.choices?.[0]?.message?.content ?? JSON.stringify(data);
-  },
-  playgroundStreamDelta(endpoint, payload) {
-    if (endpoint === "responses") return payload.delta || (payload.type === "response.output_text.delta" ? payload.delta : "");
-    if (endpoint === "messages") return payload.delta?.text || payload.content_block?.text || "";
-    if (endpoint === "completions") return payload.choices?.[0]?.text || "";
-    return payload.choices?.[0]?.delta?.content || "";
   },
 };
 
