@@ -138,4 +138,8 @@ HybRAG 0.1.71 的真实 VOS 登录、模型发现和专用网关绑定在三台�
 
 192 随后的只读核验显示可用内存约 3981 MiB、有效系统保留 2048 MiB、未释放许可为零。当前对话和向量模型批准的内存需求分别为 6254、3234 MiB，均无法满足当时的“需求加系统保留”准入条件；没有一次失败后旧许可永久占用的证据。未通过修改预算、改为外部资源或停止其他用户应用来绕过门禁。
 
-脱敏发布与验证产物保存在维护端 `~/dev/build/V-Scheduler/releases/0.0.28/verification.json`，客户端结果保存在 `~/dev/build/vai-client-migration/evidence/hybrag-{192,229,232}-functional.json`。上表仅证明逐模型调用及调度交接，不代替完整文档入库/RAG或旧独立 Router 共存推理验收；接入步骤统一维护在[统一接入指南](application-integration.md)。
+脱敏发布与验证产物保存在维护端 `~/dev/build/V-Scheduler/releases/0.0.28/verification.json`，客户端结果保存在 `~/dev/build/vai-client-migration/evidence/hybrag-{192,229,232}-functional.json`。上表证明逐模型调用及调度交接。接入步骤统一维护在[统一接入指南](application-integration.md)。
+
+### HybRAG 完整文档入库与 RAG 验收
+
+229 的已安装 HybRAG 0.1.71 通过真实 VOS 登录创建本次专用知识库，上传合成文档，等待解析完成，检索命中该文档，再经实际 RAG 会话返回包含文档验证事实的回答。另检查 SSE 的 answer 本体为 180 字符并包含验证事实，未将引用区命中误算为生成回答通过。流程产生七份调度许可，全部正常释放。测试会话与知识库已删除，未修改用户默认模型或既有知识库。脱敏摘要为维护端 `~/dev/build/vai-client-migration/evidence/hybrag-229-rag.json`。此项为代表性文本入库与回答验收，不扩展为任意文件格式、输入规模或模型组合的认证。
