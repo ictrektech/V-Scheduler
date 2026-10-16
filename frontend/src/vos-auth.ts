@@ -48,12 +48,10 @@ const TOKEN_CACHE_KEY = 'v_scheduler_vos_token'
 
 let tokenPromise: Promise<string | null> | null = null
 let memoryToken: { access_token: string; expires_at: number } | null = null
-// 防止"授权确认"弹窗风暴：限制授权流程的触发频率，并在 token 失效后的
-// 冷却期内跳过宿主注入的 token（它可能就是过期来源）。
+// Limit authorization prompts and never reuse the credential rejected by the server.
 let lastAuthorizeAt = 0
-let directTokensBypassUntil = 0
+let rejectedToken: string | null = null
 const AUTHORIZE_MIN_INTERVAL_MS = 30_000
-const DIRECT_TOKEN_BYPASS_MS = 60_000
 
 export async function getVOSBearerToken(): Promise<string | null> {
   if (tokenPromise) return tokenPromise
@@ -64,15 +62,12 @@ export async function getVOSBearerToken(): Promise<string | null> {
 }
 
 export function getCachedVOSBearerToken(): string | null {
-  if (memoryToken?.access_token && Date.now() < memoryToken.expires_at) {
-    return memoryToken.access_token
-  }
   return readCachedToken()
 }
 
-export function clearCachedVOSBearerToken() {
-  memoryToken = null
-  directTokensBypassUntil = Date.now() + DIRECT_TOKEN_BYPASS_MS
+export function clearCachedVOSBearerToken(failedToken?: string) {
+  rejectedToken = failedToken || memoryToken?.access_token || null
+  if (!failedToken || memoryToken?.access_token === failedToken) memoryToken = null
   try {
     sessionStorage.removeItem(TOKEN_CACHE_KEY)
     localStorage.removeItem(TOKEN_CACHE_KEY)
@@ -82,9 +77,8 @@ export function clearCachedVOSBearerToken() {
 }
 
 async function resolveVOSBearerToken(): Promise<string | null> {
-  const bypassDirect = Date.now() < directTokensBypassUntil
-  if (!bypassDirect) {
-    const injected = tokenFromInjectedContext() || tokenFromLocalStorage()
+  {
+    const injected = currentHostToken()
     if (injected) {
       rememberToken({ access_token: injected, expires_in: 3600 })
       return injected
@@ -100,8 +94,8 @@ async function resolveVOSBearerToken(): Promise<string | null> {
     return fastpath.access_token
   }
 
-  if (!bypassDirect) {
-    const injected = tokenFromInjectedContext() || tokenFromLocalStorage()
+  {
+    const injected = currentHostToken()
     if (injected) {
       rememberToken({ access_token: injected, expires_in: 3600 })
       return injected
@@ -110,13 +104,31 @@ async function resolveVOSBearerToken(): Promise<string | null> {
   return null
 }
 
+function usableToken(token: string | null): token is string {
+  if (!token || token === rejectedToken) return false
+  const expiry = tokenExpiry(token)
+  return expiry === null || Date.now() + 30_000 < expiry
+}
+function tokenExpiry(token: string): number | null {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')))
+    return typeof payload.exp === 'number' ? payload.exp * 1000 : null
+  } catch { return null }
+}
+function currentHostToken(): string | null {
+  // Platform storage is refreshed in place; the iframe injection may be an old snapshot.
+  const stored = tokenFromLocalStorage()
+  if (usableToken(stored)) return stored
+  const injected = tokenFromInjectedContext()
+  return usableToken(injected) ? injected : null
+}
 function readCachedToken(): string | null {
-  return memoryToken && Date.now() < memoryToken.expires_at ? memoryToken.access_token : null
+  return memoryToken && usableToken(memoryToken.access_token) && Date.now() < memoryToken.expires_at ? memoryToken.access_token : null
 }
 function cacheToken(token: VOSTokenSet) { rememberToken(token) }
 function rememberToken(token: VOSTokenSet) {
   const ttl = Math.max(1, Number(token.expires_in || 3600) - 60)
-  memoryToken = { access_token: token.access_token, expires_at: Date.now() + ttl * 1000 }
+  memoryToken = { access_token: token.access_token, expires_at: Math.min(Date.now() + ttl * 1000, tokenExpiry(token.access_token) ?? Infinity) }
 }
 
 async function requestFastpathToken(): Promise<VOSTokenSet | null> {
@@ -186,13 +198,13 @@ function tokenFromLocalStorage(): string | null {
     const directKeys = ['core-access', 'VIVIBIT-core-access']
     for (const key of directKeys) {
       const token = tokenFromAccessStore(localStorage.getItem(key))
-      if (token) return token
+      if (usableToken(token)) return token
     }
     for (let i = 0; i < localStorage.length; i += 1) {
       const key = localStorage.key(i)
       if (!key || !key.endsWith('-core-access')) continue
       const token = tokenFromAccessStore(localStorage.getItem(key))
-      if (token) return token
+      if (usableToken(token)) return token
     }
   } catch {
     return null

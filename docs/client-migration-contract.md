@@ -43,8 +43,8 @@
 - 自带三个 Ollama 使用专用自动绑定；该能力不允许其他应用自报预算后立即执行。
 - 开发中的 Voice 新清单按实际 provider、线程和输入范围限定 L4T / AMD，仍须完成最终客户端真实绑定验收，见 [V-Voice 主动接入](v-voice-auto-binding.md)。
 - Music / Desensitize / Image 使用固定应用可信绑定。Thor Music 真实直调及网关 WAV 已验收；Thor Image 真实直调及网关 PNG、业务取消后原生进程退出和预算释放已验收。这些是隔离候选实例结果，尚未作为新版安装发布，见 [固定应用绑定](application-auto-binding.md)。
-- V-Sub 动态私有 namespace 使用独立 Root broker 契约，已通过隔离协议验收；L4T Whisper 原生预算已实测，最终 Root worker 真实绑定仍待验收，见 [V-Sub 可信绑定](v-sub-auto-binding.md)。
-- HybRAG 后台推理凭据协议已通过隔离测试；实际知识库任务、旧后端兼容及客户端最终镜像验收仍须完成。Desensitize 的 OCR / NER 正在按真实线程策略重测资源。
+- V-Sub 动态私有 namespace 使用独立 Root broker 契约，已通过隔离协议验收；L4T 最终 Root worker 的真实 20 秒字幕直调、网关、越界拒绝与业务取消已验收，worker generation 重启仍待补齐，见 [V-Sub 可信绑定](v-sub-auto-binding.md)。
+- HybRAG 后台推理凭据协议已通过隔离测试；实际知识库任务、旧后端兼容及客户端最终镜像验收仍须完成。Desensitize 的 OCR / NER 已分别完成 AMD、Thor、L4T 的真实线程策略资源实测，最终业务 API / 自动绑定仍待验收。
 - 未校准的模型或 profile 保持不可执行，不能用其他机器结果或默认预算代替。
 
 ## 分工与验收

@@ -52,10 +52,14 @@ const app = {
     }
     return headers;
   },
-  async api(method, path, body, raw = false) {
+  async api(method, path, body, raw = false, retried = false) {
     const headers = await this.authHeaders();
     if (body !== undefined) headers["Content-Type"] = "application/json";
     const res = await fetch(API + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+    if (res.status === 401 && !retried && headers.Authorization && !this.gatewayKey()) {
+      VRouterOIDC.clear(headers.Authorization.slice(7));
+      return this.api(method, path, body, raw, true);
+    }
     if (raw) return res;
     const text = await res.text();
     let data = null;

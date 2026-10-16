@@ -1,6 +1,6 @@
 # 固定应用的可信绑定（开发中）
 
-此接入正在验证，尚未随 `0.0.26` 发布。内置 `config/app-calibrations.json` 现记录 Thor 的 MusicGen-small / SD-Turbo，以及 AMD RTX 5880 的 MusicGen-small / Desensitize NER 与 OCR 实测预算；该源码尚未发布到已安装实例，其他 profile/模型仍无对应批准。隔离测试使用的模拟预算不能进入正式清单；真实任务校准、发布和逐机验收完成前，不宣称客户端全面迁移已完成。
+此接入正在验证，尚未随 `0.0.26` 发布。内置 `config/app-calibrations.json` 现记录 Thor 的 MusicGen-small / SD-Turbo，以及 AMD RTX 5880 的 MusicGen-small / Desensitize NER 与 OCR 实测预算；该源码尚未发布到已安装实例，Desensitize 另外包含 Thor / L4T 的独立实测记录；其他 profile/模型仍无对应批准。隔离测试使用的模拟预算不能进入正式清单；真实任务校准、发布和逐机验收完成前，不宣称客户端全面迁移已完成。
 
 控制器只为下列固定 VOS 应用接入，不提供允许调用者自报 URL 和预算的公开注册入口。原 V-Voice 专用绑定保持独立，见 [V-Voice 主动接入](v-voice-auto-binding.md)。
 
@@ -46,6 +46,8 @@
 | `thor` / NVIDIA Thor 统一内存 | SD-Turbo | 4 核 / 8 GiB | 独占 1 槽；内存计入系统 RAM | 512×512、1 张、最多 4 步，prompt / negative 各 4000 字符；其余运行参数完整匹配 |
 | `amd-cuda` / NVIDIA RTX 5880 Ada 独立显存 | MusicGen-small | 4 核 / 8 GiB | 独占 1 槽 / 3 GiB 显存 | 最长 10 秒，prompt / negative 各 512 字符 |
 | `amd` / NVIDIA RTX 5880 Ada 独立显存 | Desensitize NER / OCR | 每次 4 核 / 4 GiB | 独占 1 槽 / 2 GiB 显存 | NER 最多 4096 字符、512 tokens；OCR 最多 4 MiB、1024×1024、单页 |
+| `thor-spark` / NVIDIA Thor 统一内存 | Desensitize NER / OCR | 每次 4 核 / 6 GiB | 独占 1 槽；内存计入系统 RAM | 同上，完整匹配 ORT 1.27.0 等实际运行设置 |
+| `l4t` / Orin 统一内存 | Desensitize NER / OCR | 每次 4 核 / 5 GiB | 独占 1 槽；内存计入系统 RAM | 同上，完整匹配 ORT 1.23.0 等实际运行设置 |
 
 Image 使用实际 `--threads 4` 配置；其他线程或 offload 设置不能借用该预算。Music 使用实际 Torch 4/1 线程、单任务、单加载模型。资源值包含实测余量，不是模型文件大小。
 
@@ -66,3 +68,5 @@ Image Studio 使用原生 `/api/v1` 适配，上游资源身份固定为 `http:/
 Thor 候选实例已通过可信 VOS 安装身份到真实客户端的隔离端到端验收：Music 直调和网关各生成真实 WAV，每次仅占一份许可，超出 10 秒先行拒绝；Image 直调和网关各生成 512×512 PNG，超出 4 步不创建任务，业务取消在观察到原生子进程后确认退出并释放预约。证据目录分别为 `actual-binding/246ce55a6a9b4c5dbb50f77e3def99a8` 和 `actual-binding/d031abd040f844ed936e71a4e98673cf`。这些结果不替代正式包升级后的逐机验收。
 
 AMD Desensitize 记录 `des-local-0485474694a64047ab5e982d6f41d890` 实测 NER 4096 字符截断到真实 512 tokens，以及精确 4 MiB / 1024×1024 OCR 与小图，均有真实输出。NER ORT 线程固定 4/1，OCR 的 det/cls/rec 会话各固定 1/1、OpenCV 1、OMP/MKL/OpenBLAS 环境均为 1，完整库版本及运行设置须匹配。CPU 观测最大 1727 millicores，保守内存合计 3201 MiB（cgroup 采样 961 + 宿主变化 2240），NVML 观测 736 MiB；批准留有余量。旧默认线程达到约 82 核的失败记录不作为批准依据。OCR 网关请求字节上限为 6 MiB，以容纳 4 MiB 图像的 base64 JSON，实际解码后的图像仍受 4 MiB 限额。此次原生校准不替代最终客户端的可信自动绑定与正式安装验收。
+
+Desensitize 的 ARM 预算分别来自 `des-tc229-b0acd2ad3f4f495fb81e6c9fa6f608be`（CPU 1179 millicores，保守内存 4371 MiB）和 `des-tc192-5aa1ed15f71b4460a4d698574f22dc36`（CPU 1003 millicores，保守内存 4091 MiB），均完成最大输入、真实 CUDA provider / 线程核对及卸载退出。统一内存计入 RAM，不将进程显存采样当作独立 VRAM 预算。L4T 未把接近 4 GiB 的观测值批准为无余量的 4 GiB；使用 5 GiB 后仍须通过实际物理空闲内存及安全余量检查，资源不足时保持等待。原生测量通过不代表最终业务 API / 自动绑定已验收。

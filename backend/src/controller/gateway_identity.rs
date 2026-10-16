@@ -1,6 +1,6 @@
 //! Fixed HybRAG background inference identity. This never grants a scheduler
 //! executor, a management role, or a caller-selected callback address.
-use super::app_bindings::{bounded_json, read_private, save_private};
+use super::app_bindings::{bounded_json, bounded_vos_installation, read_private, save_private};
 use super::{Context, Digest, PathBuf, Sha256, Uuid, Value, ensure, json};
 use std::{path::Path, time::Duration};
 const APP: &str = "com.ictrek.hybrag";
@@ -110,7 +110,7 @@ async fn reconcile(configuration: &Path, client: &reqwest::Client) -> anyhow::Re
         identity["sub"] == "com.ictrek.v-scheduler" && identity["enable"] == 1,
         "Scheduler application identity required"
     );
-    let installed = bounded_json(
+    let installed = bounded_vos_installation(
         client
             .get(format!(
                 "{}/v1000/app/detail?app_id={APP}",

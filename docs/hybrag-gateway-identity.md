@@ -20,3 +20,5 @@ POST 使用 Scheduler 的 VOS context Bearer；交接包含版本、单调递增
 控制器私有状态保存在 `/config/gateway-bindings/hybrag.json`，网关卷内只保存摘要。重启和交接重试复用持久凭据及 revision；明确卸载或切回 Model Hub 模式后停用摘要，再次启用时更新凭据与 revision。临时的 VOS/网络错误不会伪装为已卸载。客户端回执必须确认配置及对应 revision，失败后重试。
 
 这不涉及 V-Sub 的每用户动态 namespace/root broker；该协议须独立实现和验收。
+
+候选镜像已完成真实 VOS 身份交接验收：最终 AMD HybRAG 镜像在全新 PostgreSQL 17 向量库完成完整迁移 0→141，真实客户端接受私有绑定、真实 VOS 用户可登录；合法应用 key 能访问模型目录，匿名与假 key 返回 401，管理访问返回 403。证据为 `actual-binding/a4842383fe634bf891cfb98f0ef6610f/identity-checkpoint.json`。此结果尚未覆盖实际模型输出、后台索引或正式包升级，不能据此声明全面迁移完成。

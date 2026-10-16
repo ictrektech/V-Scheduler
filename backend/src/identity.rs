@@ -49,6 +49,7 @@ pub async fn verify(h: &HeaderMap) -> Result<Principal, StatusCode> {
         .json()
         .await
         .map_err(|_| StatusCode::UNAUTHORIZED)?;
+    validate_user_check(&v)?;
     if !administrator(&v) {
         return Err(StatusCode::FORBIDDEN);
     }
@@ -62,10 +63,37 @@ pub async fn verify(h: &HeaderMap) -> Result<Principal, StatusCode> {
     })
 }
 
+// VOS may return HTTP 200 with a failed business envelope for an expired session.
+fn validate_user_check(value: &Value) -> Result<(), StatusCode> {
+    match value.get("code").and_then(Value::as_i64) {
+        Some(0) | None => Ok(()),
+        Some(10002) => Err(StatusCode::FORBIDDEN),
+        Some(10001 | 10099) => Err(StatusCode::UNAUTHORIZED),
+        Some(_) => Err(StatusCode::SERVICE_UNAVAILABLE),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn expired_sessions_are_not_permission_denials() {
+        for code in [10001, 10099] {
+            assert_eq!(
+                validate_user_check(&json!({"code":code})),
+                Err(StatusCode::UNAUTHORIZED)
+            );
+        }
+        assert_eq!(
+            validate_user_check(&json!({"code":10002})),
+            Err(StatusCode::FORBIDDEN)
+        );
+        assert_eq!(
+            validate_user_check(&json!({"code":10003})),
+            Err(StatusCode::SERVICE_UNAVAILABLE)
+        );
+    }
     #[test]
     fn only_enabled_verified_platform_administrators_can_manage() {
         let good =

@@ -55,8 +55,10 @@ const code=computed(()=>exampleTab.value==='json'?JSON.stringify(sample.value,nu
 function prettyTime(value:string){return new Intl.DateTimeFormat(locale.value,{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}).format(new Date(value))}
 const errors:Record<string,string>={UNAUTHENTICATED:'未授权或令牌无效',FORBIDDEN:'权限不足',STATE_CONFLICT:'任务或资源状态不允许此操作',RETRY_NOT_ALLOWED:'任务或资源状态不允许此操作',TASK_NOT_STOPPED:'任务或资源状态不允许此操作',TEMPORARILY_UNAVAILABLE:'调度器暂不可用',WAIT_RESOURCE:'资源忙，请稍后重试',WAIT_RESOURCE_OR_NODE:'资源忙，请稍后重试'}
 async function api(path:string,body?:unknown,method?:string,extra:Record<string,string>={},retried=false){
+ if(vosEmbedded)credential.value=await getVOSBearerToken()||''
+ const requestToken=credential.value
  const response=await fetch(apiBase+path,{method:method||(body===undefined?'GET':'POST'),headers:{Authorization:`Bearer ${credential.value}`,'Content-Type':'application/json',...extra},body:body===undefined?undefined:JSON.stringify(body)})
- if(response.status===401&&vosEmbedded&&!retried){clearCachedVOSBearerToken();credential.value=await getVOSBearerToken()||'';if(credential.value)return api(path,body,method,extra,true)}
+ if(response.status===401&&vosEmbedded&&!retried){clearCachedVOSBearerToken(requestToken);credential.value=await getVOSBearerToken()||'';if(credential.value)return api(path,body,method,extra,true)}
  const text=await response.text();let payload:any;try{payload=JSON.parse(text)}catch{throw Error(`HTTP ${response.status}`)}
  if(!response.ok)throw Error(payload.code||`HTTP ${response.status}`)
  return payload.data

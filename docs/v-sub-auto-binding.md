@@ -1,6 +1,6 @@
 # V-Sub 私有 worker 可信绑定（开发中）
 
-此功能尚未随 `0.0.26` 发布。控制器、网关和模拟 Root 的隔离协议验收已通过；L4T Whisper 的原生计算与取消已测量，最终客户端 Root worker 的真实绑定及正式包安装验收仍待完成。普通用户只需通过 VOS 安装应用，不需要部署额外 agent 或逐模型手工配置。
+此功能尚未随 `0.0.26` 发布。控制器、网关和模拟 Root 的隔离协议验收已通过；L4T Whisper 的原生计算与取消已测量，最终客户端 Root worker 的真实绑定、直调/网关字幕和业务取消已通过；worker generation 重启已通过，正式包安装验收仍待完成。普通用户只需通过 VOS 安装应用，不需要部署额外 agent 或逐模型手工配置。
 
 ## 发现与身份
 
@@ -20,10 +20,16 @@
 
 ## 当前实测模板
 
-内置 `config/vsub-calibrations.json` 仅批准 `l4t` / aarch64 / Orin 统一内存的 `builtin/tiny-q5_1`，使用 CPU whisper.cpp、完整默认参数和注册模型导出路径。生产只挂载共享根目录的 `export` 子目录到 `/modelhub`，所以稳定引用是 `/modelhub/ms/vivibit/v-sub-whisper-tiny-q5_1/current/ggml-tiny-q5_1.bin`；不额外挂载整个共享仓库。预算为 4.5 核、2 GiB RAM、不占 GPU；输入最多 1 MiB、20 秒、不附加 prompt。模板中的完整运行设置必须匹配，其他模型、后端或 profile 不自动借用该预算。
+内置 `config/vsub-calibrations.json` 分别批准 `l4t` / aarch64 / Orin 统一内存及 `thor` / aarch64 / NVIDIA Thor 统一内存的 `builtin/tiny-q5_1`，使用 CPU whisper.cpp、完整默认参数和注册模型导出路径。生产只挂载共享根目录的 `export` 子目录到 `/modelhub`，所以稳定引用是 `/modelhub/ms/vivibit/v-sub-whisper-tiny-q5_1/current/ggml-tiny-q5_1.bin`；不额外挂载整个共享仓库。预算为 4.5 核、2 GiB RAM、不占 GPU；输入最多 1 MiB、20 秒、不附加 prompt。模板中的完整运行设置必须匹配，其他模型、后端或 profile 不自动借用该预算。
 
 模型路径通过共享仓库中已就绪注册文件与实际 realpath 一致性核验后，规范为稳定导出引用；相同文件名不足以取得授权。共享目录仍由安装者选择。
 
 正常计算证据 `vsub-tc192-de26b5081ef4462a8da51518d56a0cc1` 为真实 20 秒音频、8 段非空字幕；取消证据 `vsub-tc192-f9651eab75914f8ebd99362284db16fe` 确认原生进程退出与许可释放。CPU 观测最大 4021 millicores，保守内存观测合计 839 MiB。该内核不提供 cgroup `memory.peak`，采样值不能表述为精确内核峰值。
 
 `scripts/e2e-vsub-bindings.py` 验证私有用户隔离、一次网关认领只占一份许可、直接调用，以及旧许可存在时等待 generation 变更。它使用模拟原生计算，不代替最终客户端的真实 Whisper 验收。
+
+VOS 安装详情含图标及 manifest，采用独立 1 MiB 响应上限；私有 discovery / binding 响应与绑定快照仍限制为 256 KiB。安装详情的图标元数据不作为模型授权内容。失败日志只输出预设静态阶段或校验原因，不记录底层请求 URL、凭据或响应原文。
+
+最终 L4T 候选实例通过真实 VOS 用户、Root 和 Electron worker 的 20 秒默认 Whisper 直调及统一网关调用，各产生一份原生许可并释放。21 秒输入、真实用户将 VAD threshold 改为 0.6 时均先行拒绝且不新增原生许可，恢复默认 0.5 后可重新调用。真实业务上传→handleTask→观察原生 PID 与 birth marker→cancelTask→任务 idle→原生退出→许可释放也已通过。证据分别为 `actual-binding/30f88f68dda843a4ac2df9e10f42544e` 和 `actual-binding/fbaf50136f724836a67291aa0ffe8fae`；它们使用隔离候选容器，不替代正式升级后的验收。
+
+Thor 独立模板使用真实完整运行设置；20 秒正常计算与取消观测的 CPU 最大 4019 millicores、保守 RAM 合计 888 MiB，预算同为 4500 millicores / 2048 MiB / 无 GPU。真实 Root 验收 `actual-binding/f2dc1d22a6e545f69095c8f9939d344d` 已通过直调与网关各一份许可、输入与设置变化拒绝、实际业务取消与原生退出、worker 重启后旧 generation 拒绝及新可信 revision 恢复。L4T 完整 generation 验收为 `actual-binding/8ec1ee929442438185705f97afebb559`。

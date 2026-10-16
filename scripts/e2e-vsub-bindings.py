@@ -84,11 +84,11 @@ try:
  assert request(fx+'/direct',{'input':'fixture'})[0]==200
  assert int(sql('SELECT count(*) FROM vrs_permits;'))==before+2
  print('PASS private discovery isolation and exactly one claimed gateway/direct permit',flush=True)
- held=request(api+'/api/v1/permits',{'executor_id':state['binding']['models'][stats['id']],'upstream_url':state['binding']['upstreams'][stats['id']],'model_id':stats['id']},state['binding']['token']);assert held[0]==200,held
+ held=request(api+'/api/v1/permits',{'executor_id':state['binding']['gateway_executors'][stats['id']],'upstream_url':state['binding']['upstreams'][stats['id']],'model_id':stats['id']},state['gateway']['token']);assert held[0]==200,held
  old_revision=stats['revision'];request(fx+'/state',{'generation':'b'*32});time.sleep(11)
  assert request(fx+'/stats')[1]['revision']==old_revision
  assert request(fx+'/direct',{})[0]==503
- assert request(api+'/api/v1/permits/'+held[1]['data']['permit_id']+'/release',{'stopped':True,'evidence':'fixture_held_admission_without_compute'},state['binding']['token'])[0]==200
+ assert request(api+'/api/v1/permits/'+held[1]['data']['permit_id']+'/release',{'stopped':True,'evidence':'fixture_held_admission_without_compute'},state['gateway']['token'])[0]==200
  until(lambda:request(fx+'/stats')[1]['revision']>old_revision,'new worker generation not rebound')
  fresh=json.loads(docker('exec',controller,'cat','/config/app-bindings/v-sub.json'));assert fresh['binding']['models'][stats['id']]!=state['binding']['models'][stats['id']]
  assert request(fx+'/direct',{})[0]==200

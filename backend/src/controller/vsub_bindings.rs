@@ -1,10 +1,12 @@
 //! V-Sub root-broker bindings. A namespace comes only from the installed app's
 //! authenticated live-worker discovery, never a public registration request.
-use super::app_bindings::{VSUB, bounded_json, hardware, persist, read_private, save_private};
+use super::app_bindings::{
+    VSUB, bounded_json, bounded_vos_installation, hardware, persist, read_private, save_private,
+};
 use super::*;
 use std::{path::Path, time::Duration};
 const APP: &str = "com.ictrek.v-sub";
-const GATEWAY_APP: &str = "v-scheduler.v-sub-gateway";
+const GATEWAY_APP: &str = "v-scheduler.app-gateway.v-sub";
 const ORIGIN: &str = "http://v-sub-backend:7090";
 const CONTROLLER: &str = "http://v-router:8080/scheduler/api/v1";
 fn hex(value: &str, length: usize) -> bool {
@@ -207,7 +209,8 @@ async fn reconcile(
     } else {
         None
     };
-    let context = std::fs::read_to_string("/var/lib/vos-context/access-token")?;
+    let context = std::fs::read_to_string("/var/lib/vos-context/access-token")
+        .context("V-Sub phase: context read")?;
     let vos = crate::identity::base().context("VOS identity endpoint required")?;
     let identity = bounded_json(
         client
@@ -217,14 +220,16 @@ async fn reconcile(
             ))
             .bearer_auth(context.trim())
             .send()
-            .await?,
+            .await
+            .context("V-Sub phase: identity HTTP")?,
     )
-    .await?;
+    .await
+    .context("V-Sub phase: identity response")?;
     ensure!(
         identity["sub"] == "com.ictrek.v-scheduler" && identity["enable"] == 1,
         "Scheduler application identity required"
     );
-    let installed = bounded_json(
+    let installed = bounded_vos_installation(
         client
             .get(format!(
                 "{}/v1000/app/detail?app_id={APP}",
@@ -232,9 +237,11 @@ async fn reconcile(
             ))
             .bearer_auth(context.trim())
             .send()
-            .await?,
+            .await
+            .context("V-Sub phase: installation HTTP")?,
     )
-    .await?;
+    .await
+    .context("V-Sub phase: installation response")?;
     let missing = installed["code"] == 10067
         || (installed["code"] == 0 && installed["data"]["state"] != "installed");
     if missing && old.is_none() {
@@ -252,9 +259,11 @@ async fn reconcile(
                 .get(format!("{ORIGIN}/api/v1/scheduler/discovery"))
                 .bearer_auth(context.trim())
                 .send()
-                .await?,
+                .await
+                .context("V-Sub phase: discovery HTTP")?,
         )
-        .await?;
+        .await
+        .context("V-Sub phase: discovery response")?;
         ensure!(
             value["protocol_version"] == 1
                 && value["app_id"] == APP
@@ -290,7 +299,8 @@ async fn reconcile(
     )
     .bind(node)
     .fetch_one(&a.db)
-    .await?;
+    .await
+    .context("V-Sub phase: node query")?;
     ensure!(
         row.get::<bool, _>("management_enabled"),
         "local node disabled"
@@ -304,16 +314,19 @@ async fn reconcile(
         &discovery,
         approvals,
         old.as_ref(),
-    )?;
+    )
+    .context("V-Sub phase: calibration")?;
     if old.as_ref() != Some(&state) {
-        persist(&a, VSUB, &state, old.as_ref()).await?;
-        save_private(&path, &state)?;
+        persist(&a, VSUB, &state, old.as_ref())
+            .await
+            .context("V-Sub phase: ledger")?;
+        save_private(&path, &state).context("V-Sub phase: private state")?;
     }
     let gateway = PathBuf::from(
         std::env::var("SCHEDULER_GATEWAY_DATA").unwrap_or_else(|_| "/gateway-data".into()),
     )
     .join("vsub-scheduler.local.json");
-    save_private(&gateway, &state["gateway_snapshot"])?;
+    save_private(&gateway, &state["gateway_snapshot"]).context("V-Sub phase: gateway snapshot")?;
     drop(guard);
     if state["binding"]["models"]
         .as_object()
@@ -335,6 +348,57 @@ async fn reconcile(
         );
     }
     Ok(())
+}
+// Only known static validation messages may enter logs. Never format a
+// transport/database error chain containing URLs, credentials or payloads.
+fn safe_failure(error: &anyhow::Error) -> &'static str {
+    const REASONS: &[&str] = &[
+        "V-Sub phase: context read",
+        "V-Sub phase: identity HTTP",
+        "V-Sub phase: identity response",
+        "V-Sub phase: installation HTTP",
+        "V-Sub phase: installation response",
+        "V-Sub phase: discovery HTTP",
+        "V-Sub phase: discovery response",
+        "V-Sub phase: node query",
+        "V-Sub phase: calibration",
+        "V-Sub phase: ledger",
+        "V-Sub phase: private state",
+        "V-Sub phase: gateway snapshot",
+        "Scheduler application identity required",
+        "V-Sub installation check unavailable",
+        "trusted root broker discovery required",
+        "actual V-Sub profile required",
+        "unsupported V-Sub profile",
+        "local node required",
+        "local node disabled",
+        "invalid namespace or worker generation",
+        "model namespace prefix mismatch",
+        "private model declaration mismatch",
+        "private upstream origin mismatch",
+        "duplicate private model identity",
+        "ambiguous private model calibration",
+        "invalid private model resources",
+        "measured private model peak and stop evidence required",
+        "private runtime/input calibration required",
+        "private broker binding pending acceptance",
+        "application binding waits for active or unknown execution",
+        "application executor was disabled or changed",
+        "application service identity was revoked",
+    ];
+    // Prefer an exact validation reason over its surrounding phase marker.
+    let messages = error
+        .chain()
+        .map(|cause| cause.to_string())
+        .collect::<Vec<_>>();
+    for phase in [false, true] {
+        for reason in REASONS {
+            if reason.starts_with("V-Sub phase:") == phase && messages.iter().any(|m| m == reason) {
+                return reason;
+            }
+        }
+    }
+    "transport, storage or response unavailable"
 }
 pub(super) fn start(shared: SharedApp, configuration: PathBuf) {
     if std::env::var_os("VOS_APP_VERSION").is_none() {
@@ -361,11 +425,11 @@ pub(super) fn start(shared: SharedApp, configuration: PathBuf) {
                 }
             })();
             if let Ok(approvals) = result {
-                if reconcile(&shared, &configuration, &client, &approvals)
-                    .await
-                    .is_err()
-                {
-                    eprintln!("V-Sub private calibrated binding pending");
+                if let Err(error) = reconcile(&shared, &configuration, &client, &approvals).await {
+                    eprintln!(
+                        "V-Sub private calibrated binding pending: {}",
+                        safe_failure(&error)
+                    );
                 }
             }
             tokio::time::sleep(Duration::from_secs(10)).await;
@@ -381,6 +445,24 @@ mod tests {
         let discovery = json!({"models":[{"id":id,"native_id":"builtin/tiny-q5_1","namespace":namespace,"generation":"b".repeat(32),"task_type":"model.infer","upstream_url":format!("{ORIGIN}/inference/{namespace}/v1")}]});
         let approvals = json!({"protocol_version":1,"credential_epoch":1,"approvals":[{"architecture":std::env::consts::ARCH,"profile":"l4t","hardware":[],"native_model":"builtin/tiny-q5_1","execution_settings":{"profile":"l4t","runtime":"fixture"},"resources":{"cpu_millicores":4500,"memory_mib":2048},"evidence":{"id":"isolated-unit-only","confirmed_stopped":true,"peak_memory_mib":800,"observed_peak_cpu_millicores":4021},"max_input_bytes":1048576,"model_limits":{"input_bytes":1048576,"duration_seconds":20,"prompt_characters":0},"limits":{}}]});
         (discovery, approvals)
+    }
+    #[test]
+    fn diagnostics_never_log_unknown_error_content() {
+        let secret = anyhow::anyhow!("private token and signed URL must remain private");
+        assert_eq!(
+            safe_failure(&secret),
+            "transport, storage or response unavailable"
+        );
+        assert_eq!(
+            safe_failure(&secret.context("V-Sub phase: ledger")),
+            "V-Sub phase: ledger"
+        );
+        let validation = anyhow::anyhow!("private runtime/input calibration required")
+            .context("V-Sub phase: calibration");
+        assert_eq!(
+            safe_failure(&validation),
+            "private runtime/input calibration required"
+        );
     }
     #[test]
     fn full_namespace_origin_and_live_generation_are_required() {

@@ -309,7 +309,20 @@ pub(super) fn save_private(path: &Path, value: &Value) -> anyhow::Result<()> {
     result
 }
 
-pub(super) async fn bounded_json(mut response: reqwest::Response) -> anyhow::Result<Value> {
+pub(super) async fn bounded_json(response: reqwest::Response) -> anyhow::Result<Value> {
+    bounded_json_limit(response, 262144).await
+}
+
+// VOS app details include the installation icon and manifest. Their bound is
+// separate from private discovery/binding payloads and credential snapshots.
+pub(super) async fn bounded_vos_installation(response: reqwest::Response) -> anyhow::Result<Value> {
+    bounded_json_limit(response, 1048576).await
+}
+
+async fn bounded_json_limit(
+    mut response: reqwest::Response,
+    maximum: usize,
+) -> anyhow::Result<Value> {
     ensure!(
         response.status().is_success(),
         "application discovery unavailable"
@@ -317,7 +330,7 @@ pub(super) async fn bounded_json(mut response: reqwest::Response) -> anyhow::Res
     let mut bytes = Vec::new();
     while let Some(chunk) = response.chunk().await? {
         ensure!(
-            bytes.len().saturating_add(chunk.len()) <= 262144,
+            bytes.len().saturating_add(chunk.len()) <= maximum,
             "application response exceeds bound"
         );
         bytes.extend_from_slice(&chunk);
@@ -477,7 +490,7 @@ async fn reconcile(
         identity["sub"] == "com.ictrek.v-scheduler" && identity["enable"] == 1,
         "Scheduler application identity required"
     );
-    let installed = bounded_json(
+    let installed = bounded_vos_installation(
         client
             .get(format!(
                 "{}/v1000/app/detail?app_id={}",
@@ -662,6 +675,32 @@ mod tests {
         assert!(supported_profile(desensitize, "amd-without-cuda"));
         assert!(!supported_profile(desensitize, "thor"));
         assert!(!supported_profile(desensitize, "amd-cuda"));
+    }
+
+    #[tokio::test]
+    async fn vos_installation_icons_have_a_separate_bounded_response() {
+        fn response(body: Vec<u8>) -> reqwest::Response {
+            axum::http::Response::builder()
+                .status(200)
+                .body(body)
+                .unwrap()
+                .into()
+        }
+        let mut value = json!({"code":0,"data":{"state":"installed","icon_base64":"x".repeat(288032),"manifest_yaml":""}});
+        let padding = 304914 - serde_json::to_vec(&value).unwrap().len();
+        value["data"]["manifest_yaml"] = json!("x".repeat(padding));
+        let bytes = serde_json::to_vec(&value).unwrap();
+        assert_eq!(bytes.len(), 304914);
+        assert!(bounded_json(response(bytes.clone())).await.is_err());
+        assert_eq!(
+            bounded_vos_installation(response(bytes)).await.unwrap()["data"]["state"],
+            "installed"
+        );
+        assert!(
+            bounded_vos_installation(response(vec![b' '; 1048577]))
+                .await
+                .is_err()
+        );
     }
 
     #[test]
