@@ -22,6 +22,8 @@ V-Scheduler 统一安装包包含 V-Router 网关与调度控制器，提供一�
 
 顶部「关于」在所有页面均可打开，显示当前 VOS App 版本、运行配置，以及 Scheduler（内置 Router、模型仓库、界面）和三个 Ollama 实例共四个容器的镜像名与版本标签。
 
+v0.0.31 修复浏览器 `Origin` / `Accept-Encoding` 透传导致原生推理拒绝或桥接解析失败的问题，已更新 192、229、232 并开展七个兼容应用的真实调用回归；逐 profile 结果和环境限制见[客户端验收记录](docs/validation.md#v0031-installed-client-compatibility)。
+
 v0.0.30 将 Router 与模型仓库合入 Scheduler 的同一 Rust 进程，安装共四个容器；原网关/模型仓库别名、九组端口和共享目录保持兼容。192、229、232 的安装、取消恢复、重启恢复与五分钟稳定性结果见[验证记录](docs/validation.md#v0030-publication-and-installed-acceptance)。192 的 BGE-m3 / 重排序仍可能因现有容量和观测内存余量被拒绝，该环境限制未被绕过。
 
 自带 Ollama 调用中断后，控制器自动向固定后端核验原生加载与进程退出状态；停止已确认就释放残留许可并恢复后续调用。活动调用、停止未确认及其他应用的预约不会被清除。待核验的旧调用占用资源时，接口会明确提示停止核验，而非笼统地提示机器忙。

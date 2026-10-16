@@ -185,3 +185,34 @@ Every machine is installed at 0.0.30. Original public-directory UUID/mount, mode
 All three machines pass actual stream cancellation, native stop confirmation, permit release and a subsequent nonempty response. Their five-minute continuous probes completed 891 (192), 900 (229) and 882 (232) successful endpoint checks with four healthy containers, no OOM and no unexpected restart. This is a bounded five-minute check, not a long-duration soak. 229's installed HybRAG 0.1.72 also passed upload, parsing, retrieval and an answer containing the synthetic fact; its test session/knowledge base were deleted and all seven new permits released. All three machines passed unified-container restart recovery after the probes finished: original model workspace, version/profile, built-in model catalog and Scheduler API recovered.
 
 After restart, all three installed HybRAG instances also passed existing gateway binding, real VOS login, built-in model discovery and service-key non-disclosure checks. No client default configuration was changed.
+
+
+### v0.0.31 installed client compatibility
+
+[Workflow 38923451687](https://github.com/ictrektech/V-Scheduler/actions/runs/38923451687) completed GitHub Release and VOS App Store publication. The downloaded pull package selects four containers for each of the six supported profiles. The existing build scripts published the AMD and ARM unified images and read back the Feishu component cells; Ollama images remain selected from the original `ollama_server` cells.
+
+Actual V-ChatCut calls exposed a Rust Router regression: forwarding browser `Origin` caused Ollama to return 403, which the client labelled as an API-key failure. The same native request succeeded without `Origin`. The previous Go proxy stripped both `Origin` and `Accept-Encoding`; the unified Rust proxy now does the same for server-to-server HTTP/WebSocket forwarding. A rejecting fake native provider reproduces the failure before the fix and passes both streaming and non-streaming calls afterward. All 78 Rust tests pass on AMD and ARM.
+
+192 (`l4t`), 229 (`thor-spark`) and 232 (`amd`) were upgraded through VOS to 0.0.31 with their original installation selections. Each has four healthy containers, matching published unified-image identity, all nine internal/host endpoint pairs, and four `name:tag` About entries. The original shared-directory UUID/mount and all model IDs/files were retained: 192 has 10 models/457 files, 229 has 28/601, 232 has 18/484. File retention checks compare inode, size and mtime.
+
+The compatibility tests use installed clients, actual VOS login and native inference, with synthetic inputs and isolated temporary knowledge bases/jobs. They cover representative integration paths rather than every editor feature. Browser-header tests go through the unified gateway; direct client tests additionally cover native Music, NER/OCR and HybRAG indexing/retrieval/chat. Unsupported profiles and resource refusals are recorded separately from successful inference.
+
+
+| Installed client / actual operation | 192 `l4t` | 229 `thor-spark` | 232 `amd` |
+|---|---|---|---|
+| V-ChatCut: VOS login, catalog, non-streaming and streaming QA | Pass | Pass | Pass after transient 429 retry |
+| V-Voice: generated WAV and ASR transcript through the gateway | TTS resource gate (429); dependent ASR not completed | Pass | Pass |
+| V-Sub: private worker, 20-second native ASR via gateway | Pass | Pass | No calibrated AMD private worker/model; unavailable |
+| V-Music: real 10-second WAV, direct and gateway | No approved L4T binding (503) | Pass | Pass |
+| Image Studio: asynchronous SD-Turbo PNG through gateway | Selected shared model not ready; unavailable | Pass, native job and Scheduler task succeeded | No approved AMD binding (503) |
+| desensitize: native NER and image OCR replacement | Resource gate (429) | Pass | Pass |
+| HybRAG: VOS identity, gateway binding and model discovery | Pass | Pass | Pass |
+| HybRAG: upload → parse → retrieve → answer containing synthetic fact | Parsing failed, zero inference permits; not passed | Pass, seven permits released | Pass on retry, seven permits released; initial `WAIT_STOP_CONFIRMATION` recorded |
+
+232's first V-ChatCut test received a transient 429 between sequential inference requests. A bounded five-second retry completed both responses with exactly two released permits. The test waits for native stop acknowledgement rather than assuming permit release is synchronous with the response body. HybRAG's first answer stream reported `WAIT_STOP_CONFIRMATION` after successful parsing and retrieval; its five acquired permits all released and its temporary session/knowledge base were deleted. These first-attempt failures are retained as integration limitations, even when a later retry succeeds.
+
+Each machine passed a fresh bounded one-minute health probe during the client checks: 192 and 229 each completed 180 successful probes, 232 completed 177; zero errors, no new restarts/OOM, and four healthy containers. This is not a long-duration soak. No resource reserve, approved model budget, profile calibration or client default was weakened to obtain a pass. Test-created knowledge bases/sessions and image jobs are removed; unrelated user data and pre-existing tasks are preserved.
+
+Private operational evidence is stored under `~/dev/build/V-Scheduler/compatibility-20261016-231300/` on the test hosts and the local development machine. `gateway-browser.json`, `post-clients.json`, per-case logs, `upgrade/audit.json` and `stability-0.0.31.json` retain distinct success, blocked and unavailable outcomes. Older baseline results remain separate from post-upgrade results; a zero script exit alone is not counted as native inference success.
+
+232 subsequently passed the complete RAG retry: the returned answer contained the synthetic fact, all seven new permits released, and both test session and knowledge base were deleted. The transient first-attempt refusal remains recorded above. Final idle audits on all three machines found no active/suspect permits, running compute tasks, native active slots or model downloads.
