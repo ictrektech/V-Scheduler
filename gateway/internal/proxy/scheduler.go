@@ -159,23 +159,13 @@ func (t *scheduledTransport) RoundTrip(r *http.Request) (*http.Response, error) 
 	}
 	if u.Source == registry.SourceSchedulerOllama && os.Getenv("V_ROUTER_SCHEDULER_REQUIRED") == "true" {
 		model, _ := r.Context().Value(modelKey{}).(string)
-		ready := time.NewTimer(time.Minute)
-		defer ready.Stop()
-		for {
-			if cfg, exists, err := BuiltinSchedulerConfig(u.ID + "/" + model); exists {
-				if err != nil {
-					return nil, &AdmissionError{503, "built-in Ollama scheduler binding invalid"}
-				}
-				return t.withConfig(r, u, cfg)
+		if cfg, exists, err := BuiltinSchedulerConfig(u.ID + "/" + model); exists {
+			if err != nil {
+				return nil, &AdmissionError{503, "built-in Ollama scheduler binding invalid"}
 			}
-			select {
-			case <-r.Context().Done():
-				return nil, r.Context().Err()
-			case <-ready.C:
-				return nil, &AdmissionError{503, "built-in Ollama automatic registration is not ready"}
-			case <-time.After(250 * time.Millisecond):
-			}
+			return t.withConfig(r, u, cfg)
 		}
+		return nil, &AdmissionError{503, "built-in Ollama automatic registration is not ready"}
 	}
 	t.once.Do(t.load)
 	// 自动绑定使用独立且受限的网关身份，逐请求读原子快照，使重试/轮换无需重启。
@@ -320,23 +310,6 @@ func (t *scheduledTransport) withConfig(r *http.Request, u registry.Upstream, cf
 		lease, err = acquireDelegation(r.Context(), cfg, policy.ExecutorID, u.BaseURL, model, *delegatedProof)
 	} else {
 		lease, err = acquirePermit(r.Context(), cfg, policy.ExecutorID, u.BaseURL, model)
-		// Own backends need no manual enrollment. Wait for their compute turn
-		// instead of turning ordinary contention into an immediate failed chat.
-		if u.Source == registry.SourceSchedulerOllama && AdmissionStatus(err) == 429 {
-			waiting := time.NewTimer(5 * time.Minute)
-			defer waiting.Stop()
-		waitForBuiltin:
-			for AdmissionStatus(err) == 429 {
-				select {
-				case <-r.Context().Done():
-					return nil, r.Context().Err()
-				case <-waiting.C:
-					break waitForBuiltin
-				case <-time.After(500 * time.Millisecond):
-					lease, err = acquirePermit(r.Context(), cfg, policy.ExecutorID, u.BaseURL, model)
-				}
-			}
-		}
 	}
 	if err != nil {
 		if errors.Is(err, ErrSchedulerAdmission) {

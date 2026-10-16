@@ -22,6 +22,8 @@ V-Scheduler 统一安装包包含 V-Router 网关与调度控制器，提供一�
 
 顶部「关于」在所有页面均可打开，显示当前 VOS App 版本、运行配置和 Scheduler、模型管理、Router、三个 Ollama 实例的镜像名与版本标签。
 
+本地同步推理在资源忙时及时返回 HTTP 429，自动绑定尚未就绪时返回 HTTP 503；网关不再静默等待数分钟而使客户端超时。
+
 试聊沿用现有页面。Router 直接连接自带的三个后端，上游名为 `v-scheduler/ollama-qa`、`v-scheduler/ollama-embedding`、`v-scheduler/ollama-rerank`，不通过 Model Hub 发现。模型管理与调度任务使用独立 API 命名空间。内部别名、外部宿主端口、完整 API 与接管说明见[模型管理接入](docs/model-management.md)及应用内「模型管理 API」。
 
 试聊在等待响应、模型思考和接收正文时显示当前阶段与耗时；思考流与正文分别识别，只有正文作为回答。HTTP 成功后的流错误和没有正文的结束会明确报错，避免空白或一直显示省略号。

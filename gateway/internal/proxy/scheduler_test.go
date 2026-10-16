@@ -8,9 +8,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestSchedulerCloudBypassAndLocalReservation(t *testing.T) {
@@ -236,5 +238,32 @@ func TestDefaultSchedulerConfigUsesPrivateStateDirectory(t *testing.T) {
 	transport.load()
 	if transport.config == nil || transport.err != nil {
 		t.Fatal("private scheduler configuration was not loaded")
+	}
+}
+
+func TestBuiltinBusyAdmissionReturnsWithoutHiddenRetries(t *testing.T) {
+	calls := 0
+	scheduler := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls++; w.WriteHeader(429) }))
+	defer scheduler.Close()
+	cfg := &SchedulerConfig{URL: scheduler.URL, Token: strings.Repeat("x", 32), DefaultLocal: registry.SchedulerPolicy{Mode: "permit", ExecutorID: "local", Completion: "synchronous"}}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	u := registry.Upstream{Kind: registry.KindLocal, Source: registry.SourceSchedulerOllama}
+	req, _ := http.NewRequestWithContext(ctx, "POST", "http://unused.invalid/v1/embeddings", nil)
+	_, err := (&scheduledTransport{base: http.DefaultTransport}).withConfig(req, u, cfg)
+	if AdmissionStatus(err) != 429 || calls != 1 || ctx.Err() != nil {
+		t.Fatalf("busy admission was hidden: status=%d calls=%d context=%v", AdmissionStatus(err), calls, ctx.Err())
+	}
+}
+func TestBuiltinMissingBindingReturnsBeforeClientTimeout(t *testing.T) {
+	t.Setenv("V_ROUTER_SCHEDULER_REQUIRED", "true")
+	t.Setenv("V_ROUTER_STATE_PATH", filepath.Join(t.TempDir(), "state.json"))
+	u := registry.Upstream{ID: "v-scheduler/ollama-qa", Kind: registry.KindLocal, Source: registry.SourceSchedulerOllama, BaseURL: "http://unused.invalid/v1"}
+	ctx, cancel := context.WithTimeout(WithModel(WithUpstream(context.Background(), u), "test"), time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, "POST", u.BaseURL+"/chat/completions", nil)
+	_, err := (&scheduledTransport{base: http.DefaultTransport}).RoundTrip(req)
+	if AdmissionStatus(err) != 503 || ctx.Err() != nil {
+		t.Fatalf("missing binding was hidden: status=%d context=%v", AdmissionStatus(err), ctx.Err())
 	}
 }
