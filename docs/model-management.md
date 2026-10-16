@@ -35,7 +35,7 @@ Model management moves old internal5005/host35005 to6005/36005, plus1000. Origin
 
 VOS browser model-management prefix: `/app/com.ictrek.v-scheduler/model-hub`. API gateway alternative: `/api/com.ictrek.v-scheduler/model-hub`. Append `/api/v1/...` to either. Opening the unified UI directly at host22888 uses `/model-hub/api/v1/...`. Scheduler APIs remain `/scheduler/api/v1/...` on host22888. Model download tasks and scheduler execution tasks are different resources.
 
-Model management preserves Model Hub's anonymous API contract, including writes. HTTPS does not authenticate these API calls. Keep native management and model-management ports on a trusted network. Scheduler and unified inference authentication remain unchanged; downloading a model does not grant an execution approval.
+Model management preserves Model Hub's anonymous API contract, including writes. HTTPS does not authenticate these API calls. Keep native management and model-management ports on a trusted network. Scheduler and unified inference authentication remain unchanged; external backend enrollment remains separate from downloading models; the app’s own three Ollama backends are registered automatically.
 
 ## Download exact weights
 
@@ -74,3 +74,9 @@ Other apps can mount the installer-selected shared directory read-only at `/mode
 The global **About / 关于** button shows the VOS App version, installation profile and each configured image name/tag (without a registry URL), including the separate model-management service and three Ollama instances. Values come from the actual packaged profile, including distinct L4T/Thor Ollama tags; absent metadata is shown as unknown.
 
 Full operation reference: `http://v-scheduler-model-hub:6005/openapi.json`, host `http://<vos-host>:36005/openapi.json`, and the application API tab.
+
+## Built-in Ollama automatic scheduling
+
+Installing the app authorizes its own three Ollama backends. The controller discovers downloaded models and registers their scoped inference executors and private gateway bindings automatically. No per-model approval, SSH or additional agent is required. Existing Playground and unified `/v1/*` endpoints use these bindings directly.
+
+The initial policy uses a conservative memory estimate of twice the installed model size plus 1 GiB, one shared RAM pool on unified-memory devices, and exclusive use of the node's configured compute budget. This estimate is not a measured peak. Automatic registration preserves the installation context/output settings and explicit inference parameters; it does not impose a separate smaller context/output limit. The buffered request limit is 32 MiB. When compute is busy, unified requests wait for up to five minutes and honor client cancellation. Calls set `keep_alive=0` to release the model after inference. Normal permit accounting, node drain/revocation and physical resource checks remain active. Runtime discovery reads `/api/show` when tags omit capabilities and excludes rerank models from the QA list.

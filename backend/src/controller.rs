@@ -1,5 +1,6 @@
 mod allocations;
 mod management;
+mod ollama;
 use crate::model::*;
 use anyhow::{Context, ensure};
 use axum::extract::FromRef;
@@ -405,6 +406,7 @@ pub async fn serve(
         config: runtime.clone(),
     };
     crate::voice::start(path, runtime, a.db.clone());
+    ollama::start(shared.clone());
     let ticker_state = shared.clone();
     tokio::spawn(async move {
         loop {

@@ -66,3 +66,29 @@ func TestSchedulerOllamaDirectRolesAndRecovery(t *testing.T) {
 		t.Fatal("backend must recover")
 	}
 }
+
+func TestNativeShowCapabilitiesKeepRerankerOutOfQA(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/tags":
+			json.NewEncoder(w).Encode(map[string]any{"models": []any{map[string]string{"name": "chat"}, map[string]string{"name": "rank"}, map[string]string{"name": "embed"}}})
+		case "/api/show":
+			var body map[string]string
+			json.NewDecoder(r.Body).Decode(&body)
+			caps := map[string][]string{"chat": {"completion"}, "rank": {"completion", "rerank"}, "embed": {"embedding"}}
+			json.NewEncoder(w).Encode(map[string]any{"capabilities": caps[body["model"]]})
+		default:
+			json.NewEncoder(w).Encode(map[string]any{"data": []any{map[string]string{"id": "chat"}, map[string]string{"id": "rank"}, map[string]string{"id": "embed"}}})
+		}
+	}))
+	defer backend.Close()
+	reg := New()
+	p := NewSchedulerOllama(reg, backend.URL, backend.URL, backend.URL, time.Second)
+	p.pollOnce(context.Background())
+	for role, expected := range map[string]string{"qa": "chat", "embedding": "embed", "rerank": "rank"} {
+		models := reg.ModelsOf("v-scheduler/ollama-" + role)
+		if len(models) != 1 || models[0].ID != expected {
+			t.Fatalf("wrong %s models: %+v", role, models)
+		}
+	}
+}

@@ -1064,7 +1064,12 @@ const app = {
       });
       if (!res.ok) {
         let msg = `HTTP ${res.status}`;
-        try { msg = (await res.json()).error?.message || msg; } catch {}
+        try {
+          const raw = (await res.text()).trim().slice(0, 2000);
+          let detail = raw;
+          try { const data = JSON.parse(raw); detail = data.error?.message || data.msg || data.detail || raw; } catch {}
+          if (typeof detail === "string" && detail) msg += `: ${detail}`;
+        } catch {}
         out.remove();
         this.pgAppend("error", msg);
         return;

@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -204,6 +205,24 @@ func (p *ModelHubPoller) fetchOllamaCapabilities(ctx context.Context, svc modelH
 		name := m.Model
 		if name == "" {
 			name = m.Name
+		}
+		if name != "" && len(m.Capabilities) == 0 {
+			// Native /api/tags often omits capabilities; /api/show is the
+			// authoritative model contract, independent of its filename or role.
+			payload, _ := json.Marshal(map[string]any{"model": name})
+			request, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(svc.BaseURL, "/")+"/api/show", bytes.NewReader(payload))
+			if err == nil {
+				request.Header.Set("Content-Type", "application/json")
+				if response, err := p.client.Do(request); err == nil {
+					var show struct {
+						Capabilities []string `json:"capabilities"`
+					}
+					if response.StatusCode == 200 && json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&show) == nil {
+						m.Capabilities = show.Capabilities
+					}
+					response.Body.Close()
+				}
+			}
 		}
 		if name != "" && len(m.Capabilities) > 0 {
 			models[name] = append([]string(nil), m.Capabilities...)

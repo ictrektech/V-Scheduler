@@ -157,6 +157,26 @@ func (t *scheduledTransport) RoundTrip(r *http.Request) (*http.Response, error) 
 	if os.Getenv("V_ROUTER_SCHEDULER_REQUIRED") == "true" && !requestInUpstream(r, u) {
 		return nil, &AdmissionError{503, "model redirect left its approved resource endpoint"}
 	}
+	if u.Source == registry.SourceSchedulerOllama && os.Getenv("V_ROUTER_SCHEDULER_REQUIRED") == "true" {
+		model, _ := r.Context().Value(modelKey{}).(string)
+		ready := time.NewTimer(time.Minute)
+		defer ready.Stop()
+		for {
+			if cfg, exists, err := BuiltinSchedulerConfig(u.ID + "/" + model); exists {
+				if err != nil {
+					return nil, &AdmissionError{503, "built-in Ollama scheduler binding invalid"}
+				}
+				return t.withConfig(r, u, cfg)
+			}
+			select {
+			case <-r.Context().Done():
+				return nil, r.Context().Err()
+			case <-ready.C:
+				return nil, &AdmissionError{503, "built-in Ollama automatic registration is not ready"}
+			case <-time.After(250 * time.Millisecond):
+			}
+		}
+	}
 	t.once.Do(t.load)
 	// 自动绑定使用独立且受限的网关身份，逐请求读原子快照，使重试/轮换无需重启。
 	if u.ID == "app-v-voice" {
@@ -238,7 +258,11 @@ func (t *scheduledTransport) withConfig(r *http.Request, u registry.Upstream, cf
 	if r.Method == http.MethodGet && !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") || r.Method == http.MethodDelete || strings.HasSuffix(r.URL.Path, "/cancel") || u.Protocol == registry.ProtocolImageStudio && strings.HasSuffix(r.URL.Path, "/api/v1/inputs") {
 		return t.base.RoundTrip(r)
 	}
-	if err := validateInputBudget(r, policy, cfg.RequireModelPolicy); err != nil {
+	strictInput := cfg.RequireModelPolicy && !(u.Source == registry.SourceSchedulerOllama && strings.HasPrefix(policy.ExecutorID, "builtin-ollama-auto-"))
+	if err := validateInputBudget(r, policy, strictInput); err != nil {
+		return nil, err
+	}
+	if err := boundBuiltinInput(r, u, policy); err != nil {
 		return nil, err
 	}
 	var delegatedProof *delegation
@@ -284,6 +308,23 @@ func (t *scheduledTransport) withConfig(r *http.Request, u registry.Upstream, cf
 		lease, err = acquireDelegation(r.Context(), cfg, policy.ExecutorID, u.BaseURL, model, *delegatedProof)
 	} else {
 		lease, err = acquirePermit(r.Context(), cfg, policy.ExecutorID, u.BaseURL, model)
+		// Own backends need no manual enrollment. Wait for their compute turn
+		// instead of turning ordinary contention into an immediate failed chat.
+		if u.Source == registry.SourceSchedulerOllama && AdmissionStatus(err) == 429 {
+			waiting := time.NewTimer(5 * time.Minute)
+			defer waiting.Stop()
+		waitForBuiltin:
+			for AdmissionStatus(err) == 429 {
+				select {
+				case <-r.Context().Done():
+					return nil, r.Context().Err()
+				case <-waiting.C:
+					break waitForBuiltin
+				case <-time.After(500 * time.Millisecond):
+					lease, err = acquirePermit(r.Context(), cfg, policy.ExecutorID, u.BaseURL, model)
+				}
+			}
+		}
 	}
 	if err != nil {
 		if errors.Is(err, ErrSchedulerAdmission) {

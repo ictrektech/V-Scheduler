@@ -10,6 +10,40 @@ V-Scheduler 统一安装包包含 V-Router 网关与调度控制器，提供一�
 
 试聊沿用现有页面。Router 直接连接自带的三个后端，上游名为 `v-scheduler/ollama-qa`、`v-scheduler/ollama-embedding`、`v-scheduler/ollama-rerank`，不通过 Model Hub 发现。模型管理与调度任务使用独立 API 命名空间。内部别名、外部宿主端口、完整 API 与接管说明见[模型管理接入](docs/model-management.md)及应用内「模型管理 API」。
 
+## Host alias、内部端口与宿主机端口
+
+以下是所有 profile 共用的默认映射。`<vos-host>` 为安装该应用的 VOS 宿主机 IP 或域名；192、229、232 三台测试机分别使用 `192.168.1.192`、`192.168.1.229`、`192.168.1.232`。内部地址仅在 Docker `vos_default` 网络解析，完整 URL 在地址前加 `http://`。安装时修改端口参数后，以实际安装值为准；应用内「API 文档 → 模型管理 API」显示配置后的地址。
+
+| 功能 | Docker host alias:内部端口（含全部兼容别名） | 宿主机 host:外部端口 | 主要路径与用途 |
+|---|---|---|---|
+| 统一推理、网关管理及统一界面 | `v-router:8080`、`v-router-backend:8080` | `<vos-host>:22888` | `/v1/*` 推理；`/api/v1/*` 网关管理；`/` 界面 |
+| 调度接管与资源管理 | `v-scheduler:38120`、`v-scheduler-backend:38120`、`v-scheduler-frontend:38120` | `<vos-host>:38120` | `/api/v1/*` 任务、许可、节点、执行器及统计 |
+| 模型仓库管理 | `v-scheduler-model-hub:6005`、`v-scheduler-model-hub-backend:6005` | `<vos-host>:36005` | `/api/v1/*` 模型、选中文件下载、更新、导入、别名、引用和后端管理；`/openapi.json` |
+| Ollama QA 原生管理 | `v-scheduler-ollama-qa:11434` | `<vos-host>:12434` | `/api/*` 模型清单、拉取、详情、加载/卸载及原生推理 |
+| Ollama QA 推理网关 | `v-scheduler-ollama-qa:11535` | `<vos-host>:12535` | `/v1/chat/completions` 聊天；`/metrics` 指标 |
+| Ollama Embedding 原生管理 | `v-scheduler-ollama-embedding:11434` | `<vos-host>:12435` | `/api/*` 原生模型管理及向量推理 |
+| Ollama Embedding 推理网关 | `v-scheduler-ollama-embedding:11535` | `<vos-host>:12536` | `/v1/embeddings` 向量；`/metrics` 指标 |
+| Ollama Rerank 原生管理 | `v-scheduler-ollama-rerank:11434` | `<vos-host>:12436` | `/api/*` 原生模型管理及重排推理 |
+| Ollama Rerank 推理网关 | `v-scheduler-ollama-rerank:11535` | `<vos-host>:12537` | `/v1/rerank` 重排；`/metrics` 指标 |
+
+可配置的外部端口参数：
+
+- `V_ROUTER_HOST_PORT`：默认 `22888`。
+- `SCHEDULER_HOST_PORT`：默认 `38120`。
+- `MODEL_HUB_BACKEND_HOST_PORT`：默认 `36005`。
+- `OLLAMA_QA_HOST_PORT`：默认 `12434`。
+- `OLLAMA_QA_GATEWAY_HOST_PORT`：默认 `12535`。
+- `OLLAMA_EMBEDDING_HOST_PORT`：默认 `12435`。
+- `OLLAMA_EMBEDDING_GATEWAY_HOST_PORT`：默认 `12536`。
+- `OLLAMA_RERANK_HOST_PORT`：默认 `12436`。
+- `OLLAMA_RERANK_GATEWAY_HOST_PORT`：默认 `12537`。
+
+同一行的兼容别名指向同一个容器和端口，不产生额外服务或宿主机映射。`host.docker.internal` 是网关容器中的 Docker 宿主机别名（`host-gateway`），用于访问宿主机已发布端口，例如 `host.docker.internal:38120`；它不是新增服务，也没有单独的固定端口。
+
+网关还在同一 `22888` 端口提供 `/scheduler/api/v1/*` 调度代理和 `/model-hub/api/v1/*` 模型管理代理。VOS 内统一入口为 `/app/com.ictrek.v-scheduler/`；模型管理前缀为 `/app/com.ictrek.v-scheduler/model-hub/api/v1/*`，网关 API 前缀为 `/api/com.ictrek.v-scheduler`。三个 Ollama 的 `11535` 是各后端推理/指标入口；跨后端统一模型名和调度入口使用 `v-router:8080/v1/*` 或 `<vos-host>:22888/v1/*`。
+
+这些别名由 V-Scheduler 自己声明；原 Model Hub 的别名、端口及共享目录保持原应用所有权。共享模型目录仍在安装时选择，沿用原 Model Hub 所选公共目录即可。
+
 0.0.20 起，“节点管理”通过 VOS App 发现和管理节点：读取 ModelInfer 已有节点及监控、保存预算规划、管理已受控接入节点的预算与执行器、撤销服务凭据并查看操作记录。用户无需逐台部署 Agent。ModelInfer 远端调度控制接口已预留，验证前保持不可调度；底层固定多节点在线许可协议已通过隔离验收，不等于真实多机部署已经接入。见[节点管理](docs/node-management.md)。
 
 0.0.21 修复同日升级可能沿用旧控制器镜像的问题：所有运行配置均强制检查并拉取当前发布镜像，避免安装版本已更新而后台代码仍停留在旧版。
@@ -134,3 +168,7 @@ Agent 是本应用在节点上运行的资源采集与任务执行后台进程�
 任务列表支持状态、应用、节点组合筛选，并搜索业务任务 ID、调度任务 ID、应用和执行器。默认加载最近 200 条；存在更早任务时明确标记筛选范围，并提供“加载更早任务”。打开的详情独立查询原任务，不随列表翻页消失。
 
 `GET /api/v1/tasks/{id}/events?cursor=0&limit=50` 返回单个可见任务的事件，按最新在前排列。`next_cursor` 用于查询更早事件，无更早页时为 null。原 `/events` 的正向增量读取契约不变。
+
+内置三个 Ollama 后端和已下载模型由应用自动纳管，可直接使用现有试聊，无需逐模型批准、SSH 或手写策略。统一调用保留 Ollama 的安装配置和请求参数，采用基于模型大小的保守内存估算，默认独占本机已配置的计算预算；资源忙时等待计算资源。详见 [模型管理接入](docs/model-management.md#built-in-ollama-automatic-scheduling)。
+
+自动纳管回归测试：在已同步并完成构建的 Linux 测试机执行 `python3 scripts/e2e-builtin-ollama.py`。测试使用独立 PostgreSQL、内部 Docker 网络与模拟后端，覆盖自动登记、私有凭据、三类路由、流式输出、资源等待、许可释放和重启恢复；真实设备验证仍需单独完成。

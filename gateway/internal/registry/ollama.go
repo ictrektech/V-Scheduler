@@ -69,6 +69,12 @@ func (p *SchedulerOllama) pollOnce(ctx context.Context) {
 			}
 			compatible := models[:0]
 			for _, model := range models {
+				if !HasKnownCapability(model.Capabilities) {
+					continue
+				}
+				if svc.roleString() != "rerank" && modelHasAnyCapability(model, "rerank", "reranking") {
+					continue
+				}
 				if supports(upstream, model, path) {
 					compatible = append(compatible, model)
 				}

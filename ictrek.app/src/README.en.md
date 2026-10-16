@@ -1,6 +1,6 @@
 # V-Scheduler Resource Scheduling
 
-The unified package includes the model gateway and scheduling controller. Model clients use host port 22888 /v1; scheduling uses /scheduler/api/v1. It discovers available models from Model Hub, Image Studio, V-Voice, V-Music, ML Server, and Video Structure. Once ready, V-Voice connects automatically and binds calibrated executors and model mappings. See Application integration in the UI.
+The unified package includes the model gateway and scheduling controller. Model clients use host port 22888 /v1; scheduling uses /scheduler/api/v1. Router connects directly to its three built-in Ollama backends without Model Hub discovery. It also discovers available models from Image Studio, V-Voice, V-Music, ML Server, and Video Structure. Once ready, V-Voice connects automatically and binds calibrated executors and model mappings. See Application integration in the UI.
 
 Version __APP_VERSION__
 
@@ -17,3 +17,23 @@ VOS administrator sign-in and automatic local collection are supported. HA and d
 The dashboard shows 24-hour queue wait, occupancy P50/P95, task failure rate and model permit history. Live task details include a status timeline, per-attempt assignment/stop times, waiting guidance and controlled retry. Combine status, application and node filters, search application task IDs, and load older tasks beyond the initial 200. P95 requires at least 20 valid samples; old permits retain unknown release times.
 
 Node management reuses the installed ModelInfer app’s remote-node inventory and existing monitoring. Users do not install Agents on individual machines. Save budget plans, manage approved nodes, executors and scoped service credentials, and inspect activity. Plans do not grant execution; remote scheduling control awaits verification. Existing deployments remain managed by their owning VOS app.
+
+## Docker aliases and host ports
+
+The defaults below apply to every profile. Replace `<vos-host>` with the installed VOS host IP/name. Docker aliases resolve on `vos_default`; prefix addresses with `http://`. All listed host ports are installer parameters. The in-app API guide displays the configured values.
+
+| Function | All Docker aliases : internal port | Host : published port | API / installer parameter |
+|---|---|---|---|
+| Unified inference, gateway management and UI | `v-router:8080`, `v-router-backend:8080` | `<vos-host>:22888` | `/v1/*`, `/api/v1/*`, `/`; `V_ROUTER_HOST_PORT` |
+| Scheduling, takeover and resources | `v-scheduler:38120`, `v-scheduler-backend:38120`, `v-scheduler-frontend:38120` | `<vos-host>:38120` | `/api/v1/*`; `SCHEDULER_HOST_PORT` |
+| Model library management | `v-scheduler-model-hub:6005`, `v-scheduler-model-hub-backend:6005` | `<vos-host>:36005` | `/api/v1/*`, `/openapi.json`; `MODEL_HUB_BACKEND_HOST_PORT` |
+| Ollama QA native management | `v-scheduler-ollama-qa:11434` | `<vos-host>:12434` | `/api/*`; `OLLAMA_QA_HOST_PORT` |
+| Ollama QA inference and metrics | `v-scheduler-ollama-qa:11535` | `<vos-host>:12535` | `/v1/chat/completions`, `/metrics`; `OLLAMA_QA_GATEWAY_HOST_PORT` |
+| Ollama embedding native management | `v-scheduler-ollama-embedding:11434` | `<vos-host>:12435` | `/api/*`; `OLLAMA_EMBEDDING_HOST_PORT` |
+| Ollama embedding inference and metrics | `v-scheduler-ollama-embedding:11535` | `<vos-host>:12536` | `/v1/embeddings`, `/metrics`; `OLLAMA_EMBEDDING_GATEWAY_HOST_PORT` |
+| Ollama rerank native management | `v-scheduler-ollama-rerank:11434` | `<vos-host>:12436` | `/api/*`; `OLLAMA_RERANK_HOST_PORT` |
+| Ollama rerank inference and metrics | `v-scheduler-ollama-rerank:11535` | `<vos-host>:12537` | `/v1/rerank`, `/metrics`; `OLLAMA_RERANK_GATEWAY_HOST_PORT` |
+
+Aliases in one row reach the same container/port. `host.docker.internal` is the gateway container's `host-gateway` alias for the Docker host, e.g. `host.docker.internal:38120`; it is not a separate service or port.
+
+The gateway also proxies scheduling at port 22888 `/scheduler/api/v1/*` and model management at `/model-hub/api/v1/*`. The VOS UI uses `/app/com.ictrek.v-scheduler/`; the model-management API uses `/app/com.ictrek.v-scheduler/model-hub/api/v1/*`; the gateway API prefix is `/api/com.ictrek.v-scheduler`. Use the unified gateway `/v1/*` for cross-backend model names and scheduling. Retain the original Model Hub installer-selected public directory to adopt existing models in place.
