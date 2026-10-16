@@ -107,3 +107,15 @@
 - 229 新版 Controller/Gateway、独立 PostgreSQL 与最终 Music 镜像构成隔离真实链路，外层持有实际 Scheduler 的 12 GiB 许可：实际 VOS context 身份及目标安装 profile 核验、固定地址自动交接、业务直连与统一网关各生成真实 10 秒 WAV，每条调用恰好一笔停止后已释放的内部许可；duration=11 两条路径均在计算前拒绝。生产实例未替换。证据 `~/dev/build/V-Scheduler/actual-binding/246ce55a6a9b4c5dbb50f77e3def99a8/result.json`。
 - HybRAG 新身份的隔离真实 Controller/PostgreSQL/Gateway 协议测试通过：固定可信回调、推理凭据不能调用管理/图片接口、错误凭据拒绝、重启不重置凭据及修订、卸载停用、重装轮换、旧 Model Hub 模式停用。使用模拟 VOS/HybRAG 端点，不将此结果当作真实 HybRAG 后台索引验收。脚本 `scripts/e2e-gateway-identity.py`。
 - AMD Rust 44 项及 Go 全包测试通过，新增 Voice 能力/模型输入限额、管理后预算匹配、目标应用 profile、Image 原生根地址和后台身份权限测试。新的 Voice 客户端边界、Image 原生异步绑定和 HybRAG 客户端仍待最终镜像联调；V-Sub 动态 namespace 协议亦须独立完成，不因此宣称全面迁移或最终发版完成。
+
+## 0.0.27 统一模型仓库与会话修复（2026-10-16）
+
+发布流水线 `38865702637` 的测试、GitHub Release 与 VOS App Store 均成功，发布包六种 profile 的镜像映射、公共目录参数、三个默认关闭的预热开关已核对。Rust 50 项、前端 17 项、AMD / ARM Go 全包测试及模型仓库 41 项隔离 API 验收通过；接口验收包括选中文件下载、追加、更新、续传重试、导入及推理后端管理。
+
+192=`l4t`、229=`thor-spark`、232=`amd` 均安装 `0.0.27`，每台 6 个容器健康、9 组 Docker 别名与宿主端口通过验证，运行镜像与实际发布的 manifest/config digest 相符。各自原 Model Hub 公共目录保留，原模型/文件分别为 3/18、24/566、12/46；原文件 inode、大小和 mtime 均保留。关于接口仅输出镜像名与 tag。
+
+三台旧版都曾将无效 VOS 会话误报为 HTTP 403 `FORBIDDEN`；更新后均为 HTTP 401 `UNAUTHENTICATED`。浏览器候选验证覆盖 HTTP 401 后重新获取凭据、宿主令牌轮换后持续轮询、无需页面刷新恢复连接，控制台无相关错误。真实非管理员仍受原权限检查。
+
+229 使用试聊默认请求 `qwen3:4b` 连续两轮取得完整正文与 `[DONE]`；耗时 60.66 / 10.70 秒，正文 159 / 110 字符，各一份许可均释放。证据为 `install-20261016/v27-terminal-close-regression.json`。内置模型绑定缺失及时返回 503，资源忙及时返回 429，避免网关静默等待一至五分钟后撞客户端超时。
+
+客户端可信绑定与实际任务范围见 [固定应用](application-auto-binding.md)、[V-Voice](v-voice-auto-binding.md)、[V-Sub](v-sub-auto-binding.md)及 [HybRAG](hybrag-gateway-identity.md)。192 Voice 的可用内存、232 现有 Model Hub QA 的 CPU 占用仍限制部分正向计算；容量拒绝与认证专项验证不计为原生模型输出通过。
