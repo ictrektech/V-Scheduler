@@ -16,7 +16,7 @@ Installer `MODEL_HUB_SHARED_MODELS_PATH`, default `/data/vos_workspace/model_hub
 - [x] Aliases and container references: preserved data, management APIs and discoverable UI.
 - [x] API guide: exact file download/append examples, task lifecycle, file mount layouts, external service contract, complete operation list.
 - [x] Installation: every old Model Hub parameter, preloads false, native platform Ollama images, stable unique DNS aliases, all necessary host ports.
-- [ ] Release validation: Rust tests, existing scheduler tests, Vue build, fixture API/download/import/takeover/runtime checks, native AMD/ARM images, Feishu readback, one complete release and App Store publication.
+- [x] Release validation: Rust tests, existing scheduler tests, Vue build, fixture API/download/import/takeover/runtime checks, native AMD/ARM images, Feishu readback, one complete release and App Store publication.
 
 ## Endpoint plan
 
@@ -24,4 +24,12 @@ Model management internal `v-scheduler-model-hub:6005`, host default `36005` (ol
 
 ## Verification before publication
 
-Native AMD and ARM Rust suites: 34 tests each. Vue: 10 tests and production build. Packaging/dependency contracts: 14 tests. Isolated API lifecycle: 46 checks on each native runtime image, including unchanged legacy inode/bytes, selected downloads, resume, rollback, runtime confirmation and version metadata. Browser checks cover the unified API documentation entry, removal of the duplicate model-library guide tab, model/file selection, runtime cards, all three locales, mobile width, existing Playground streaming and global About beside language on API and model-library pages. Both runtime images pass ZIP/TAR/gzip/bzip2/xz imports, flat model IDs, config-only archives and 3 MiB multipart uploads. AMD/ARM scheduler and gateway images use the fixed 20261016 tags; original Ollama images remain unchanged. Registry manifests and four Feishu component cells are checked before the single package release.
+Native AMD and ARM Rust suites: 34 tests each. Vue: 10 tests and production build. Packaging/dependency contracts: 15 tests. Isolated API lifecycle: 46 checks on each native runtime image, including unchanged legacy inode/bytes, selected downloads, resume, rollback, runtime confirmation and version metadata. Browser checks cover the unified API documentation entry, removal of the duplicate model-library guide tab, model/file selection, runtime cards, all three locales, mobile width, existing Playground streaming and global About beside language on API and model-library pages. Both runtime images pass ZIP/TAR/gzip/bzip2/xz imports, flat model IDs, config-only archives and 3 MiB multipart uploads. AMD/ARM scheduler and gateway images use the fixed 20261016 tags; original Ollama images remain unchanged. Registry manifests and four Feishu component cells are checked before the single package release.
+
+## Published result
+
+v0.0.23: https://github.com/ictrektech/V-Scheduler/releases/tag/v0.0.23
+
+GitHub Actions run 38834563141 completed both release and VOS App Store jobs successfully. The downloaded 51,200-byte package has SHA-256 `c5b169dc19861abc66470abb0a0fb9b4557f8790e5e84774f62af4f60d97b7ac`. Its outer archive contains only app.tar.gz; all six profiles include the correct scheduler/gateway 20261016 images and original Ollama 20261012 platform tags, rendered app version, stable aliases, shared-path hint and disabled preloads. Packaging resolved PGV from the published catalog as >=0.0.49. v0.0.22 stopped during packaging and was never published; its hyperlink-cell parsing failure was corrected before the complete v0.0.23 release. Feishu hyperlink repositories are read from their text property, leaving the shared spreadsheet unchanged.
+
+Verification used isolated fixtures on native build hosts. It did not upgrade the installed VOS instance or claim a hardware inference test on its DGX nodes.
