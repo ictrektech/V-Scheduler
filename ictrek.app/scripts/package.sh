@@ -215,7 +215,7 @@ import json,sys
 def text(value):
  if isinstance(value,str):return value.strip()
  if isinstance(value,list):return "".join(text(item) for item in value).strip()
- if isinstance(value,dict):return text(value.get("text") or value.get("link") or "")
+ if isinstance(value,dict):return text(value.get("text") or "")
  return ""
 data=json.load(sys.stdin);assert data.get("code")==0
 print(text(data["data"]["valueRange"]["values"][0][0]))')"
