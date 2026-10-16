@@ -13,8 +13,8 @@ async function open(){dialog.value?.showModal();loading.value=true;error.value='
   <div class="about-title"><h2>{{t('关于 V-Scheduler')}}</h2><button class="quiet" :aria-label="t('关闭')" @click="dialog?.close()">×</button></div>
   <p v-if="loading" role="status">{{t('正在读取版本…')}}</p>
   <template v-else><dl class="version-summary"><div><dt>VOS App</dt><dd>{{info?.version?'v'+info.version:t('未知')}}</dd></div><div><dt>{{t('运行配置')}}</dt><dd>{{info?.profile||t('未知')}}</dd></div></dl><p v-if="error" class="error" role="alert">{{t(error)}}</p>
-   <div v-for="image in info?.images||[]" :key="image.service" class="image-version"><div><strong>{{t(labels[image.service]||image.service)}}</strong></div><code>{{image.image?.split('/').pop()||t('未提供镜像信息')}}</code></div>
-   <p class="version-note">{{t('镜像信息来自当前安装配置；模型管理与界面复用 Scheduler 镜像。')}}</p>
+   <div v-for="image in info?.images||[]" :key="image.service" class="image-version"><div><strong>{{t(labels[image.service]||image.service)}}<span v-if="image.components?.length>1"> · Router · {{t('模型仓库')}}</span></strong></div><code>{{image.image?.split('/').pop()||t('未提供镜像信息')}}</code></div>
+   <p class="version-note">{{t('镜像信息来自当前安装配置；Scheduler 内置 Router、模型仓库与界面。')}}</p>
   </template>
  </dialog>
 </template>

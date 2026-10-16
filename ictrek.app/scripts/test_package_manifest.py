@@ -78,7 +78,7 @@ class ModelManagementPackagingTests(unittest.TestCase):
     def test_every_profile_has_stable_storage_and_three_distinct_ollamas(self):
         for profile in ('amd','amd-without-cuda','arm','arm-without-cuda','l4t','thor-spark'):
             selected=[s for s in self.compose['services'].values() if profile in s.get('profiles',[])]
-            storage=[s for s in selected if s.get('command',[None])[0]=='model-hub']
+            storage=[s for s in selected if s.get('command',[None])[0]=='controller']
             self.assertEqual(len(storage),1)
             self.assertIn('v-scheduler-model-hub',storage[0]['networks']['vos_default']['aliases'])
             self.assertIn('${MODEL_HUB_BACKEND_HOST_PORT:-36005}:6005',storage[0]['ports'])
@@ -90,7 +90,7 @@ class ModelManagementPackagingTests(unittest.TestCase):
                 service=services[0]
                 self.assertTrue(service['image'].startswith('${OLLAMA_SERVER_'))
                 self.assertEqual(service['environment']['MODEL_HUB_REGISTER_URL'],'http://v-scheduler-model-hub:6005')
-                self.assertEqual(service['volumes'],storage[0]['volumes'])
+                self.assertTrue(set(service['volumes']).issubset(storage[0]['volumes']))
                 self.assertEqual(len(service['ports']),2)
                 ports.extend(service['ports'])
                 self.assertEqual(service.get('runtime')=='nvidia',profile not in ('amd-without-cuda','arm-without-cuda'))
@@ -102,11 +102,24 @@ class ModelManagementPackagingTests(unittest.TestCase):
         for sheet in ('AMD_with_cuda','ARM_with_cuda','ARM_without_cuda','l4t','thor_spark'):
             self.assertIn(sheet,script)
         for name,service in self.compose['services'].items():
-            if name.startswith('gateway-'):
+            if name.startswith('controller-'):
                 env=service['environment']
                 self.assertEqual(env['V_ROUTER_MODEL_HUB_URL'],'')
                 for role in ('QA','EMBEDDING','RERANK'):
                     self.assertEqual(env[f'V_SCHEDULER_OLLAMA_{role}_URL'],f'http://v-scheduler-ollama-{role.lower()}:11535')
+
+    def test_router_is_embedded_and_legacy_addresses_remain_compatible(self):
+        self.assertFalse(any(name.startswith('gateway-') for name in self.compose['services']))
+        for profile in ('amd','amd-without-cuda','arm','arm-without-cuda','l4t','thor-spark'):
+            selected=[s for s in self.compose['services'].values() if profile in s.get('profiles',[])]
+            self.assertEqual(len(selected),4)
+            controller=next(s for s in selected if s.get('command',[None])[0]=='controller')
+            self.assertTrue({'v-router','v-router-backend','v-scheduler-gateway','v-scheduler'}.issubset(controller['networks']['vos_default']['aliases']))
+            self.assertIn('${V_ROUTER_HOST_PORT:-22888}:8080',controller['ports'])
+            self.assertIn('${SCHEDULER_HOST_PORT:-38120}:38120',controller['ports'])
+            self.assertEqual(controller['environment']['V_ROUTER_ADDR'],':8080')
+            self.assertEqual(controller['environment']['V_ROUTER_STATE_PATH'],'/gateway-data/state.json')
+        self.assertNotIn('V_ROUTER_BACKEND|',(self.root/'scripts/package.sh').read_text())
 
 
     def test_original_ollama_rich_cells_and_platform_tag_prefixes(self):

@@ -1,5 +1,6 @@
 export const messages:Record<string,[string,string]>={
 "等待停止确认":["Waiting for confirmed stop", "等待停止確認"],
+"镜像信息来自当前安装配置；Scheduler 内置 Router、模型仓库与界面。":["Image versions come from the installed configuration; Scheduler includes Router, model management and the UI.", "鏡像資訊來自目前安裝設定；Scheduler 內建 Router、模型倉庫與介面。"],
 "关于":["About", "關於"],
 "关于 V-Scheduler":["About V-Scheduler", "關於 V-Scheduler"],
 "正在读取版本…":["Reading versions…", "正在讀取版本…"],

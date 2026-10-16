@@ -32,4 +32,6 @@ VOS installation does not require `database.env` at Compose creation time. Missi
 
 Build hosts may reuse a verified Rust 1.97 SDK cache with `SCHEDULER_RUST_BUILD_IMAGE=<local-cache-image>`; `SCHEDULER_CARGO_OFFLINE=1` refuses downloads when its Cargo registry is complete. These affect only the build stage; the runtime remains Debian and the source is copied from the synchronized checkout. The default remains the official Rust 1.97 image.
 
-All controller and gateway services inherit `pull_policy: always`. Image tags use a fixed platform/date, so multiple releases on the same day may update the same tag. VOS may pre-pull only missing images; Compose creation must also refresh existing tags so package upgrades cannot retain an older cached controller.
+All four runtime containers inherit `pull_policy: always`. Image tags use a fixed platform/date, so multiple releases on the same day may update the same tag. VOS may pre-pull only missing images; Compose creation must also refresh existing tags so package upgrades cannot retain an older cached controller.
+
+The Scheduler Rust process embeds Router and model management. Every profile has four containers: Scheduler plus QA, embedding and rerank Ollama. All legacy gateway/model-management aliases and host ports remain mapped to Scheduler. The shared models directory is the same installation-selected mount at `/data`; gateway state remains at `/gateway-data`. Publish only `v-scheduler` AMD/ARM images for unified service changes; reuse the original profile-specific `ollama_server` image.

@@ -28,23 +28,33 @@ pub fn openapi() -> Value {
 
 pub fn version() -> Value {
     let scheduler = std::env::var("V_SCHEDULER_IMAGE").ok();
-    let gateway = std::env::var("V_ROUTER_BACKEND_IMAGE").ok();
     let ollama = std::env::var("OLLAMA_SERVER_IMAGE").ok();
-    let mut images = vec![];
-    for (service, image) in [
-        ("scheduler", scheduler.clone()),
-        ("model-management", scheduler),
-        ("router", gateway),
+    let embedded = std::env::var("SCHEDULER_EMBEDDED_MODEL_HUB").as_deref() == Ok("true");
+    let mut components = vec![("scheduler", scheduler.clone())];
+    if !embedded {
+        components.push(("model-management", scheduler.clone()));
+        components.push((
+            "router",
+            std::env::var("V_ROUTER_BACKEND_IMAGE").ok().or(scheduler),
+        ));
+    }
+    components.extend([
         ("ollama-qa", ollama.clone()),
         ("ollama-embedding", ollama.clone()),
         ("ollama-rerank", ollama),
-    ] {
-        let tag = image
-            .as_ref()
-            .and_then(|image| image.rsplit('/').next())
-            .and_then(|name| name.rsplit_once(':').map(|(_, tag)| tag));
-        let name = image.as_ref().and_then(|value| value.rsplit('/').next());
-        images.push(json!({"service":service,"image":name,"tag":tag}));
-    }
+    ]);
+    let images = components
+        .into_iter()
+        .map(|(service, image)| {
+            let name = image.as_ref().and_then(|value| value.rsplit('/').next());
+            let tag = name.and_then(|value| value.rsplit_once(':').map(|(_, tag)| tag));
+            let includes = if service == "scheduler" && embedded {
+                vec!["scheduler", "router", "model-management"]
+            } else {
+                vec![service]
+            };
+            json!({"service":service,"image":name,"tag":tag,"components":includes})
+        })
+        .collect::<Vec<_>>();
     json!({"version":std::env::var("VOS_APP_VERSION").ok(),"profile":std::env::var("MODEL_HUB_PROFILE").ok(),"images":images})
 }

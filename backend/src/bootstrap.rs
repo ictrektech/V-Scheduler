@@ -72,10 +72,7 @@ async fn initialize(
         } else {
             "PGV_SETUP_UNAVAILABLE"
         };
-        return Err((
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(json!({"code":code})),
-        ));
+        return Err((StatusCode::SERVICE_UNAVAILABLE, Json(json!({"code":code}))));
     }
     if let Some(sender) = shutdown.take() {
         let _ = sender.send(());
@@ -138,13 +135,20 @@ async fn provision(config: &Path, headers: &HeaderMap) -> anyhow::Result<()> {
         .database(&setting("POSTGRES_DB", "postgres"));
     // Older PGV installations can still differ from the injected platform
     // password; identify that case without exposing credentials.
-    let mut admin = PgConnection::connect_with(&options).await.map_err(|error| {
-        if error.as_database_error().and_then(|db| db.code()).as_deref() == Some("28P01") {
-            anyhow::Error::new(PgvCredentialRequired)
-        } else {
-            anyhow::Error::new(error)
-        }
-    })?;
+    let mut admin = PgConnection::connect_with(&options)
+        .await
+        .map_err(|error| {
+            if error
+                .as_database_error()
+                .and_then(|db| db.code())
+                .as_deref()
+                == Some("28P01")
+            {
+                anyhow::Error::new(PgvCredentialRequired)
+            } else {
+                anyhow::Error::new(error)
+            }
+        })?;
     let dir = config.parent().context("config directory missing")?;
     std::fs::create_dir_all(dir)?;
     let pending = dir.join("database-provision.json");
@@ -215,7 +219,15 @@ async fn provision(config: &Path, headers: &HeaderMap) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn wait(config: PathBuf, listen: &str, ui: Option<PathBuf>) -> anyhow::Result<()> {
+pub fn waiting() -> Router {
+    Router::new().route("/api/v1/setup",get(||async{Json(json!({"code":"OK","data":{"ready":true,"database_ready":false,"version":std::env::var("VOS_APP_VERSION").unwrap_or_else(|_|env!("CARGO_PKG_VERSION").into())}}))})).fallback(||async{crate::contract::failure(StatusCode::SERVICE_UNAVAILABLE,"TEMPORARILY_UNAVAILABLE","Scheduler initialization is unavailable; retry later",false)})
+}
+pub async fn wait(
+    config: PathBuf,
+    listen: &str,
+    ui: Option<PathBuf>,
+    gateway: Option<&crate::router::Runtime>,
+) -> anyhow::Result<()> {
     let (tx, rx) = oneshot::channel();
     let state = Setup {
         config,
@@ -228,8 +240,11 @@ pub async fn wait(config: PathBuf, listen: &str, ui: Option<PathBuf>) -> anyhow:
         .route("/scheduler/api/v1/setup", get(|| async { Json(json!({"code":"OK","data":{"ready":false,"version":std::env::var("VOS_APP_VERSION").unwrap_or_else(|_| env!("CARGO_PKG_VERSION").into())}})) }).post(initialize))
         .route("/scheduler/api/v1/openapi.json", get(|| async { Json(serde_json::from_str::<Value>(include_str!("../../api/openapi-v1.json")).expect("valid OpenAPI")) }))
         .with_state(state);
-    if let Some(ui) = ui {
+    if let Some(ui) = ui.as_ref() {
         router = router.fallback_service(ServeDir::new(ui));
+    }
+    if let Some(gateway) = gateway {
+        gateway.set_controller(router.clone(), false);
     }
     axum::serve(tokio::net::TcpListener::bind(listen).await?, router)
         .with_graceful_shutdown(async {

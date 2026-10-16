@@ -1,0 +1,1520 @@
+{
+  "base_urls": {
+    "internal": "http://v-router:8080/v1",
+    "lan": "http://<vos-host>:22888/v1",
+    "same_origin": "/api/com.ictrek.v-scheduler/v1"
+  },
+  "groups": [
+    {
+      "endpoints": [
+        {
+          "auth": "public",
+          "desc": "Container health endpoint. Returns HTTP 200 and ok without authentication.",
+          "method": "GET",
+          "path": "/healthz",
+          "summary": "Health check"
+        },
+        {
+          "auth": "public",
+          "desc": "Unauthenticated OIDC connectivity diagnostics: reports userinfo availability and the latest error to troubleshoot HTTP 401 in the management UI.",
+          "method": "GET",
+          "path": "/api/v1/auth-probe",
+          "summary": "Authentication diagnostics"
+        }
+      ],
+      "id": "system",
+      "title": "System"
+    },
+    {
+      "endpoints": [
+        {
+          "auth": "inference",
+          "desc": "Combines models from all healthy upstreams. Only source-qualified names are returned, such as model-hub/xxx, image-studio/xxx, registered/xxx, manual/xxx and com.ictrek.ai/xxx.",
+          "example": "curl http://<vos-host>:22888/v1/models",
+          "method": "GET",
+          "path": "/v1/models",
+          "summary": "Model list"
+        },
+        {
+          "auth": "inference",
+          "desc": "OpenAI-compatible. Use a source-qualified model name from /v1/models. Requests are forwarded to the upstream; stream=true forwards tokens as they arrive.",
+          "example": "curl -N http://<vos-host>:22888/v1/chat/completions \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"model\":\"v-scheduler/ollama-qa/qwen3.5:2b\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"Hello\"}]}'",
+          "method": "POST",
+          "path": "/v1/chat/completions",
+          "summary": "Chat completions (SSE streaming)"
+        },
+        {
+          "auth": "inference",
+          "desc": "OpenAI-compatible. Routes to embedding upstreams, such as Model Hub bge-m3 or discovered ML Server Qwen3/CLIP text embeddings. ML Server does not report tokenizer usage, so usage is omitted without failing the request.",
+          "example": "curl http://<vos-host>:22888/v1/embeddings \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"model\":\"model-hub/bge-m3\",\"input\":\"Hello\"}'",
+          "method": "POST",
+          "path": "/v1/embeddings",
+          "summary": "Text embeddings"
+        },
+        {
+          "auth": "inference",
+          "desc": "Routes by the model query parameter to the TTS upstream, restores its native model name and forwards the response. model, default_voice and equivalent voices[]/data[] lists are preserved; clients must use a returned voice ID.",
+          "example": "curl 'http://<vos-host>:22888/v1/audio/voices?model=v-voice/kokoro-multilang'",
+          "method": "GET",
+          "path": "/v1/audio/voices",
+          "summary": "TTS voice list"
+        },
+        {
+          "auth": "inference",
+          "desc": "multipart/form-data requires model and image. Adapts ml-server models for CLIP image embeddings, face recognition, person ReID or OCR. Optional: min_score, max_resolution, score_mode. Responses retain the Immich ML Server format; embedding remains a JSON-array string.",
+          "example": "curl http://<vos-host>:22888/v1/ml/predictions -F model=ml-server/PP-OCRv5_server -F image=@image.jpg -F min_score=0.5",
+          "method": "POST",
+          "path": "/v1/ml/predictions",
+          "summary": "ML Server image inference extension"
+        },
+        {
+          "auth": "inference",
+          "desc": "V-Router extension. JSON requires model=ml-server/video-structure, asset_id and video_path; detection and per-scene tasks are optional. video_path must already exist on shared storage accessible to ML Server.",
+          "example": "curl http://<vos-host>:22888/v1/ml/video/structure -H 'Content-Type: application/json' -d '{\"model\":\"ml-server/video-structure\",\"asset_id\":\"asset-001\",\"video_path\":\"video/example.mp4\"}'",
+          "method": "POST",
+          "path": "/v1/ml/video/structure",
+          "summary": "ML Server video structure task"
+        },
+        {
+          "auth": "inference",
+          "desc": "The model query parameter is required. queued/running can be polled repeatedly. ML Server consumes succeeded/failed results after the first read; subsequent queries for that task_id return 404.",
+          "example": "curl 'http://<vos-host>:22888/v1/ml/video/structure/tasks/<task-id>?model=ml-server/video-structure'",
+          "method": "GET",
+          "path": "/v1/ml/video/structure/tasks/{task_id}",
+          "summary": "Query an ML Server video structure task"
+        },
+        {
+          "auth": "inference",
+          "desc": "Routes by model and restores the native model name. Supports application/json; upstream responses (including SSE, binary content and errors) are forwarded unchanged. Upload limit: 32 MiB. Capabilities and parameters depend on the upstream. X-VRouter-Upstream requires authentication and an upstream-native body; model may be omitted.",
+          "example": "curl http://<vos-host>:22888/v1/completions -H 'Content-Type: application/json' -d '{\"model\":\"<model>\",\"prompt\":\"Hello\"}'",
+          "method": "POST",
+          "path": "/v1/completions",
+          "summary": "Text completions"
+        },
+        {
+          "auth": "inference",
+          "desc": "Native upstreams are forwarded directly. For Model Hub/chat_completions-only upstreams, Rust converts text, image input, function tools, structured output and SSE. store must be false or omitted. previous_response_id, background, hosted tools and server-side state are unsupported; unsupported fields return 400. Pinned upstreams still use their configured conversion and native model names.",
+          "example": "curl http://<vos-host>:22888/v1/responses -H 'Content-Type: application/json' -d '{\"model\":\"<model>\",\"input\":\"Hello\"}'",
+          "method": "POST",
+          "path": "/v1/responses",
+          "summary": "Responses multimodal output"
+        },
+        {
+          "auth": "inference",
+          "desc": "Routes by model and restores the native model name. Supports application/json; upstream responses (including SSE, binary content and errors) are forwarded unchanged. Upload limit: 32 MiB. Capabilities and parameters depend on the upstream. X-VRouter-Upstream requires authentication and an upstream-native body; model may be omitted.",
+          "example": "curl http://<vos-host>:22888/v1/responses/compact -H 'Content-Type: application/json' -d '{\"model\":\"<model>\",\"input\":[{\"role\":\"user\",\"content\":\"Hello\"}]}'",
+          "method": "POST",
+          "path": "/v1/responses/compact",
+          "summary": "Responses context compaction"
+        },
+        {
+          "auth": "inference",
+          "desc": "Routes by model and restores the native model name. Supports application/json; upstream responses (including SSE, binary content and errors) are forwarded unchanged. Upload limit: 32 MiB. Capabilities and parameters depend on the upstream. X-VRouter-Upstream requires authentication and an upstream-native body; model may be omitted.",
+          "example": "curl http://<vos-host>:22888/v1/images/generations -H 'Content-Type: application/json' -d '{\"model\":\"<model>\",\"prompt\":\"A mountain\"}'",
+          "method": "POST",
+          "path": "/v1/images/generations",
+          "summary": "Image generation"
+        },
+        {
+          "auth": "inference",
+          "desc": "Routes by model and restores the native model name. Supports multipart/form-data; upstream responses (including SSE, binary content and errors) are forwarded unchanged. Upload limit: 32 MiB. Capabilities and parameters depend on the upstream. X-VRouter-Upstream requires authentication and an upstream-native body; model may be omitted.",
+          "example": "curl http://<vos-host>:22888/v1/images/edits -F model='<model>' -F image=@image.png -F prompt='A mountain'",
+          "method": "POST",
+          "path": "/v1/images/edits",
+          "summary": "Image editing"
+        },
+        {
+          "auth": "inference",
+          "desc": "Routes by model and restores the native model name. Supports multipart/form-data; upstream responses (including SSE, binary content and errors) are forwarded unchanged. Upload limit: 32 MiB. Capabilities and parameters depend on the upstream. X-VRouter-Upstream requires authentication and an upstream-native body; model may be omitted.",
+          "example": "curl http://<vos-host>:22888/v1/images/variations -F model='<model>' -F image=@image.png",
+          "method": "POST",
+          "path": "/v1/images/variations",
+          "summary": "Image variations"
+        },
+        {
+          "auth": "inference",
+          "desc": "Routes by model and restores the native model name. Supports application/json; upstream responses (including SSE, binary content and errors) are forwarded unchanged. Upload limit: 32 MiB. Capabilities and parameters depend on the upstream. X-VRouter-Upstream requires authentication and an upstream-native body; model may be omitted. A 2xx response containing id records the task creator. Later queries/cancellation through /v1/videos/{id} enforce ownership and reject cross-account access.",
+          "example": "curl http://<vos-host>:22888/v1/videos/generations -H 'Content-Type: application/json' -d '{\"model\":\"<model>\",\"prompt\":\"A kitten running on the moon\"}'",
+          "method": "POST",
+          "path": "/v1/videos/generations",
+          "summary": "Video generation"
+        },
+        {
+          "auth": "inference",
+          "desc": "Routes by model and restores the native model name. Supports multipart/form-data; upstream responses (including SSE, binary content and errors) are forwarded unchanged. Upload limit: 32 MiB. Capabilities and parameters depend on the upstream. X-VRouter-Upstream requires authentication and an upstream-native body; model may be omitted. Hotword-capable models accept hotwords text, a UTF-8 hotwords_file, saved hotwords_set IDs (repeatable, merged and deduplicated with text/files by the server) and hotwords_score. V-Router does not parse or rewrite hotwords. timestamp_granularities[] is forwarded unchanged. V-Voice verbose_json can return OpenAI-style words/segments; discovered metadata determines support. speaker_model (a v-voice/-qualified speaker model ID, restored to its native ID) and speaker_threshold are also forwarded; when provided, verbose_json includes speaker attribution without trimming.",
+          "example": "curl http://<vos-host>:22888/v1/audio/transcriptions -F model='<model>' -F file=@audio.wav -F response_format=verbose_json -F 'timestamp_granularities[]=word' -F hotwords='V-Voice,sherpa-onnx' -F hotwords_file=@hotwords.txt -F hotwords_score=1.5",
+          "method": "POST",
+          "path": "/v1/audio/transcriptions",
+          "summary": "ASR transcription (hotword text, files and boost scores)"
+        },
+        {
+          "auth": "inference",
+          "desc": "Routes by model and restores the native model name. Supports multipart/form-data; upstream responses (including SSE, binary content and errors) are forwarded unchanged. Upload limit: 32 MiB. Capabilities and parameters depend on the upstream. X-VRouter-Upstream requires authentication and an upstream-native body; model may be omitted. Hotword-capable models accept hotwords text, a UTF-8 hotwords_file, saved hotwords_set IDs (repeatable, merged and deduplicated with text/files by the server) and hotwords_score. V-Router does not parse or rewrite hotwords. timestamp_granularities[] is forwarded unchanged. V-Voice verbose_json can return OpenAI-style words/segments; discovered metadata determines support. speaker_model (a v-voice/-qualified speaker model ID, restored to its native ID) and speaker_threshold are also forwarded; when provided, verbose_json includes speaker attribution without trimming.",
+          "example": "curl http://<vos-host>:22888/v1/audio/translations -F model='<model>' -F file=@audio.wav -F response_format=verbose_json -F 'timestamp_granularities[]=word' -F hotwords='V-Voice,sherpa-onnx' -F hotwords_file=@hotwords.txt -F hotwords_score=1.5",
+          "method": "POST",
+          "path": "/v1/audio/translations",
+          "summary": "Audio translation"
+        },
+        {
+          "auth": "inference",
+          "desc": "Routes by model and restores the native model name. Supports application/json; upstream responses (including SSE, binary content and errors) are forwarded unchanged. Upload limit: 32 MiB. Capabilities and parameters depend on the upstream. X-VRouter-Upstream requires authentication and an upstream-native body; model may be omitted.",
+          "example": "curl http://<vos-host>:22888/v1/audio/speech -H 'Content-Type: application/json' -d '{\"model\":\"<model>\",\"input\":\"Hello\",\"voice\":\"alloy\"}' --output speech.mp3",
+          "method": "POST",
+          "path": "/v1/audio/speech",
+          "summary": "Text-to-speech"
+        },
+        {
+          "auth": "inference",
+          "desc": "OpenAI-style extension (OpenAI has no official music generation endpoint). Routes v-music/<model key> and restores the native key. Other JSON fields and WAV/FLAC binary responses are forwarded unchanged.",
+          "example": "curl http://<vos-host>:22888/v1/audio/music/generations -H 'Content-Type: application/json' -d '{\"model\":\"v-music/stable-audio-3-small-music\",\"prompt\":\"warm cinematic ambient music\",\"duration\":10,\"instrumental\":true,\"response_format\":\"wav\"}' --output music.wav",
+          "method": "POST",
+          "path": "/v1/audio/music/generations",
+          "summary": "Music generation (OpenAI-style extension)"
+        },
+        {
+          "auth": "inference",
+          "desc": "1:N speaker attribution. Multipart: model (required, v-voice/-qualified speaker model ID), file (required), threshold (optional, 0..1, default 0.6). Returns identified, speaker ({id,name,score}, null if no match), score, threshold and ranked (Top-5). Speakers are registered in V-Voice and shared at host level; V-Router does not proxy registration.",
+          "example": "curl http://<vos-host>:22888/v1/audio/speakers/identify -F model='<model>' -F file=@sample.wav -F threshold=0.6",
+          "method": "POST",
+          "path": "/v1/audio/speakers/identify",
+          "summary": "Speaker identification 1:N"
+        },
+        {
+          "auth": "inference",
+          "desc": "1:1 speaker verification. Multipart: model (required, v-voice/-qualified speaker model ID), speaker (required, speaker ID or name), file (required), threshold (optional, 0..1, default 0.6). Returns verified, score, threshold and speaker. Unknown speakers return upstream 404.",
+          "example": "curl http://<vos-host>:22888/v1/audio/speakers/verify -F model='<model>' -F speaker=sp_1a2b3c4d -F file=@sample.wav",
+          "method": "POST",
+          "path": "/v1/audio/speakers/verify",
+          "summary": "Speaker verification 1:1"
+        },
+        {
+          "auth": "inference",
+          "desc": "Routes by model and restores the native model name. Supports application/json; upstream responses (including SSE, binary content and errors) are forwarded unchanged. Upload limit: 32 MiB. Capabilities and parameters depend on the upstream. X-VRouter-Upstream requires authentication and an upstream-native body; model may be omitted.",
+          "example": "curl http://<vos-host>:22888/v1/moderations -H 'Content-Type: application/json' -d '{\"model\":\"<model>\",\"input\":\"Hello\"}'",
+          "method": "POST",
+          "path": "/v1/moderations",
+          "summary": "Content moderation"
+        },
+        {
+          "auth": "inference",
+          "desc": "Routes by model and restores the native model name. Supports application/json; upstream responses (including SSE, binary content and errors) are forwarded unchanged. Upload limit: 32 MiB. Capabilities and parameters depend on the upstream. X-VRouter-Upstream requires authentication and an upstream-native body; model may be omitted.",
+          "example": "curl http://<vos-host>:22888/v1/rerank -H 'Content-Type: application/json' -d '{\"model\":\"<model>\",\"query\":\"Question\",\"documents\":[\"Document\"]}'",
+          "method": "POST",
+          "path": "/v1/rerank",
+          "summary": "Reranking (compatible extension, not an OpenAI standard)"
+        },
+        {
+          "auth": "inference",
+          "desc": "Requires a model declaring streaming capability. model is a query parameter: v-voice/<model key>. The body is a chunked audio byte stream (format=pcm|wav|auto; PCM defaults to 16 kHz s16le). Forwarded end to end without full buffering or an overall timeout. Query parameters hotwords, hotwords_set (repeatable), hotwords_score, response_format, speaker_model (qualified ID restored to native), speaker_threshold are forwarded. Ending the body returns the final transcription; verbose_json matches batch transcription plus streaming:true. The connection occupies one model concurrency slot.",
+          "example": "curl -N -X POST 'http://<vos-host>:22888/v1/audio/streaming/transcriptions?model=v-voice/zipformer-zh-streaming&format=pcm' --header 'Transfer-Encoding: chunked' --data-binary @audio.pcm",
+          "method": "POST",
+          "path": "/v1/audio/streaming/transcriptions",
+          "summary": "Streaming ASR (HTTP chunked upload)"
+        },
+        {
+          "auth": "inference",
+          "desc": "WebSocket upgrade with model query parameter; format is pcm|wav only. Send s16le mono PCM binary chunks; receive {type:partial,text,is_endpoint}. Sending {type:finish} as a text frame or disconnecting returns {type:final,text,tokens,timestamps}. final includes speaker attribution if speaker_model was supplied. Close codes: 4404 (unknown model), 4409 (not ready), 4422 (parameter mismatch), 4500 (inference failure). Frames and close codes are forwarded unchanged. The connection occupies one model concurrency slot.",
+          "method": "GET",
+          "path": "/v1/audio/streaming/ws",
+          "summary": "Streaming ASR (realtime WebSocket)"
+        },
+        {
+          "auth": "inference",
+          "desc": "Routes by model query parameter (v-voice/<speaker model key>). Returns registered speakers in equivalent speakers[]/data[] lists with id, name, dimension and created_at, plus default_threshold. No embedding vectors are returned. Registration/deletion is managed in V-Voice, outside this endpoint.",
+          "example": "curl 'http://<vos-host>:22888/v1/audio/speakers?model=v-voice/speaker-campplus-zh-en'",
+          "method": "GET",
+          "path": "/v1/audio/speakers",
+          "summary": "Speaker library"
+        }
+      ],
+      "id": "openai",
+      "title": "Inference API (OpenAI-compatible)"
+    },
+    {
+      "endpoints": [
+        {
+          "auth": "inference",
+          "desc": "Anthropic-native upstreams are forwarded directly. For chat_completions upstreams, Rust converts text, image input and function tools, including SSE. Stateless conversion does not support server-side tools, caching or thinking; model capabilities determine image/tool support. x-api-key is supported for gateway identity.",
+          "method": "POST",
+          "path": "/v1/messages",
+          "summary": "Anthropic Messages"
+        }
+      ],
+      "id": "anthropic",
+      "title": "Inference API (Anthropic-compatible)"
+    },
+    {
+      "endpoints": [
+        {
+          "auth": "manage",
+          "desc": "Version, healthy upstream count, model count, total requests and API key enforcement.",
+          "method": "GET",
+          "path": "/api/v1/status",
+          "summary": "Gateway status"
+        },
+        {
+          "auth": "manage",
+          "desc": "Management view: includes upstream name, upstream type and short-name alias metadata for each model.",
+          "method": "GET",
+          "path": "/api/v1/models",
+          "summary": "Model list with metadata"
+        },
+        {
+          "auth": "manage",
+          "desc": "Aggregates requests and upstream-reported input/output tokens from JSONL history by model, upstream and user. period accepts day (default), week, month or all. Requests still complete when the upstream does not report usage.",
+          "method": "GET",
+          "path": "/api/v1/usage",
+          "summary": "Usage statistics"
+        },
+        {
+          "auth": "manage",
+          "desc": "All upstreams visible to the current user: discovered, cloud/manual and registered. Secrets are never returned. status values: healthy; paused (scheduling disabled); lease_expired; circuit_open (consecutive connection failures, failures count and circuit_open_until cooldown; the next request probes recovery after cooldown); auth_failed (model probe returned 401/403, with the original reason in detail); discovery_failed; no_models (reachable but no usable models); full (max_inflight reached). manageable indicates whether the caller may edit, refresh, delete or configure scheduling (owner or administrator). Private upstreams appear only to their owner and administrators.",
+          "method": "GET",
+          "path": "/api/v1/upstreams",
+          "summary": "Upstream list"
+        },
+        {
+          "auth": "manage",
+          "desc": "Probes models using the current form parameters. Optional test_model performs a lightweight connectivity test. A failed probe returns diagnostics without saving the upstream.",
+          "method": "POST",
+          "path": "/api/v1/upstreams/probe",
+          "summary": "Probe a cloud/manual upstream"
+        },
+        {
+          "auth": "manage",
+          "desc": "Registers an upstream. kind: manual/cloud. protocol: openai (native), chat_completions (Responses/Messages conversion), anthropic (native), offline_asr (/transcribe adapter), image_studio (image/video adapter), async_task (generic asynchronous image task creation/polling). Cloud model prefixes reverse the domain, e.g. ai.ictrek.com -> com.ictrek.ai. Models are probed before saving; async_task validates the single-model/task configuration without creating a paid task. visibility: public (default, shared with all callers) or private (owner and administrators only). The creator becomes owner; only the owner and administrators may edit, refresh, delete or configure scheduling. Legacy upstreams with an empty owner remain shared and manageable by all signed-in users.",
+          "example": "curl -X POST http://<vos-host>:22888/api/v1/upstreams \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"kind\":\"cloud\",\"name\":\"ICTrek AI\",\"base_url\":\"https://ai.ictrek.com/v1\",\"api_key\":\"sk-...\",\"visibility\":\"public\"}'",
+          "method": "POST",
+          "path": "/api/v1/upstreams",
+          "summary": "Add a cloud or manual upstream"
+        },
+        {
+          "auth": "manage",
+          "desc": "Updates name, URL, protocol, key or visibility. An empty api_key retains the existing key. Cloud model prefixes are recalculated from base_url. Owner and administrators only: editing another user's public upstream returns 403; accessing their private upstream returns 404. Ownership cannot be transferred.",
+          "method": "PUT",
+          "path": "/api/v1/upstreams/{id}",
+          "summary": "Update a cloud or manual upstream"
+        },
+        {
+          "auth": "manage",
+          "desc": "Probes and refreshes models for API-created cloud/manual upstreams. Owner and administrators only.",
+          "method": "POST",
+          "path": "/api/v1/upstreams/{id}/refresh",
+          "summary": "Refresh upstream models"
+        },
+        {
+          "auth": "manage",
+          "desc": "Immediately removes its models from /v1/models and clears upstream resource ownership records. Discovered Model Hub and registered upstreams cannot be deleted here. Owner and administrators only.",
+          "method": "DELETE",
+          "path": "/api/v1/upstreams/{id}",
+          "summary": "Delete a cloud or manual upstream"
+        },
+        {
+          "auth": "manage",
+          "desc": "Returns descriptions and examples for every endpoint in the running version. The API Documentation tab renders this contract live. Use lang=en for English; the default is Chinese.",
+          "method": "GET",
+          "path": "/api/v1/apidoc",
+          "summary": "API documentation data"
+        },
+        {
+          "auth": "manage",
+          "desc": "Validates a VOS OIDC Bearer token or shared gateway key. Returns identity, auth_method, permissions, resource_isolation=true and registration_scopes. Registered services support public/private visibility; private services are visible only to the registrant and administrators.",
+          "method": "GET",
+          "path": "/api/v1/auth/me",
+          "summary": "Verify caller identity"
+        },
+        {
+          "auth": "manage",
+          "desc": "Generated from the runtime route table. Extension fields and upstream response bodies are preserved and updated with the running version. Use lang=en for English.",
+          "method": "GET",
+          "path": "/api/v1/openapi.json",
+          "summary": "OpenAPI 3.1 contract"
+        },
+        {
+          "auth": "manage",
+          "desc": "For manual, Model Hub and registered backends. weight defaults to 1 (1..1000); max_inflight defaults to 0 (unlimited); disabled defaults to false. Limits count only this gateway's in-flight requests; SSE releases its slot on completion or cancellation. Configuration is persisted. Owner/administrators only (403); another user's private upstream returns 404.",
+          "method": "PUT",
+          "path": "/api/v1/upstreams/{id}/routing",
+          "summary": "Configure upstream scheduling"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires a gateway key or VOS identity. A stable service_id produces registered-<service_id>; the same ID updates the same instance, replicas need distinct IDs. Public services are visible to all callers; private services only to the registrant. Register a base_url/models API or explicitly supply model/models. Explicit models must declare endpoints; capabilities/model_kind supports capability filtering. model_endpoints/model_capabilities can override individual models. ttl_seconds defaults to 90.",
+          "method": "POST",
+          "path": "/api/v1/registrations",
+          "summary": "Register or update an inference backend"
+        },
+        {
+          "auth": "manage",
+          "desc": "Submit JSON {ttl_seconds:90}; renew every 30 seconds. A 404 indicates an expired lease or restarted gateway; register again. Heartbeats do not refresh models; register again when models change.",
+          "method": "POST",
+          "path": "/api/v1/registrations/{id}/heartbeat",
+          "summary": "Renew a registration lease"
+        },
+        {
+          "auth": "manage",
+          "desc": "Immediately stops assigning new requests; existing requests finish. Only actively registered upstreams can be unregistered.",
+          "method": "DELETE",
+          "path": "/api/v1/registrations/{id}",
+          "summary": "Unregister an inference backend"
+        }
+      ],
+      "id": "manage",
+      "title": "Management API"
+    },
+    {
+      "endpoints": [
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "GET",
+          "path": "/v1/messages",
+          "summary": "messages · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "DELETE",
+          "path": "/v1/messages",
+          "summary": "messages · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "PATCH",
+          "path": "/v1/messages",
+          "summary": "messages · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "GET",
+          "path": "/v1/messages/{resource_path...}",
+          "summary": "messages · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "POST",
+          "path": "/v1/messages/{resource_path...}",
+          "summary": "messages · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "DELETE",
+          "path": "/v1/messages/{resource_path...}",
+          "summary": "messages · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "PATCH",
+          "path": "/v1/messages/{resource_path...}",
+          "summary": "messages · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "GET",
+          "path": "/v1/skills",
+          "summary": "skills · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "POST",
+          "path": "/v1/skills",
+          "summary": "skills · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "DELETE",
+          "path": "/v1/skills",
+          "summary": "skills · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "PATCH",
+          "path": "/v1/skills",
+          "summary": "skills · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "GET",
+          "path": "/v1/skills/{resource_path...}",
+          "summary": "skills · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "POST",
+          "path": "/v1/skills/{resource_path...}",
+          "summary": "skills · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "DELETE",
+          "path": "/v1/skills/{resource_path...}",
+          "summary": "skills · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "PATCH",
+          "path": "/v1/skills/{resource_path...}",
+          "summary": "skills · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "GET",
+          "path": "/v1/responses",
+          "summary": "responses · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "DELETE",
+          "path": "/v1/responses",
+          "summary": "responses · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "PATCH",
+          "path": "/v1/responses",
+          "summary": "responses · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "GET",
+          "path": "/v1/responses/{resource_path...}",
+          "summary": "responses · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "POST",
+          "path": "/v1/responses/{resource_path...}",
+          "summary": "responses · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "DELETE",
+          "path": "/v1/responses/{resource_path...}",
+          "summary": "responses · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "PATCH",
+          "path": "/v1/responses/{resource_path...}",
+          "summary": "responses · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "GET",
+          "path": "/v1/chat/completions",
+          "summary": "chat/completions · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "DELETE",
+          "path": "/v1/chat/completions",
+          "summary": "chat/completions · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "PATCH",
+          "path": "/v1/chat/completions",
+          "summary": "chat/completions · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "GET",
+          "path": "/v1/chat/completions/{resource_path...}",
+          "summary": "chat/completions · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "POST",
+          "path": "/v1/chat/completions/{resource_path...}",
+          "summary": "chat/completions · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "DELETE",
+          "path": "/v1/chat/completions/{resource_path...}",
+          "summary": "chat/completions · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "PATCH",
+          "path": "/v1/chat/completions/{resource_path...}",
+          "summary": "chat/completions · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "GET",
+          "path": "/v1/files",
+          "summary": "files · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "POST",
+          "path": "/v1/files",
+          "summary": "files · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "DELETE",
+          "path": "/v1/files",
+          "summary": "files · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "PATCH",
+          "path": "/v1/files",
+          "summary": "files · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "GET",
+          "path": "/v1/files/{resource_path...}",
+          "summary": "files · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "POST",
+          "path": "/v1/files/{resource_path...}",
+          "summary": "files · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "DELETE",
+          "path": "/v1/files/{resource_path...}",
+          "summary": "files · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "PATCH",
+          "path": "/v1/files/{resource_path...}",
+          "summary": "files · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "GET",
+          "path": "/v1/uploads",
+          "summary": "uploads · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "POST",
+          "path": "/v1/uploads",
+          "summary": "uploads · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "DELETE",
+          "path": "/v1/uploads",
+          "summary": "uploads · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "PATCH",
+          "path": "/v1/uploads",
+          "summary": "uploads · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "GET",
+          "path": "/v1/uploads/{resource_path...}",
+          "summary": "uploads · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "POST",
+          "path": "/v1/uploads/{resource_path...}",
+          "summary": "uploads · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "DELETE",
+          "path": "/v1/uploads/{resource_path...}",
+          "summary": "uploads · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "PATCH",
+          "path": "/v1/uploads/{resource_path...}",
+          "summary": "uploads · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "GET",
+          "path": "/v1/batches",
+          "summary": "batches · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "POST",
+          "path": "/v1/batches",
+          "summary": "batches · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "DELETE",
+          "path": "/v1/batches",
+          "summary": "batches · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "PATCH",
+          "path": "/v1/batches",
+          "summary": "batches · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "GET",
+          "path": "/v1/batches/{resource_path...}",
+          "summary": "batches · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "POST",
+          "path": "/v1/batches/{resource_path...}",
+          "summary": "batches · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "DELETE",
+          "path": "/v1/batches/{resource_path...}",
+          "summary": "batches · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "PATCH",
+          "path": "/v1/batches/{resource_path...}",
+          "summary": "batches · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "GET",
+          "path": "/v1/images",
+          "summary": "images · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "POST",
+          "path": "/v1/images",
+          "summary": "images · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "DELETE",
+          "path": "/v1/images",
+          "summary": "images · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "PATCH",
+          "path": "/v1/images",
+          "summary": "images · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "GET",
+          "path": "/v1/images/{resource_path...}",
+          "summary": "images · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "POST",
+          "path": "/v1/images/{resource_path...}",
+          "summary": "images · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "DELETE",
+          "path": "/v1/images/{resource_path...}",
+          "summary": "images · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "PATCH",
+          "path": "/v1/images/{resource_path...}",
+          "summary": "images · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "GET",
+          "path": "/v1/audio",
+          "summary": "audio · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "POST",
+          "path": "/v1/audio",
+          "summary": "audio · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "DELETE",
+          "path": "/v1/audio",
+          "summary": "audio · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "PATCH",
+          "path": "/v1/audio",
+          "summary": "audio · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "GET",
+          "path": "/v1/audio/{resource_path...}",
+          "summary": "audio · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "POST",
+          "path": "/v1/audio/{resource_path...}",
+          "summary": "audio · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "DELETE",
+          "path": "/v1/audio/{resource_path...}",
+          "summary": "audio · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "PATCH",
+          "path": "/v1/audio/{resource_path...}",
+          "summary": "audio · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "GET",
+          "path": "/v1/videos",
+          "summary": "videos · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "POST",
+          "path": "/v1/videos",
+          "summary": "videos · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "DELETE",
+          "path": "/v1/videos",
+          "summary": "videos · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "PATCH",
+          "path": "/v1/videos",
+          "summary": "videos · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "GET",
+          "path": "/v1/videos/{resource_path...}",
+          "summary": "videos · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "POST",
+          "path": "/v1/videos/{resource_path...}",
+          "summary": "videos · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "DELETE",
+          "path": "/v1/videos/{resource_path...}",
+          "summary": "videos · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "PATCH",
+          "path": "/v1/videos/{resource_path...}",
+          "summary": "videos · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "GET",
+          "path": "/v1/fine_tuning",
+          "summary": "fine_tuning · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "POST",
+          "path": "/v1/fine_tuning",
+          "summary": "fine_tuning · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "DELETE",
+          "path": "/v1/fine_tuning",
+          "summary": "fine_tuning · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "PATCH",
+          "path": "/v1/fine_tuning",
+          "summary": "fine_tuning · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "GET",
+          "path": "/v1/fine_tuning/{resource_path...}",
+          "summary": "fine_tuning · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "POST",
+          "path": "/v1/fine_tuning/{resource_path...}",
+          "summary": "fine_tuning · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "DELETE",
+          "path": "/v1/fine_tuning/{resource_path...}",
+          "summary": "fine_tuning · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "PATCH",
+          "path": "/v1/fine_tuning/{resource_path...}",
+          "summary": "fine_tuning · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "GET",
+          "path": "/v1/vector_stores",
+          "summary": "vector_stores · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "POST",
+          "path": "/v1/vector_stores",
+          "summary": "vector_stores · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "DELETE",
+          "path": "/v1/vector_stores",
+          "summary": "vector_stores · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "PATCH",
+          "path": "/v1/vector_stores",
+          "summary": "vector_stores · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "GET",
+          "path": "/v1/vector_stores/{resource_path...}",
+          "summary": "vector_stores · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "POST",
+          "path": "/v1/vector_stores/{resource_path...}",
+          "summary": "vector_stores · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "DELETE",
+          "path": "/v1/vector_stores/{resource_path...}",
+          "summary": "vector_stores · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "PATCH",
+          "path": "/v1/vector_stores/{resource_path...}",
+          "summary": "vector_stores · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "GET",
+          "path": "/v1/assistants",
+          "summary": "assistants · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "POST",
+          "path": "/v1/assistants",
+          "summary": "assistants · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "DELETE",
+          "path": "/v1/assistants",
+          "summary": "assistants · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "PATCH",
+          "path": "/v1/assistants",
+          "summary": "assistants · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "GET",
+          "path": "/v1/assistants/{resource_path...}",
+          "summary": "assistants · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "POST",
+          "path": "/v1/assistants/{resource_path...}",
+          "summary": "assistants · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "DELETE",
+          "path": "/v1/assistants/{resource_path...}",
+          "summary": "assistants · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "PATCH",
+          "path": "/v1/assistants/{resource_path...}",
+          "summary": "assistants · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "GET",
+          "path": "/v1/threads",
+          "summary": "threads · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "POST",
+          "path": "/v1/threads",
+          "summary": "threads · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "DELETE",
+          "path": "/v1/threads",
+          "summary": "threads · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "PATCH",
+          "path": "/v1/threads",
+          "summary": "threads · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "GET",
+          "path": "/v1/threads/{resource_path...}",
+          "summary": "threads · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "POST",
+          "path": "/v1/threads/{resource_path...}",
+          "summary": "threads · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "DELETE",
+          "path": "/v1/threads/{resource_path...}",
+          "summary": "threads · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "PATCH",
+          "path": "/v1/threads/{resource_path...}",
+          "summary": "threads · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "GET",
+          "path": "/v1/conversations",
+          "summary": "conversations · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "POST",
+          "path": "/v1/conversations",
+          "summary": "conversations · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "DELETE",
+          "path": "/v1/conversations",
+          "summary": "conversations · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "PATCH",
+          "path": "/v1/conversations",
+          "summary": "conversations · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "GET",
+          "path": "/v1/conversations/{resource_path...}",
+          "summary": "conversations · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "POST",
+          "path": "/v1/conversations/{resource_path...}",
+          "summary": "conversations · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "DELETE",
+          "path": "/v1/conversations/{resource_path...}",
+          "summary": "conversations · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "PATCH",
+          "path": "/v1/conversations/{resource_path...}",
+          "summary": "conversations · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "GET",
+          "path": "/v1/realtime",
+          "summary": "realtime · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "POST",
+          "path": "/v1/realtime",
+          "summary": "realtime · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "DELETE",
+          "path": "/v1/realtime",
+          "summary": "realtime · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "PATCH",
+          "path": "/v1/realtime",
+          "summary": "realtime · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "GET",
+          "path": "/v1/realtime/{resource_path...}",
+          "summary": "realtime · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "POST",
+          "path": "/v1/realtime/{resource_path...}",
+          "summary": "realtime · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "DELETE",
+          "path": "/v1/realtime/{resource_path...}",
+          "summary": "realtime · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "PATCH",
+          "path": "/v1/realtime/{resource_path...}",
+          "summary": "realtime · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "GET",
+          "path": "/v1/containers",
+          "summary": "containers · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "POST",
+          "path": "/v1/containers",
+          "summary": "containers · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "DELETE",
+          "path": "/v1/containers",
+          "summary": "containers · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "PATCH",
+          "path": "/v1/containers",
+          "summary": "containers · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "GET",
+          "path": "/v1/containers/{resource_path...}",
+          "summary": "containers · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "POST",
+          "path": "/v1/containers/{resource_path...}",
+          "summary": "containers · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "DELETE",
+          "path": "/v1/containers/{resource_path...}",
+          "summary": "containers · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "PATCH",
+          "path": "/v1/containers/{resource_path...}",
+          "summary": "containers · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "POST",
+          "path": "/v1/models",
+          "summary": "models · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "DELETE",
+          "path": "/v1/models",
+          "summary": "models · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "PATCH",
+          "path": "/v1/models",
+          "summary": "models · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "GET",
+          "path": "/v1/models/{resource_path...}",
+          "summary": "models · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "POST",
+          "path": "/v1/models/{resource_path...}",
+          "summary": "models · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "DELETE",
+          "path": "/v1/models/{resource_path...}",
+          "summary": "models · pinned upstream forwarding"
+        },
+        {
+          "auth": "manage",
+          "desc": "Requires X-VRouter-Upstream: <upstream ID> and management identity. Use native parameters/model names and the same upstream for creation, queries, cancellation and downloads. Public registrations are visible to all callers; private registrations only to their registrant and administrators. A successful creation through V-Router (POST /v1/<family>, 2xx with id) records the owner; other users then get 404, except administrators. Lists still include all resources in the shared provider account. Resources predating this feature or created outside V-Router are not restricted. Query parameters, multipart, SSE, binary data and WebSocket upgrades are preserved. Unsupported operations return upstream errors.",
+          "method": "PATCH",
+          "path": "/v1/models/{resource_path...}",
+          "summary": "models · pinned upstream forwarding"
+        }
+      ],
+      "id": "resource",
+      "title": "Resource APIs · pinned upstream"
+    },
+    {
+      "endpoints": [
+        {
+          "auth": "inference",
+          "desc": "Reports whether V-Router's periodic discovery has found scene-detect and structure. Missing or unreachable services are normal states.",
+          "method": "GET",
+          "path": "/api/v1/video-structure/status",
+          "summary": "Video structure discovery status"
+        },
+        {
+          "auth": "inference",
+          "desc": "Preserves the video structure service's original path, request body, status, response headers and body. V-Router exposes business endpoints without adding the service to the base model pool.",
+          "method": "POST",
+          "path": "/api/v1/scenes/detect",
+          "summary": "Detect video scenes synchronously"
+        },
+        {
+          "auth": "inference",
+          "desc": "Preserves the video structure service's original path, request body, status, response headers and body. V-Router exposes business endpoints without adding the service to the base model pool.",
+          "method": "POST",
+          "path": "/api/v2/scenes/detect/jobs",
+          "summary": "Submit a scene detection job"
+        },
+        {
+          "auth": "inference",
+          "desc": "Preserves the video structure service's original path, request body, status, response headers and body. V-Router exposes business endpoints without adding the service to the base model pool.",
+          "method": "GET",
+          "path": "/api/v2/scenes/detect/jobs/{job_id}",
+          "summary": "Query a scene detection job"
+        },
+        {
+          "auth": "inference",
+          "desc": "Preserves the video structure service's original path, request body, status, response headers and body. V-Router exposes business endpoints without adding the service to the base model pool.",
+          "method": "POST",
+          "path": "/api/v2/video/structure/jobs",
+          "summary": "Submit a video structure job"
+        },
+        {
+          "auth": "inference",
+          "desc": "Preserves the video structure service's original path, request body, status, response headers and body. V-Router exposes business endpoints without adding the service to the base model pool.",
+          "method": "GET",
+          "path": "/api/v2/video/structure/jobs/{job_id}",
+          "summary": "Query a video structure job"
+        },
+        {
+          "auth": "inference",
+          "desc": "Preserves the video structure service's original path, request body, status, response headers and body. V-Router exposes business endpoints without adding the service to the base model pool.",
+          "method": "GET",
+          "path": "/api/v2/video/structure/jobs/{job_id}/artifact",
+          "summary": "Download a video structure artifact"
+        },
+        {
+          "auth": "inference",
+          "desc": "Preserves the video structure service's original path, request body, status, response headers and body. V-Router exposes business endpoints without adding the service to the base model pool.",
+          "method": "DELETE",
+          "path": "/api/v2/video/structure/jobs/{job_id}",
+          "summary": "Release a video structure artifact"
+        },
+        {
+          "auth": "inference",
+          "desc": "Preserves the video structure service's original path, request body, status, response headers and body. V-Router exposes business endpoints without adding the service to the base model pool.",
+          "method": "POST",
+          "path": "/api/v2/video/describe/jobs",
+          "summary": "Submit a scene description job"
+        },
+        {
+          "auth": "inference",
+          "desc": "Preserves the video structure service's original path, request body, status, response headers and body. V-Router exposes business endpoints without adding the service to the base model pool.",
+          "method": "GET",
+          "path": "/api/v2/video/describe/jobs/{job_id}",
+          "summary": "Query a scene description job"
+        }
+      ],
+      "id": "video-structure",
+      "title": "Video structure API"
+    }
+  ],
+  "identity": [
+    {
+      "channel": "VOS applications / management UI",
+      "effect": "Calls are attributed to the corresponding VOS user. Management APIs require this identity or a gateway key. Other VOS applications can use their own Fastpath token on the same-origin /api/com.ictrek.v-scheduler/v1/* path; calls are attributed to their current user without registering with V-Router.",
+      "method": "Authorization: Bearer <VOS OIDC access_token>"
+    },
+    {
+      "channel": "LAN / external clients",
+      "effect": "Calls use the gateway-admin identity and count towards administrator usage.",
+      "method": "Authorization: Bearer <V_ROUTER_API_KEY> (when authentication is enforced)"
+    },
+    {
+      "channel": "Anonymous VOS internal calls",
+      "effect": "Anonymous model inference is available only when REQUIRE_KEY is disabled and is attributed to internal. Management and pinned resource APIs reject anonymous callers.",
+      "method": "No credentials"
+    }
+  ],
+  "integration": [
+    {
+      "example": "# VOS_API is the reachable VOS API base URL (for example http://<vos-host>:8105).\n# login.json contains {\"username\":\"<username>\",\"password\":\"<password>\",\"application\":\"nas\"}.\n# Keep login.json private; never store credentials in client source code.\nVOS_API=http://<vos-host>:8105\nROUTER=http://<vos-host>:22888\nVOS_TOKEN=$(curl --fail-with-body -sS \"$VOS_API/v1000/user/login\" \\\n  -H 'Content-Type: application/json' --data-binary @login.json | jq -er '.data.access_token')\ncurl --fail-with-body \"$ROUTER/api/v1/auth/me\" -H \"Authorization: Bearer $VOS_TOKEN\"\ncurl --fail-with-body \"$ROUTER/v1/models\" -H \"Authorization: Bearer $VOS_TOKEN\"\ncurl --fail-with-body \"$ROUTER/v1/chat/completions\" \\\n  -H \"Authorization: Bearer $VOS_TOKEN\" -H 'Content-Type: application/json' \\\n  -d '{\"model\":\"<qualified-model-id-from-models>\",\"messages\":[{\"role\":\"user\",\"content\":\"Hello\"}]}'",
+      "note": "First POST to /v1000/user/login on the VOS API and read data.access_token. Send Authorization: Bearer <access_token> to the mapped V-Router port (22888 by default; configurable through V_ROUTER_HOST_PORT). Use the device's reachable VOS API entry point, e.g. http://<vos-host>:8105 or its configured HTTPS reverse proxy. V-Router validates the token with VOS userinfo and applies usage attribution and resource permissions for that VOS user; no separate V-Router account is required. Verify identity with /api/v1/auth/me first. On 401, sign in again or refresh the token; a VOS password is not a Bearer token. Server-side calls are not subject to browser CORS; browser apps on other origins should use a same-origin proxy.",
+      "title": "LAN clients: sign in to VOS, then use the mapped port"
+    },
+    {
+      "example": "Cloud model: app → V-Router → cloud provider (no local permit)\nSynchronous model on this or another managed node: app → V-Router → V-Scheduler permit → model service\nOwn asynchronous task: app → V-Scheduler task → approved node executor",
+      "note": "Classify by the actual execution node, not by URL. Cloud upstreams do not consume V-Scheduler node capacity. Other managed nodes reserve their own resource pool. An unmanaged remote upstream cannot claim scheduler coverage. Each computation has exactly one permit or task reservation.",
+      "title": "Compute paths: cloud, this node and other nodes"
+    },
+    {
+      "example": "const result = await fetch('/api/com.ictrek.v-scheduler/v1/chat/completions', {\n  method: 'POST',\n  headers: {Authorization: 'Bearer ' + token, 'Content-Type': 'application/json'},\n  body: JSON.stringify({model: 'v-scheduler/ollama-qa/<model>', messages: [{role: 'user', content: 'Hello'}]})\n});",
+      "note": "Callers use only V-Router model APIs and never hold the scheduler service token. Administrators approve the actual node, executor upstream_urls, and per-model input/resource limits in models[upstreamID/nativeModelID] in scheduler.local.json. Missing approval/config returns 503, capacity 429, input budget 413, parameter budget 422. HTTP/SSE, WebSocket and asynchronous creation are admitted before computation. Delegation verifies task, owner, node and budget; a declaration cannot bypass admission. WebSocket requires an approved server_close stop contract. Uncertain completion retains reservations; restart resumes asynchronous polling. Cloud providers bypass local permits.",
+      "title": "Local model access: the gateway requests a permit"
+    },
+    {
+      "example": "const token = await vosFastpathToken();\nconst models = await fetch('/api/com.ictrek.v-scheduler/v1/models', {\n  headers: { Authorization: 'Bearer ' + token }\n}).then(r => r.json());\n// Populate the model selector with models.data[].id; do not store cloud keys, upstream URLs or model lists in this app.",
+      "note": "Configure the built-in Ollama services, cloud APIs, upstream keys, weights and concurrency in V-Router first. Other apps only read models and call the unified /v1/* API. A signed-in VOS account can reuse its Fastpath/OIDC token on the same-origin /api/com.ictrek.v-scheduler path.",
+      "title": "Other VOS apps: populate model selectors from V-Router"
+    },
+    {
+      "example": "const detail = await fetch('/api/com.ictrek.v-scheduler/api/v1/models', {\n  headers: { Authorization: 'Bearer ' + token }\n}).then(r => r.json());\n// detail.models includes qualified, kind, capabilities, endpoints, upstream_kind and model_prefix for filtering chat/embedding selectors.",
+      "note": "Use /v1/models for ordinary selectors; use /api/v1/models for capability filtering. Do not reject models solely because capabilities are unknown; display the specific gateway or upstream error after calling.",
+      "title": "Other VOS apps: read model source metadata"
+    },
+    {
+      "example": "curl http://<vos-host>:22888/v1/chat/completions -H \"Authorization: Bearer $VOS_TOKEN\" -H \"Content-Type: application/json\" -d '{\"model\":\"v-scheduler/ollama-qa/qwen3:0.6b\",\"messages\":[{\"role\":\"user\",\"content\":\"Hello\"}]}'",
+      "note": "Use source-qualified model names, e.g. v-scheduler/ollama-qa/, registered/ or com.ictrek.ai/. To pin an instance, pass X-VRouter-Upstream:<ID> and use the upstream-native model name.",
+      "title": "Select a source or pin an upstream"
+    },
+    {
+      "example": "curl http://<vos-host>:22888/api/v1/registrations \\\n  -H \"Authorization: Bearer $VOS_TOKEN\" -H \"Content-Type: application/json\" \\\n  -d '{\"service_id\":\"vllm-node-1\",\"visibility\":\"public\",\"base_url\":\"http://<backend>:8000/v1\",\"protocol\":\"chat_completions\",\"model_kind\":\"chat\",\"ttl_seconds\":90}'",
+      "note": "visibility=public makes models visible to all VOS users and anonymous internal inference through /v1/models. visibility=private limits visibility to the registrant's VOS identity and administrators. Use a stable, distinct service_id per instance; register again when models change.",
+      "title": "Register a model API: public or private"
+    },
+    {
+      "example": "curl http://<vos-host>:22888/api/v1/registrations \\\n  -H \"Authorization: Bearer $VOS_TOKEN\" -H \"Content-Type: application/json\" \\\n  -d '{\"service_id\":\"embed-node-1\",\"visibility\":\"private\",\"base_url\":\"http://<backend>:8000/v1\",\"protocol\":\"openai\",\"model\":\"bge-m3\",\"endpoints\":[\"embeddings\"],\"capabilities\":[\"embedding\"],\"ttl_seconds\":90}'",
+      "note": "Single-model registration does not probe /models; model and endpoints are required. endpoints determines available interfaces; capabilities/model_kind supports older clients and capability fallback. Unsupported interfaces return specific gateway or upstream errors.",
+      "title": "Register one model: declare endpoints and capabilities"
+    },
+    {
+      "example": "curl http://<vos-host>:22888/api/v1/registrations \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"service_id\":\"asr-192\",\"visibility\":\"public\",\"base_url\":\"http://192.168.1.192:27100\",\"protocol\":\"offline_asr\",\"model\":\"offline-asr\",\"endpoints\":[\"audio/transcriptions\"],\"capabilities\":[\"asr\"],\"ttl_seconds\":90}'",
+      "note": "offline_asr converts the multipart file in OpenAI-compatible /v1/audio/transcriptions to raw audio for upstream POST /transcribe?lang=<language>. Suitable for offline ASR services on VOS or the host.",
+      "title": "Register an offline ASR service"
+    },
+    {
+      "example": "curl -X POST http://<vos-host>:22888/api/v1/registrations/registered-vllm-node-1/heartbeat \\\n  -H \"Authorization: Bearer $VOS_TOKEN\" -H \"Content-Type: application/json\" -d '{\"ttl_seconds\":90}'\n\ncurl -X DELETE http://<vos-host>:22888/api/v1/registrations/registered-vllm-node-1 \\\n  -H \"Authorization: Bearer $VOS_TOKEN\"",
+      "note": "The response returns registered-<service_id>. Renew every ttl/3 seconds. A heartbeat 404 means the lease expired, the gateway restarted or the caller is not owner/admin; register again.",
+      "title": "Renew or remove a registration lease"
+    },
+    {
+      "example": "curl http://<vos-host>:22888/api/v1/auth/me -H \"Authorization: Bearer $VOS_TOKEN\"",
+      "note": "Other VOS apps can reuse their Fastpath token. Reauthorize after 401; invalid credentials never fall back to anonymous. Registered services support public/private visibility; private services are visible only to their registrant and administrators.",
+      "title": "Verify the current identity first"
+    },
+    {
+      "example": "curl http://<vos-host>:22888/v1/files -H \"Authorization: Bearer $VOS_TOKEN\" -H \"X-VRouter-Upstream: <id>\"",
+      "note": "Get the ID from the upstream page. Keep creation, queries and deletion on the same upstream, using native model names. Resources created through V-Router record their owner; other users get 404 (owner and administrators are exempt). Lists include all resources of the shared upstream account. Never expose a shared gateway key in a public frontend.",
+      "title": "Access resources on a pinned upstream"
+    },
+    {
+      "example": "curl http://<vos-host>:22888/v1/audio/transcriptions \\\n  -H \"Authorization: Bearer $VOS_TOKEN\" \\\n  -F model=v-voice/qwen3-asr-0.6b -F file=@sample.wav \\\n  -F hotwords='V-Router,Ascend' -F hotwords_set=hw_1a2b3c4d \\\n  -F 'timestamp_granularities[]=word' \\\n  -F speaker_model=v-voice/speaker-campplus-zh-en -F speaker_threshold=0.6 \\\n  -F response_format=verbose_json",
+      "note": "Use v-voice/-qualified gateway IDs for model and speaker_model; V-Router restores native IDs when forwarding. verbose_json returns text, words/segments (depending on word_timestamps capability), hotwords (including applied and active sets), and speaker attribution. No response fields are removed. Filter by capabilities instead of hardcoding model lists.",
+      "title": "V-Voice transcription: hotwords, timestamps and speaker attribution"
+    },
+    {
+      "example": "curl -N -X POST 'http://<vos-host>:22888/v1/audio/streaming/transcriptions?model=v-voice/zipformer-zh-streaming&format=pcm' \\\n  -H \"Authorization: Bearer $VOS_TOKEN\" -H 'Transfer-Encoding: chunked' --data-binary @audio.pcm\n\ncurl 'http://<vos-host>:22888/v1/audio/speakers?model=v-voice/speaker-campplus-zh-en' -H \"Authorization: Bearer $VOS_TOKEN\"\ncurl 'http://<vos-host>:22888/v1/audio/speakers/identify' -H \"Authorization: Bearer $VOS_TOKEN\" -F model=v-voice/speaker-campplus-zh-en -F file=@sample.wav",
+      "note": "Streaming requires a model declaring the streaming capability. Bodies are forwarded end to end without an overall timeout; connections occupy one concurrency slot. WebSocket: GET /v1/audio/streaming/ws?model=... (binary PCM upstream, partial/final downstream). Register/delete speakers in V-Voice; V-Router exposes only listing, identify and verify. See docs/v-voice-hotwords.md for the protocol and Python WebSocket examples.",
+      "title": "V-Voice streaming ASR and speaker integration"
+    }
+  ],
+  "key_required": false,
+  "oidc_enabled": false,
+  "version": "dev"
+}

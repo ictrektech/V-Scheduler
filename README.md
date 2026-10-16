@@ -10,7 +10,7 @@
 
 [V-Sub 私有 worker 可信绑定](docs/v-sub-auto-binding.md) 使用完整 namespace、worker generation 和已实测原生模型模板；L4T 与 Thor 的最终 Root worker 已通过真实字幕、直调/网关、业务取消和 generation 重启验证。
 
-网关源码现位于本仓库 `gateway/`，无需另行检出 V-Router；两个镜像仍使用原飞书列，构建命令见[源码与构建](docs/unified-application.md#source-ownership)。
+网关源码位于本仓库 `backend/src/router/`，与调度、模型仓库运行在同一个 Rust 进程；统一镜像使用原飞书 `v-scheduler` 列，构建命令见[源码与构建](docs/unified-application.md#source-ownership)。
 
 V-Scheduler 统一安装包包含 V-Router 网关与调度控制器，提供一个界面和文档入口。模型目录、上游、自动发现、试聊、协议适配、用量和原有模型 API 由原网关实现保留；任务、许可、节点和资源统计由控制器管理。顶部登录身份使用随主题变化的文字颜色。安装后自动发现支持的应用与模型；界面“应用接入”说明本地、云端及 V-Voice 主动接入方式。API 与端口兼容说明见[统一应用说明](docs/unified-application.md)。 网关接口若返回 HTML 等无效 JSON，界面会提示检查服务与访问路径，不会将错误响应写入模型列表，切换语言仍可使用。
 
@@ -20,7 +20,7 @@ V-Scheduler 统一安装包包含 V-Router 网关与调度控制器，提供一�
 
 调度页面轮询跟随 VOS 更新后的登录令牌；过期会话会按未认证处理并获取新令牌，无需刷新页面恢复。真实非管理员访问仍返回权限不足。
 
-顶部「关于」在所有页面均可打开，显示当前 VOS App 版本、运行配置和 Scheduler、模型管理、Router、三个 Ollama 实例的镜像名与版本标签。
+顶部「关于」在所有页面均可打开，显示当前 VOS App 版本、运行配置和 Scheduler（内置 Router、模型仓库、界面）和三个 Ollama 实例，共四个容器的镜像名与版本标签。
 
 自带 Ollama 调用中断后，控制器自动向固定后端核验原生加载与进程退出状态；停止已确认就释放残留许可并恢复后续调用。活动调用、停止未确认及其他应用的预约不会被清除。待核验的旧调用占用资源时，接口会明确提示停止核验，而非笼统地提示机器忙。
 
@@ -94,7 +94,7 @@ VOS 安装中的 V-Voice 可由现有发现器主动接入：控制器核验同�
 
 ## 统一配置与接口契约
 
-网关、调度器与模型仓库共用配置/身份说明和[错误契约](docs/api-contract.md)。VOS 根地址可通过 `SCHEDULER_VOS_URL` 同时提供给 Go/Rust，原 userinfo 覆盖保留。统一模型仓库入口复用网关登录；原生受信任内网接口保持兼容。应用 API 错误统一提供 `code`、`request_id` 与 `X-Request-ID`，保留旧 `error.message` / `detail`；前端统一服务路径、令牌轮换和错误解析。成功响应及推理协议保持原样，具体调度拒绝原因不会再被折叠为没有业务码的通用错误。模型下载的终态发布与活动记录清理保持同步，失败后可立即重试。
+网关、调度器与模型仓库共用配置/身份说明和[错误契约](docs/api-contract.md)。VOS 根地址可通过 `SCHEDULER_VOS_URL` 提供给统一 Rust 服务，原 userinfo 覆盖保留。统一模型仓库入口复用网关登录；原生受信任内网接口保持兼容。应用 API 错误统一提供 `code`、`request_id` 与 `X-Request-ID`，保留旧 `error.message` / `detail`；前端统一服务路径、令牌轮换和错误解析。成功响应及推理协议保持原样，具体调度拒绝原因不会再被折叠为没有业务码的通用错误。模型下载的终态发布与活动记录清理保持同步，失败后可立即重试。
 
 ## 设计与接入标准
 
@@ -171,7 +171,7 @@ Agent 是本应用在节点上运行的资源采集与任务执行后台进程�
 
 新版 V-Router 的 VOS 包强制依赖 Scheduler `>=0.0.11`，逐模型批准输入、资源参数与目标 executor。HTTP/SSE、WebSocket 与异步创建均有准入；异步接力和已运行任务子调用必须经数据库核验，不能凭 delegated 声明跳过。`GET /api/v1/permits` 显示模型许可历史，executor `upstream_urls` 绑定实际计算地址。接口以 [OpenAPI](api/openapi-v1.json) 和 [接入标准](docs/integration-standard.md) 为准。
 
-节点 `resident_baseline` 计常驻模型，`safety_reserve` 保护 VOS 余量；默认保留至少 2 GiB/10% RAM、一个 CPU 核和 256 MiB/5% 独立显存，CPU 95% 暂停准入。全部未释放预约与观测余量共同校验，统一内存仅用一个池。未知停止继续占用；关联子许可未停止时父任务不释放、不重试。控制器与内置采集共同受 512 MiB/1 CPU 容器限制。模板须按真实模型峰值校准，外部未纳管进程及不守契约的模型服务仍需执行端硬约束。
+节点 `resident_baseline` 计常驻模型，`safety_reserve` 保护 VOS 余量；默认保留至少 2 GiB/10% RAM、一个 CPU 核和 256 MiB/5% 独立显存，CPU 95% 暂停准入。全部未释放预约与观测余量共同校验，统一内存仅用一个池。未知停止继续占用；关联子许可未停止时父任务不释放、不重试。统一服务与内置采集共同受 1280 MiB/3 CPU 容器限制。模板须按真实模型峰值校准，外部未纳管进程及不守契约的模型服务仍需执行端硬约束。
 
 ### 本机采集与 Jetson Thor
 

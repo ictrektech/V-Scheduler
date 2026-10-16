@@ -75,7 +75,8 @@ fn parameter<'a>(query: &'a HashMap<String, String>, key: &str) -> Api<&'a str> 
         .map(String::as_str)
         .ok_or_else(|| bad(&format!("missing {key}")))
 }
-pub async fn serve(listen: String) -> Result<()> {
+pub async fn start(listen: String) -> Result<tokio::task::JoinHandle<Result<()>>> {
+    let socket = tokio::net::TcpListener::bind(&listen).await?;
     let store = Store::new(download::env("MODELS_BASE_DIR", "/data").into())?;
     let hub = Arc::new(Hub {
         store,
@@ -110,13 +111,17 @@ pub async fn serve(listen: String) -> Result<()> {
             tokio::time::sleep(std::time::Duration::from_secs(60)).await;
         }
     });
-    let socket = tokio::net::TcpListener::bind(&listen).await?;
-    axum::serve(socket, router(hub))
-        .with_graceful_shutdown(async {
-            let _ = tokio::signal::ctrl_c().await;
-        })
-        .await?;
-    Ok(())
+    Ok(tokio::spawn(async move {
+        axum::serve(socket, router(hub))
+            .with_graceful_shutdown(async {
+                let _ = tokio::signal::ctrl_c().await;
+            })
+            .await?;
+        Ok(())
+    }))
+}
+pub async fn serve(listen: String) -> Result<()> {
+    start(listen).await?.await?
 }
 fn router(hub: Arc<Hub>) -> Router {
     Router::new()

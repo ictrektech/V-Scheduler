@@ -1,6 +1,6 @@
 # V-Voice 主动接入
 
-统一包内的 Go 网关复用 V-Voice 发现器，将同一容器网络中的标准服务声明和实际就绪
+统一包内的 Rust 网关复用 V-Voice 发现器，将同一容器网络中的标准服务声明和实际就绪
 模型写入网关私有数据目录。Rust 控制器核验 VOS 签发给
 `com.ictrek.v-scheduler` 的应用 context 身份，并确认 `com.ictrek.v-voice`
 在本 VOS 已安装。授权只发给固定的 `http://v-voice-backend:7070`，不向发现结果中的

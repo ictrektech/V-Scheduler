@@ -157,3 +157,12 @@ HybRAG 0.1.71 的真实 VOS 登录、模型发现和专用网关绑定在三台�
 192、229 的 HybRAG 使用 `arm`，232 使用 `amd`，三台均为 0.1.72、installed、runtime_ready；这与 Scheduler 自身的 `l4t`/`thor-spark`/`amd` profile 分别选择。三台前后端共六项运行镜像 manifest 与最终发布一致，真实登录、模型发现、独立网关绑定及后台私钥不暴露均通过。229 已安装的正式 0.1.72 再次完成测试文档上传、解析、检索与含验证事实的实际 answer 事件，七张许可全部释放，测试会话及知识库删除。脱敏记录为 `~/dev/build/vai-client-migration/evidence/hybrag-229-rag72.json`。192 的实际容量限制仍按前表记录，不将拒绝冒充输出通过。
 
 旧路径共存测试的最终只读清理确认：临时容器已移除、三个专用测试执行器已停用、专用服务身份已撤销、全部本次许可已释放。未改用户默认模型、原有知识库或原 Model Hub 模型目录。新旧入口的受控真实共存和已安装新入口的完整 RAG 均已验收。
+
+
+## 2026-10-16 Rust unified-service candidate
+
+Router is reimplemented in `backend/src/router/`; Scheduler, Router and model management share one Rust process. Each of the six package profiles selects four containers. Existing gateway/model-workspace DNS aliases, nine port mappings, retained gateway state and the installation-selected shared model directory remain compatible. The About dialog lists four actual images as name:tag and marks Router/model management as embedded components.
+
+AMD and ARM each pass 77 Rust tests, including retained Go JSON state/zero timestamps, routing/circuit recovery, private ownership, multipart bytes, Responses/Messages tools and SSE, WebSocket frames/custom close codes, terminal/truncated/cancelled resource lifecycles and persistent consumable async receipts. Model management passes 41 isolated acceptance checks. The 16 packaging/helper tests and frontend tests/build pass. The actual unified-process API fixture passes identity matrices, CRUD/probes/registrations/resources, usage, all six documentation groups, PGV outage/restart and initial PGV unavailability. Browser checks cover all eight pages and shared About, four image rows without registry paths, model-workspace tabs, desktop/mobile and complete streaming/non-streaming chat without JS/request errors.
+
+These candidate checks use isolated data and synthetic model/identity endpoints. Publication, named-machine upgrades and native model/stability results are recorded separately after execution.

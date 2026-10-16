@@ -1,0 +1,1520 @@
+{
+  "base_urls": {
+    "internal": "http://v-router:8080/v1",
+    "lan": "http://<vos-host>:22888/v1",
+    "same_origin": "/api/com.ictrek.v-scheduler/v1"
+  },
+  "groups": [
+    {
+      "endpoints": [
+        {
+          "method": "GET",
+          "path": "/healthz",
+          "summary": "健康检查",
+          "desc": "容器健康检查端点，返回 200 和 ok，无需鉴权。",
+          "auth": "public"
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/auth-probe",
+          "summary": "登录诊断",
+          "desc": "免鉴权的 OIDC 连通性诊断：报告 userinfo 端点是否可达与最近错误，用于排查管理界面 401。",
+          "auth": "public"
+        }
+      ],
+      "id": "system",
+      "title": "系统"
+    },
+    {
+      "endpoints": [
+        {
+          "method": "GET",
+          "path": "/v1/models",
+          "summary": "模型列表",
+          "desc": "合并所有健康上游的模型。只返回带来源前缀的模型名，例如 model-hub/xxx、image-studio/xxx、registered/xxx、manual/xxx、com.ictrek.ai/xxx。",
+          "auth": "inference",
+          "example": "curl http://<vos-host>:22888/v1/models"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/chat/completions",
+          "summary": "对话补全（支持 SSE 流式）",
+          "desc": "OpenAI 兼容。model 必须使用 /v1/models 返回的带来源前缀名称；请求原样透传到上游，stream=true 时逐 token 转发。",
+          "auth": "inference",
+          "example": "curl -N http://<vos-host>:22888/v1/chat/completions \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"model\":\"v-scheduler/ollama-qa/qwen3.5:2b\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"你好\"}]}'"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/embeddings",
+          "summary": "文本向量",
+          "desc": "OpenAI 兼容。路由到 embedding 角色的上游（如 Model Hub 的 bge-m3，或自动发现 ML Server 的 Qwen3/CLIP 文本向量）。ML Server 不报告 tokenizer 用量，因此响应省略 usage，调用仍正常完成。",
+          "auth": "inference",
+          "example": "curl http://<vos-host>:22888/v1/embeddings \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"model\":\"model-hub/bge-m3\",\"input\":\"你好\"}'"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/audio/voices",
+          "summary": "语音合成 Voice 列表",
+          "desc": "按 model 查询参数路由到 TTS 上游，替换为原生模型名并透传响应；上游返回的 model、default_voice 和同值 voices[]/data[] 列表原样保留，客户端只能使用返回的 voice id。",
+          "auth": "inference",
+          "example": "curl 'http://<vos-host>:22888/v1/audio/voices?model=v-voice/kokoro-multilang'"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/ml/predictions",
+          "summary": "ML Server 图片推理扩展",
+          "desc": "multipart/form-data：model 与 image 必填。按 ml-server 模型自动适配 CLIP 图片向量、人脸识别、行人 ReID 或 OCR；可选 min_score、max_resolution、score_mode。上游返回保持 Immich ML Server 格式，embedding 字段仍是 JSON 数组字符串。",
+          "auth": "inference",
+          "example": "curl http://<vos-host>:22888/v1/ml/predictions -F model=ml-server/PP-OCRv5_server -F image=@image.jpg -F min_score=0.5"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/ml/video/structure",
+          "summary": "ML Server 视频结构化任务",
+          "desc": "V-Router 扩展接口。JSON 中 model=ml-server/video-structure，asset_id、video_path 必填，可选 detection 与逐场景 tasks；video_path 必须已存在于 ML Server 可访问的共享存储。",
+          "auth": "inference",
+          "example": "curl http://<vos-host>:22888/v1/ml/video/structure -H 'Content-Type: application/json' -d '{\"model\":\"ml-server/video-structure\",\"asset_id\":\"asset-001\",\"video_path\":\"video/example.mp4\"}'"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/ml/video/structure/tasks/{task_id}",
+          "summary": "查询 ML Server 视频结构化任务",
+          "desc": "model 查询参数必填。queued/running 可重复查询；succeeded/failed 终态首次读取后即由 ML Server 消费，后续查询同一 task_id 返回 404。",
+          "auth": "inference",
+          "example": "curl 'http://<vos-host>:22888/v1/ml/video/structure/tasks/<task-id>?model=ml-server/video-structure'"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/completions",
+          "summary": "文本补全",
+          "desc": "按 model 路由并替换原生模型名；支持 application/json，上游响应（含 SSE、二进制和错误）原样转发。上传上限 32 MiB；能力与参数取决于上游。指定 X-VRouter-Upstream 时需登录，使用上游原生请求体，可省略 model。",
+          "auth": "inference",
+          "example": "curl http://<vos-host>:22888/v1/completions -H 'Content-Type: application/json' -d '{\"model\":\"<model>\",\"prompt\":\"你好\"}'"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/responses",
+          "summary": "Responses 多模态响应",
+          "desc": "原生上游直接转发；Model Hub/仅 chat_completions 上游由 Rust 转换文本、图片输入、function tools、结构化输出和 SSE，须 store=false 或省略。转换不支持 previous_response_id、background、托管工具或服务端状态，不支持的字段返回 400。显式上游仍按配置转换，使用原生模型名。",
+          "auth": "inference",
+          "example": "curl http://<vos-host>:22888/v1/responses -H 'Content-Type: application/json' -d '{\"model\":\"<model>\",\"input\":\"你好\"}'"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/responses/compact",
+          "summary": "Responses 上下文压缩",
+          "desc": "按 model 路由并替换原生模型名；支持 application/json，上游响应（含 SSE、二进制和错误）原样转发。上传上限 32 MiB；能力与参数取决于上游。指定 X-VRouter-Upstream 时需登录，使用上游原生请求体，可省略 model。",
+          "auth": "inference",
+          "example": "curl http://<vos-host>:22888/v1/responses/compact -H 'Content-Type: application/json' -d '{\"model\":\"<model>\",\"input\":[{\"role\":\"user\",\"content\":\"你好\"}]}'"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/images/generations",
+          "summary": "图片生成",
+          "desc": "按 model 路由并替换原生模型名；支持 application/json，上游响应（含 SSE、二进制和错误）原样转发。上传上限 32 MiB；能力与参数取决于上游。指定 X-VRouter-Upstream 时需登录，使用上游原生请求体，可省略 model。",
+          "auth": "inference",
+          "example": "curl http://<vos-host>:22888/v1/images/generations -H 'Content-Type: application/json' -d '{\"model\":\"<model>\",\"prompt\":\"一座山\"}'"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/images/edits",
+          "summary": "图片编辑",
+          "desc": "按 model 路由并替换原生模型名；支持 multipart/form-data，上游响应（含 SSE、二进制和错误）原样转发。上传上限 32 MiB；能力与参数取决于上游。指定 X-VRouter-Upstream 时需登录，使用上游原生请求体，可省略 model。",
+          "auth": "inference",
+          "example": "curl http://<vos-host>:22888/v1/images/edits -F model='<model>' -F image=@image.png -F prompt='一座山'"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/images/variations",
+          "summary": "图片变体",
+          "desc": "按 model 路由并替换原生模型名；支持 multipart/form-data，上游响应（含 SSE、二进制和错误）原样转发。上传上限 32 MiB；能力与参数取决于上游。指定 X-VRouter-Upstream 时需登录，使用上游原生请求体，可省略 model。",
+          "auth": "inference",
+          "example": "curl http://<vos-host>:22888/v1/images/variations -F model='<model>' -F image=@image.png"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/videos/generations",
+          "summary": "视频生成",
+          "desc": "按 model 路由并替换原生模型名；支持 application/json，上游响应（含 SSE、二进制和错误）原样转发。上传上限 32 MiB；能力与参数取决于上游。指定 X-VRouter-Upstream 时需登录，使用上游原生请求体，可省略 model。 上游返回 2xx 且含 id 时记录任务创建者；后续经 /v1/videos/{id} 的查询、取消按资源归属拦截跨账户访问。",
+          "auth": "inference",
+          "example": "curl http://<vos-host>:22888/v1/videos/generations -H 'Content-Type: application/json' -d '{\"model\":\"<model>\",\"prompt\":\"一只小猫在月球上奔跑\"}'"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/audio/transcriptions",
+          "summary": "语音识别 ASR（支持热词文本、热词文件和增强分数）",
+          "desc": "按 model 路由并替换原生模型名；支持 multipart/form-data，上游响应（含 SSE、二进制和错误）原样转发。上传上限 32 MiB；能力与参数取决于上游。指定 X-VRouter-Upstream 时需登录，使用上游原生请求体，可省略 model。 热词模型可透传 hotwords 文本、hotwords_file UTF-8 文件、hotwords_set 已保存热词集 ID（可重复，与文本/文件在服务端合并去重）和 hotwords_score；V-Router 不解析或改写热词内容。timestamp_granularities[] 也原样透传；V-Voice 的 verbose_json 可返回 OpenAI 风格 words/segments，具体能力以发现元数据为准。V-Voice 模型还可透传 speaker_model（填 v-voice/ 前缀的声纹模型 ID，V-Router 在转发边界还原为原生 ID）与 speaker_threshold，提供时 verbose_json 附带 speaker 归属块，V-Router 不裁剪。",
+          "auth": "inference",
+          "example": "curl http://<vos-host>:22888/v1/audio/transcriptions -F model='<model>' -F file=@audio.wav -F response_format=verbose_json -F 'timestamp_granularities[]=word' -F hotwords='V-Voice,sherpa-onnx' -F hotwords_file=@hotwords.txt -F hotwords_score=1.5"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/audio/translations",
+          "summary": "语音翻译",
+          "desc": "按 model 路由并替换原生模型名；支持 multipart/form-data，上游响应（含 SSE、二进制和错误）原样转发。上传上限 32 MiB；能力与参数取决于上游。指定 X-VRouter-Upstream 时需登录，使用上游原生请求体，可省略 model。 热词模型可透传 hotwords 文本、hotwords_file UTF-8 文件、hotwords_set 已保存热词集 ID（可重复，与文本/文件在服务端合并去重）和 hotwords_score；V-Router 不解析或改写热词内容。timestamp_granularities[] 也原样透传；V-Voice 的 verbose_json 可返回 OpenAI 风格 words/segments，具体能力以发现元数据为准。V-Voice 模型还可透传 speaker_model（填 v-voice/ 前缀的声纹模型 ID，V-Router 在转发边界还原为原生 ID）与 speaker_threshold，提供时 verbose_json 附带 speaker 归属块，V-Router 不裁剪。",
+          "auth": "inference",
+          "example": "curl http://<vos-host>:22888/v1/audio/translations -F model='<model>' -F file=@audio.wav -F response_format=verbose_json -F 'timestamp_granularities[]=word' -F hotwords='V-Voice,sherpa-onnx' -F hotwords_file=@hotwords.txt -F hotwords_score=1.5"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/audio/speech",
+          "summary": "语音合成 TTS",
+          "desc": "按 model 路由并替换原生模型名；支持 application/json，上游响应（含 SSE、二进制和错误）原样转发。上传上限 32 MiB；能力与参数取决于上游。指定 X-VRouter-Upstream 时需登录，使用上游原生请求体，可省略 model。",
+          "auth": "inference",
+          "example": "curl http://<vos-host>:22888/v1/audio/speech -H 'Content-Type: application/json' -d '{\"model\":\"<model>\",\"input\":\"你好\",\"voice\":\"alloy\"}' --output speech.mp3"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/audio/music/generations",
+          "summary": "音乐生成（OpenAI 风格扩展）",
+          "desc": "OpenAI 风格扩展（OpenAI 官方当前无音乐生成端点）。V-Router 按 v-music/<模型 key> 自动路由并将 model 还原为原生 key，其余 JSON 字段和 WAV/FLAC 二进制响应原样透传。",
+          "auth": "inference",
+          "example": "curl http://<vos-host>:22888/v1/audio/music/generations -H 'Content-Type: application/json' -d '{\"model\":\"v-music/stable-audio-3-small-music\",\"prompt\":\"warm cinematic ambient music\",\"duration\":10,\"instrumental\":true,\"response_format\":\"wav\"}' --output music.wav"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/audio/speakers/identify",
+          "summary": "声纹识别 1:N（说话人归属）",
+          "desc": "1:N 说话人归属。multipart 字段：model 必填（v-voice/ 前缀声纹模型 ID）、file 必填、threshold 可选（0..1，默认 0.6）。响应包含 identified（是否超过阈值命中）、speaker（{id,name,score}，未命中为 null）、score、threshold 与 ranked（Top-5）。声纹经 V-Voice 管理面注册（宿主机级共享），V-Router 不代理注册接口。",
+          "auth": "inference",
+          "example": "curl http://<vos-host>:22888/v1/audio/speakers/identify -F model='<model>' -F file=@sample.wav -F threshold=0.6"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/audio/speakers/verify",
+          "summary": "声纹验证 1:1（说话人比对）",
+          "desc": "1:1 声纹验证。multipart 字段：model 必填（v-voice/ 前缀声纹模型 ID）、speaker 必填（声纹 id 或名称）、file 必填、threshold 可选（0..1，默认 0.6）。响应 verified、score、threshold、speaker；speaker 不存在由上游返回 404。",
+          "auth": "inference",
+          "example": "curl http://<vos-host>:22888/v1/audio/speakers/verify -F model='<model>' -F speaker=sp_1a2b3c4d -F file=@sample.wav"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/moderations",
+          "summary": "内容审核",
+          "desc": "按 model 路由并替换原生模型名；支持 application/json，上游响应（含 SSE、二进制和错误）原样转发。上传上限 32 MiB；能力与参数取决于上游。指定 X-VRouter-Upstream 时需登录，使用上游原生请求体，可省略 model。",
+          "auth": "inference",
+          "example": "curl http://<vos-host>:22888/v1/moderations -H 'Content-Type: application/json' -d '{\"model\":\"<model>\",\"input\":\"你好\"}'"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/rerank",
+          "summary": "重排序（兼容扩展，非 OpenAI 标准）",
+          "desc": "按 model 路由并替换原生模型名；支持 application/json，上游响应（含 SSE、二进制和错误）原样转发。上传上限 32 MiB；能力与参数取决于上游。指定 X-VRouter-Upstream 时需登录，使用上游原生请求体，可省略 model。",
+          "auth": "inference",
+          "example": "curl http://<vos-host>:22888/v1/rerank -H 'Content-Type: application/json' -d '{\"model\":\"<model>\",\"query\":\"问题\",\"documents\":[\"文档\"]}'"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/audio/streaming/transcriptions",
+          "summary": "流式语音识别（HTTP 分块上传）",
+          "desc": "仅声明 streaming capability 的模型（model 为查询参数，v-voice/<模型 key>）。请求体是 chunked 音频字节流（format=pcm|wav|auto，pcm 默认 16kHz s16le），V-Router 边到边透传、不整体缓冲，也不设置整体超时；hotwords、hotwords_set（可重复）、hotwords_score、response_format、speaker_model（v-voice/ 前缀 ID，转发时还原原生）、speaker_threshold 均经查询参数透传。body 结束后返回最终转写，verbose_json 字段与整句接口一致并附加 streaming:true；流式连接存续期间占用该模型一个并发槽。",
+          "auth": "inference",
+          "example": "curl -N -X POST 'http://<vos-host>:22888/v1/audio/streaming/transcriptions?model=v-voice/zipformer-zh-streaming&format=pcm' --header 'Transfer-Encoding: chunked' --data-binary @audio.pcm"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/audio/streaming/ws",
+          "summary": "流式语音识别（WebSocket 实时）",
+          "desc": "WebSocket 升级连接（model 为查询参数，format 仅 pcm|wav）。客户端发送 s16le 单声道 PCM 二进制分片，服务端回 {type:partial,text,is_endpoint}，客户端发文本帧 {type:finish} 或断开后回 {type:final,text,tokens,timestamps}；连接参数带 speaker_model 时 final 附带 speaker 归属块。错误按 4404（模型不存在）、4409（未就绪）、4422（参数不匹配）、4500（推理失败）关闭，V-Router 原样透传帧与关闭码。连接存续期间占用该模型一个并发槽。",
+          "auth": "inference"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/audio/speakers",
+          "summary": "声纹库列表",
+          "desc": "按 model 查询参数（v-voice/<声纹模型 key>）路由到声纹模型，返回已注册声纹：speakers[]/data[]（同值）每项含 id、name、dimension、created_at，另含 default_threshold；不返回声纹向量。声纹注册/删除在 V-Voice 管理面完成，不属于本接口。",
+          "auth": "inference",
+          "example": "curl 'http://<vos-host>:22888/v1/audio/speakers?model=v-voice/speaker-campplus-zh-en'"
+        }
+      ],
+      "id": "openai",
+      "title": "推理 API（OpenAI 兼容）"
+    },
+    {
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/v1/messages",
+          "summary": "Anthropic Messages",
+          "desc": "Anthropic 原生上游直接转发；chat_completions 上游由 Rust 进程内转换文本、图片输入与 function tools，支持 SSE。无状态转换不支持服务端工具、缓存或 thinking；图片和工具能力仍由模型决定。支持 x-api-key 网关身份。",
+          "auth": "inference"
+        }
+      ],
+      "id": "anthropic",
+      "title": "推理 API（Anthropic 兼容）"
+    },
+    {
+      "endpoints": [
+        {
+          "method": "GET",
+          "path": "/api/v1/status",
+          "summary": "网关状态",
+          "desc": "版本、上游健康数、模型数、累计请求、是否启用 API Key。",
+          "auth": "manage"
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/models",
+          "summary": "模型列表（含元数据）",
+          "desc": "管理视图：每个模型带上游名称、上游类型、是否短名别名等元数据。",
+          "auth": "manage"
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/usage",
+          "summary": "用量统计",
+          "desc": "从 JSONL 历史按模型、上游和用户汇总请求及上游报告的输入/输出 Token；period 支持 day（默认）、week、month、all。上游不报告 usage 时请求仍正常完成。",
+          "auth": "manage"
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/upstreams",
+          "summary": "上游列表",
+          "desc": "当前用户可见的全部上游（本地发现 + 云端/手动添加 + 主动注册），密钥不回显。每个上游带 status 状态分档：healthy 健康；paused 调度已暂停；lease_expired 注册租约过期；circuit_open 连续连接失败熔断中（failures 连续失败次数、circuit_open_until 冷却结束时间，冷却后下一个请求自动探测恢复）；auth_failed 模型探测返回 401/403（detail 带原始原因）；discovery_failed 发现或探测失败；no_models 上游可达但没有可用模型；full 进行中请求已达 max_inflight。manageable 表示当前身份能否修改、刷新、删除该上游或配置其调度（owner 或管理员）。private 上游只出现在 owner 和管理员的列表里。",
+          "auth": "manage"
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/upstreams/probe",
+          "summary": "测试云端/手动上游",
+          "desc": "按当前表单参数探测模型列表；可提交 test_model 做一次轻量联通测试。失败只返回诊断结果，不保存上游。",
+          "auth": "manage"
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/upstreams",
+          "summary": "添加云端或手动上游",
+          "desc": "登记上游，kind 支持 manual/cloud，protocol 支持 openai（原生）、chat_completions（转换 Responses/Messages）、anthropic（原生）、offline_asr（离线 ASR /transcribe 适配）、image_studio（Image Studio 生图/生视频适配）、async_task（通用异步图片任务创建/轮询适配）。云端模型前缀按域名反转生成，例如 ai.ictrek.com -> com.ictrek.ai。默认保存前探测模型列表；async_task 改为校验单模型及任务字段，不创建付费任务。visibility 支持 public（共享，默认，所有调用者可见可用）和 private（仅创建者与管理员可见可用）；创建者身份记录为 owner，之后只有 owner 和管理员能修改、刷新、删除该上游或配置调度。历史存量上游 owner 为空，升级后保持共享且所有登录用户可管理。",
+          "auth": "manage",
+          "example": "curl -X POST http://<vos-host>:22888/api/v1/upstreams \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"kind\":\"cloud\",\"name\":\"ICTrek AI\",\"base_url\":\"https://ai.ictrek.com/v1\",\"api_key\":\"sk-...\",\"visibility\":\"public\"}'"
+        },
+        {
+          "method": "PUT",
+          "path": "/api/v1/upstreams/{id}",
+          "summary": "更新云端或手动上游",
+          "desc": "修改名称、地址、协议、密钥或可见范围；api_key 留空表示保留原密钥。云端上游会按新 base_url 重新计算模型前缀。仅 owner 和管理员可调用：非 owner 修改他人 public 上游返回 403，访问他人 private 上游返回 404。owner 不可转移。",
+          "auth": "manage"
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/upstreams/{id}/refresh",
+          "summary": "刷新上游模型",
+          "desc": "重新探测 API 创建的云端/手动上游并刷新其模型列表。仅 owner 和管理员可调用。",
+          "auth": "manage"
+        },
+        {
+          "method": "DELETE",
+          "path": "/api/v1/upstreams/{id}",
+          "summary": "删除云端或手动上游",
+          "desc": "删除后其模型立即从 /v1/models 移除，同时清除该上游的资源归属记录；Model Hub 发现和后端注册的上游不可在此删除。仅 owner 和管理员可调用。",
+          "auth": "manage"
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/apidoc",
+          "summary": "API 文档数据",
+          "desc": "返回当前版本全部端点的说明与示例；管理界面的“API 文档”页由此实时渲染，永远与运行中的接口一致。",
+          "auth": "manage"
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/auth/me",
+          "summary": "验证当前调用身份",
+          "desc": "校验 VOS OIDC Bearer token 或共享网关 Key，返回 identity、auth_method、permissions、resource_isolation=true 和 registration_scopes。注册服务可选择 public/private；private 只对注册者身份和管理员可见。",
+          "auth": "manage"
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/openapi.json",
+          "summary": "OpenAPI 3.1 契约",
+          "desc": "从运行时路由表自动生成；扩展字段和上游返回体保留，随版本即时更新。",
+          "auth": "manage"
+        },
+        {
+          "method": "PUT",
+          "path": "/api/v1/upstreams/{id}/routing",
+          "summary": "配置上游自动调度",
+          "desc": "适用于手动、Model Hub 和主动注册后端。weight 默认 1（1..1000），max_inflight 默认 0 不限并发，disabled 默认 false。该上限仅统计本网关进行中请求；SSE 到结束或取消才释放。配置持久化。仅 owner 和管理员可调用（403），他人 private 上游返回 404。",
+          "auth": "manage"
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/registrations",
+          "summary": "推理后端主动注册 / 更新",
+          "desc": "需网关 Key 或 VOS 身份。稳定 service_id 生成 registered-<service_id>；相同 ID 更新同一实例，副本须不同 ID。可注册 public 或 private 服务；private 只对注册者身份可见，public 对所有调用者可见。可注册 base_url/models 模型 API，也可提交 model 或 models 显式注册单个/多个模型；显式模型必须声明 endpoints，capabilities/model_kind 用于接口能力过滤；model_endpoints 和 model_capabilities 可逐模型覆盖；ttl_seconds 默认90。",
+          "auth": "manage"
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/registrations/{id}/heartbeat",
+          "summary": "续期注册租约",
+          "desc": "提交 JSON {ttl_seconds:90}，建议每30秒续期。404 表示租约过期或网关重启，须重新注册。心跳不刷新模型目录；模型变动请重新注册。",
+          "auth": "manage"
+        },
+        {
+          "method": "DELETE",
+          "path": "/api/v1/registrations/{id}",
+          "summary": "注销推理后端",
+          "desc": "立即退出新请求分配，已开始的请求继续完成。只允许注销主动注册来源。",
+          "auth": "manage"
+        }
+      ],
+      "id": "manage",
+      "title": "管理 API"
+    },
+    {
+      "endpoints": [
+        {
+          "method": "GET",
+          "path": "/v1/messages",
+          "summary": "messages · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/messages",
+          "summary": "messages · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/messages",
+          "summary": "messages · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/messages/{resource_path...}",
+          "summary": "messages · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/messages/{resource_path...}",
+          "summary": "messages · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/messages/{resource_path...}",
+          "summary": "messages · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/messages/{resource_path...}",
+          "summary": "messages · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/skills",
+          "summary": "skills · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/skills",
+          "summary": "skills · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/skills",
+          "summary": "skills · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/skills",
+          "summary": "skills · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/skills/{resource_path...}",
+          "summary": "skills · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/skills/{resource_path...}",
+          "summary": "skills · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/skills/{resource_path...}",
+          "summary": "skills · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/skills/{resource_path...}",
+          "summary": "skills · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/responses",
+          "summary": "responses · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/responses",
+          "summary": "responses · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/responses",
+          "summary": "responses · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/responses/{resource_path...}",
+          "summary": "responses · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/responses/{resource_path...}",
+          "summary": "responses · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/responses/{resource_path...}",
+          "summary": "responses · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/responses/{resource_path...}",
+          "summary": "responses · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/chat/completions",
+          "summary": "chat/completions · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/chat/completions",
+          "summary": "chat/completions · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/chat/completions",
+          "summary": "chat/completions · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/chat/completions/{resource_path...}",
+          "summary": "chat/completions · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/chat/completions/{resource_path...}",
+          "summary": "chat/completions · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/chat/completions/{resource_path...}",
+          "summary": "chat/completions · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/chat/completions/{resource_path...}",
+          "summary": "chat/completions · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/files",
+          "summary": "files · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/files",
+          "summary": "files · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/files",
+          "summary": "files · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/files",
+          "summary": "files · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/files/{resource_path...}",
+          "summary": "files · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/files/{resource_path...}",
+          "summary": "files · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/files/{resource_path...}",
+          "summary": "files · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/files/{resource_path...}",
+          "summary": "files · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/uploads",
+          "summary": "uploads · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/uploads",
+          "summary": "uploads · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/uploads",
+          "summary": "uploads · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/uploads",
+          "summary": "uploads · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/uploads/{resource_path...}",
+          "summary": "uploads · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/uploads/{resource_path...}",
+          "summary": "uploads · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/uploads/{resource_path...}",
+          "summary": "uploads · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/uploads/{resource_path...}",
+          "summary": "uploads · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/batches",
+          "summary": "batches · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/batches",
+          "summary": "batches · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/batches",
+          "summary": "batches · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/batches",
+          "summary": "batches · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/batches/{resource_path...}",
+          "summary": "batches · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/batches/{resource_path...}",
+          "summary": "batches · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/batches/{resource_path...}",
+          "summary": "batches · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/batches/{resource_path...}",
+          "summary": "batches · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/images",
+          "summary": "images · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/images",
+          "summary": "images · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/images",
+          "summary": "images · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/images",
+          "summary": "images · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/images/{resource_path...}",
+          "summary": "images · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/images/{resource_path...}",
+          "summary": "images · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/images/{resource_path...}",
+          "summary": "images · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/images/{resource_path...}",
+          "summary": "images · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/audio",
+          "summary": "audio · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/audio",
+          "summary": "audio · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/audio",
+          "summary": "audio · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/audio",
+          "summary": "audio · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/audio/{resource_path...}",
+          "summary": "audio · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/audio/{resource_path...}",
+          "summary": "audio · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/audio/{resource_path...}",
+          "summary": "audio · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/audio/{resource_path...}",
+          "summary": "audio · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/videos",
+          "summary": "videos · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/videos",
+          "summary": "videos · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/videos",
+          "summary": "videos · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/videos",
+          "summary": "videos · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/videos/{resource_path...}",
+          "summary": "videos · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/videos/{resource_path...}",
+          "summary": "videos · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/videos/{resource_path...}",
+          "summary": "videos · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/videos/{resource_path...}",
+          "summary": "videos · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/fine_tuning",
+          "summary": "fine_tuning · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/fine_tuning",
+          "summary": "fine_tuning · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/fine_tuning",
+          "summary": "fine_tuning · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/fine_tuning",
+          "summary": "fine_tuning · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/fine_tuning/{resource_path...}",
+          "summary": "fine_tuning · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/fine_tuning/{resource_path...}",
+          "summary": "fine_tuning · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/fine_tuning/{resource_path...}",
+          "summary": "fine_tuning · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/fine_tuning/{resource_path...}",
+          "summary": "fine_tuning · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/vector_stores",
+          "summary": "vector_stores · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/vector_stores",
+          "summary": "vector_stores · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/vector_stores",
+          "summary": "vector_stores · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/vector_stores",
+          "summary": "vector_stores · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/vector_stores/{resource_path...}",
+          "summary": "vector_stores · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/vector_stores/{resource_path...}",
+          "summary": "vector_stores · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/vector_stores/{resource_path...}",
+          "summary": "vector_stores · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/vector_stores/{resource_path...}",
+          "summary": "vector_stores · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/assistants",
+          "summary": "assistants · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/assistants",
+          "summary": "assistants · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/assistants",
+          "summary": "assistants · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/assistants",
+          "summary": "assistants · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/assistants/{resource_path...}",
+          "summary": "assistants · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/assistants/{resource_path...}",
+          "summary": "assistants · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/assistants/{resource_path...}",
+          "summary": "assistants · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/assistants/{resource_path...}",
+          "summary": "assistants · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/threads",
+          "summary": "threads · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/threads",
+          "summary": "threads · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/threads",
+          "summary": "threads · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/threads",
+          "summary": "threads · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/threads/{resource_path...}",
+          "summary": "threads · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/threads/{resource_path...}",
+          "summary": "threads · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/threads/{resource_path...}",
+          "summary": "threads · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/threads/{resource_path...}",
+          "summary": "threads · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/conversations",
+          "summary": "conversations · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/conversations",
+          "summary": "conversations · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/conversations",
+          "summary": "conversations · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/conversations",
+          "summary": "conversations · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/conversations/{resource_path...}",
+          "summary": "conversations · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/conversations/{resource_path...}",
+          "summary": "conversations · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/conversations/{resource_path...}",
+          "summary": "conversations · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/conversations/{resource_path...}",
+          "summary": "conversations · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/realtime",
+          "summary": "realtime · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/realtime",
+          "summary": "realtime · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/realtime",
+          "summary": "realtime · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/realtime",
+          "summary": "realtime · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/realtime/{resource_path...}",
+          "summary": "realtime · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/realtime/{resource_path...}",
+          "summary": "realtime · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/realtime/{resource_path...}",
+          "summary": "realtime · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/realtime/{resource_path...}",
+          "summary": "realtime · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/containers",
+          "summary": "containers · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/containers",
+          "summary": "containers · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/containers",
+          "summary": "containers · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/containers",
+          "summary": "containers · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/containers/{resource_path...}",
+          "summary": "containers · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/containers/{resource_path...}",
+          "summary": "containers · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/containers/{resource_path...}",
+          "summary": "containers · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/containers/{resource_path...}",
+          "summary": "containers · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/models",
+          "summary": "models · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/models",
+          "summary": "models · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/models",
+          "summary": "models · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/models/{resource_path...}",
+          "summary": "models · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "POST",
+          "path": "/v1/models/{resource_path...}",
+          "summary": "models · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v1/models/{resource_path...}",
+          "summary": "models · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        },
+        {
+          "method": "PATCH",
+          "path": "/v1/models/{resource_path...}",
+          "summary": "models · 指定上游透传",
+          "desc": "必须携带 X-VRouter-Upstream: <上游 ID> 和管理身份，使用上游原生参数/模型名；创建、查询、取消、下载均固定同一上游。public 注册服务对所有调用者可见；private 注册服务只对注册者身份和管理员可见。资源归属：经 V-Router 创建成功的资源（POST /v1/<family> 返回 2xx 且含 id）会记录创建者，其他用户随后访问该资源返回 404，owner 和管理员不受限；列表接口仍返回上游共享账户的全部资源（共享供应商账户的固有限制），在本功能上线前或绕过 V-Router 创建的资源不受限。保留查询参数、multipart、SSE、二进制及 WebSocket 升级；不支持的操作由上游返回错误。",
+          "auth": "manage"
+        }
+      ],
+      "id": "resource",
+      "title": "资源接口 · 指定上游"
+    },
+    {
+      "endpoints": [
+        {
+          "method": "GET",
+          "path": "/api/v1/video-structure/status",
+          "summary": "视频结构化服务发现状态",
+          "desc": "报告 scene-detect 与 structure 是否已由 V-Router 定期发现；服务未安装或不可达是正常状态。",
+          "auth": "inference"
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/scenes/detect",
+          "summary": "同步检测视频场景",
+          "desc": "保持视频结构化原始路径、请求体、状态码、响应头和响应体透传；V-Router 只暴露业务接口，不把该服务加入基础模型池。",
+          "auth": "inference"
+        },
+        {
+          "method": "POST",
+          "path": "/api/v2/scenes/detect/jobs",
+          "summary": "提交场景检测任务",
+          "desc": "保持视频结构化原始路径、请求体、状态码、响应头和响应体透传；V-Router 只暴露业务接口，不把该服务加入基础模型池。",
+          "auth": "inference"
+        },
+        {
+          "method": "GET",
+          "path": "/api/v2/scenes/detect/jobs/{job_id}",
+          "summary": "查询场景检测任务",
+          "desc": "保持视频结构化原始路径、请求体、状态码、响应头和响应体透传；V-Router 只暴露业务接口，不把该服务加入基础模型池。",
+          "auth": "inference"
+        },
+        {
+          "method": "POST",
+          "path": "/api/v2/video/structure/jobs",
+          "summary": "提交视频结构化任务",
+          "desc": "保持视频结构化原始路径、请求体、状态码、响应头和响应体透传；V-Router 只暴露业务接口，不把该服务加入基础模型池。",
+          "auth": "inference"
+        },
+        {
+          "method": "GET",
+          "path": "/api/v2/video/structure/jobs/{job_id}",
+          "summary": "查询视频结构化任务",
+          "desc": "保持视频结构化原始路径、请求体、状态码、响应头和响应体透传；V-Router 只暴露业务接口，不把该服务加入基础模型池。",
+          "auth": "inference"
+        },
+        {
+          "method": "GET",
+          "path": "/api/v2/video/structure/jobs/{job_id}/artifact",
+          "summary": "下载视频结构化产物",
+          "desc": "保持视频结构化原始路径、请求体、状态码、响应头和响应体透传；V-Router 只暴露业务接口，不把该服务加入基础模型池。",
+          "auth": "inference"
+        },
+        {
+          "method": "DELETE",
+          "path": "/api/v2/video/structure/jobs/{job_id}",
+          "summary": "释放视频结构化产物",
+          "desc": "保持视频结构化原始路径、请求体、状态码、响应头和响应体透传；V-Router 只暴露业务接口，不把该服务加入基础模型池。",
+          "auth": "inference"
+        },
+        {
+          "method": "POST",
+          "path": "/api/v2/video/describe/jobs",
+          "summary": "提交场景描述任务",
+          "desc": "保持视频结构化原始路径、请求体、状态码、响应头和响应体透传；V-Router 只暴露业务接口，不把该服务加入基础模型池。",
+          "auth": "inference"
+        },
+        {
+          "method": "GET",
+          "path": "/api/v2/video/describe/jobs/{job_id}",
+          "summary": "查询场景描述任务",
+          "desc": "保持视频结构化原始路径、请求体、状态码、响应头和响应体透传；V-Router 只暴露业务接口，不把该服务加入基础模型池。",
+          "auth": "inference"
+        }
+      ],
+      "id": "video-structure",
+      "title": "视频结构化 API"
+    }
+  ],
+  "identity": [
+    {
+      "channel": "VOS 内应用 / 管理界面",
+      "effect": "调用归集到对应 VOS 用户；管理 API 必须以此登录（或使用网关 Key）。其他 VOS 应用的 fastpath token 同样有效：其前端携带自身 token 调用同域 /api/com.ictrek.v-scheduler/v1/* 即按该应用当前用户归集，无需向 V-Router 注册",
+      "method": "Authorization: Bearer <VOS OIDC access_token>"
+    },
+    {
+      "channel": "局域网 / 外部客户端",
+      "effect": "以 gateway-admin 身份调用，计入管理员用量",
+      "method": "Authorization: Bearer <V_ROUTER_API_KEY>（启用校验后）"
+    },
+    {
+      "channel": "VOS 内网匿名调用",
+      "effect": "仅关闭 REQUIRE_KEY 时模型推理可匿名使用，归集为 internal；管理 API 和显式上游资源接口拒绝匿名",
+      "method": "无凭证"
+    }
+  ],
+  "integration": [
+    {
+      "example": "# VOS_API is the reachable VOS API base URL (for example http://<vos-host>:8105).\n# login.json contains {\"username\":\"<username>\",\"password\":\"<password>\",\"application\":\"nas\"}.\n# Keep login.json private; never store credentials in client source code.\nVOS_API=http://<vos-host>:8105\nROUTER=http://<vos-host>:22888\nVOS_TOKEN=$(curl --fail-with-body -sS \"$VOS_API/v1000/user/login\" \\\n  -H 'Content-Type: application/json' --data-binary @login.json | jq -er '.data.access_token')\ncurl --fail-with-body \"$ROUTER/api/v1/auth/me\" -H \"Authorization: Bearer $VOS_TOKEN\"\ncurl --fail-with-body \"$ROUTER/v1/models\" -H \"Authorization: Bearer $VOS_TOKEN\"\ncurl --fail-with-body \"$ROUTER/v1/chat/completions\" \\\n  -H \"Authorization: Bearer $VOS_TOKEN\" -H 'Content-Type: application/json' \\\n  -d '{\"model\":\"<qualified-model-id-from-models>\",\"messages\":[{\"role\":\"user\",\"content\":\"Hello\"}]}'",
+      "note": "先通过 VOS API 的 POST /v1000/user/login 获取 data.access_token，再携带 Authorization: Bearer <access_token> 调用 V-Router 映射端口。默认 22888，可通过安装参数 V_ROUTER_HOST_PORT 修改；VOS API 地址使用设备实际可访问的 API 入口（例如 http://<vos-host>:8105，或平台已配置的 HTTPS 反代入口）。V-Router 会向 VOS userinfo 校验 token，并按该 VOS 用户归集用量及应用资源权限，无需另建 V-Router 账户。先调用 /api/v1/auth/me 核对身份；401 时重新登录或刷新 token，不能用 VOS 密码替代 Bearer token。服务端调用不受浏览器 CORS 限制；跨域网页应通过同域代理接入。",
+      "title": "局域网客户端：VOS 登录后直连映射端口"
+    },
+    {
+      "example": "云端模型：应用 → V-Router → 云端供应商（无需本地许可）\n本机或已纳管其他节点的同步模型：应用 → V-Router → V-Scheduler permit → 模型服务\n自有异步任务：应用 → V-Scheduler task → 已批准的节点执行器",
+      "note": "按实际执行节点分类，不按 URL 猜测。云端上游不占 V-Scheduler 的本地 CPU/GPU；其他已纳管节点按目标节点资源池预约。未纳管远端上游不能声称由调度器管理。同一计算只由 permit 或 task 预约一次。",
+      "title": "算力路径：云端、本机与其他节点"
+    },
+    {
+      "example": "const result = await fetch('/api/com.ictrek.v-scheduler/v1/chat/completions', {\n  method: 'POST',\n  headers: {Authorization: 'Bearer ' + token, 'Content-Type': 'application/json'},\n  body: JSON.stringify({model: 'v-scheduler/ollama-qa/<model>', messages: [{role: 'user', content: 'Hello'}]})\n});",
+      "note": "调用方只使用 V-Router 模型 API，不持有 V-Scheduler 服务令牌。管理员须批准真实节点与带 upstream_urls 的 executor，在 scheduler.local.json 的 models[upstreamID/nativeModelID] 批准输入与资源参数上限。未批准/缺配置返回 503，资源忙返回 429，超输入返回 413，超参数返回 422。HTTP/SSE、WebSocket 和异步创建均先准入；异步接力、运行任务子调用须核验任务、用户、节点及预算，不能凭 delegated 跳过。WebSocket 须批准 server_close 停止契约；未知停止保留预约，异步日志重启恢复轮询。云端绕过本地许可。",
+      "title": "本地模型接入：由网关申请许可"
+    },
+    {
+      "example": "const token = await vosFastpathToken();\nconst models = await fetch('/api/com.ictrek.v-scheduler/v1/models', {\n  headers: { Authorization: 'Bearer ' + token }\n}).then(r => r.json());\n// 用 models.data[].id 填充模型下拉框；不要在本应用保存云端 key、上游地址或模型清单。",
+      "note": "推荐方式是用户先在 V-Router 里配置内置 Ollama、云端 API、上游 key、权重和并发；其他应用只读取模型列表并调用统一 /v1/*。同一个 VOS 账户在任一应用登录后，其 Fastpath/OIDC token 可直接访问 V-Router，同域路径为 /api/com.ictrek.v-scheduler。",
+      "title": "其他 VOS 应用：用 V-Router 模型列表生成下拉框"
+    },
+    {
+      "example": "const detail = await fetch('/api/com.ictrek.v-scheduler/api/v1/models', {\n  headers: { Authorization: 'Bearer ' + token }\n}).then(r => r.json());\n// detail.models 包含 qualified、kind、capabilities、endpoints、upstream_kind、model_prefix，可用于筛选对话/Embedding 下拉。",
+      "note": "普通下拉框用 /v1/models 即可；需要按能力筛选时用 /api/v1/models。能力未知时不要在应用侧硬拦截，调用后显示 V-Router 或上游返回的具体错误。",
+      "title": "其他 VOS 应用：读取带来源元数据的模型列表"
+    },
+    {
+      "example": "curl http://<vos-host>:22888/v1/chat/completions -H \"Authorization: Bearer $VOS_TOKEN\" -H \"Content-Type: application/json\" -d '{\"model\":\"v-scheduler/ollama-qa/qwen3:0.6b\",\"messages\":[{\"role\":\"user\",\"content\":\"你好\"}]}'",
+      "note": "模型名必须带来源前缀，例如 v-scheduler/ollama-qa/、registered/、com.ictrek.ai/。需要固定实例时附加 X-VRouter-Upstream:<ID> 严格指定后端（模型用上游原生名）。",
+      "title": "指定来源与指定上游"
+    },
+    {
+      "example": "curl http://<vos-host>:22888/api/v1/registrations \\\n  -H \"Authorization: Bearer $VOS_TOKEN\" -H \"Content-Type: application/json\" \\\n  -d '{\"service_id\":\"vllm-node-1\",\"visibility\":\"public\",\"base_url\":\"http://<backend>:8000/v1\",\"protocol\":\"chat_completions\",\"model_kind\":\"chat\",\"ttl_seconds\":90}'",
+      "note": "visibility=public 时所有 VOS 用户和匿名内网推理都可在 /v1/models 看到；visibility=private 时只对注册者同一 VOS token 和管理员可见。每个实例用稳定且不同的 service_id；模型变化需再次注册。",
+      "title": "注册模型 API：public 或 private"
+    },
+    {
+      "example": "curl http://<vos-host>:22888/api/v1/registrations \\\n  -H \"Authorization: Bearer $VOS_TOKEN\" -H \"Content-Type: application/json\" \\\n  -d '{\"service_id\":\"embed-node-1\",\"visibility\":\"private\",\"base_url\":\"http://<backend>:8000/v1\",\"protocol\":\"openai\",\"model\":\"bge-m3\",\"endpoints\":[\"embeddings\"],\"capabilities\":[\"embedding\"],\"ttl_seconds\":90}'",
+      "note": "单模型注册不会探测 /models，必须提供 model 和 endpoints。endpoints 决定可访问接口，capabilities/model_kind 用于旧客户端和能力兜底；不支持的接口由 V-Router 或上游返回具体错误。",
+      "title": "注册单个模型：声明接口和能力"
+    },
+    {
+      "example": "curl http://<vos-host>:22888/api/v1/registrations \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"service_id\":\"asr-192\",\"visibility\":\"public\",\"base_url\":\"http://192.168.1.192:27100\",\"protocol\":\"offline_asr\",\"model\":\"offline-asr\",\"endpoints\":[\"audio/transcriptions\"],\"capabilities\":[\"asr\"],\"ttl_seconds\":90}'",
+      "note": "offline_asr 将 OpenAI 兼容 /v1/audio/transcriptions 的 multipart file 转成上游 POST /transcribe?lang=<language> 原始音频调用，适合 VOS 或宿主机上的离线语音识别服务。",
+      "title": "注册离线 ASR 服务"
+    },
+    {
+      "example": "curl -X POST http://<vos-host>:22888/api/v1/registrations/registered-vllm-node-1/heartbeat \\\n  -H \"Authorization: Bearer $VOS_TOKEN\" -H \"Content-Type: application/json\" -d '{\"ttl_seconds\":90}'\n\ncurl -X DELETE http://<vos-host>:22888/api/v1/registrations/registered-vllm-node-1 \\\n  -H \"Authorization: Bearer $VOS_TOKEN\"",
+      "note": "响应返回 registered-<service_id>，建议每 ttl/3 秒续期。心跳 404 表示租约过期、网关重启或当前身份不是 owner/admin；需要重新注册。",
+      "title": "注册租约续期和注销"
+    },
+    {
+      "example": "curl http://<vos-host>:22888/api/v1/auth/me -H \"Authorization: Bearer $VOS_TOKEN\"",
+      "note": "其他 VOS 应用携带自身 Fastpath token 即可。401 时重新授权；无效凭证不会降级匿名。注册服务支持 public/private 可见范围；private 只对注册者身份和管理员可见。",
+      "title": "先验证当前身份"
+    },
+    {
+      "example": "curl http://<vos-host>:22888/v1/files -H \"Authorization: Bearer $VOS_TOKEN\" -H \"X-VRouter-Upstream: <id>\"",
+      "note": "从上游页取得 ID，创建、查询和删除保持同一上游；模型字段使用原生名称。经 V-Router 创建的资源会记录创建者，其他用户访问这些资源返回 404（owner 和管理员不受限）；列表返回上游共享账户的全部资源。不要把共享网关 Key 放到公开前端。",
+      "title": "固定上游访问资源"
+    },
+    {
+      "example": "curl http://<vos-host>:22888/v1/audio/transcriptions \\\n  -H \"Authorization: Bearer $VOS_TOKEN\" \\\n  -F model=v-voice/qwen3-asr-0.6b -F file=@sample.wav \\\n  -F hotwords='V-Router,昇腾' -F hotwords_set=hw_1a2b3c4d \\\n  -F 'timestamp_granularities[]=word' \\\n  -F speaker_model=v-voice/speaker-campplus-zh-en -F speaker_threshold=0.6 \\\n  -F response_format=verbose_json",
+      "note": "model 与 speaker_model 都填 v-voice/ 前缀的网关模型 ID，V-Router 在转发边界还原原生 ID。verbose_json 返回 text、words/segments（以 word_timestamps capability 为准）、hotwords（含 applied 与生效 sets）和 speaker 归属块；V-Router 不裁剪任何字段。按 capabilities 筛选模型，不要硬编码模型清单。",
+      "title": "V-Voice 语音转写：热词、时间戳与说话人归属"
+    },
+    {
+      "example": "curl -N -X POST 'http://<vos-host>:22888/v1/audio/streaming/transcriptions?model=v-voice/zipformer-zh-streaming&format=pcm' \\\n  -H \"Authorization: Bearer $VOS_TOKEN\" -H 'Transfer-Encoding: chunked' --data-binary @audio.pcm\n\ncurl 'http://<vos-host>:22888/v1/audio/speakers?model=v-voice/speaker-campplus-zh-en' -H \"Authorization: Bearer $VOS_TOKEN\"\ncurl 'http://<vos-host>:22888/v1/audio/speakers/identify' -H \"Authorization: Bearer $VOS_TOKEN\" -F model=v-voice/speaker-campplus-zh-en -F file=@sample.wav",
+      "note": "流式接口仅服务声明 streaming capability 的模型，请求体边到边透传、无整体超时，连接期间占用一个并发槽；WebSocket 实时通道为 GET /v1/audio/streaming/ws?model=...（二进制 PCM 上行、partial/final 下行）。声纹注册/删除在 V-Voice 管理面完成，经 V-Router 只做列表、identify 与 verify；详细协议和 Python WebSocket 示例见 docs/v-voice-hotwords.md。",
+      "title": "V-Voice 流式识别与声纹接入"
+    }
+  ],
+  "key_required": false,
+  "oidc_enabled": false,
+  "version": "dev"
+}

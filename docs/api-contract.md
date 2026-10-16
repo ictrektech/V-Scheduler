@@ -1,6 +1,6 @@
 # 统一配置、身份与错误契约
 
-Go 网关和 Rust 服务继续分别运行，使用同一份[错误契约](../api/error-contract.json)做跨语言回归。完整接入操作见[统一接入指南](application-integration.md)。
+Router、Scheduler 与模型仓库在同一 Rust 进程运行，使用同一份[错误契约](../api/error-contract.json)回归。完整接入操作见[统一接入指南](application-integration.md)。
 
 ## 地址与配置
 
@@ -8,7 +8,7 @@ Go 网关和 Rust 服务继续分别运行，使用同一份[错误契约](../ap
 |---|---|
 | `SCHEDULER_VOS_URL` | 网关与控制器共用的 VOS 根地址；只接受不带凭据、查询参数或子路径的 HTTP(S) origin。空值沿用 VOS 注入的 `VOS_HOST_GW_IP:8105`。 |
 | `VOS_OIDC_USERINFO_URL` | 保留的网关 userinfo 精确地址覆盖；未设置时从上述共同根地址解析。控制器仍使用同一 VOS 的 `/v1000/user/check` 核验管理员。 |
-| `V_ROUTER_CONTROLLER_URL` | 网关到控制器的内部根地址，安装默认 `http://v-scheduler:38120`。 |
+| `V_ROUTER_CONTROLLER_URL` | 兼容保留的控制器地址；统一进程使用内存分发，安装地址仍为 `http://v-scheduler:38120`。 |
 | `V_SCHEDULER_MODEL_MANAGEMENT_URL` | 网关到模型仓库的内部根地址，安装默认 `http://v-scheduler-model-hub:6005`。配置无效或服务离线返回明确的 JSON 503。 |
 
 前端统一解析三种服务路径：网关 `/api/v1/*`、控制器 `/scheduler/api/v1/*`、模型仓库 `/model-hub/api/v1/*`。VOS 页面全部使用 `/api/com.ictrek.v-scheduler` 前缀；宿主端口页面使用同域根路径。任务与下载任务保持独立命名空间。九组内外端口及全部兼容别名见 [README](../README.md#host-alias内部端口与宿主机端口)。
@@ -26,7 +26,7 @@ Go 网关和 Rust 服务继续分别运行，使用同一份[错误契约](../ap
 
 统一模型仓库代理复用网关已有账号鉴权。原生模型仓库端口保持原 Model Hub 的受信任内网契约，供已有容器注册、发现和管理；三个 Ollama 原生管理入口也保持原契约。此次没有将管理 Key、submitter token、上游 Key 合为一把密钥，也不改变原生接口访问策略。
 
-Go 与 Rust 接受相同的 Bearer 语法，拒绝错误 scheme、多余字段和空令牌。前端每次请求读取当前 VOS token；401 时共享既有凭据刷新机制，最多重试一次；403 不刷新、不重放操作。资源不足不触发令牌刷新。取消请求继续使用原 AbortSignal。
+所有入口接受相同的 Bearer 语法，拒绝错误 scheme、多余字段和空令牌。前端每次请求读取当前 VOS token；401 时共享既有凭据刷新机制，最多重试一次；403 不刷新、不重放操作。资源不足不触发令牌刷新。取消请求继续使用原 AbortSignal。
 
 ## 错误响应
 
@@ -62,7 +62,7 @@ Go 与 Rust 接受相同的 Bearer 语法，拒绝错误 scheme、多余字段�
 
 ## 验证入口
 
-- Go `go test ./...` 与 Rust `cargo test --locked` 共同读取 `api/error-contract.json`；网关镜像构建上下文包含该文件。
+- Rust `cargo test --locked` 验证统一错误、旧状态兼容、协议转换、SSE、WebSocket 与许可生命周期。
 - 前端 `npm test` 覆盖三种服务路径、三种旧错误形状、令牌轮换、一次 401 重试及 403 不重放。
-- `scripts/e2e-api-contract.py` 启动实际 Go/Rust 服务、独立 PostgreSQL 与合成 VOS/模型端点，验证身份矩阵、代理、畸形 JSON、故障隔离、三种对话协议及 SSE。该脚本不调用真实模型或已安装应用。
+- `scripts/e2e-api-contract.py` 启动实际统一 Rust 服务、独立 PostgreSQL 与合成 VOS/模型端点，验证身份矩阵、代理、畸形 JSON、故障隔离、三种对话协议及 SSE。该脚本不调用真实模型或已安装应用。
 - `scripts/e2e-model-hub.py` 验证原模型接管、选定文件下载、追加/更新/重试、导入、服务管理及原文件保留；可用 `--binary` 运行构建主机上的候选二进制，或保留原容器运行方式。

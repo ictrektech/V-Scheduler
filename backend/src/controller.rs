@@ -1,9 +1,9 @@
 mod allocations;
 mod app_bindings;
 mod gateway_identity;
-mod vsub_bindings;
 mod management;
 mod ollama;
+mod vsub_bindings;
 use crate::model::*;
 use anyhow::{Context, ensure};
 use axum::extract::FromRef;
@@ -303,7 +303,9 @@ pub async fn serve(
     url: String,
     listen: String,
     ui: Option<PathBuf>,
+    gateway: Option<&crate::router::Runtime>,
 ) -> anyhow::Result<()> {
+    let socket = tokio::net::TcpListener::bind(&listen).await?;
     let embedded = crate::local::prepare(&path, &listen).await?;
     let config: Config = serde_json::from_slice(&std::fs::read(&path)?)?;
     let runtime = crate::voice::Runtime::restore(&path, config)?;
@@ -384,6 +386,7 @@ pub async fn serve(
     }
     let db = PgPoolOptions::new()
         .max_connections(12)
+        .acquire_timeout(std::time::Duration::from_secs(3))
         .connect(&url)
         .await
         .context("database connection failed")?;
@@ -472,11 +475,13 @@ pub async fn serve(
         .nest("/scheduler/api/v1", api)
         .layer(axum::extract::DefaultBodyLimit::max(262144))
         .with_state(shared);
-    if let Some(path) = ui {
+    if let Some(path) = ui.as_ref() {
         router = router.fallback_service(ServeDir::new(path));
     }
     let router = router.layer(axum::middleware::from_fn(crate::contract::normalize_errors));
-    let socket = tokio::net::TcpListener::bind(&listen).await?;
+    if let Some(gateway) = gateway {
+        gateway.set_controller(router.clone(), true);
+    }
     eprintln!("V-Scheduler controller listening on {listen}");
     axum::serve(socket, router)
         .with_graceful_shutdown(async {

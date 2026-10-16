@@ -93,7 +93,7 @@ curl --fail-with-body "$GATEWAY/api/v1/registrations" \
 
 这是显式单模型注册，不探测 `/models`，成功也不证明模型就绪。需要自动读取模型列表时删除 `model`，由注册流程探测 `base_url/models`；仍应声明真实支持的 endpoints。Embedding 实例使用 `model_kind=embedding`、`endpoints=["embeddings"]` 和 `capabilities=["embedding"]`。不要为不支持的接口注册能力。
 
-自动探测多个模型时，可用 `model_endpoints`、`model_capabilities` 按原生模型 ID 覆盖各模型的接口和能力；也支持用 `models` 显式登记多个模型。只为真实支持工具调用的模型声明 `tools`。字段定义见[注册 API](../gateway/internal/api/routing.go)。
+自动探测多个模型时，可用 `model_endpoints`、`model_capabilities` 按原生模型 ID 覆盖各模型的接口和能力；也支持用 `models` 显式登记多个模型。只为真实支持工具调用的模型声明 `tools`。字段定义见[注册 API](../api/router-openapi-zh-CN.json)。
 
 `visibility` 可选 `private` 或 `public`：private 只向所属身份与管理员提供模型；public 使模型按网关账户策略对其他用户可见。可见性不改变后续调度审批。仅把 `visibility` 改为 public 不会获得资源权限。
 
