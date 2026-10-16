@@ -203,13 +203,22 @@ latest_image() {
   local sheet_id="$2"
   local component="$3"
   local repository="$4"
+  local tag_prefix="${5:-$profile}"
   local column tag repository_response actual_repository
   column="$(find_component_column_letter "$token" "$sheet_id" "$component")" || return 1
   tag="$(find_latest_tag "$token" "$sheet_id" "$column")" || return 1
   [[ -n "$tag" ]] || return 1
-  [[ "$tag" =~ ^${profile}_[0-9]{8}$ ]] || die "invalid profile image tag"
+  [[ "$tag" =~ ^${tag_prefix}_[0-9]{8}$ ]] || die "invalid profile image tag"
   repository_response="$(get_range_values "$token" "${sheet_id}!${column}2:${column}2")"
-  actual_repository="$(printf '%s' "$repository_response" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("code")==0; v=d["data"]["valueRange"]["values"][0][0]; assert isinstance(v,str); print(v.strip())')"
+  actual_repository="$(printf '%s' "$repository_response" | python3 -c '
+import json,sys
+def text(value):
+ if isinstance(value,str):return value.strip()
+ if isinstance(value,list):return "".join(text(item) for item in value).strip()
+ if isinstance(value,dict):return text(value.get("text") or value.get("link") or "")
+ return ""
+data=json.load(sys.stdin);assert data.get("code")==0
+print(text(data["data"]["valueRange"]["values"][0][0]))')"
   [[ "$actual_repository" == "$repository" ]] || die "unexpected component repository in Feishu row 2"
   echo "${actual_repository}:${tag}"
 }
@@ -421,10 +430,10 @@ done
 
 # Ollama stays owned and built by modules/ollama. Resolve its original column
 # from each original platform sheet; never substitute a scheduler image/tag.
-for ollama_spec in "amd|AMD_with_cuda" "arm|ARM_with_cuda" "arm-without-cuda|ARM_without_cuda" "l4t|l4t" "thor-spark|thor_spark"; do
-  IFS='|' read -r profile sheet_title <<< "$ollama_spec"
+for ollama_spec in "amd|AMD_with_cuda|amd" "arm|ARM_with_cuda|arm" "arm-without-cuda|ARM_without_cuda|arm" "l4t|l4t|l4t" "thor-spark|thor_spark|thor"; do
+  IFS='|' read -r profile sheet_title tag_prefix <<< "$ollama_spec"
   sheet_id="$(get_sheet_id_by_title "$FEISHU_TOKEN" "$sheet_title")"
-  image="$(latest_image "$FEISHU_TOKEN" "$sheet_id" "ollama_server" "swr.cn-southwest-2.myhuaweicloud.com/ictrek/ollama_server")"
+  image="$(latest_image "$FEISHU_TOKEN" "$sheet_id" "ollama_server" "swr.cn-southwest-2.myhuaweicloud.com/ictrek/ollama_server" "$tag_prefix")"
   log "$profile ($sheet_title) ollama_server -> $image"
   printf 'OLLAMA_SERVER_%s_IMAGE=%s\n' "$(env_key "$profile")" "$image" >> "$ENV_FILE"
 done

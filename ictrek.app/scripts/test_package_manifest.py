@@ -108,5 +108,16 @@ class ModelManagementPackagingTests(unittest.TestCase):
                 for role in ('QA','EMBEDDING','RERANK'):
                     self.assertEqual(env[f'V_SCHEDULER_OLLAMA_{role}_URL'],f'http://v-scheduler-ollama-{role.lower()}:11535')
 
+
+    def test_original_ollama_rich_cells_and_platform_tag_prefixes(self):
+        import json,os
+        function=re.search(r"latest_image\(\) \{\n.*?\n\}\n\nload_feishu_auth",(self.root/'scripts/package.sh').read_text(),re.S).group(0).rsplit('\n\nload_feishu_auth',1)[0]
+        repository='swr.cn-southwest-2.myhuaweicloud.com/ictrek/ollama_server'
+        for profile,prefix,cell in [('amd','amd',repository),('arm-without-cuda','arm',[{'type':'url','text':repository}]),('thor-spark','thor',{'link':repository})]:
+            env={**os.environ,'FIXTURE_JSON':json.dumps({'code':0,'data':{'valueRange':{'values':[[cell]]}}}),'FIXTURE_TAG':prefix+'_20261012','FIXTURE_PROFILE':profile,'FIXTURE_PREFIX':prefix,'FIXTURE_REPOSITORY':repository}
+            script='set -euo pipefail\nprofile="$FIXTURE_PROFILE"\ndie(){ echo "$*" >&2; exit 1; }\nfind_component_column_letter(){ echo C; }\nfind_latest_tag(){ echo "$FIXTURE_TAG"; }\nget_range_values(){ echo "$FIXTURE_JSON"; }\n'+function+'\nlatest_image token sheet ollama_server "$FIXTURE_REPOSITORY" "$FIXTURE_PREFIX"\n'
+            result=subprocess.run(['bash','-s'],input=script,text=True,capture_output=True,env=env,check=True)
+            self.assertEqual(result.stdout.strip(),repository+':'+prefix+'_20261012')
+
 if __name__ == '__main__':
     unittest.main()
