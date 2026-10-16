@@ -1,4 +1,5 @@
 export const messages:Record<string,[string,string]>={
+"等待停止确认":["Waiting for confirmed stop", "等待停止確認"],
 "关于":["About", "關於"],
 "关于 V-Scheduler":["About V-Scheduler", "關於 V-Scheduler"],
 "正在读取版本…":["Reading versions…", "正在讀取版本…"],

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -87,5 +88,75 @@ func TestUnifiedModelManagementHasSeparateTaskNamespace(t *testing.T) {
 	mux.ServeHTTP(response, req)
 	if response.Code != 200 || !strings.Contains(response.Body.String(), "download-1") {
 		t.Fatalf("model management proxy: %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestUnifiedProxyFailuresHaveStableContract(t *testing.T) {
+	for _, item := range []struct{ name, controller, storage, path string }{
+		{"controller offline", "http://127.0.0.1:1", "http://127.0.0.1:1", "/scheduler/api/v1/nodes"},
+		{"controller invalid", "http://user:private@host", "http://127.0.0.1:1", "/scheduler/api/v1/nodes"},
+		{"storage offline", "http://127.0.0.1:1", "http://127.0.0.1:1", "/model-hub/api/v1/tasks"},
+		{"storage invalid", "http://127.0.0.1:1", "http://user:private@host", "/model-hub/api/v1/tasks"},
+	} {
+		t.Run(item.name, func(t *testing.T) {
+			t.Setenv("V_ROUTER_CONTROLLER_URL", item.controller)
+			t.Setenv("V_SCHEDULER_MODEL_MANAGEMENT_URL", item.storage)
+			mux := http.NewServeMux()
+			unifiedController(mux)
+			response := httptest.NewRecorder()
+			mux.ServeHTTP(response, httptest.NewRequest("GET", item.path, nil))
+			var value map[string]any
+			if response.Code != 503 || json.Unmarshal(response.Body.Bytes(), &value) != nil {
+				t.Fatalf("expected JSON 503, got %d %s", response.Code, response.Body.String())
+			}
+			if value["code"] != "TEMPORARILY_UNAVAILABLE" || value["category"] != "v-scheduler" || value["request_id"] == "" || value["request_id"] != response.Header().Get("X-Request-ID") || value["error"] == nil {
+				t.Fatalf("missing error contract: %s", response.Body.String())
+			}
+			if strings.Contains(response.Body.String(), "private") {
+				t.Fatal("configuration credential leaked")
+			}
+		})
+	}
+}
+
+func TestUnifiedModelManagementUsesGatewayIdentity(t *testing.T) {
+	calls := 0
+	storage := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls++; w.Write([]byte(`[]`)) }))
+	defer storage.Close()
+	t.Setenv("V_ROUTER_CONTROLLER_URL", storage.URL)
+	t.Setenv("V_SCHEDULER_MODEL_MANAGEMENT_URL", storage.URL)
+	mux := http.NewServeMux()
+	guard := func(next http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("Authorization") != "Bearer caller" {
+				writeError(w, 401, "Login required")
+				return
+			}
+			next(w, r)
+		}
+	}
+	unifiedController(mux, guard)
+	for _, token := range []string{"", "caller"} {
+		r := httptest.NewRequest("GET", "/model-hub/api/v1/models", nil)
+		if token != "" {
+			r.Header.Set("Authorization", "Bearer "+token)
+		}
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, r)
+		want := 401
+		if token != "" {
+			want = 200
+		}
+		if w.Code != want {
+			t.Fatalf("auth status %d", w.Code)
+		}
+	}
+	if calls != 1 {
+		t.Fatal("unauthenticated request reached model management")
+	}
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("GET", "/model-hub/openapi.json", nil))
+	if w.Code != 200 {
+		t.Fatal("public documentation requires login")
 	}
 }

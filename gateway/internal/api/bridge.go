@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/ictrektech/v-router/internal/httpcontract"
 	"io"
 	"mime"
 	"mime/multipart"
@@ -74,7 +75,7 @@ func (s *Server) forwardProtocol(w http.ResponseWriter, r *http.Request, u regis
 		if err != nil {
 			if status := proxy.AdmissionStatus(err); status != 0 {
 				obs.observe(err)
-				writeProtocolError(w, protocol, status, err.Error())
+				writeTransportError(w, protocol, status, err)
 				return
 			}
 			obs.observe(err)
@@ -252,21 +253,19 @@ func normalizeOfflineASRResponse(data []byte) jsonObject {
 }
 
 func writeProtocolError(w http.ResponseWriter, protocol string, status int, message string) {
-	kind := "api_error"
-	if status == 400 {
-		kind = "invalid_request_error"
+	httpcontract.WriteError(w, status, message, "", "", protocol)
+}
+
+func writeTransportError(w http.ResponseWriter, protocol string, status int, err error) {
+	code, requestID := proxy.AdmissionDetails(err)
+	httpcontract.WriteError(w, status, err.Error(), code, requestID, protocol)
+}
+func writeRequestFailure(w http.ResponseWriter, r *http.Request, status int, err error) {
+	protocol := ""
+	if strings.HasPrefix(r.URL.Path, "/v1/messages") {
+		protocol = "messages"
 	}
-	if status == 401 {
-		kind = "authentication_error"
-	}
-	if status == 429 {
-		kind = "rate_limit_error"
-	}
-	out := jsonObject{"error": jsonObject{"type": kind, "message": message}}
-	if protocol == "messages" {
-		out["type"] = "error"
-	}
-	writeJSON(w, status, out)
+	writeTransportError(w, protocol, status, err)
 }
 
 func writeRequestError(w http.ResponseWriter, r *http.Request, status int, message string) {

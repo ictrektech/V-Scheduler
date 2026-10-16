@@ -446,7 +446,7 @@ log "Tag: ${TAG}"
 
 BUILD_DIR="${HOME}/dev/build/V-Scheduler/gateway-images/${ARCH_TAG}"
 mkdir -p "$BUILD_DIR/context"
-tar --exclude=.git --exclude=node_modules --exclude=target --exclude=dist --exclude="*.local.json" --exclude=.env -cf - -C "$ROOT_DIR" gateway | tar -xf - -C "$BUILD_DIR/context"
+tar --exclude=.git --exclude=node_modules --exclude=target --exclude=dist --exclude="*.local.json" --exclude=.env -cf - -C "$ROOT_DIR" gateway api/error-contract.json | tar -xf - -C "$BUILD_DIR/context"
 
 for component in "${COMPONENTS[@]}"; do
   case "$component" in

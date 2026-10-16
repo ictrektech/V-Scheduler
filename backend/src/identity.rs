@@ -4,11 +4,24 @@ use serde_json::Value;
 use std::time::Duration;
 
 pub fn base() -> Option<String> {
-    std::env::var("SCHEDULER_VOS_URL").ok().or_else(|| {
-        std::env::var("VOS_HOST_GW_IP")
-            .ok()
-            .map(|host| format!("http://{host}:8105"))
-    })
+    if let Ok(raw) = std::env::var("SCHEDULER_VOS_URL") {
+        let raw = raw.trim();
+        if !raw.is_empty() {
+            let url = reqwest::Url::parse(raw).ok()?;
+            return (matches!(url.scheme(), "http" | "https")
+                && url.host_str().is_some()
+                && url.username().is_empty()
+                && url.password().is_none()
+                && url.query().is_none()
+                && url.fragment().is_none()
+                && url.path() == "/")
+                .then(|| raw.trim_end_matches('/').to_string());
+        }
+    }
+    std::env::var("VOS_HOST_GW_IP")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .map(|host| format!("http://{host}:8105"))
 }
 
 pub fn administrator(v: &Value) -> bool {
@@ -24,13 +37,17 @@ pub fn administrator(v: &Value) -> bool {
             .is_some_and(|s| !s.is_empty())
 }
 
+pub fn bearer(h: &HeaderMap) -> Option<&str> {
+    let mut fields = h.get("authorization")?.to_str().ok()?.split_whitespace();
+    let scheme = fields.next()?;
+    let token = fields.next()?;
+    (scheme.eq_ignore_ascii_case("Bearer") && fields.next().is_none()).then_some(token)
+}
+
 pub async fn verify(h: &HeaderMap) -> Result<Principal, StatusCode> {
     let base = base().ok_or(StatusCode::UNAUTHORIZED)?;
-    let bearer = h
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .filter(|v| v.starts_with("Bearer ") && v.len() > 7)
-        .ok_or(StatusCode::UNAUTHORIZED)?;
+    let token = bearer(h).ok_or(StatusCode::UNAUTHORIZED)?;
+    let bearer = format!("Bearer {token}");
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(5))
         .redirect(reqwest::redirect::Policy::none())
@@ -77,6 +94,24 @@ fn validate_user_check(value: &Value) -> Result<(), StatusCode> {
 mod tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn bearer_syntax_matches_gateway() {
+        for value in [
+            "Bearer token",
+            "bearer token",
+            "BEARER token",
+            "Bearer   token",
+        ] {
+            let mut h = HeaderMap::new();
+            h.insert("authorization", value.parse().unwrap());
+            assert_eq!(bearer(&h), Some("token"));
+        }
+        for value in ["Basic token", "Bearer", "Bearer token extra"] {
+            let mut h = HeaderMap::new();
+            h.insert("authorization", value.parse().unwrap());
+            assert_eq!(bearer(&h), None);
+        }
+    }
     #[test]
     fn expired_sessions_are_not_permission_denials() {
         for code in [10001, 10099] {

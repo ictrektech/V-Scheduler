@@ -47,12 +47,12 @@ impl FromRef<SharedApp> for App {
 struct Error(StatusCode, &'static str);
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
-        (self.0, Json(envelope(json!({}), self.1))).into_response()
+        crate::contract::failure(self.0, self.1, self.1, false)
     }
 }
 type Api<T> = Result<T, Error>;
 fn envelope(data: Value, code: &str) -> Value {
-    json!({"code":code,"category":"v-scheduler","data":data,"msg":code,"version":"1","request_id":Uuid::new_v4().to_string()})
+    crate::contract::envelope(data, code, code)
 }
 fn ok(v: Value) -> Json<Value> {
     Json(envelope(v, "OK"))
@@ -64,11 +64,8 @@ fn unavailable(_: sqlx::Error) -> Error {
     Error(StatusCode::SERVICE_UNAVAILABLE, "TEMPORARILY_UNAVAILABLE")
 }
 async fn auth(a: &App, h: &HeaderMap) -> Api<Principal> {
-    let token = h
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .ok_or(Error(StatusCode::UNAUTHORIZED, "UNAUTHENTICATED"))?;
+    let token =
+        crate::identity::bearer(h).ok_or(Error(StatusCode::UNAUTHORIZED, "UNAUTHENTICATED"))?;
     let digest = Sha256::digest(token.as_bytes());
     if let Some(p) = a
         .config
@@ -478,6 +475,7 @@ pub async fn serve(
     if let Some(path) = ui {
         router = router.fallback_service(ServeDir::new(path));
     }
+    let router = router.layer(axum::middleware::from_fn(crate::contract::normalize_errors));
     let socket = tokio::net::TcpListener::bind(&listen).await?;
     eprintln!("V-Scheduler controller listening on {listen}");
     axum::serve(socket, router)

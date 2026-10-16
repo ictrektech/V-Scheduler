@@ -13,6 +13,7 @@ WORKDIR /src
 COPY gateway/go.mod ./
 RUN if [ -n "$PROXY" ]; then go env -w GOPROXY="$PROXY"; fi
 COPY gateway/ ./
+COPY api/error-contract.json /api/error-contract.json
 RUN go test ./... && go build -ldflags="-s -w -X main.version=${APP_VERSION}" -o /out/v-router .
 
 FROM ${RUNTIME_IMAGE}

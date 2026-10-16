@@ -279,3 +279,22 @@ func TestPendingStopHasDistinctAdmissionReason(t *testing.T) {
 		t.Fatalf("missing stop confirmation reason: %v", err)
 	}
 }
+
+func TestSchedulerFailurePreservesSafeCodeAndTraceWithoutServiceDetails(t *testing.T) {
+	for _, status := range []int{403, 429, 503} {
+		scheduler := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(status)
+			io.WriteString(w, `{"code":"EXECUTOR_NOT_ALLOWED","request_id":"trace-123","msg":"private upstream token"}`)
+		}))
+		_, err := schedulerCall(context.Background(), &SchedulerConfig{URL: scheduler.URL, Token: strings.Repeat("x", 32)}, "/permits", map[string]string{}, "fixture")
+		scheduler.Close()
+		code, trace := AdmissionDetails(err)
+		want := 503
+		if status == 429 {
+			want = 429
+		}
+		if AdmissionStatus(err) != want || code != "EXECUTOR_NOT_ALLOWED" || trace != "trace-123" || strings.Contains(err.Error(), "private") {
+			t.Fatalf("lost/sensitive failure: %v %s %s", err, code, trace)
+		}
+	}
+}

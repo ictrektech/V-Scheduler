@@ -5,6 +5,7 @@ import css from './gateway/style.css?raw'
 import { mountGateway } from './gateway/runtime.js'
 import { getVOSBearerToken, clearCachedVOSBearerToken } from './vos-auth'
 import logo from '../../assets/icon.png'
+import {apiBases} from './http-client.js'
 const props=defineProps<{tab:string;locale:string;visible:boolean}>()
 const emit=defineEmits<{select:[tab:string]}>()
 const host=ref<HTMLElement>()
@@ -14,7 +15,7 @@ onMounted(async()=>{
  root.innerHTML=`<style>${css}</style>${markup.replaceAll('__GATEWAY_ICON__',logo)}`
  const legacyAbout=root.querySelector<HTMLButtonElement>('button[onclick="app.openAbout()"]');if(legacyAbout)legacyAbout.style.display='none'
  const footer=root.querySelector('.side-footer');if(footer)root.querySelector('.top-actions')?.prepend(footer)
- const apiBase=location.pathname.startsWith('/app/')?'/api/com.ictrek.v-scheduler':''
+ const apiBase=apiBases(location.pathname).gateway
  workspace=mountGateway(root,{apiBase,token:getVOSBearerToken,clearToken:clearCachedVOSBearerToken,locale:()=>props.locale,visible:()=>props.visible,select:(tab:string)=>emit('select',tab)})
  workspace.select(props.tab)
  await workspace.started

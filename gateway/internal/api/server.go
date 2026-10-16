@@ -4,6 +4,7 @@ package api
 
 import (
 	"encoding/json"
+	"github.com/ictrektech/v-router/internal/httpcontract"
 	"net/http"
 	"os"
 	"strings"
@@ -207,7 +208,7 @@ func (s *Server) routes() http.Handler {
 		}
 		mux.HandleFunc(r.Method+" "+r.Path, h)
 	}
-	unifiedController(mux)
+	unifiedController(mux, s.requireIdentity)
 	return protectGateway(mux)
 }
 
@@ -370,5 +371,5 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 }
 
 func writeError(w http.ResponseWriter, status int, msg string) {
-	writeJSON(w, status, map[string]any{"error": map[string]string{"message": msg}})
+	httpcontract.WriteError(w, status, msg, "", "", "")
 }

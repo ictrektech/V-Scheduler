@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import {ref} from 'vue'
 import {request} from './modelhub/client'
+import {apiBases,jsonResponse} from './http-client.js'
 defineProps<{t:(text:string)=>string}>()
 const dialog=ref<HTMLDialogElement>(),info=ref<any>(null),loading=ref(false),error=ref('')
 const labels:Record<string,string>={'scheduler':'Scheduler 与界面','model-management':'模型管理','router':'Router','ollama-qa':'Ollama · 聊天','ollama-embedding':'Ollama · 向量','ollama-rerank':'Ollama · 重排'}
-async function open(){dialog.value?.showModal();loading.value=true;error.value='';try{info.value=await request('/api/v1/version')}catch{error.value='无法读取当前镜像版本';try{const response=await fetch('/scheduler/api/v1/setup');const data=await response.json();info.value={version:data.data?.version,images:[]}}catch{info.value=null}}finally{loading.value=false}}
+async function open(){dialog.value?.showModal();loading.value=true;error.value='';try{info.value=await request('/api/v1/version')}catch{error.value='无法读取当前镜像版本';try{const response=await fetch(apiBases(location.pathname).scheduler+'setup');const data=await jsonResponse(response);info.value={version:data.data?.version,images:[]}}catch{info.value=null}}finally{loading.value=false}}
 </script>
 <template>
  <button class="quiet about-trigger" @click="open">{{t('关于')}}</button>

@@ -3,14 +3,16 @@
   "info": {
     "title": "V-Scheduler model management API",
     "version": "development",
-    "description": "Model Hub management implemented in Rust. Model download tasks and scheduler execution tasks have separate namespaces. READY describes the requested file scope only."
+    "description": "Model Hub management implemented in Rust. Model download tasks and scheduler execution tasks have separate namespaces. READY describes the requested file scope only. Unified proxy /api/com.ictrek.v-scheduler/model-hub requires a VOS account or gateway management key. The native internal endpoint retains the trusted-network Model Hub contract. Application errors add code, category, data, msg, version and request_id/X-Request-ID while preserving detail."
   },
   "servers": [
     {
-      "url": "http://v-scheduler-model-hub:6005"
+      "url": "/api/com.ictrek.v-scheduler/model-hub",
+      "description": "Unified VOS proxy; VOS account or gateway management key required"
     },
     {
-      "url": "/app/com.ictrek.v-scheduler/model-hub"
+      "url": "http://v-scheduler-model-hub:6005",
+      "description": "Native trusted-network compatibility endpoint"
     }
   ],
   "paths": {
@@ -2741,14 +2743,44 @@
       },
       "Error": {
         "type": "object",
+        "required": [
+          "code",
+          "category",
+          "data",
+          "msg",
+          "version",
+          "request_id",
+          "detail",
+          "error"
+        ],
         "properties": {
+          "code": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string",
+            "const": "v-scheduler"
+          },
+          "data": {
+            "type": "object"
+          },
+          "msg": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string",
+            "const": "1"
+          },
+          "request_id": {
+            "type": "string"
+          },
           "detail": {
             "type": "string"
+          },
+          "error": {
+            "type": "object"
           }
-        },
-        "required": [
-          "detail"
-        ]
+        }
       }
     }
   }

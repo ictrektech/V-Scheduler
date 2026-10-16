@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"os"
 	"regexp"
 	"strings"
@@ -74,6 +75,13 @@ const identityCacheTTL = 60 * time.Second
 func resolveUserInfoURL() string {
 	if u := os.Getenv("VOS_OIDC_USERINFO_URL"); u != "" {
 		return u
+	}
+	if raw := strings.TrimSpace(os.Getenv("SCHEDULER_VOS_URL")); raw != "" {
+		u, err := url.Parse(raw)
+		if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
+			return ""
+		}
+		return strings.TrimRight(raw, "/") + "/v1000/oauth2/userinfo"
 	}
 	host := os.Getenv("VOS_HOST_GW_IP")
 	if host == "" {

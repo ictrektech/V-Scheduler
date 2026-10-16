@@ -1,3 +1,4 @@
+import {apiError} from '../http-client.js';
 import { createGatewayI18n } from './locale.js';
 import { playgroundStreamEvent } from './playground-stream.js';
 export function mountGateway(root, options) {
@@ -56,7 +57,7 @@ const app = {
     const headers = await this.authHeaders();
     if (body !== undefined) headers["Content-Type"] = "application/json";
     const res = await fetch(API + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
-    if (res.status === 401 && !retried && headers.Authorization && !this.gatewayKey()) {
+    if (res.status === 401 && !retried && headers.Authorization && headers.Authorization !== "Bearer " + this.gatewayKey()) {
       VRouterOIDC.clear(headers.Authorization.slice(7));
       return this.api(method, path, body, raw, true);
     }
@@ -73,8 +74,7 @@ const app = {
       data = null;
     }
     if (!res.ok) {
-      const err = new Error((data && data.error && data.error.message) || `${method} ${path} -> ${res.status}`);
-      err.status = res.status;
+      const err = apiError(data,res.status);
       throw err;
     }
     return data;
@@ -1092,7 +1092,7 @@ const app = {
         try {
           const raw = (await res.text()).trim().slice(0, 2000);
           let detail = raw;
-          try { const data = JSON.parse(raw); detail = data.error?.message || data.msg || data.detail || raw; } catch {}
+          try { const data = JSON.parse(raw); detail = apiError(data,res.status).message; } catch {}
           if (typeof detail === "string" && detail) msg += `: ${detail}`;
         } catch {}
         out.remove();

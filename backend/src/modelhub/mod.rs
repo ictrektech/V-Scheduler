@@ -59,7 +59,7 @@ impl From<anyhow::Error> for Error {
 }
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
-        (self.0, Json(json!({"detail":self.1}))).into_response()
+        crate::contract::failure(self.0, crate::contract::code(self.0), &self.1, true)
     }
 }
 type Api<T> = std::result::Result<T, Error>;
@@ -154,7 +154,7 @@ fn router(hub: Arc<Hub>) -> Router {
  .route("/openapi.json",get(||async{Json(specification::openapi())}))
  .route("/docs",get(||async{axum::response::Html("<!doctype html><html><meta charset=utf-8><title>Model management API</title><h1>V-Scheduler model management API</h1><p>Open the Model management API tab in V-Scheduler for the guide and interactive operation reference.</p><a href=\"openapi.json\">OpenAPI 3.1 JSON</a></html>")}))
  .layer(DefaultBodyLimit::max(2*1024*1024))
- .layer(tower_http::cors::CorsLayer::permissive()).with_state(hub)
+ .layer(axum::middleware::from_fn(crate::contract::normalize_errors)).layer(tower_http::cors::CorsLayer::permissive()).with_state(hub)
 }
 async fn models(
     State(h): State<Arc<Hub>>,
@@ -317,6 +317,10 @@ async fn cancel(h: &Hub, id: &str) -> Result<bool> {
             tokio::time::sleep(std::time::Duration::from_millis(25)).await;
         }
         anyhow::bail!("waiting for worker cancellation");
+    }
+    drop(active);
+    if terminal(&h.store.task(id)?) {
+        return Ok(false);
     }
     anyhow::bail!("task belongs to another application; cancel it in its owner first")
 }

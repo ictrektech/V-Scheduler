@@ -40,7 +40,7 @@ func forwardMLServerEmbedding(w http.ResponseWriter, r *http.Request, u registry
 		vector, err := callMLTextEmbedding(r, u, nativeID, text, observe)
 		if err != nil {
 			if status := proxy.AdmissionStatus(err); status != 0 {
-				writeProtocolError(w, "embeddings", status, err.Error())
+				writeTransportError(w, "embeddings", status, err)
 				return
 			}
 			writeProtocolError(w, "embeddings", http.StatusBadGateway, err.Error())
@@ -278,7 +278,7 @@ func (s *Server) forwardMLRequest(w http.ResponseWriter, original *http.Request,
 	if err != nil {
 		obs.observe(err)
 		if status := proxy.AdmissionStatus(err); status != 0 {
-			writeRequestError(w, original, status, err.Error())
+			writeRequestFailure(w, original, status, err)
 			return
 		}
 		writeRequestError(w, original, http.StatusBadGateway, "upstream connection failed")

@@ -8,6 +8,7 @@ x-controller: &controller
     SCHEDULER_EMBEDDED_AGENT: "true"
     NVIDIA_VISIBLE_DEVICES: all
     NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    SCHEDULER_VOS_URL: "${SCHEDULER_VOS_URL:-}"
     VOS_HOST_GW_IP: ${VOS_HOST_GW_IP}
     VOS_APP_VERSION: __APP_VERSION__
     SCHEDULER_PGV_BOOTSTRAP_PASSWORD: ${VOS_POSTGRES_PASSWORD:?VOS_POSTGRES_PASSWORD is required}
@@ -70,6 +71,7 @@ x-gateway: &gateway
     VOS_APP_VERSION: "__APP_VERSION__"
     # Platform-injected host gateway IP; the backend derives the userinfo
     # URL from it (VOS_OIDC_USERINFO_URL overrides when set).
+    SCHEDULER_VOS_URL: "${SCHEDULER_VOS_URL:-}"
     VOS_HOST_GW_IP: "${VOS_HOST_GW_IP:-}"
     VOS_OIDC_USERINFO_URL: "${VOS_OIDC_USERINFO_URL:-}"
     V_ROUTER_AUTH_DISABLED: "${V_ROUTER_AUTH_DISABLED:-false}"

@@ -247,3 +247,20 @@ func TestRequiredEmptyKeyFailsClosed(t *testing.T) {
 		t.Fatal("valid OIDC token must work when key is required")
 	}
 }
+
+func TestSharedVOSOriginConfiguration(t *testing.T) {
+	t.Setenv("VOS_OIDC_USERINFO_URL", "")
+	t.Setenv("SCHEDULER_VOS_URL", "http://vos.example:8105/")
+	if got := resolveUserInfoURL(); got != "http://vos.example:8105/v1000/oauth2/userinfo" {
+		t.Fatal(got)
+	}
+	t.Setenv("VOS_OIDC_USERINFO_URL", "http://explicit.example/userinfo")
+	if got := resolveUserInfoURL(); got != "http://explicit.example/userinfo" {
+		t.Fatal("legacy override changed")
+	}
+	t.Setenv("VOS_OIDC_USERINFO_URL", "")
+	t.Setenv("SCHEDULER_VOS_URL", "http://user:secret@vos.example")
+	if got := resolveUserInfoURL(); got != "" {
+		t.Fatal("unsafe origin accepted")
+	}
+}

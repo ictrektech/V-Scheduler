@@ -92,6 +92,10 @@ VOS 安装中的 V-Voice 可由现有发现器主动接入：控制器核验同�
 - 仓库：`git@github.com:ictrektech/V-Scheduler.git`。
 - VAI 子模块路径：`apps/V-Scheduler`。
 
+## 统一配置与接口契约
+
+网关、调度器与模型仓库共用配置/身份说明和[错误契约](docs/api-contract.md)。VOS 根地址可通过 `SCHEDULER_VOS_URL` 同时提供给 Go/Rust，原 userinfo 覆盖保留。统一模型仓库入口复用网关登录；原生受信任内网接口保持兼容。应用 API 错误统一提供 `code`、`request_id` 与 `X-Request-ID`，保留旧 `error.message` / `detail`；前端统一服务路径、令牌轮换和错误解析。成功响应及推理协议保持原样，具体调度拒绝原因不会再被折叠为没有业务码的通用错误。模型下载的终态发布与活动记录清理保持同步，失败后可立即重试。
+
 ## 设计与接入标准
 
 **[统一接入指南](docs/application-integration.md)**：模型网关调用、调度接管、vLLM 主动注册、public/private、是否启用调度、共享模型目录及远端节点，统一在这一份文档维护操作步骤。应用内「API 文档 → 应用接入」也指向该指南。

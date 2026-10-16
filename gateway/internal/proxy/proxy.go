@@ -4,9 +4,11 @@ package proxy
 
 import (
 	"errors"
+	"github.com/ictrektech/v-router/internal/httpcontract"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/ictrektech/v-router/internal/registry"
@@ -52,7 +54,12 @@ func To(w http.ResponseWriter, r *http.Request, upstream registry.Upstream, path
 				}
 			}
 			w.Header().Set("Retry-After", "1")
-			http.Error(w, err.Error(), AdmissionStatus(err))
+			code, requestID := AdmissionDetails(err)
+			protocol := ""
+			if strings.HasPrefix(r.URL.Path, "/v1/messages") {
+				protocol = "messages"
+			}
+			httpcontract.WriteError(w, AdmissionStatus(err), err.Error(), code, requestID, protocol)
 			return
 		}
 		for _, notify := range onTransportError {
@@ -60,7 +67,7 @@ func To(w http.ResponseWriter, r *http.Request, upstream registry.Upstream, path
 				notify(err)
 			}
 		}
-		http.Error(w, "upstream "+upstream.ID+" unreachable: "+err.Error(), http.StatusBadGateway)
+		httpcontract.WriteError(w, 502, "Upstream is unavailable", "", "", "")
 	}
 
 	origDirector := rp.Director

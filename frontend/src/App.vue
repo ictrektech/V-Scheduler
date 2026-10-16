@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import AboutDialog from './AboutDialog.vue'
+import {apiBases,authenticatedFetch,jsonResponse} from './http-client.js'
 import ModelHub from './ModelHub.vue'
 import GatewayWorkspace from './GatewayWorkspace.vue'
 import IntegrationGuide from './IntegrationGuide.vue'
@@ -23,6 +24,7 @@ preference.value=language.preference
 const t=(source:string)=>locale.value==='zh-CN'?source:messages[source]?.[locale.value==='en'?0:1]||source
 const demo=ref(false)
 const appVersion=ref('')
+const errorRequestId=ref('')
 const vosEmbedded=window.parent!==window||location.pathname.startsWith('/app/com.ictrek.v-scheduler')
 const initialPage=location.hash.slice(1)
 const page=ref(['models','upstreams','playground','api','resources','nodes','model-hub'].includes(initialPage)?initialPage:'overview'),docMode=ref('gateway'),credential=ref(''),connected=ref(false),busy=ref(false),error=ref(''),tasks=ref<Task[]>([]),nodes=ref<Node[]>([]),reservations=ref<Reservation[]>([]),filter=ref('all'),search=ref(''),selected=ref<Task|null>(null),deleting=ref<Task|null>(null),confirmPermit=ref<Reservation|null>(null),stopEvidence=ref(''),copied=ref(false)
@@ -34,7 +36,7 @@ const shown=computed(()=>tasks.value.filter(task=>(filter.value==='all'||task.st
 const active=computed(()=>tasks.value.filter(task=>['assigned','running','cancelling','recovering'].includes(task.status)).length)
 const queued=computed(()=>tasks.value.filter(task=>['queued','retry_wait'].includes(task.status)).length)
 const basePath=new URL('./',location.href.split('#')[0]).pathname
-const apiBase=basePath+'scheduler/api/v1/'
+const apiBase=apiBases(location.pathname).scheduler
 const managementApiUrl=new URL(apiBase,location.origin).href
 const gatewayPages=['overview','models','upstreams','playground']
 const gatewayTab=computed(()=>page.value==='api'?'apidoc':page.value)
@@ -53,17 +55,13 @@ const docTitle=computed(()=>operation.value?.['x-title']?.[locale.value]||operat
 const docDescription=computed(()=>operation.value?.['x-description']?.[locale.value]||operation.value?.description||'')
 const code=computed(()=>exampleTab.value==='json'?JSON.stringify(sample.value,null,2):`curl -X ${operation.value?.method.toUpperCase()||'GET'} '${location.origin}${apiBase}${(operation.value?.path||'/discovery').slice(1)}'${operation.value?.security?.length?" \\\n  -H 'Authorization: Bearer <service-access-token>'":''}${operation.value?.parameters?.some((p:any)=>p.name==='Idempotency-Key')?" \\\n  -H 'Idempotency-Key: stable-business-key'":''}${operation.value?.requestBody?" \\\n  -H 'Content-Type: application/json' \\\n  -d '"+JSON.stringify(sample.value)+"'":''}`)
 function prettyTime(value:string){return new Intl.DateTimeFormat(locale.value,{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}).format(new Date(value))}
-const errors:Record<string,string>={UNAUTHENTICATED:'未授权或令牌无效',FORBIDDEN:'权限不足',STATE_CONFLICT:'任务或资源状态不允许此操作',RETRY_NOT_ALLOWED:'任务或资源状态不允许此操作',TASK_NOT_STOPPED:'任务或资源状态不允许此操作',TEMPORARILY_UNAVAILABLE:'调度器暂不可用',WAIT_RESOURCE:'资源忙，请稍后重试',WAIT_RESOURCE_OR_NODE:'资源忙，请稍后重试'}
-async function api(path:string,body?:unknown,method?:string,extra:Record<string,string>={},retried=false){
- if(vosEmbedded)credential.value=await getVOSBearerToken()||''
- const requestToken=credential.value
- const response=await fetch(apiBase+path,{method:method||(body===undefined?'GET':'POST'),headers:{Authorization:`Bearer ${credential.value}`,'Content-Type':'application/json',...extra},body:body===undefined?undefined:JSON.stringify(body)})
- if(response.status===401&&vosEmbedded&&!retried){clearCachedVOSBearerToken(requestToken);credential.value=await getVOSBearerToken()||'';if(credential.value)return api(path,body,method,extra,true)}
- const text=await response.text();let payload:any;try{payload=JSON.parse(text)}catch{throw Error(`HTTP ${response.status}`)}
- if(!response.ok)throw Error(payload.code||`HTTP ${response.status}`)
- return payload.data
+const errors:Record<string,string>={UNAUTHENTICATED:'未授权或令牌无效',FORBIDDEN:'权限不足',STATE_CONFLICT:'任务或资源状态不允许此操作',RETRY_NOT_ALLOWED:'任务或资源状态不允许此操作',TASK_NOT_STOPPED:'任务或资源状态不允许此操作',TEMPORARILY_UNAVAILABLE:'调度器暂不可用',WAIT_RESOURCE:'资源忙，请稍后重试',WAIT_RESOURCE_OR_NODE:'资源忙，请稍后重试',WAIT_STOP_CONFIRMATION:'等待停止确认'}
+async function api(path:string,body?:unknown,method?:string,extra:Record<string,string>={}){
+ const response=await authenticatedFetch(apiBase+path,{method:method||(body===undefined?'GET':'POST'),headers:{'Content-Type':'application/json',...extra},body:body===undefined?undefined:JSON.stringify(body)},{token:async()=>{if(vosEmbedded)credential.value=await getVOSBearerToken()||'';return credential.value},clearToken:vosEmbedded?clearCachedVOSBearerToken:undefined})
+ return (await jsonResponse(response))?.data
 }
-function showError(e:unknown){error.value=(e instanceof Error?e.message:String(e)).replace(/^Error: /,'')}
+
+function showError(e:unknown){const failure=e as {code?:string;requestId?:string};errorRequestId.value=failure?.requestId||'';error.value=failure?.code&&errors[failure.code]?failure.code:(e instanceof Error?e.message:String(e)).replace(/^Error: /,'')}
 async function refresh(){
  if(!connected.value||busy.value)return
  busy.value=true
@@ -129,7 +127,7 @@ onUnmounted(()=>{clearInterval(timer);language.dispose()})
   <aside><div class="brand"><img :src="logoUrl" alt=""><div>V-Scheduler<small>{{t('模型路由与资源调度')}}</small></div></div><nav><button v-for="item in [{id:'overview',label:'模型与调用'},{id:'models',label:'模型'},{id:'upstreams',label:'上游'},{id:'playground',label:'试聊'}]" :key="item.id" :class="{current:page===item.id}" @click="page=item.id"><Icon name="server"/>{{t(item.label)}}</button><button :class="{current:page==='model-hub'}" @click="page='model-hub'"><Icon name="server"/>{{t('模型仓库')}}</button><button :class="{current:page==='resources'}" @click="page='resources'"><Icon name="queue"/>{{t('资源与任务')}}</button><button :class="{current:page==='nodes'}" @click="page='nodes'"><Icon name="server"/>{{t('节点管理')}}</button><button :class="{current:page==='api'}" @click="page='api'"><Icon name="book"/>{{t('API 文档')}}</button></nav><div class="aside-note"><span class="connection-dot" :class="{on:connected}"></span>{{t(error==='FORBIDDEN'?'调度管理需管理员身份':demo?'演示模式':connected?'已连接':'调度未连接')}}<small>{{t('按能力分配')}}<br>{{t('确认停止后释放')}}</small><small v-if="appVersion">v{{appVersion}}</small></div></aside>
   <main>
    <header><div><h1>{{t(pageTitle)}}</h1><p>{{t(page==='api'?'接口标准、认证方式与可复制的请求示例。':page==='nodes'?'登记、审批与管理执行节点和服务权限。':page==='resources'?'查看执行资源、预约与排队任务。':'统一管理模型、上游和调用；本地计算经过资源准入。')}}</p></div><div class="header-actions"><label class="locale-control"><Icon name="globe"/><select v-model="preference" :aria-label="t('界面语言')" @change="language.setPreference(preference)"><option value="auto">{{t('跟随 VOS')}}</option><option value="zh-CN">简体中文</option><option value="en">English</option><option value="zh-TW">繁體中文</option></select></label><AboutDialog :t="t"/></div></header>
-   <div v-if="error&&(page==='resources'||page==='nodes')" class="error" role="alert">{{t(errors[error]||error)}}<code v-if="errors[error]">{{error}}</code></div>
+   <div v-if="error&&(page==='resources'||page==='nodes')" class="error" role="alert">{{t(errors[error]||error)}}<code v-if="errors[error]">{{error}}</code><code v-if="errorRequestId">{{errorRequestId}}</code></div>
    <section v-if="page==='overview'&&connected" class="unified-summary panel"><button class="quiet" @click="page='resources'">{{t('就绪节点')}} {{nodes.filter(n=>nodeHealth(n)==='ready').length}} / {{nodes.length}}</button><button class="quiet" @click="page='resources'">{{t('正在执行')}} {{active}}</button><button class="quiet" @click="page='resources'">{{t('等待队列')}} {{queued}}</button><span>{{t('外部云模型不占本地资源预约')}}</span></section>
    <div v-if="page==='api'" class="documentation-tabs"><button :class="{current:docMode==='gateway'}" @click="docMode='gateway'">{{t('模型与网关 API')}}</button><button :class="{current:docMode==='scheduler'}" @click="docMode='scheduler'">{{t('调度管理 API')}}</button><button :class="{current:docMode==='model-hub'}" @click="docMode='model-hub'">{{t('模型管理 API')}}</button><button :class="{current:docMode==='guide'}" @click="docMode='guide'">{{t('应用接入')}}</button></div>
    <ModelHub v-if="page==='model-hub'" :locale="locale" :t="t"/>

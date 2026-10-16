@@ -1,10 +1,10 @@
-export const base = location.pathname.startsWith('/app/') ? '/app/com.ictrek.v-scheduler/model-hub' : '/model-hub'
-export async function request(path: string, body?: unknown, method?: string): Promise<any> {
+import {apiBases,authenticatedFetch,jsonResponse} from '../http-client.js'
+import {getVOSBearerToken,clearCachedVOSBearerToken} from '../vos-auth'
+export const base=apiBases(location.pathname).models
+export async function request(path:string,body?:unknown,method?:string):Promise<any>{
  const form=body instanceof FormData
- const response=await fetch(base+path,{method:method||(body===undefined?'GET':'POST'),headers:body===undefined||form?undefined:{'Content-Type':'application/json'},body:body===undefined?undefined:form?body:JSON.stringify(body)})
- const payload=await response.json().catch(()=>({detail:`HTTP ${response.status}`}))
- if(!response.ok)throw new Error(payload.detail||`HTTP ${response.status}`)
- return payload
+ const response=await authenticatedFetch(base+path,{method:method||(body===undefined?'GET':'POST'),headers:body===undefined||form?undefined:{'Content-Type':'application/json'},body:body===undefined?undefined:form?body:JSON.stringify(body)},{token:async()=>await getVOSBearerToken()||localStorage.getItem('v-router-key')||null,clearToken:clearCachedVOSBearerToken})
+ return jsonResponse(response)
 }
 export const encode=encodeURIComponent
 export function fileSize(value:number|null|undefined):string {

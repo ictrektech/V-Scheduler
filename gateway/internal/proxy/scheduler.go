@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/ictrektech/v-router/internal/httpcontract"
 	"github.com/ictrektech/v-router/internal/registry"
 	"io"
 	"net/http"
@@ -30,6 +31,22 @@ func AdmissionStatus(err error) int {
 		return e.Status
 	}
 	return 0
+}
+
+// Scheduler failures keep their machine code without exposing service credentials.
+type SchedulerAdmissionError struct {
+	Admission       *AdmissionError
+	Code, RequestID string
+}
+
+func (e *SchedulerAdmissionError) Error() string { return e.Admission.Error() }
+func (e *SchedulerAdmissionError) Unwrap() error { return e.Admission }
+func AdmissionDetails(err error) (string, string) {
+	var e *SchedulerAdmissionError
+	if errors.As(err, &e) {
+		return e.Code, e.RequestID
+	}
+	return "", ""
 }
 
 type schedulerKey struct{}
@@ -115,18 +132,27 @@ func schedulerCall(ctx context.Context, cfg *SchedulerConfig, path string, body 
 		return nil, err
 	}
 	defer response.Body.Close()
-	if response.StatusCode == http.StatusTooManyRequests {
-		var failure struct {
-			Code string `json:"code"`
-		}
-		if json.NewDecoder(io.LimitReader(response.Body, 65536)).Decode(&failure) == nil && failure.Code == "WAIT_STOP_CONFIRMATION" {
-			return nil, &AdmissionError{429, "previous inference is awaiting native stop confirmation; recovery is in progress"}
-		}
-		return nil, &AdmissionError{429, "local resources busy; retry later"}
-	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return nil, &AdmissionError{503, "scheduler did not authorize local execution"}
+		var failure struct {
+			Code      string `json:"code"`
+			RequestID string `json:"request_id"`
+		}
+		_ = json.NewDecoder(io.LimitReader(response.Body, 65536)).Decode(&failure)
+		status := 503
+		message := "scheduler did not authorize local execution"
+		if response.StatusCode == 429 {
+			status = 429
+			message = "local resources busy; retry later"
+			if failure.Code == "WAIT_STOP_CONFIRMATION" {
+				message = "previous inference is awaiting native stop confirmation; recovery is in progress"
+			}
+		}
+		if !httpcontract.ValidCode(failure.Code) {
+			failure.Code = httpcontract.Code(status)
+		}
+		return nil, &SchedulerAdmissionError{Admission: &AdmissionError{status, message}, Code: failure.Code, RequestID: failure.RequestID}
 	}
+
 	var value struct {
 		Data map[string]json.RawMessage `json:"data"`
 	}

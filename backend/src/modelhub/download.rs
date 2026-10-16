@@ -297,6 +297,9 @@ pub async fn create(hub: Arc<Hub>, mut request: Value) -> Result<Value> {
     Ok(result)
 }
 async fn finish_task(hub: &Hub, id: &str, outcome: Result<()>) {
+    // A visible terminal state must permit an immediate retry. Hold the same
+    // admission lock through publishing that state and removing active ownership.
+    let mut active = hub.active.lock().await;
     if let Ok(mut task) = hub.store.task(id) {
         match outcome {
             Ok(()) => {
@@ -329,7 +332,7 @@ async fn finish_task(hub: &Hub, id: &str, outcome: Result<()>) {
         task["eta"] = Value::Null;
         let _ = hub.store.put_task(&task);
     }
-    hub.active.lock().await.remove(id);
+    active.remove(id);
 }
 async fn pull_repository(hub: &Hub, task: &mut Value) -> Result<()> {
     let id = task["model_id"].as_str().unwrap().to_owned();
@@ -708,4 +711,45 @@ async fn ollama_attempt(hub: &Hub, task: &mut Value, url: &str, name: &str) -> R
     }
     ensure!(success, "Ollama stream ended before success");
     Ok(())
+}
+
+#[cfg(test)]
+mod completion_tests {
+    use super::*;
+    #[tokio::test]
+    async fn terminal_download_is_not_visible_before_active_bookkeeping_can_finish() {
+        let root =
+            std::env::temp_dir().join(format!("vs-download-finish-{}", uuid::Uuid::new_v4()));
+        let hub = Arc::new(Hub {
+            store: Store::new(root.clone()).unwrap(),
+            client: reqwest::Client::new(),
+            active: Default::default(),
+            model_locks: Default::default(),
+        });
+        hub.store.put_task(&json!({"task_id":"owned-task","model_id":"hf://fixture/model","phase":"DOWNLOADING"})).unwrap();
+        let (tx, _rx) = tokio::sync::watch::channel(false);
+        hub.active
+            .lock()
+            .await
+            .insert("owned-task".into(), ("hf://fixture/model".into(), tx));
+        let guard = hub.active.lock().await;
+        let (started, ready) = tokio::sync::oneshot::channel();
+        let worker = hub.clone();
+        let job = tokio::spawn(async move {
+            started.send(()).unwrap();
+            finish_task(&worker, "owned-task", Ok(())).await;
+        });
+        ready.await.unwrap();
+        tokio::task::yield_now().await;
+        assert_eq!(
+            hub.store.task("owned-task").unwrap()["phase"],
+            "DOWNLOADING",
+            "terminal state must not race ahead of the active-task lock"
+        );
+        drop(guard);
+        job.await.unwrap();
+        assert_eq!(hub.store.task("owned-task").unwrap()["phase"], "READY");
+        assert!(hub.active.lock().await.is_empty());
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }

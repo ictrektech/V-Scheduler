@@ -7,7 +7,7 @@ Uses the Rust debug binary and SDK image produced by verification; tiny local HT
 import argparse, hashlib, io, json, os, pathlib, shutil, socket, subprocess, tarfile, tempfile, threading, time, urllib.parse, urllib.request, urllib.error, uuid, zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-parser=argparse.ArgumentParser();parser.add_argument('--build-root',required=True);parser.add_argument('--runtime-image');args=parser.parse_args()
+parser=argparse.ArgumentParser();parser.add_argument('--build-root',required=True);parser.add_argument('--runtime-image');parser.add_argument('--binary');args=parser.parse_args()
 build=pathlib.Path(args.build_root).expanduser().resolve();data=build/('acceptance-'+uuid.uuid4().hex);data.mkdir(parents=True)
 files={'config.json':b'{"architecture":"fixture"}', 'weights/Q4.gguf':b'Q4weight'*100,'weights/Q8.gguf':b'Q8weight'*150,'weights/slow.gguf':b'slow-weights'*65536}
 seen=[];version=[1000];fail=[False];slow=[False];running=set()
@@ -59,7 +59,13 @@ command=['docker','run','--rm','--name',name,'--network','host','-v',f'{data}:/d
 for role in ['QA','EMBEDDING','RERANK']:command+=['-e',f'OLLAMA_{role}_API_URL={upstream}','-e',f'OLLAMA_{role}_GATEWAY_URL={upstream}']
 command+=['-e','VOS_APP_VERSION=acceptance-fixture','-e','MODEL_HUB_PROFILE=amd','-e','V_SCHEDULER_IMAGE=fixture/scheduler:amd_fixture','-e','V_ROUTER_BACKEND_IMAGE=fixture/router:amd_fixture','-e','OLLAMA_SERVER_IMAGE=fixture/ollama:amd_fixture']
 command+=([args.runtime_image] if args.runtime_image else ['--entrypoint','/target/debug/v-scheduler','v-scheduler-modelhub-sdk:20261016'])+['model-hub','--listen',f'127.0.0.1:{port}']
-process=subprocess.Popen(command,stdout=log,stderr=log)
+environment=None
+if args.binary:
+ environment={**os.environ,'MODELS_BASE_DIR':str(data),'MODELSCOPE_ENDPOINT':upstream,'HF_MIRROR_ENABLED':'true','HF_ENDPOINT':upstream,'VOS_APP_VERSION':'acceptance-fixture','MODEL_HUB_PROFILE':'amd','V_SCHEDULER_IMAGE':'fixture/scheduler:amd_fixture','V_ROUTER_BACKEND_IMAGE':'fixture/router:amd_fixture','OLLAMA_SERVER_IMAGE':'fixture/ollama:amd_fixture'}
+ for role in ['QA','EMBEDDING','RERANK']:
+  for kind in ['API','GATEWAY']:environment[f'OLLAMA_{role}_{kind}_URL']=upstream
+ command=[args.binary,'model-hub','--listen',f'127.0.0.1:{port}']
+process=subprocess.Popen(command,env=environment,stdout=log,stderr=log)
 checks=[]
 def check(condition,label):
  if not condition:raise AssertionError(label)
@@ -144,4 +150,6 @@ try:
  check((old/'weights.gguf').stat().st_ino==inode and (old/'weights.gguf').read_bytes()==b'legacy weights','legacy model stays unchanged after full lifecycle tests')
  result={'checks':len(checks),'passed':checks,'fixture_data':str(data)};(build/'model-hub-acceptance.json').write_text(json.dumps(result,indent=2));print(json.dumps({'checks':len(checks),'status':'PASS','evidence':str(build/'model-hub-acceptance.json')}))
 finally:
- subprocess.run(['docker','stop',name],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL);process.wait(timeout=15);log.close();fixture.shutdown()
+ if args.binary:process.terminate()
+ else:subprocess.run(['docker','stop',name],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+ process.wait(timeout=15);log.close();fixture.shutdown()

@@ -1,5 +1,6 @@
 mod agent;
 mod bootstrap;
+mod contract;
 mod controller;
 mod gpu;
 mod identity;
