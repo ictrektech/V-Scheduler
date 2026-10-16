@@ -1,0 +1,726 @@
+//! Fixed VOS application bindings. Discovery describes readiness; only a matching
+//! measured calibration authorizes compute. No client-supplied URL grants trust.
+use super::*;
+use std::{os::unix::fs::PermissionsExt, path::Path, time::Duration};
+
+const CONTROLLER: &str = "http://v-router:8080/scheduler/api/v1";
+
+#[derive(Clone, Copy)]
+struct Application {
+    slug: &'static str,
+    id: &'static str,
+    origin: &'static str,
+    upstream: &'static str,
+    discovery: &'static str,
+    asynchronous: bool,
+}
+
+const APPLICATIONS: [Application; 3] = [
+    Application {
+        slug: "v-music",
+        id: "com.ictrek.v-music",
+        origin: "http://v-music-backend:7080",
+        upstream: "app-v-music",
+        discovery: "/api/v1/discovery",
+        asynchronous: false,
+    },
+    Application {
+        slug: "desensitize",
+        id: "com.ictrek.desensitize",
+        origin: "http://desensitize-backend:5000",
+        upstream: "app-desensitize",
+        discovery: "/api/v1/discovery",
+        asynchronous: false,
+    },
+    Application {
+        slug: "image-studio",
+        id: "com.ictrek.image-studio",
+        origin: "http://image-studio-backend:5000",
+        upstream: "app-image-studio",
+        discovery: "/api/v1/v-router/registration",
+        asynchronous: true,
+    },
+];
+
+fn upstream(application: Application) -> String {
+    format!("{}/v1", application.origin)
+}
+
+fn declaration<'a>(application: Application, discovery: &'a Value) -> anyhow::Result<&'a Value> {
+    let contract = &discovery["scheduler"];
+    ensure!(
+        contract["protocol_version"] == 1
+            && contract["app_id"] == application.id
+            && contract["executor_base_url"] == application.origin
+            && contract["upstream_url"] == upstream(application)
+            && contract["binding_endpoint"] == "/api/v1/scheduler/binding",
+        "application binding origin mismatch"
+    );
+    ensure!(
+        contract["execution_settings"]
+            .as_object()
+            .is_some_and(|settings| !settings.is_empty()),
+        "actual execution settings required"
+    );
+    Ok(contract)
+}
+
+fn credential(old: Option<&Value>, field: &str) -> String {
+    old.and_then(|value| value["binding"][field].as_str())
+        .map(str::to_owned)
+        .unwrap_or_else(|| format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple()))
+}
+
+fn hardware(report: &Value) -> Value {
+    let mut devices: Vec<Value> = report["gpus"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|gpu| json!({"name":gpu["name"],"memory_type":gpu["memory_type"]}))
+        .collect();
+    devices.sort_by_key(Value::to_string);
+    json!(devices)
+}
+
+// The caller supplies the actual VOS profile and telemetry, never discovery's
+// claim of its own hardware. A missing calibration produces no executors.
+fn build(
+    application: Application,
+    node: &str,
+    capacity: &Resources,
+    baseline: &Resources,
+    profile: &str,
+    report: &Value,
+    contract: &Value,
+    approvals: &Value,
+    old: Option<&Value>,
+) -> anyhow::Result<Value> {
+    ensure!(
+        approvals["protocol_version"] == 1,
+        "unsupported application calibration format"
+    );
+    let epoch = approvals["credential_epoch"]
+        .as_u64()
+        .context("credential epoch required")?;
+    ensure!(
+        old.is_none_or(|value| epoch >= value["credential_epoch"].as_u64().unwrap_or(0)),
+        "credential epoch cannot roll back"
+    );
+    let previous = old.filter(|value| value["credential_epoch"] == epoch);
+    let token = credential(previous, "token");
+    let executor_token = credential(previous, "executor_token");
+    let gateway_token = previous
+        .and_then(|value| value["gateway"]["token"].as_str())
+        .map(str::to_owned)
+        .unwrap_or_else(|| format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple()));
+    let owner = format!("v-scheduler.app-gateway.{}", application.slug);
+    let mut models = serde_json::Map::new();
+    let mut gateway_executors = serde_json::Map::new();
+    let mut model_limits = serde_json::Map::new();
+    let mut model_parameters = serde_json::Map::new();
+    let mut policies = serde_json::Map::new();
+    let mut executors = Vec::new();
+    let mut adapters = Vec::new();
+    let mut gateway_ids = Vec::new();
+    let mut delegated_ids = Vec::new();
+    let actual_hardware = hardware(report);
+    for approval in approvals["approvals"]
+        .as_array()
+        .context("calibration list required")?
+    {
+        if approval["app_id"] != application.id
+            || approval["architecture"].as_str() != Some(std::env::consts::ARCH)
+            || approval["profile"] != profile
+            || approval["hardware"] != actual_hardware
+            || approval["execution_settings"] != contract["execution_settings"]
+        {
+            continue;
+        }
+        let model = approval["model_id"]
+            .as_str()
+            .context("calibrated model required")?;
+        let task_type = approval["task_type"]
+            .as_str()
+            .context("calibrated task type required")?;
+        ensure!(
+            !model.is_empty() && model.len() <= 512 && !model.chars().any(char::is_control),
+            "invalid calibrated model"
+        );
+        ensure!(
+            if application.asynchronous {
+                ["image.generate", "video.generate"].contains(&task_type)
+            } else {
+                task_type == "model.infer"
+            },
+            "unexpected application task type"
+        );
+        let list = if application.asynchronous {
+            "async_models"
+        } else {
+            "sync_models"
+        };
+        if !contract[list].as_array().is_some_and(|rows| {
+            rows.iter()
+                .any(|row| row["id"] == model && row["task_type"] == task_type)
+        }) {
+            continue;
+        }
+        let resources: Resources = serde_json::from_value(approval["resources"].clone())?;
+        ensure!(
+            resources.valid()
+                && resources.cpu_millicores > 0
+                && resources.memory_mib > 0
+                && (resources.gpu_memory_mib == 0 || resources.gpu_slots > 0),
+            "invalid measured resources"
+        );
+        ensure!(
+            approval["evidence"]["id"]
+                .as_str()
+                .is_some_and(|id| !id.is_empty())
+                && approval["evidence"]["peak_memory_mib"]
+                    .as_i64()
+                    .is_some_and(|peak| peak > 0 && peak <= resources.memory_mib)
+                && approval["evidence"]["confirmed_stopped"] == true,
+            "measurement and stop evidence required"
+        );
+        if !resources.fits(baseline, capacity) {
+            continue;
+        }
+        let maximum = approval["max_input_bytes"]
+            .as_u64()
+            .context("measured input bound required")?;
+        ensure!(
+            (1..=33554432).contains(&maximum)
+                && approval["model_limits"]
+                    .as_object()
+                    .is_some_and(|limits| !limits.is_empty()),
+            "model input limits required"
+        );
+        let fingerprint = json!([application.id, node, approval]);
+        let digest = format!("{:x}", Sha256::digest(serde_json::to_vec(&fingerprint)?));
+        let executor = format!("app-auto-{}-{}", application.slug, &digest[..24]);
+        let gateway_executor = format!("app-gateway-{}-{}", application.slug, &digest[..24]);
+        ensure!(!models.contains_key(model), "duplicate model calibration");
+        models.insert(model.into(), json!(executor));
+        gateway_executors.insert(model.into(), json!(gateway_executor));
+        model_limits.insert(model.into(), approval["model_limits"].clone());
+        if application.asynchronous {
+            ensure!(
+                approval["model_parameters"]
+                    .as_object()
+                    .is_some_and(|parameters| !parameters.is_empty()),
+                "measured image runtime parameters required"
+            );
+            model_parameters.insert(model.into(), approval["model_parameters"].clone());
+        }
+        executors.push(json!({"id":executor,"app_id":application.id,"node_id":node,"contract_version":"1","task_type":task_type,"resources":resources,"upstream_urls":[upstream(application)],"placements":[],"retry_mode":"none","max_attempts":1}));
+        executors.push(json!({"id":gateway_executor,"app_id":owner,"node_id":node,"contract_version":"1","task_type":"model.infer","resources":resources,"upstream_urls":[upstream(application)],"placements":[],"retry_mode":"none","max_attempts":1}));
+        gateway_ids.push(gateway_executor.clone());
+        if application.asynchronous {
+            delegated_ids.push(executor.clone());
+            adapters.push(json!({"id":executor,"url":application.origin,"token":executor_token,"health_url":format!("{}/health",application.origin)}));
+        }
+        policies.insert(format!("{}/{model}",application.upstream),json!({"mode":if application.asynchronous {"delegated"} else {"permit"},"executor_id":gateway_executor,"completion":"synchronous","upstream_url":upstream(application),"max_input_bytes":maximum,"limits":approval["limits"].as_object().cloned().unwrap_or_default()}));
+    }
+    let mut state = json!({"credential_epoch":epoch,"binding":{"protocol_version":1,"binding_revision":1,"app_id":application.id,"url":CONTROLLER,"token":token,"executor_token":executor_token,"upstream_url":upstream(application),"execution_settings":contract["execution_settings"],"models":models,"gateway_executors":gateway_executors,"model_limits":model_limits,"model_parameters":model_parameters},
+        "principals":[{"token":token,"role":"submitter","app_id":application.id,"permit_executors":gateway_ids},{"token":gateway_token,"role":"submitter","app_id":owner,"delegated_executors":delegated_ids}],
+        "executors":executors,"adapters":adapters,"gateway":{"url":CONTROLLER,"token":gateway_token,"require_model_policy":true,"models":policies}});
+    if let Some(old) = old {
+        let revision = old["binding"]["binding_revision"]
+            .as_u64()
+            .context("persisted binding revision missing")?;
+        state["binding"]["binding_revision"] = json!(revision);
+        if state != *old {
+            state["binding"]["binding_revision"] = json!(
+                revision
+                    .checked_add(1)
+                    .context("binding revision exhausted")?
+            );
+        }
+    }
+    Ok(state)
+}
+
+fn read_private(path: &Path) -> anyhow::Result<Value> {
+    let metadata = std::fs::symlink_metadata(path)?;
+    ensure!(
+        metadata.is_file()
+            && metadata.permissions().mode() & 0o077 == 0
+            && metadata.len() <= 262144,
+        "private bounded binding required"
+    );
+    Ok(serde_json::from_slice(&std::fs::read(path)?)?)
+}
+
+fn save_private(path: &Path, value: &Value) -> anyhow::Result<()> {
+    use std::{io::Write, os::unix::fs::OpenOptionsExt};
+    let directory = path.parent().context("binding parent required")?;
+    std::fs::create_dir_all(directory)?;
+    let data = serde_json::to_vec(value)?;
+    ensure!(data.len() <= 262144, "binding exceeds bound");
+    let pending = directory.join(format!(".{}.pending", Uuid::new_v4().simple()));
+    let result = (|| -> anyhow::Result<()> {
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&pending)?;
+        file.write_all(&data)?;
+        file.sync_all()?;
+        std::fs::rename(&pending, path)?;
+        std::fs::File::open(directory)?.sync_all()?;
+        Ok(())
+    })();
+    let _ = std::fs::remove_file(pending);
+    result
+}
+
+async fn bounded_json(mut response: reqwest::Response) -> anyhow::Result<Value> {
+    ensure!(
+        response.status().is_success(),
+        "application discovery unavailable"
+    );
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response.chunk().await? {
+        ensure!(
+            bytes.len().saturating_add(chunk.len()) <= 262144,
+            "application response exceeds bound"
+        );
+        bytes.extend_from_slice(&chunk);
+    }
+    Ok(serde_json::from_slice(&bytes)?)
+}
+
+async fn persist(
+    a: &App,
+    application: Application,
+    state: &Value,
+    old: Option<&Value>,
+) -> anyhow::Result<()> {
+    let node = a
+        .config
+        .local_agent
+        .as_ref()
+        .and_then(|local| local["node_id"].as_str())
+        .context("local node required")?;
+    let owner = format!("v-scheduler.app-gateway.{}", application.slug);
+    let mut tx = a.db.begin().await?;
+    sqlx::query("SELECT id FROM vrs_nodes WHERE id=$1 FOR UPDATE")
+        .bind(node)
+        .fetch_one(&mut *tx)
+        .await?;
+    let busy: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM vrs_permits WHERE app IN ($1,$2) AND state<>'released') OR EXISTS(SELECT 1 FROM vrs_reservations r JOIN vrs_tasks t ON t.id=r.task WHERE t.app=$1 AND r.state<>'released')")
+        .bind(application.id).bind(&owner).fetch_one(&mut *tx).await?;
+    ensure!(
+        !busy,
+        "application binding waits for active or unknown execution"
+    );
+    let definitions = state["executors"]
+        .as_array()
+        .context("executor definitions required")?;
+    let ids: Vec<&str> = definitions
+        .iter()
+        .map(|row| row["id"].as_str().context("executor ID missing"))
+        .collect::<anyhow::Result<_>>()?;
+    // Retire only this module's own executors. Administrator-created identities
+    // and bindings belonging to another application remain untouched.
+    let prefix = format!("app-auto-{}-", application.slug);
+    let gateway_prefix = format!("app-gateway-{}-", application.slug);
+    sqlx::query("UPDATE vrs_executor_settings SET state='disabled',version=version+1,updated_at=now() WHERE (starts_with(id,$1) OR starts_with(id,$2)) AND NOT(id=ANY($3)) AND state='enabled'")
+        .bind(&prefix).bind(&gateway_prefix).bind(&ids).execute(&mut *tx).await?;
+    for definition in definitions {
+        let id = definition["id"].as_str().context("executor ID missing")?;
+        sqlx::query("INSERT INTO vrs_executor_settings(id,node_id,definition,state) VALUES($1,$2,$3,'enabled') ON CONFLICT(id) DO NOTHING")
+            .bind(id).bind(node).bind(definition).execute(&mut *tx).await?;
+        let enabled: bool = sqlx::query_scalar(
+            "SELECT state='enabled' AND definition=$2 FROM vrs_executor_settings WHERE id=$1",
+        )
+        .bind(id)
+        .bind(definition)
+        .fetch_one(&mut *tx)
+        .await?;
+        ensure!(enabled, "application executor was disabled or changed");
+    }
+    for principal in state["principals"]
+        .as_array()
+        .context("service identities required")?
+    {
+        let secret = principal["token"]
+            .as_str()
+            .context("service credential required")?;
+        let digest = format!("{:x}", Sha256::digest(secret.as_bytes()));
+        let id = format!("app-auto-identity-{}", &digest[..24]);
+        let app = principal["app_id"]
+            .as_str()
+            .context("identity owner required")?;
+        let permit = principal["permit_executors"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        let delegated = principal["delegated_executors"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        sqlx::query("INSERT INTO vrs_service_identities(id,app_id,token_hash,permit_executors,delegated_executors) VALUES($1,$2,$3,$4,$5) ON CONFLICT(id) DO UPDATE SET permit_executors=excluded.permit_executors,delegated_executors=excluded.delegated_executors WHERE vrs_service_identities.revoked_at IS NULL AND vrs_service_identities.app_id=excluded.app_id AND vrs_service_identities.token_hash=excluded.token_hash")
+            .bind(&id).bind(app).bind(&digest).bind(json!(permit)).bind(json!(delegated)).execute(&mut *tx).await?;
+        let enabled: bool = sqlx::query_scalar("SELECT revoked_at IS NULL AND app_id=$2 AND token_hash=$3 FROM vrs_service_identities WHERE id=$1")
+            .bind(&id).bind(app).bind(&digest).fetch_one(&mut *tx).await?;
+        ensure!(enabled, "application service identity was revoked");
+    }
+    if let Some(old) = old {
+        for principal in old["principals"]
+            .as_array()
+            .context("persisted service identities required")?
+        {
+            if state["principals"]
+                .as_array()
+                .is_some_and(|rows| rows.iter().any(|row| row["token"] == principal["token"]))
+            {
+                continue;
+            }
+            let token = principal["token"]
+                .as_str()
+                .context("persisted credential required")?;
+            let digest = format!("{:x}", Sha256::digest(token.as_bytes()));
+            sqlx::query("UPDATE vrs_service_identities SET revoked_at=COALESCE(revoked_at,now()) WHERE token_hash=$1 AND app_id IN ($2,$3)")
+                .bind(digest).bind(application.id).bind(&owner).execute(&mut *tx).await?;
+        }
+    }
+    sqlx::query("INSERT INTO vrs_management_events(actor,action,resource) VALUES('v-scheduler','application.binding.update',$1)")
+        .bind(application.id).execute(&mut *tx).await?;
+    tx.commit().await?;
+    management::restore(&a.db, &a.voice_config).await?;
+    Ok(())
+}
+
+async fn reconcile(
+    shared: &SharedApp,
+    configuration: &Path,
+    application: Application,
+    client: &reqwest::Client,
+    approvals: &Value,
+) -> anyhow::Result<()> {
+    let directory = configuration
+        .parent()
+        .context("configuration directory required")?;
+    let path = directory
+        .join("app-bindings")
+        .join(format!("{}.json", application.slug));
+    if !path.exists()
+        && !approvals["approvals"]
+            .as_array()
+            .is_some_and(|rows| rows.iter().any(|row| row["app_id"] == application.id))
+    {
+        return Ok(());
+    }
+    let context_token = std::fs::read_to_string("/var/lib/vos-context/access-token")?;
+    let vos = crate::identity::base().context("VOS identity endpoint required")?;
+    let identity = bounded_json(
+        client
+            .get(format!(
+                "{}/v1000/oauth2/userinfo",
+                vos.trim_end_matches('/')
+            ))
+            .bearer_auth(context_token.trim())
+            .send()
+            .await?,
+    )
+    .await?;
+    ensure!(
+        identity["sub"] == "com.ictrek.v-scheduler" && identity["enable"] == 1,
+        "Scheduler application identity required"
+    );
+    let installed = bounded_json(
+        client
+            .get(format!(
+                "{}/v1000/app/detail?app_id={}",
+                vos.trim_end_matches('/'),
+                application.id
+            ))
+            .bearer_auth(context_token.trim())
+            .send()
+            .await?,
+    )
+    .await?;
+    ensure!(
+        installed["code"] == 0 && installed["data"]["state"] == "installed",
+        "application must be installed on this VOS"
+    );
+    let discovery = bounded_json(
+        client
+            .get(format!("{}{}", application.origin, application.discovery))
+            .send()
+            .await?,
+    )
+    .await?;
+    let contract = declaration(application, &discovery)?;
+    let _guard = shared.config.management_lock.lock().await;
+    let a = App::from_ref(shared);
+    let node_id = a
+        .config
+        .local_agent
+        .as_ref()
+        .and_then(|local| local["node_id"].as_str())
+        .context("local node required")?;
+    let row = sqlx::query(
+        "SELECT capacities,resident_baseline,report,management_enabled FROM vrs_nodes WHERE id=$1",
+    )
+    .bind(node_id)
+    .fetch_one(&a.db)
+    .await?;
+    ensure!(
+        row.get::<bool, _>("management_enabled"),
+        "local node disabled"
+    );
+    let report: Value = row.get("report");
+    let profile = installed["data"]["configs_current"]["VOS_APP_PROFILES"]
+        .as_str()
+        .context("actual application installation profile required")?;
+    ensure!(
+        [
+            "amd",
+            "amd-without-cuda",
+            "arm",
+            "arm-without-cuda",
+            "l4t",
+            "thor-spark"
+        ]
+        .contains(&profile),
+        "unsupported application profile"
+    );
+    let old = if path.exists() {
+        Some(read_private(&path)?)
+    } else {
+        None
+    };
+    let state = build(
+        application,
+        node_id,
+        &serde_json::from_value(row.get("capacities"))?,
+        &serde_json::from_value(row.get("resident_baseline"))?,
+        &profile,
+        &report,
+        contract,
+        approvals,
+        old.as_ref(),
+    )?;
+    if old.as_ref() != Some(&state) {
+        ensure!(
+            serde_json::to_vec(&state)?.len() <= 262144,
+            "binding exceeds bound"
+        );
+        persist(&a, application, &state, old.as_ref()).await?;
+        save_private(&path, &state)?;
+    }
+    // Sharing this lock with V-Voice's read/merge/write prevents one app's
+    // adapter refresh from losing another app's configuration.
+    let agent_path = directory.join("local-agent.json");
+    let mut agent = read_private(&agent_path)?;
+    let adapters = agent["executors"]
+        .as_array_mut()
+        .context("local adapters required")?;
+    let prefix = format!("app-auto-{}-", application.slug);
+    adapters.retain(|entry| {
+        !entry["id"]
+            .as_str()
+            .is_some_and(|id| id.starts_with(&prefix))
+    });
+    adapters.extend(
+        state["adapters"]
+            .as_array()
+            .context("application adapters required")?
+            .clone(),
+    );
+    save_private(&agent_path, &agent)?;
+    let gateway = PathBuf::from(
+        std::env::var("SCHEDULER_GATEWAY_DATA").unwrap_or_else(|_| "/gateway-data".into()),
+    );
+    save_private(
+        &gateway
+            .join("app-bindings")
+            .join(format!("{}.json", application.slug)),
+        &state["gateway"],
+    )?;
+    if state["binding"]["models"]
+        .as_object()
+        .is_some_and(|models| !models.is_empty())
+    {
+        let response = client
+            .post(format!("{}/api/v1/scheduler/binding", application.origin))
+            .bearer_auth(context_token.trim())
+            .json(&state["binding"])
+            .send()
+            .await?;
+        ensure!(
+            response.status().is_success(),
+            "application binding pending acceptance"
+        );
+    }
+    Ok(())
+}
+
+pub(super) fn start(shared: SharedApp, configuration: PathBuf) {
+    if std::env::var_os("VOS_APP_VERSION").is_none() {
+        return;
+    }
+    tokio::spawn(async move {
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(8))
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .expect("application binding client");
+        loop {
+            let result = (|| -> anyhow::Result<Value> {
+                let path = configuration
+                    .parent()
+                    .context("configuration directory missing")?
+                    .join("app-approvals.json");
+                if path.exists() {
+                    read_private(&path)
+                } else {
+                    Ok(serde_json::from_slice(&std::fs::read(
+                        "/opt/v-scheduler/app-calibrations.json",
+                    )?)?)
+                }
+            })();
+            if let Ok(approvals) = result {
+                for application in APPLICATIONS {
+                    if reconcile(&shared, &configuration, application, &client, &approvals)
+                        .await
+                        .is_err()
+                    {
+                        eprintln!(
+                            "application calibrated binding pending ({})",
+                            application.slug
+                        );
+                    }
+                }
+            }
+            tokio::time::sleep(Duration::from_secs(10)).await;
+        }
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn application_urls_are_fixed_and_settings_are_required() {
+        let app = APPLICATIONS[0];
+        let mut discovery = json!({"scheduler":{"protocol_version":1,"app_id":app.id,"executor_base_url":app.origin,"upstream_url":upstream(app),"binding_endpoint":"/api/v1/scheduler/binding","execution_settings":{"provider":"cpu"}}});
+        assert!(declaration(app, &discovery).is_ok());
+        discovery["scheduler"]["executor_base_url"] = json!("http://untrusted");
+        assert!(declaration(app, &discovery).is_err());
+    }
+
+    #[test]
+    fn discovery_without_measured_calibration_grants_nothing() {
+        let app = APPLICATIONS[0];
+        let capacity = Resources {
+            cpu_millicores: 4000,
+            memory_mib: 8192,
+            ..Resources::default()
+        };
+        let state = build(app,"node",&capacity,&Resources::default(),"amd",&json!({}),&json!({"execution_settings":{"provider":"cpu"},"sync_models":[{"id":"musicgen-small","task_type":"model.infer"}]}),&json!({"protocol_version":1,"credential_epoch":1,"approvals":[]}),None).unwrap();
+        assert_eq!(state["executors"], json!([]));
+        assert_eq!(state["binding"]["models"], json!({}));
+        let repeated = build(
+            app,
+            "node",
+            &capacity,
+            &Resources::default(),
+            "amd",
+            &json!({}),
+            &json!({"execution_settings":{"provider":"cpu"},"sync_models":[{"id":"musicgen-small","task_type":"model.infer"}]}),
+            &json!({"protocol_version":1,"credential_epoch":1,"approvals":[]}),
+            Some(&state),
+        )
+        .unwrap();
+        assert_eq!(state, repeated);
+    }
+
+    #[test]
+    fn measured_settings_and_hardware_must_match_and_limits_persist() {
+        let app = APPLICATIONS[0];
+        let capacity = Resources {
+            cpu_millicores: 4000,
+            memory_mib: 8192,
+            ..Resources::default()
+        };
+        let contract = json!({"execution_settings":{"provider":"cpu","torch_threads":4},"sync_models":[{"id":"musicgen-small","task_type":"model.infer"}]});
+        let mut approvals = json!({"protocol_version":1,"credential_epoch":1,"approvals":[{"app_id":app.id,"architecture":std::env::consts::ARCH,"profile":"amd","hardware":[],"execution_settings":contract["execution_settings"],"model_id":"musicgen-small","task_type":"model.infer","resources":{"cpu_millicores":4000,"memory_mib":4096},"evidence":{"id":"unit-fixture-only","peak_memory_mib":2048,"confirmed_stopped":true},"max_input_bytes":8192,"model_limits":{"duration_seconds":10,"prompt_characters":100,"negative_prompt_characters":100}}]});
+        let state = build(
+            app,
+            "node",
+            &capacity,
+            &Resources::default(),
+            "amd",
+            &json!({}),
+            &contract,
+            &approvals,
+            None,
+        )
+        .unwrap();
+        assert_eq!(state["executors"].as_array().unwrap().len(), 2);
+        for definition in state["executors"].as_array().unwrap() {
+            let parsed: Executor = serde_json::from_value(definition.clone()).unwrap();
+            assert_eq!(
+                *definition,
+                serde_json::to_value(parsed).unwrap(),
+                "persisted approval must match the runtime executor exactly"
+            );
+        }
+        assert_eq!(
+            state["binding"]["model_limits"]["musicgen-small"]["duration_seconds"],
+            10
+        );
+        assert_eq!(
+            build(
+                app,
+                "node",
+                &capacity,
+                &Resources::default(),
+                "amd",
+                &json!({}),
+                &contract,
+                &approvals,
+                Some(&state)
+            )
+            .unwrap(),
+            state
+        );
+        approvals["approvals"][0]["execution_settings"]["torch_threads"] = json!(8);
+        assert_eq!(
+            build(
+                app,
+                "node",
+                &capacity,
+                &Resources::default(),
+                "amd",
+                &json!({}),
+                &contract,
+                &approvals,
+                None
+            )
+            .unwrap()["executors"],
+            json!([])
+        );
+        approvals["approvals"][0]["execution_settings"] = contract["execution_settings"].clone();
+        approvals["approvals"][0]["evidence"]["confirmed_stopped"] = json!(false);
+        assert!(
+            build(
+                app,
+                "node",
+                &capacity,
+                &Resources::default(),
+                "amd",
+                &json!({}),
+                &contract,
+                &approvals,
+                None
+            )
+            .is_err()
+        );
+    }
+}

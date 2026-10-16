@@ -547,6 +547,7 @@ async fn reconcile(path: &Path, runtime: &Runtime, db: &PgPool) -> anyhow::Resul
         tx.commit().await?;
     }
     let agent_path = directory.join("local-agent.json");
+    let adapter_guard = runtime.management_lock.lock().await;
     let mut agent = read_private(&agent_path)?;
     let adapters = agent["executors"]
         .as_array_mut()
@@ -563,6 +564,7 @@ async fn reconcile(path: &Path, runtime: &Runtime, db: &PgPool) -> anyhow::Resul
             .clone(),
     );
     write_private(&agent_path, &agent)?;
+    drop(adapter_guard);
     write_private(
         &Path::new(&gateway).join("voice-scheduler.local.json"),
         &state["gateway"],

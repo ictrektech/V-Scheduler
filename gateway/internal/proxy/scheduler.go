@@ -187,6 +187,12 @@ func (t *scheduledTransport) RoundTrip(r *http.Request) (*http.Response, error) 
 			return t.withConfig(r, u, cfg)
 		}
 	}
+	if cfg, exists, err := applicationSchedulerConfig(u); exists {
+		if err != nil {
+			return nil, &AdmissionError{503, "application calibrated scheduler binding invalid"}
+		}
+		return t.withConfig(r, u, cfg)
+	}
 	if t.err != nil {
 		return nil, &AdmissionError{503, "local scheduler configuration invalid"}
 	}

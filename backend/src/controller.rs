@@ -1,4 +1,5 @@
 mod allocations;
+mod app_bindings;
 mod management;
 mod ollama;
 use crate::model::*;
@@ -405,6 +406,7 @@ pub async fn serve(
         app: a.clone(),
         config: runtime.clone(),
     };
+    app_bindings::start(shared.clone(), path.clone());
     crate::voice::start(path, runtime, a.db.clone());
     ollama::start(shared.clone());
     let ticker_state = shared.clone();
