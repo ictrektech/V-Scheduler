@@ -1,6 +1,6 @@
 # 固定应用的可信绑定（开发中）
 
-此接入正在验证，尚未随 `0.0.26` 发布。内置 `config/app-calibrations.json` 的校准清单目前为空，不授予 Music、Desensitize 或 Image Studio 新的执行权限。隔离测试使用的模拟预算不能进入正式清单；真实任务校准、发布和逐机验收完成前，不宣称客户端全面迁移已完成。
+此接入正在验证，尚未随 `0.0.26` 发布。内置 `config/app-calibrations.json` 现记录 Thor 的 MusicGen-small / SD-Turbo 及 AMD RTX 5880 的 MusicGen-small 实测预算；该源码尚未发布到已安装实例，其他 profile/模型及 Desensitize 仍无对应批准。隔离测试使用的模拟预算不能进入正式清单；真实任务校准、发布和逐机验收完成前，不宣称客户端全面迁移已完成。
 
 控制器只为下列固定 VOS 应用接入，不提供允许调用者自报 URL 和预算的公开注册入口。原 V-Voice 专用绑定保持独立，见 [V-Voice 主动接入](v-voice-auto-binding.md)。
 
@@ -37,3 +37,19 @@
 内容相同时保留 revision 和凭据。变更必须等待本应用活动任务、许可及停止未知的预约结束；提高 `credential_epoch` 才轮换凭据，并撤销旧身份。管理员已禁用的执行器和已撤销的身份不会被同一配置重新启用。运行配置不再匹配时，旧自动执行器退出可执行集合；即使客户端尚持旧快照，也不能据此取得执行授权。
 
 V-Sub 的每用户 worker/root broker 和动态 namespace 上游、HybRAG 的独立后台网关凭据不属于本固定三应用模块，仍须分别完成契约及验证，见[迁移协同契约](client-migration-contract.md)。
+
+## 当前实测清单（尚未发布）
+
+| VOS profile / 硬件 | 模型 | CPU / RAM | GPU | 已测输入范围 |
+|---|---|---|---|---|
+| `thor-spark` / NVIDIA Thor 统一内存 | MusicGen-small | 4 核 / 12 GiB | 独占 1 槽；内存计入系统 RAM | 最长 10 秒，prompt / negative 各 512 字符 |
+| `thor-spark` / NVIDIA Thor 统一内存 | SD-Turbo | 4 核 / 8 GiB | 独占 1 槽；内存计入系统 RAM | 512×512、1 张、最多 4 步，prompt / negative 各 4000 字符；其余运行参数完整匹配 |
+| `amd` / NVIDIA RTX 5880 Ada 独立显存 | MusicGen-small | 4 核 / 8 GiB | 独占 1 槽 / 3 GiB 显存 | 最长 10 秒，prompt / negative 各 512 字符 |
+
+Image 使用实际 `--threads 4` 配置；其他线程或 offload 设置不能借用该预算。Music 使用实际 Torch 4/1 线程、单任务、单加载模型。资源值包含实测余量，不是模型文件大小。
+
+229 节点经用户授权将总内存规划从 16 GiB 调到 20 GiB，保留原驻留基线 6 GiB；这使 12 GiB Music 预算可以在规划内被预约。192 经用户授权只将 CPU 规划从 4 核调到 4.5 核，覆盖 Whisper/Electron 的实测开销，内存规划未变。调整均通过现有带版本校验、节点空闲保护的管理 API 保存并回读，原规划已备份；物理空闲内存与安全余量检查继续生效。
+
+这些是隔离真实原生任务的预算证据。正式绑定、网关调用、客户端安装和逐机验收仍须通过后才发布；192 的 Music 仍因实际内存不足待验收，不能据规划调整宣称通过。
+
+AMD Music 记录进程 `ru_maxrss` 内核高水位、NVML 按进程显存采样及宿主内存变化；该机内核不提供 cgroup `memory.peak`，所以 `memory.current` 的采样最大值不标为精确峰值。批准预算覆盖已测值并留有余量，原始测量方法保留在清单证据中。

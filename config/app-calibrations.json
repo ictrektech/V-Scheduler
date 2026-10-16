@@ -1,5 +1,197 @@
 {
   "protocol_version": 1,
   "credential_epoch": 1,
-  "approvals": []
+  "approvals": [
+    {
+      "app_id": "com.ictrek.v-music",
+      "architecture": "aarch64",
+      "profile": "thor-spark",
+      "hardware": [
+        {
+          "name": "NVIDIA Thor",
+          "memory_type": "unified"
+        }
+      ],
+      "execution_settings": {
+        "profile": "thor",
+        "provider": "cuda",
+        "torch_threads": 4,
+        "torch_interop_threads": 1,
+        "max_concurrent_jobs": 1,
+        "max_loaded_models": 1,
+        "backends": {
+          "ace-step-1.5-turbo": "ace-step-1.5",
+          "stable-audio-3-small-music": "stable-audio-3",
+          "stable-audio-3-medium": "stable-audio-3",
+          "musicgen-small": "musicgen"
+        }
+      },
+      "model_id": "musicgen-small",
+      "task_type": "model.infer",
+      "resources": {
+        "cpu_millicores": 4000,
+        "memory_mib": 12288,
+        "gpu_slots": 1,
+        "gpu_memory_mib": 0
+      },
+      "evidence": {
+        "id": "music-thor-7c40656d9e0d426aa858947fdee5e5bc",
+        "image_digest": "sha256:276623caa881414855b7570ff7ca913eb7067a3cad9610c8b2a8f34868abe15b",
+        "peak_memory_mib": 10604,
+        "memory_method": "conservative sum of cgroup peak and host available-memory decrease; may overlap",
+        "cgroup_peak_mib": 5888,
+        "host_available_drop_mib": 4716,
+        "observed_peak_cpu_millicores": 2748,
+        "confirmed_stopped": true,
+        "cancellation_evidence_id": "music-tc229-700d6dbf174149e98f6a9f592bba34ae"
+      },
+      "max_input_bytes": 8192,
+      "model_limits": {
+        "duration_seconds": 10,
+        "prompt_characters": 512,
+        "negative_prompt_characters": 512
+      },
+      "limits": {
+        "duration": 10,
+        "duration_seconds": 10
+      }
+    },
+    {
+      "app_id": "com.ictrek.image-studio",
+      "architecture": "aarch64",
+      "profile": "thor-spark",
+      "hardware": [
+        {
+          "name": "NVIDIA Thor",
+          "memory_type": "unified"
+        }
+      ],
+      "execution_settings": {
+        "profile": "thor",
+        "runtime": "stable-diffusion.cpp",
+        "logical_cpu_count": 14,
+        "max_concurrency": 1,
+        "sd_cpp_extra_args_sha256": "d020f4ca7c181c781d4ef5f4343d0bb4410a8806ce547538fac1e6b92a123579"
+      },
+      "model_id": "sd-turbo",
+      "task_type": "image.generate",
+      "resources": {
+        "cpu_millicores": 4000,
+        "memory_mib": 8192,
+        "gpu_slots": 1,
+        "gpu_memory_mib": 0
+      },
+      "evidence": {
+        "id": "image-thor-6004a88be34b42d5840ea4ef2d94ac5d",
+        "image_digest": "sha256:a62b3ac4e4c19a862e995f0e648d81b7ccf111fe3844181541adf8d67c903d2c",
+        "peak_memory_mib": 4879,
+        "memory_method": "conservative sum of cgroup peak and host available-memory decrease; may overlap",
+        "cgroup_peak_mib": 961,
+        "host_available_drop_mib": 3919,
+        "observed_peak_cpu_millicores": 3559,
+        "confirmed_stopped": true
+      },
+      "max_input_bytes": 65536,
+      "model_limits": {
+        "width": 512,
+        "height": 512,
+        "steps": 4,
+        "batch_count": 1,
+        "video_frames": 0,
+        "prompt_characters": 4000,
+        "negative_prompt_characters": 4000,
+        "hires_width": 0,
+        "hires_height": 0,
+        "hires_steps": 0
+      },
+      "model_parameters": {
+        "weight_type": "f16",
+        "tensor_type_rules": "",
+        "cache_mode": "",
+        "cache_option": "",
+        "qwen_image_layers": 0,
+        "vae_tiling": true,
+        "vae_tile_size": "",
+        "vae_tile_overlap": 0.5,
+        "temporal_tiling": false,
+        "temporal_tile_frames": 4,
+        "temporal_tile_overlap": 1,
+        "max_vram": 0.0,
+        "stream_layers": false,
+        "auto_fit": false,
+        "clip_on_cpu": false,
+        "offload_to_cpu": false,
+        "vae_cpu_fallback": false,
+        "backend": "",
+        "params_backend": "",
+        "has_reference": false
+      },
+      "limits": {
+        "width": 512,
+        "height": 512,
+        "steps": 4,
+        "num_inference_steps": 4,
+        "n": 1,
+        "batch_count": 1,
+        "batch_size": 1,
+        "video_frames": 0,
+        "num_frames": 0
+      }
+    },
+    {
+      "app_id": "com.ictrek.v-music",
+      "architecture": "x86_64",
+      "profile": "amd",
+      "hardware": [
+        {
+          "name": "NVIDIA RTX 5880 Ada Generation",
+          "memory_type": "dedicated"
+        }
+      ],
+      "execution_settings": {
+        "profile": "amd-cuda",
+        "provider": "cuda",
+        "torch_threads": 4,
+        "torch_interop_threads": 1,
+        "max_concurrent_jobs": 1,
+        "max_loaded_models": 1,
+        "backends": {
+          "ace-step-1.5-turbo": "ace-step-1.5",
+          "stable-audio-3-small-music": "stable-audio-3",
+          "stable-audio-3-medium": "stable-audio-3",
+          "musicgen-small": "musicgen"
+        }
+      },
+      "model_id": "musicgen-small",
+      "task_type": "model.infer",
+      "resources": {
+        "cpu_millicores": 4000,
+        "memory_mib": 8192,
+        "gpu_slots": 1,
+        "gpu_memory_mib": 3072
+      },
+      "evidence": {
+        "id": "music-local-6a6a18de29c94b35ae2c1087cbe1379d",
+        "peak_memory_mib": 4202,
+        "memory_method": "max of process ru_maxrss and conservative sum of sampled cgroup current and host available-memory decrease; no kernel cgroup peak available",
+        "kernel": "5.15.0-118-generic",
+        "sample_target_seconds": 0.25,
+        "process_max_rss_kib": 4302764,
+        "observed_process_gpu_peak_mib": 1744,
+        "observed_peak_cpu_millicores": 3612,
+        "cancellation_evidence_id": "music-local-62131e35e06c4195a1f1947e627df734",
+        "confirmed_stopped": true
+      },
+      "max_input_bytes": 8192,
+      "model_limits": {
+        "duration_seconds": 10,
+        "prompt_characters": 512,
+        "negative_prompt_characters": 512
+      },
+      "limits": {
+        "duration": 10,
+        "duration_seconds": 10
+      }
+    }
+  ]
 }
