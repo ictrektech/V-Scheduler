@@ -1,6 +1,6 @@
-# HybRAG 后台网关身份（开发中）
+# HybRAG 后台网关身份
 
-本功能尚未随已安装的 `0.0.26` 发布，客户端热绑定、正式镜像和端到端验收仍在进行。它解决后台索引没有浏览器 OIDC、也不应复用网关管理员密钥的问题；不会创建模型执行器或替代调度准入。
+后台身份使用同 VOS 的可信应用交接，支持私有凭据持久化与轮换。它解决后台索引没有浏览器 OIDC、也不应复用网关管理员密钥的问题；不会创建模型执行器或替代调度准入。
 
 控制器核验自己的 VOS 应用 context 身份，再向同一 VOS 确认 `com.ictrek.hybrag` 已安装。仅访问固定 `http://hybrag-app:8080/api/v1/scheduler/gateway-binding`，不接受发现结果指定的回调地址，不跟随重定向。GET 必须声明 `protocol_version=1`、固定 app/endpoint、`gateway-inference-v1` 能力与实际后端模式。`model-hub` 模式不激活本身份。
 
@@ -22,3 +22,5 @@ POST 使用 Scheduler 的 VOS context Bearer；交接包含版本、单调递增
 这不涉及 V-Sub 的每用户动态 namespace/root broker；该协议须独立实现和验收。
 
 候选镜像已完成真实 VOS 身份交接验收：最终 AMD HybRAG 镜像在全新 PostgreSQL 17 向量库完成完整迁移 0→141，真实客户端接受私有绑定、真实 VOS 用户可登录；合法应用 key 能访问模型目录，匿名与假 key 返回 401，管理访问返回 403。证据为 `actual-binding/a4842383fe634bf891cfb98f0ef6610f/identity-checkpoint.json`。此结果尚未覆盖实际模型输出、后台索引或正式包升级，不能据此声明全面迁移完成。
+
+修正隔离实例的逐模型 `ollama-bindings` 挂载后，最终客户端真实向量调试请求在约 18–28 毫秒返回明确的内层 HTTP 429，直接 Gateway 请求约 11 毫秒返回 429，生产控制器返回 `WAIT_RESOURCE`。旧测试挂载遗漏及网关的静默等待导致的 HTTP 超时已定位；同步请求现在立即返回 429 / 503。此证据证明真实客户端请求已到达资源准入，不表示向量生成或后台索引已经完成。

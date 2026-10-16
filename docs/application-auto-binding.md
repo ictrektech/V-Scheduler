@@ -1,6 +1,6 @@
-# 固定应用的可信绑定（开发中）
+# 固定应用的可信绑定
 
-此接入正在验证，尚未随 `0.0.26` 发布。内置 `config/app-calibrations.json` 现记录 Thor 的 MusicGen-small / SD-Turbo，以及 AMD RTX 5880 的 MusicGen-small / Desensitize NER 与 OCR 实测预算；该源码尚未发布到已安装实例，Desensitize 另外包含 Thor / L4T 的独立实测记录；其他 profile/模型仍无对应批准。隔离测试使用的模拟预算不能进入正式清单；真实任务校准、发布和逐机验收完成前，不宣称客户端全面迁移已完成。
+内置 `config/app-calibrations.json` 按目标应用 profile、硬件、模型、完整运行设置及输入边界记录批准预算。Thor Music / Image 已有真实直调及网关输出，Thor Desensitize 已有可信绑定后的真实业务 API 输出；AMD / L4T 的资源测量与各项验收边界列在下文。未校准组合不自动借用其他机器的预算。
 
 控制器只为下列固定 VOS 应用接入，不提供允许调用者自报 URL 和预算的公开注册入口。原 V-Voice 专用绑定保持独立，见 [V-Voice 主动接入](v-voice-auto-binding.md)。
 
@@ -38,7 +38,7 @@
 
 [V-Sub 每用户 worker / Root broker](v-sub-auto-binding.md) 和 [HybRAG 后台网关凭据](hybrag-gateway-identity.md) 使用各自契约，不属于本固定三应用模块。协议测试与真实任务验收分别记录，见[迁移协同契约](client-migration-contract.md)。
 
-## 当前实测清单（尚未发布）
+## 当前实测清单
 
 | 目标应用 VOS profile / 硬件 | 模型 | CPU / RAM | GPU | 已测输入范围 |
 |---|---|---|---|---|
@@ -70,3 +70,5 @@ Thor 候选实例已通过可信 VOS 安装身份到真实客户端的隔离端�
 AMD Desensitize 记录 `des-local-0485474694a64047ab5e982d6f41d890` 实测 NER 4096 字符截断到真实 512 tokens，以及精确 4 MiB / 1024×1024 OCR 与小图，均有真实输出。NER ORT 线程固定 4/1，OCR 的 det/cls/rec 会话各固定 1/1、OpenCV 1、OMP/MKL/OpenBLAS 环境均为 1，完整库版本及运行设置须匹配。CPU 观测最大 1727 millicores，保守内存合计 3201 MiB（cgroup 采样 961 + 宿主变化 2240），NVML 观测 736 MiB；批准留有余量。旧默认线程达到约 82 核的失败记录不作为批准依据。OCR 网关请求字节上限为 6 MiB，以容纳 4 MiB 图像的 base64 JSON，实际解码后的图像仍受 4 MiB 限额。此次原生校准不替代最终客户端的可信自动绑定与正式安装验收。
 
 Desensitize 的 ARM 预算分别来自 `des-tc229-b0acd2ad3f4f495fb81e6c9fa6f608be`（CPU 1179 millicores，保守内存 4371 MiB）和 `des-tc192-5aa1ed15f71b4460a4d698574f22dc36`（CPU 1003 millicores，保守内存 4091 MiB），均完成最大输入、真实 CUDA provider / 线程核对及卸载退出。统一内存计入 RAM，不将进程显存采样当作独立 VRAM 预算。L4T 未把接近 4 GiB 的观测值批准为无余量的 4 GiB；使用 5 GiB 后仍须通过实际物理空闲内存及安全余量检查，资源不足时保持等待。原生测量通过不代表最终业务 API / 自动绑定已验收。
+
+Thor Desensitize 真实可信绑定业务验收 `actual-binding/7c5f41f7a94e448fa845ad3cdaebbed1` 已通过：4096 字符 NER 实际替换、精确 4 MiB / 1024×1024 OCR 实际文本、两次原生许可均释放；越界输入先行拒绝且不新增许可。该应用使用真实业务 API，不提供 OpenAI 模型推理接口。

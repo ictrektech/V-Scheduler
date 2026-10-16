@@ -1,14 +1,14 @@
 # V-Scheduler · 资源调度
 
-七个客户端的迁移分工、统一入口、身份与调度责任，以及尚待完成的逐机验收见[客户端迁移协同契约](docs/client-migration-contract.md)。
+七个客户端的迁移分工、统一入口、身份与调度责任，以及各 profile 的实测范围见[客户端迁移协同契约](docs/client-migration-contract.md)。
 
 原仓库的[文件选择下载 API](docs/file-download-api.md)、[网关协议](gateway/docs/api-protocols.md)、[注册与路由](gateway/docs/routing.md)、[鉴权](gateway/docs/auth.md)及其他网关指南已集中到本仓库；各文档标明统一应用入口与历史验证内容。
 
-开发中的 [HybRAG 后台网关身份](docs/hybrag-gateway-identity.md) 使用同 VOS 可信交接和独立推理凭据；不使用 Scheduler submitter token 代替网关 key，不授予管理权限。此接入及新的 Voice 输入边界尚未随 `0.0.26` 发布。
+[HybRAG 后台网关身份](docs/hybrag-gateway-identity.md) 使用同 VOS 可信交接和独立推理凭据；不使用 Scheduler submitter token 代替网关 key，不授予管理权限。新 Voice 输入边界见其接入文档。
 
-开发中的 [Music / Desensitize / Image Studio 可信绑定](docs/application-auto-binding.md) 按实测运行设置、模型参数和输入限额接入调度；清单现含 Thor MusicGen-small / SD-Turbo 与 AMD RTX 5880 MusicGen-small、Desensitize NER/OCR 实测预算，尚未随 `0.0.26` 发布，不能据此宣称这些应用已完成真实任务迁移。
+[Music / Desensitize / Image Studio 可信绑定](docs/application-auto-binding.md) 按实测运行设置、模型参数和输入限额接入调度；清单包含 Thor MusicGen-small / SD-Turbo、AMD MusicGen-small，以及 AMD / Thor / L4T Desensitize NER/OCR 的独立实测预算。各模型仅在完整运行设置与输入范围匹配时接入，具体真实业务验收见文档。
 
-开发中的 [V-Sub 私有 worker 可信绑定](docs/v-sub-auto-binding.md) 使用完整 namespace、worker generation 和已实测原生模型模板；隔离协议验证已通过，最终 Root worker 真实任务和新版安装仍待验收。
+[V-Sub 私有 worker 可信绑定](docs/v-sub-auto-binding.md) 使用完整 namespace、worker generation 和已实测原生模型模板；L4T 与 Thor 的最终 Root worker 已通过真实字幕、直调/网关、业务取消和 generation 重启验证。
 
 网关源码现位于本仓库 `gateway/`，无需另行检出 V-Router；两个镜像仍使用原飞书列，构建命令见[源码与构建](docs/unified-application.md#source-ownership)。
 
