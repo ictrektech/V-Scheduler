@@ -99,3 +99,11 @@
 - 相同 build host、相同 reqwest 与相同 ModelScope LFS 文件进行两轮对照：未设 User-Agent 时 CDN 返回 403；使用固定应用 User-Agent 时返回 206。仓库元信息和非 LFS 文件均可访问，不能把该故障归因为模型不存在或调度准入拒绝。
 - 修复后在独立空目录运行真实 Rust 模型仓库服务：`huluxiaohuowa/rapidocr-ppocrv4-onnx` 全部 7 个文件约 3.01 秒 READY；`huluxiaohuowa/bert4ner-base-chinese-onnx` 全部 12 个文件（含 406,945,730 字节 ONNX 权重）约 40.33 秒 READY。下载过程执行文件大小与 SHA-256 校验，未修改三台机器的原共享模型。
 - 下载错误现在保留安全分类，区分 HTTP 状态、网络/TLS、存储、校验和范围错误；不会输出带签名的重定向 URL、令牌或存储私有路径。Rust 测试与构建通过。本节仅证明修复源码，三台已安装的 `0.0.26` 尚不包含该修复。
+
+## 2026-10-16：应用接入源码验收（尚未发布）
+
+- 经用户明确授权，通过管理 API 保存并回读节点规划：192 CPU 4000→4500m；229 总 RAM 16384→20480 MiB，保留 6144 MiB 驻留基线。原规划私有备份，GPU 与安全余量配置未改。192 的 Music 仍受真实可用内存保护，不据规划调整宣称已通过。
+- MusicGen-small：229 真实 1/10 秒 WAV、512 字符 prompt/negative 边界、卸载与运行中取消通过；232 真实 10 秒 WAV、512/512 边界及取消通过。清单分别匹配目标应用 `thor` / `amd-cuda` profile、实际 provider/线程和硬件；Image 使用自己的 `thor`，Desensitize 保留 `thor-spark`，不混用 Scheduler profile 名称。
+- 229 新版 Controller/Gateway、独立 PostgreSQL 与最终 Music 镜像构成隔离真实链路，外层持有实际 Scheduler 的 12 GiB 许可：实际 VOS context 身份及目标安装 profile 核验、固定地址自动交接、业务直连与统一网关各生成真实 10 秒 WAV，每条调用恰好一笔停止后已释放的内部许可；duration=11 两条路径均在计算前拒绝。生产实例未替换。证据 `~/dev/build/V-Scheduler/actual-binding/246ce55a6a9b4c5dbb50f77e3def99a8/result.json`。
+- HybRAG 新身份的隔离真实 Controller/PostgreSQL/Gateway 协议测试通过：固定可信回调、推理凭据不能调用管理/图片接口、错误凭据拒绝、重启不重置凭据及修订、卸载停用、重装轮换、旧 Model Hub 模式停用。使用模拟 VOS/HybRAG 端点，不将此结果当作真实 HybRAG 后台索引验收。脚本 `scripts/e2e-gateway-identity.py`。
+- AMD Rust 44 项及 Go 全包测试通过，新增 Voice 能力/模型输入限额、管理后预算匹配、目标应用 profile、Image 原生根地址和后台身份权限测试。新的 Voice 客户端边界、Image 原生异步绑定和 HybRAG 客户端仍待最终镜像联调；V-Sub 动态 namespace 协议亦须独立完成，不因此宣称全面迁移或最终发版完成。

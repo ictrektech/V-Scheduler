@@ -228,14 +228,13 @@ fn build(
         approvals["protocol_version"] == 1,
         "unsupported approval format"
     );
-    let node_id = runtime
-        .base
+    let current = runtime.snapshot();
+    let node_id = current
         .local_agent
         .as_ref()
         .and_then(|v| v["node_id"].as_str())
         .context("local execution node required")?;
-    let node = runtime
-        .base
+    let node = current
         .nodes
         .iter()
         .find(|node| node.id == node_id)
@@ -262,6 +261,7 @@ fn build(
     let mut models = serde_json::Map::new();
     let mut gateway_executors = serde_json::Map::new();
     let mut secondary_models = serde_json::Map::new();
+    let mut model_limits = serde_json::Map::new();
     let mut policies = serde_json::Map::new();
     let mut executors = Vec::new();
     let mut adapters = Vec::new();
@@ -280,6 +280,16 @@ fn build(
             || !approval["hardware"].is_array()
         {
             continue;
+        }
+        let bounded_inputs = !approval["input_limits_version"].is_null();
+        if bounded_inputs {
+            ensure!(
+                approval["input_limits_version"] == 1,
+                "unsupported model input limits"
+            );
+            if contract["input_limits_version"] != 1 {
+                continue;
+            }
         }
         let id = approval["id"]
             .as_str()
@@ -367,6 +377,19 @@ fn build(
             adapters.push(json!({"id":executor,"url":ORIGIN,"token":executor_token,"health_url":format!("{ORIGIN}/health")}));
             for model in approved {
                 ensure!(!models.contains_key(model), "duplicate model approval");
+                if bounded_inputs {
+                    let limits = approval["model_limits"][model]
+                        .as_object()
+                        .context("calibrated per-model input limits required")?;
+                    ensure!(
+                        !limits.is_empty()
+                            && limits.values().all(|value| value
+                                .as_f64()
+                                .is_some_and(|n| n.is_finite() && n >= 0.0)),
+                        "invalid calibrated model input limits"
+                    );
+                    model_limits.insert(model.to_owned(), json!(limits));
+                }
                 models.insert(model.to_owned(), json!(executor));
                 if task_type == "model.infer" {
                     let gateway = format!("v-scheduler.voice.{id}.infer");
@@ -411,6 +434,10 @@ fn build(
         "principals":[{"token":token,"role":"submitter","app_id":APP,"permit_executors":gateway_ids},{"token":gateway_token,"role":"submitter","app_id":"v-scheduler.voice-gateway"}],
         "executors":executors,"adapters":adapters,
         "gateway":{"url":URL,"token":gateway_token,"require_model_policy":true,"models":policies}});
+    if !model_limits.is_empty() {
+        state["binding"]["input_limits_version"] = json!(1);
+        state["binding"]["model_limits"] = json!(model_limits);
+    }
     if let Some(old) = old {
         let revision = old["binding"]["binding_revision"]
             .as_u64()
@@ -612,6 +639,43 @@ mod tests {
         let approvals = json!({"protocol_version":1,"approvals":[{"id":"measured","architecture":std::env::consts::ARCH,"provider":"cpu","cpu_models":[],"num_threads":4,"max_concurrent_inference":2,"hardware":[],"calibration":{"evidence_id":"unit-fixture","peak_memory_mib":1024},"resources":{"cpu_millicores":4000,"memory_mib":2048},"max_input_bytes":1048576,"limits":{},"sync_models":["asr","speaker"],"async_models":["tts"],"secondary_models":{"asr":["speaker"]}}]});
         (runtime, contract, approvals)
     }
+    #[test]
+    fn new_voice_input_approvals_require_capability_and_bound_each_ready_model() {
+        let (runtime, mut contract, mut approvals) = fixtures();
+        approvals["approvals"][0]["input_limits_version"] = json!(1);
+        assert!(build(&runtime, &contract, &approvals, None).is_err());
+        contract["input_limits_version"] = json!(1);
+        assert!(build(&runtime, &contract, &approvals, None).is_err());
+        approvals["approvals"][0]["model_limits"] = json!({"asr":{"duration_seconds":20},"speaker":{"input_bytes":1024},"tts":{"text_characters":512,"speed_min":1.0,"speed_max":1.0}});
+        let all = build(&runtime, &contract, &approvals, None).unwrap();
+        assert_eq!(all["binding"]["input_limits_version"], 1);
+        assert_eq!(
+            all["binding"]["model_limits"]["tts"]["text_characters"],
+            512
+        );
+        contract["_ready_sync"] = json!(["asr"]);
+        contract["_ready_async"] = json!([]);
+        let ready = build(&runtime, &contract, &approvals, None).unwrap();
+        assert_eq!(
+            ready["binding"]["model_limits"].as_object().unwrap().len(),
+            1
+        );
+        assert!(ready["binding"]["model_limits"].get("speaker").is_none());
+    }
+
+    #[test]
+    fn voice_approval_uses_saved_management_capacity() {
+        let (runtime, contract, mut approvals) = fixtures();
+        approvals["approvals"][0]["resources"]["cpu_millicores"] = json!(4500);
+        let mut managed = ManagedConfig::default();
+        managed.nodes.push(serde_json::from_value(json!({"id":"local","capacities":{"cpu_millicores":4000,"memory_mib":16384,"gpu_slots":1,"gpu_memory_mib":16384}})).unwrap());
+        runtime.set_management(managed.clone()).unwrap();
+        assert!(build(&runtime, &contract, &approvals, None).is_err());
+        managed.nodes[0].capacities.cpu_millicores = 5000;
+        runtime.set_management(managed).unwrap();
+        assert!(build(&runtime, &contract, &approvals, None).is_ok());
+    }
+
     #[test]
     fn management_and_voice_bindings_preserve_each_other() {
         let (runtime, contract, approvals) = fixtures();

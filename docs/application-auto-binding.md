@@ -40,11 +40,11 @@ V-Sub 的每用户 worker/root broker 和动态 namespace 上游、HybRAG 的独
 
 ## 当前实测清单（尚未发布）
 
-| VOS profile / 硬件 | 模型 | CPU / RAM | GPU | 已测输入范围 |
+| 目标应用 VOS profile / 硬件 | 模型 | CPU / RAM | GPU | 已测输入范围 |
 |---|---|---|---|---|
-| `thor-spark` / NVIDIA Thor 统一内存 | MusicGen-small | 4 核 / 12 GiB | 独占 1 槽；内存计入系统 RAM | 最长 10 秒，prompt / negative 各 512 字符 |
-| `thor-spark` / NVIDIA Thor 统一内存 | SD-Turbo | 4 核 / 8 GiB | 独占 1 槽；内存计入系统 RAM | 512×512、1 张、最多 4 步，prompt / negative 各 4000 字符；其余运行参数完整匹配 |
-| `amd` / NVIDIA RTX 5880 Ada 独立显存 | MusicGen-small | 4 核 / 8 GiB | 独占 1 槽 / 3 GiB 显存 | 最长 10 秒，prompt / negative 各 512 字符 |
+| `thor` / NVIDIA Thor 统一内存 | MusicGen-small | 4 核 / 12 GiB | 独占 1 槽；内存计入系统 RAM | 最长 10 秒，prompt / negative 各 512 字符 |
+| `thor` / NVIDIA Thor 统一内存 | SD-Turbo | 4 核 / 8 GiB | 独占 1 槽；内存计入系统 RAM | 512×512、1 张、最多 4 步，prompt / negative 各 4000 字符；其余运行参数完整匹配 |
+| `amd-cuda` / NVIDIA RTX 5880 Ada 独立显存 | MusicGen-small | 4 核 / 8 GiB | 独占 1 槽 / 3 GiB 显存 | 最长 10 秒，prompt / negative 各 512 字符 |
 
 Image 使用实际 `--threads 4` 配置；其他线程或 offload 设置不能借用该预算。Music 使用实际 Torch 4/1 线程、单任务、单加载模型。资源值包含实测余量，不是模型文件大小。
 
@@ -53,3 +53,7 @@ Image 使用实际 `--threads 4` 配置；其他线程或 offload 设置不能�
 这些是隔离真实原生任务的预算证据。正式绑定、网关调用、客户端安装和逐机验收仍须通过后才发布；192 的 Music 仍因实际内存不足待验收，不能据规划调整宣称通过。
 
 AMD Music 记录进程 `ru_maxrss` 内核高水位、NVML 按进程显存采样及宿主内存变化；该机内核不提供 cgroup `memory.peak`，所以 `memory.current` 的采样最大值不标为精确峰值。批准预算覆盖已测值并留有余量，原始测量方法保留在清单证据中。
+
+校准匹配目标应用自己的安装 profile，不能直接套用 Scheduler 的同平台名称：Music / Image 的 CUDA profile 为 `amd-cuda` / `arm-cuda` / `thor`，Desensitize 则为 `amd` / `arm` / `thor-spark`。目标 profile 从 VOS 安装记录读取，再与各自清单及真实运行设置一起精确匹配。
+
+Image Studio 使用原生 `/api/v1` 适配，上游资源身份固定为 `http://image-studio-backend:5000` 根地址；不能附加不存在的 OpenAI `/v1`。Music / Desensitize 的 OpenAI 上游身份仍为各自根地址加 `/v1`。发现、绑定、网关 origin 和许可中的上游身份须一致。

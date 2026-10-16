@@ -4,6 +4,8 @@
 
 原仓库的[文件选择下载 API](docs/file-download-api.md)、[网关协议](gateway/docs/api-protocols.md)、[注册与路由](gateway/docs/routing.md)、[鉴权](gateway/docs/auth.md)及其他网关指南已集中到本仓库；各文档标明统一应用入口与历史验证内容。
 
+开发中的 [HybRAG 后台网关身份](docs/hybrag-gateway-identity.md) 使用同 VOS 可信交接和独立推理凭据；不使用 Scheduler submitter token 代替网关 key，不授予管理权限。此接入及新的 Voice 输入边界尚未随 `0.0.26` 发布。
+
 开发中的 [Music / Desensitize / Image Studio 可信绑定](docs/application-auto-binding.md) 按实测运行设置、模型参数和输入限额接入调度；清单现含 Thor MusicGen-small / SD-Turbo 与 AMD RTX 5880 MusicGen-small 实测预算，尚未随 `0.0.26` 发布，不能据此宣称这些应用已完成真实任务迁移。
 
 网关源码现位于本仓库 `gateway/`，无需另行检出 V-Router；两个镜像仍使用原飞书列，构建命令见[源码与构建](docs/unified-application.md#source-ownership)。

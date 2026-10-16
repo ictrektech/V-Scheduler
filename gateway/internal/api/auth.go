@@ -17,10 +17,11 @@ import (
 // administrator; internal-network calls without credentials run as
 // "internal" (inference only, never management).
 type Identity struct {
-	Sub      string `json:"sub,omitempty"`
-	Username string `json:"username"`
-	Email    string `json:"email,omitempty"`
-	Admin    bool   `json:"admin"`
+	ServiceApp string `json:"-"`
+	Sub        string `json:"sub,omitempty"`
+	Username   string `json:"username"`
+	Email      string `json:"email,omitempty"`
+	Admin      bool   `json:"admin"`
 }
 
 func (id Identity) ownerKey() string {
@@ -201,6 +202,12 @@ func (s *Server) identityFor(r *http.Request) Identity {
 	if s.apiKey != "" && token == s.apiKey {
 		return Identity{Username: "gateway-admin", Admin: true}
 	}
+	if strings.HasPrefix(token, "vs-app-") {
+		if id, ok := applicationIdentity(token); ok {
+			return id
+		}
+		return Identity{}
+	}
 	if s.userInfoURL != "" {
 		if id, ok := s.verifyOIDC(token); ok {
 			s.vSubDiscovery.Refresh(r.Context(), token, id.ownerKey())
@@ -220,6 +227,10 @@ func (s *Server) requireIdentity(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		id := s.identityFor(r)
+		if id.ServiceApp != "" {
+			writeRequestError(w, r, http.StatusForbidden, "application credential is inference only")
+			return
+		}
 		if !id.authenticated() {
 			w.Header().Set("WWW-Authenticate", "Bearer")
 			writeRequestError(w, r, http.StatusUnauthorized, "management API requires a VOS user token or the gateway API key")
@@ -263,6 +274,10 @@ func (s *Server) guardAPI(next http.HandlerFunc) http.HandlerFunc {
 			if !id.authenticated() {
 				w.Header().Set("WWW-Authenticate", "Bearer")
 				writeRequestError(w, r, http.StatusUnauthorized, "invalid or missing gateway Key / VOS access token")
+				return
+			}
+			if !applicationInferenceAllowed(id, r) {
+				writeRequestError(w, r, http.StatusForbidden, "application credential does not permit this endpoint")
 				return
 			}
 			next(w, withRequestIdentity(r, id))

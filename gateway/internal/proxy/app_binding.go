@@ -19,7 +19,7 @@ func applicationSchedulerConfig(upstream registry.Upstream) (*SchedulerConfig, b
 	applications := map[string]application{
 		"app-v-music":      {"v-music", "http://v-music-backend:7080/v1", "permit"},
 		"app-desensitize":  {"desensitize", "http://desensitize-backend:5000/v1", "permit"},
-		"app-image-studio": {"image-studio", "http://image-studio-backend:5000/v1", "delegated"},
+		"app-image-studio": {"image-studio", "http://image-studio-backend:5000", "delegated"},
 	}
 	app, known := applications[upstream.ID]
 	if !known {

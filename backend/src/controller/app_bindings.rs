@@ -42,8 +42,28 @@ const APPLICATIONS: [Application; 3] = [
     },
 ];
 
+fn supported_profile(application: Application, profile: &str) -> bool {
+    let profiles: &[&str] = if application.slug == "desensitize" {
+        &[
+            "amd",
+            "amd-without-cuda",
+            "arm",
+            "arm-without-cuda",
+            "l4t",
+            "thor-spark",
+        ]
+    } else {
+        &["amd", "amd-cuda", "arm", "arm-cuda", "l4t", "thor"]
+    };
+    profiles.contains(&profile)
+}
+
 fn upstream(application: Application) -> String {
-    format!("{}/v1", application.origin)
+    if application.asynchronous {
+        application.origin.to_owned()
+    } else {
+        format!("{}/v1", application.origin)
+    }
 }
 
 fn declaration<'a>(application: Application, discovery: &'a Value) -> anyhow::Result<&'a Value> {
@@ -241,7 +261,7 @@ fn build(
     Ok(state)
 }
 
-fn read_private(path: &Path) -> anyhow::Result<Value> {
+pub(super) fn read_private(path: &Path) -> anyhow::Result<Value> {
     let metadata = std::fs::symlink_metadata(path)?;
     ensure!(
         metadata.is_file()
@@ -252,7 +272,7 @@ fn read_private(path: &Path) -> anyhow::Result<Value> {
     Ok(serde_json::from_slice(&std::fs::read(path)?)?)
 }
 
-fn save_private(path: &Path, value: &Value) -> anyhow::Result<()> {
+pub(super) fn save_private(path: &Path, value: &Value) -> anyhow::Result<()> {
     use std::{io::Write, os::unix::fs::OpenOptionsExt};
     let directory = path.parent().context("binding parent required")?;
     std::fs::create_dir_all(directory)?;
@@ -275,7 +295,7 @@ fn save_private(path: &Path, value: &Value) -> anyhow::Result<()> {
     result
 }
 
-async fn bounded_json(mut response: reqwest::Response) -> anyhow::Result<Value> {
+pub(super) async fn bounded_json(mut response: reqwest::Response) -> anyhow::Result<Value> {
     ensure!(
         response.status().is_success(),
         "application discovery unavailable"
@@ -477,15 +497,7 @@ async fn reconcile(
         .as_str()
         .context("actual application installation profile required")?;
     ensure!(
-        [
-            "amd",
-            "amd-without-cuda",
-            "arm",
-            "arm-without-cuda",
-            "l4t",
-            "thor-spark"
-        ]
-        .contains(&profile),
+        supported_profile(application, profile),
         "unsupported application profile"
     );
     let old = if path.exists() {
@@ -604,6 +616,26 @@ pub(super) fn start(shared: SharedApp, configuration: PathBuf) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn target_application_profiles_are_not_scheduler_profile_names() {
+        let music = APPLICATIONS[0];
+        let desensitize = APPLICATIONS[1];
+        let image = APPLICATIONS[2];
+        assert_eq!(upstream(image), "http://image-studio-backend:5000");
+        assert_eq!(upstream(music), "http://v-music-backend:7080/v1");
+        for app in [music, image] {
+            assert!(supported_profile(app, "thor"));
+            assert!(supported_profile(app, "amd-cuda"));
+            assert!(supported_profile(app, "arm-cuda"));
+            assert!(!supported_profile(app, "thor-spark"));
+            assert!(!supported_profile(app, "amd-without-cuda"));
+        }
+        assert!(supported_profile(desensitize, "thor-spark"));
+        assert!(supported_profile(desensitize, "amd-without-cuda"));
+        assert!(!supported_profile(desensitize, "thor"));
+        assert!(!supported_profile(desensitize, "amd-cuda"));
+    }
 
     #[test]
     fn application_urls_are_fixed_and_settings_are_required() {

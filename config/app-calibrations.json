@@ -5,7 +5,7 @@
     {
       "app_id": "com.ictrek.v-music",
       "architecture": "aarch64",
-      "profile": "thor-spark",
+      "profile": "thor",
       "hardware": [
         {
           "name": "NVIDIA Thor",
@@ -59,7 +59,7 @@
     {
       "app_id": "com.ictrek.image-studio",
       "architecture": "aarch64",
-      "profile": "thor-spark",
+      "profile": "thor",
       "hardware": [
         {
           "name": "NVIDIA Thor",
@@ -141,7 +141,7 @@
     {
       "app_id": "com.ictrek.v-music",
       "architecture": "x86_64",
-      "profile": "amd",
+      "profile": "amd-cuda",
       "hardware": [
         {
           "name": "NVIDIA RTX 5880 Ada Generation",

@@ -70,6 +70,128 @@
         "async_peak_memory_mib": 3768,
         "active_cancel_confirmed_stopped": true
       }
+    },
+    {
+      "provider": "cuda",
+      "cpu_models": [
+        "paraformer-zh"
+      ],
+      "num_threads": 4,
+      "max_concurrent_inference": 2,
+      "id": "orin-voice-native-bounded-v1",
+      "architecture": "aarch64",
+      "hardware": [
+        {
+          "name": "Orin (nvgpu)",
+          "memory_type": "unified"
+        }
+      ],
+      "input_limits_version": 1,
+      "resources": {
+        "cpu_millicores": 4500,
+        "memory_mib": 4096,
+        "gpu_slots": 1,
+        "gpu_memory_mib": 0
+      },
+      "max_input_bytes": 1048576,
+      "limits": {
+        "n": 1,
+        "batch_count": 1
+      },
+      "sync_models": [
+        "kokoro-multilang",
+        "sensevoice-int8"
+      ],
+      "async_models": [],
+      "secondary_models": {},
+      "model_limits": {
+        "kokoro-multilang": {
+          "text_characters": 512,
+          "speed_min": 1.0,
+          "speed_max": 1.0
+        },
+        "sensevoice-int8": {
+          "duration_seconds": 20,
+          "sample_rate": 24000,
+          "hotwords_characters": 0,
+          "input_bytes": 1048576
+        }
+      },
+      "calibration": {
+        "evidence_id": "voice-tc192-117c8124374043b3aaa908b4fdcb3aed",
+        "peak_memory_mib": 3455,
+        "memory_method": "conservative sum of sampled cgroup current and host available-memory decrease; not kernel cgroup high-water",
+        "observed_peak_cpu_millicores": 3988,
+        "native_and_container_exit_confirmed": true,
+        "cases": [
+          "native Kokoro TTS 512 characters at speed 1",
+          "SenseVoice ASR 20 seconds at 24kHz",
+          "both model runtimes unloaded"
+        ],
+        "observed_concurrency": 1,
+        "kernel": "5.15.148-tegra",
+        "sample_target_seconds": 0.25
+      }
+    },
+    {
+      "provider": "cpu",
+      "cpu_models": [],
+      "num_threads": 4,
+      "max_concurrent_inference": 2,
+      "id": "amd5880-voice-cpu-bounded-v1",
+      "architecture": "x86_64",
+      "hardware": [
+        {
+          "name": "NVIDIA RTX 5880 Ada Generation",
+          "memory_type": "dedicated"
+        }
+      ],
+      "input_limits_version": 1,
+      "resources": {
+        "cpu_millicores": 24000,
+        "memory_mib": 4096,
+        "gpu_slots": 0,
+        "gpu_memory_mib": 0
+      },
+      "max_input_bytes": 1048576,
+      "limits": {
+        "n": 1,
+        "batch_count": 1
+      },
+      "sync_models": [
+        "kokoro-multilang",
+        "sensevoice-int8"
+      ],
+      "async_models": [],
+      "secondary_models": {},
+      "model_limits": {
+        "kokoro-multilang": {
+          "text_characters": 512,
+          "speed_min": 1.0,
+          "speed_max": 1.0
+        },
+        "sensevoice-int8": {
+          "duration_seconds": 20,
+          "sample_rate": 24000,
+          "hotwords_characters": 0,
+          "input_bytes": 1048576
+        }
+      },
+      "calibration": {
+        "evidence_id": "voice-local-cbcb43c7839747cbacd649606f9209aa",
+        "peak_memory_mib": 1793,
+        "memory_method": "conservative sum of sampled cgroup current and host available-memory decrease; not kernel cgroup high-water",
+        "observed_peak_cpu_millicores": 19330,
+        "native_and_container_exit_confirmed": true,
+        "cases": [
+          "native Kokoro TTS 512 characters at speed 1",
+          "SenseVoice ASR 20 seconds at 24kHz",
+          "both model runtimes unloaded"
+        ],
+        "observed_concurrency": 1,
+        "kernel": "5.15.0-118-generic",
+        "sample_target_seconds": 0.25
+      }
     }
   ]
 }

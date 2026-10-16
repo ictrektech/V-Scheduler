@@ -48,3 +48,23 @@ func TestApplicationBindingIsPrivateAndFixedToApplicationOrigin(t *testing.T) {
 		t.Fatal("another application model accepted")
 	}
 }
+
+func TestImageBindingUsesNativeRootOrigin(t *testing.T) {
+	directory := t.TempDir()
+	t.Setenv("V_ROUTER_STATE_PATH", filepath.Join(directory, "state.json"))
+	if err := os.Mkdir(filepath.Join(directory, "app-bindings"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	data := `{"url":"http://v-router:8080/scheduler/api/v1","token":"` + strings.Repeat("x", 64) + `","require_model_policy":true,"models":{"app-image-studio/sd-turbo":{"mode":"delegated","executor_id":"app-gateway-image-studio-fixture","completion":"synchronous","upstream_url":"http://image-studio-backend:5000","max_input_bytes":65536}}}`
+	if err := os.WriteFile(filepath.Join(directory, "app-bindings/image-studio.json"), []byte(data), 0600); err != nil {
+		t.Fatal(err)
+	}
+	upstream := registry.Upstream{ID: "app-image-studio", BaseURL: "http://image-studio-backend:5000"}
+	if _, exists, err := applicationSchedulerConfig(upstream); !exists || err != nil {
+		t.Fatalf("native origin rejected: %v", err)
+	}
+	upstream.BaseURL += "/v1"
+	if _, _, err := applicationSchedulerConfig(upstream); err == nil {
+		t.Fatal("invented OpenAI origin accepted for native Image Studio")
+	}
+}
