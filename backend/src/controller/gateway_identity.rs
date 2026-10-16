@@ -6,7 +6,8 @@ use std::{path::Path, time::Duration};
 const APP: &str = "com.ictrek.hybrag";
 const ORIGIN: &str = "http://hybrag-app:8080";
 const ENDPOINT: &str = "/api/v1/scheduler/gateway-binding";
-const URL: &str = "http://v-router:8080/v1";
+const URL: &str = "http://v-scheduler-gateway:8080/v1";
+const LEGACY_URL: &str = "http://v-router:8080/v1";
 const SCOPE: &str = "gateway-inference-v1";
 
 fn binding(old: Option<&Value>) -> anyhow::Result<Value> {
@@ -15,7 +16,7 @@ fn binding(old: Option<&Value>) -> anyhow::Result<Value> {
         ensure!(
             value["protocol_version"] == 1
                 && value["app_id"] == APP
-                && value["url"] == URL
+                && (value["url"] == URL || value["url"] == LEGACY_URL)
                 && value["scope"] == SCOPE,
             "invalid persisted gateway identity"
         );
@@ -33,7 +34,16 @@ fn binding(old: Option<&Value>) -> anyhow::Result<Value> {
             "invalid persisted gateway credential"
         );
         if state["active"] == true {
-            return Ok(value.clone());
+            let mut current = value.clone();
+            if current["url"] != URL {
+                current["url"] = json!(URL);
+                current["binding_revision"] = json!(
+                    revision
+                        .checked_add(1)
+                        .context("gateway identity revision exhausted")?
+                );
+            }
+            return Ok(current);
         }
         return Ok(new_binding(
             revision
@@ -202,6 +212,19 @@ mod tests {
         let mut invalid = state;
         invalid["binding"]["url"] = json!("http://other/v1");
         assert!(binding(Some(&invalid)).is_err());
+    }
+    #[test]
+    fn legacy_gateway_origin_migrates_with_revision_and_same_key() {
+        let mut old = binding(None).unwrap();
+        old["url"] = json!(LEGACY_URL);
+        let migrated = binding(Some(&json!({"binding":old,"active":true}))).unwrap();
+        assert_eq!(migrated["url"], URL);
+        assert_eq!(migrated["binding_revision"], 2);
+        assert_eq!(migrated["token"], old["token"]);
+        assert_eq!(
+            binding(Some(&json!({"binding":migrated,"active":true}))).unwrap(),
+            migrated
+        );
     }
     #[test]
     fn only_fixed_hybrag_capability_can_receive_identity() {

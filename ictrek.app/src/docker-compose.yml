@@ -52,6 +52,7 @@ x-gateway: &gateway
   networks:
     vos_default:
       aliases:
+        - v-scheduler-gateway
         - v-router-backend
         - v-router
   environment:

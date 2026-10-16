@@ -267,3 +267,15 @@ func TestBuiltinMissingBindingReturnsBeforeClientTimeout(t *testing.T) {
 		t.Fatalf("missing binding was hidden: status=%d context=%v", AdmissionStatus(err), ctx.Err())
 	}
 }
+
+func TestPendingStopHasDistinctAdmissionReason(t *testing.T) {
+	scheduler := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(429)
+		_, _ = io.WriteString(w, `{"code":"WAIT_STOP_CONFIRMATION"}`)
+	}))
+	defer scheduler.Close()
+	_, err := schedulerCall(context.Background(), &SchedulerConfig{URL: scheduler.URL, Token: strings.Repeat("x", 32)}, "/permits", map[string]string{}, "fixture")
+	if AdmissionStatus(err) != 429 || !strings.Contains(err.Error(), "native stop confirmation") {
+		t.Fatalf("missing stop confirmation reason: %v", err)
+	}
+}

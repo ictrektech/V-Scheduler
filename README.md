@@ -22,6 +22,8 @@ V-Scheduler 统一安装包包含 V-Router 网关与调度控制器，提供一�
 
 顶部「关于」在所有页面均可打开，显示当前 VOS App 版本、运行配置和 Scheduler、模型管理、Router、三个 Ollama 实例的镜像名与版本标签。
 
+自带 Ollama 调用中断后，控制器自动向固定后端核验原生加载与进程退出状态；停止已确认就释放残留许可并恢复后续调用。活动调用、停止未确认及其他应用的预约不会被清除。待核验的旧调用占用资源时，接口会明确提示停止核验，而非笼统地提示机器忙。
+
 本地同步推理在资源忙时及时返回 HTTP 429，自动绑定尚未就绪时返回 HTTP 503；网关不再静默等待数分钟而使客户端超时。
 
 试聊沿用现有页面。Router 直接连接自带的三个后端，上游名为 `v-scheduler/ollama-qa`、`v-scheduler/ollama-embedding`、`v-scheduler/ollama-rerank`，不通过 Model Hub 发现。模型管理与调度任务使用独立 API 命名空间。内部别名、外部宿主端口、完整 API 与接管说明见[模型管理接入](docs/model-management.md)及应用内「模型管理 API」。
@@ -36,7 +38,7 @@ V-Scheduler 统一安装包包含 V-Router 网关与调度控制器，提供一�
 
 | 功能 | Docker host alias:内部端口（含全部兼容别名） | 宿主机 host:外部端口 | 主要路径与用途 |
 |---|---|---|---|
-| 统一推理、网关管理及统一界面 | `v-router:8080`、`v-router-backend:8080` | `<vos-host>:22888` | `/v1/*` 推理；`/api/v1/*` 网关管理；`/` 界面 |
+| 统一推理、网关管理及统一界面 | `v-scheduler-gateway:8080`、`v-router:8080`、`v-router-backend:8080` | `<vos-host>:22888` | `/v1/*` 推理；`/api/v1/*` 网关管理；`/` 界面 |
 | 调度接管与资源管理 | `v-scheduler:38120`、`v-scheduler-backend:38120`、`v-scheduler-frontend:38120` | `<vos-host>:38120` | `/api/v1/*` 任务、许可、节点、执行器及统计 |
 | 模型仓库管理 | `v-scheduler-model-hub:6005`、`v-scheduler-model-hub-backend:6005` | `<vos-host>:36005` | `/api/v1/*` 模型、选中文件下载、更新、导入、别名、引用和后端管理；`/openapi.json` |
 | Ollama QA 原生管理 | `v-scheduler-ollama-qa:11434` | `<vos-host>:12434` | `/api/*` 模型清单、拉取、详情、加载/卸载及原生推理 |
@@ -57,6 +59,8 @@ V-Scheduler 统一安装包包含 V-Router 网关与调度控制器，提供一�
 - `OLLAMA_EMBEDDING_GATEWAY_HOST_PORT`：默认 `12536`。
 - `OLLAMA_RERANK_HOST_PORT`：默认 `12436`。
 - `OLLAMA_RERANK_GATEWAY_HOST_PORT`：默认 `12537`。
+
+新应用接入统一推理应使用独立别名 `v-scheduler-gateway:8080`；与旧独立 V-Router 共存时，共享的 `v-router` 兼容别名可能解析到旧容器，不应用于传递 V-Scheduler 私有凭据。
 
 同一行的兼容别名指向同一个容器和端口，不产生额外服务或宿主机映射。`host.docker.internal` 是网关容器中的 Docker 宿主机别名（`host-gateway`），用于访问宿主机已发布端口，例如 `host.docker.internal:38120`；它不是新增服务，也没有单独的固定端口。
 

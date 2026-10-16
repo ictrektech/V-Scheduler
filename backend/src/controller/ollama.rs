@@ -196,15 +196,108 @@ pub(super) fn start(shared: SharedApp) {
                         }
                     }
                 }
+                let a = App::from_ref(&shared);
+                if recover_stopped(&a, &client, role).await.is_err() {
+                    // Do not log underlying HTTP errors or private payloads.
+                    eprintln!("built-in Ollama stop verification pending ({role})");
+                }
             }
             tokio::time::sleep(Duration::from_secs(5)).await;
         }
     });
 }
 
+fn stopped_receipt(value: &Value, model: &str, nonce: &str) -> bool {
+    value["protocol_version"] == 1
+        && value["model"] == model
+        && value["nonce"] == nonce
+        && value["stopped"] == true
+        && value["native_exit_barrier"] == true
+}
+
+// Only this app's fixed native backends can supply this recovery proof.
+// An expired lease, empty /api/ps or elapsed timeout alone never releases work.
+async fn recover_stopped(a: &App, client: &reqwest::Client, role: &str) -> anyhow::Result<()> {
+    let current = a.voice_config.snapshot();
+    let Some(node) = current
+        .local_agent
+        .as_ref()
+        .and_then(|v| v["node_id"].as_str())
+    else {
+        return Ok(());
+    };
+    let origin = format!("http://v-scheduler-ollama-{role}:11535/v1");
+    let candidates = sqlx::query("SELECT id FROM vrs_permits WHERE app=$1 AND node=$2 AND state='suspect' AND parent_attempt IS NULL AND metadata->>'upstream_url'=$3 ORDER BY created_at LIMIT 8")
+        .bind(OWNER).bind(node).bind(&origin).fetch_all(&a.db).await?;
+    for candidate in candidates {
+        let id: String = candidate.get("id");
+        let mut tx = a.db.begin().await?;
+        sqlx::query("SELECT id FROM vrs_nodes WHERE id=$1 FOR UPDATE")
+            .bind(node)
+            .fetch_one(&mut *tx)
+            .await?;
+        let Some(row) = sqlx::query("SELECT executor,metadata FROM vrs_permits WHERE id=$1 AND app=$2 AND node=$3 AND state='suspect' AND parent_attempt IS NULL FOR UPDATE")
+            .bind(&id).bind(OWNER).bind(node).fetch_optional(&mut *tx).await? else { continue };
+        let metadata: Value = row.get("metadata");
+        let executor: String = row.get("executor");
+        let Some(model) = metadata["model_id"]
+            .as_str()
+            .filter(|v| !v.is_empty() && v.len() <= 512)
+        else {
+            continue;
+        };
+        if !executor.starts_with("builtin-ollama-auto-") || metadata["upstream_url"] != origin {
+            continue;
+        }
+        let active: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM vrs_permits WHERE node=$1 AND state='active')",
+        )
+        .bind(node)
+        .fetch_one(&mut *tx)
+        .await?;
+        if active {
+            continue;
+        }
+        let nonce = Uuid::new_v4().simple().to_string();
+        let response = client
+            .post(format!(
+                "http://v-scheduler-ollama-{role}:11434/api/scheduler/confirm-stopped"
+            ))
+            .json(&json!({"model":model,"nonce":nonce}))
+            .send()
+            .await?;
+        let receipt = super::app_bindings::bounded_json(response).await?;
+        if !stopped_receipt(&receipt, model, &nonce) {
+            continue;
+        }
+        sqlx::query("UPDATE vrs_permits SET state='released',evidence='builtin_ollama_native_stop_confirmed',released_at=COALESCE(released_at,now()) WHERE id=$1 AND app=$2 AND state='suspect'")
+            .bind(&id).bind(OWNER).execute(&mut *tx).await?;
+        tx.commit().await?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn recovery_requires_matching_native_exit_receipt() {
+        let good = json!({"protocol_version":1,"model":"qwen3.5:2b","nonce":"challenge","stopped":true,"native_exit_barrier":true});
+        assert!(stopped_receipt(&good, "qwen3.5:2b", "challenge"));
+        for key in [
+            "protocol_version",
+            "model",
+            "nonce",
+            "stopped",
+            "native_exit_barrier",
+        ] {
+            let mut bad = good.clone();
+            bad.as_object_mut().unwrap().remove(key);
+            assert!(!stopped_receipt(&bad, "qwen3.5:2b", "challenge"));
+        }
+        assert!(!stopped_receipt(&good, "other", "challenge"));
+        assert!(!stopped_receipt(&good, "qwen3.5:2b", "stale"));
+    }
     #[test]
     fn automatic_memory_uses_one_unified_pool_and_compute_is_exclusive() {
         let capacity = Resources {

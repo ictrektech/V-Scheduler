@@ -32,7 +32,7 @@ if(req.url==='/v1000/oauth2/userinfo'){send(res,req.headers.authorization==='Bea
 if(req.url.startsWith('/v1000/app/detail?app_id=')){send(res,200,req.url.endsWith('com.ictrek.hybrag')&&installed?{code:0,data:{state:'installed'}}:{code:10067});return;}
 if(req.url==='/api/v1/scheduler/gateway-binding'&&req.method==='GET'){send(res,200,{protocol_version:1,app_id:'com.ictrek.hybrag',capabilities:['gateway-inference-v1'],binding_endpoint:'/api/v1/scheduler/gateway-binding',backend,configured:!!binding});return;}
 if(req.url==='/api/v1/scheduler/gateway-binding'&&req.method==='POST'){
-if(req.headers.authorization!=='Bearer fixture-context'||body.app_id!=='com.ictrek.hybrag'||body.url!=='http://v-router:8080/v1'||body.scope!=='gateway-inference-v1'){send(res,403,{});return;}
+if(req.headers.authorization!=='Bearer fixture-context'||body.app_id!=='com.ictrek.hybrag'||body.url!=='http://v-scheduler-gateway:8080/v1'||body.scope!=='gateway-inference-v1'){send(res,403,{});return;}
 binding=body;send(res,200,{configured:true,binding_revision:binding.binding_revision});return;}
 if(req.url==='/fixture-state'){if(req.method==='POST'){installed=body.installed??installed;backend=body.backend??backend;}send(res,200,{installed,backend,binding});return;}
 send(res,404,{});};createServer(handler).listen(7080,'0.0.0.0');createServer(handler).listen(8080,'0.0.0.0');

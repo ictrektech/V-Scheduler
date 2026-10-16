@@ -49,3 +49,5 @@ V-Voice 等已适配执行端以自己的受限 submitter 调用 Scheduler
 测试覆盖原生 HTTP、Responses/Messages 转换、WebSocket 双向帧、异步终态/用户隔离/恢复、资源参数和云端边界；Scheduler PostgreSQL 验证覆盖关联许可、预算和接力。见[验证记录](validation.md)。
 
 内置 Ollama 同步请求遵循相同的响应规则：准入忙立即返回 429，缺少逐模型私有绑定立即返回 503。客户端可稍后重试；网关不在 HTTP 请求中隐藏等待或重复申请许可。
+
+自带 Ollama 的 `suspect` 许可由控制器周期性核验。仅处理本应用、当前本机、自动执行器及固定三类后端的许可；存在活动许可时跳过。原生后端必须返回匹配模型与本次 nonce 的停止回执，确认加载循环和进程退出屏障后，才记录 `builtin_ollama_native_stop_confirmed` 并释放。旧版后端不支持回执、网络异常、过期回执或真正未退出时继续保留预约。其他应用和远端执行器不走此恢复路径。因待停止核验的预约无法准入时，API 返回 HTTP 429 / `WAIT_STOP_CONFIRMATION`。

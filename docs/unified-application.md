@@ -14,7 +14,9 @@ One VOS application, `com.ictrek.v-scheduler`, contains the original V-Router ga
 | Existing controller/Agent clients | `http://v-scheduler:38120/api/v1/*` | Retained controller interface |
 | Legacy VOS controller clients | `/app/com.ictrek.v-scheduler/api/v1/*` | Retained controller mount |
 
-The model, upstream, registration, routing, protocol bridge, playground, usage, diagnostic and API documentation functionality remains implemented by the original gateway. The package preserves its discovery configuration, intervals, service DNS aliases (`v-router`, `v-router-backend`) and default port `22888`. The existing resource collector, task views and scheduler API documentation remain available in the same navigation. API documentation has one entry with gateway and scheduler categories.
+The model, upstream, registration, routing, protocol bridge, playground, usage, diagnostic and API documentation functionality remains implemented by the original gateway. The package preserves its discovery configuration, intervals, service DNS aliases (`v-router`, `v-router-backend`) with the unique preferred alias `v-scheduler-gateway` and default port `22888`. The existing resource collector, task views and scheduler API documentation remain available in the same navigation. API documentation has one entry with gateway and scheduler categories.
+
+New model callers use `http://v-scheduler-gateway:8080/v1` on the Docker network. Its unique alias avoids resolving the legacy standalone router when both generations coexist. Existing compatibility aliases remain available; private Scheduler inference credentials must use the unique alias. HybRAG gateway identity handoff migrates an existing approved identity to this origin with a higher binding revision and the same key.
 
 Model callers use the gateway. Local and managed remote model computation requires approved scheduler admission; external cloud providers do not reserve local CPU/GPU. Business applications retain their job records, outputs and executor contracts. The controller does not proxy model payloads. Losing the controller must not block cloud-only routing.
 

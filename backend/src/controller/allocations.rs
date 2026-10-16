@@ -66,7 +66,16 @@ pub(super) async fn room(
         || !cost.fits(&used, &capacity)
         || !cost.fits_guarded(&used, &node.get("report"), &reserve)
     {
-        return Err(Error(StatusCode::TOO_MANY_REQUESTS, "WAIT_RESOURCE"));
+        let pending_stop: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM vrs_permits WHERE node=$1 AND state='suspect') OR EXISTS(SELECT 1 FROM vrs_reservations WHERE node=$1 AND state='suspect')")
+            .bind(&id).fetch_one(&mut **tx).await.map_err(unavailable)?;
+        return Err(Error(
+            StatusCode::TOO_MANY_REQUESTS,
+            if pending_stop {
+                "WAIT_STOP_CONFIRMATION"
+            } else {
+                "WAIT_RESOURCE"
+            },
+        ));
     }
     Ok(())
 }

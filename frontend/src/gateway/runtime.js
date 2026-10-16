@@ -568,7 +568,7 @@ const app = {
     VRouterI18n.bind($("aboutBody"), "innerHTML", () => [
       [VRouterI18n.t("版本"), st?.version ? "v" + st.version : VRouterI18n.t("未知")],
       [VRouterI18n.t("应用 ID"), "com.ictrek.v-router"],
-      [VRouterI18n.t("VOS 内调用"), "http://v-router:8080/v1"],
+      [VRouterI18n.t("VOS 内调用"), "http://v-scheduler-gateway:8080/v1"],
       [VRouterI18n.t("局域网调用"), "http://<vos-host>:22888/v1"],
       [VRouterI18n.t("API 文档"), VRouterI18n.t("本页面「API 文档」页签，由网关实时生成")],
       [VRouterI18n.t("项目仓库"), "github.com/ictrektech/V-Scheduler"],

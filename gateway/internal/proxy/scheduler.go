@@ -116,6 +116,12 @@ func schedulerCall(ctx context.Context, cfg *SchedulerConfig, path string, body 
 	}
 	defer response.Body.Close()
 	if response.StatusCode == http.StatusTooManyRequests {
+		var failure struct {
+			Code string `json:"code"`
+		}
+		if json.NewDecoder(io.LimitReader(response.Body, 65536)).Decode(&failure) == nil && failure.Code == "WAIT_STOP_CONFIRMATION" {
+			return nil, &AdmissionError{429, "previous inference is awaiting native stop confirmation; recovery is in progress"}
+		}
 		return nil, &AdmissionError{429, "local resources busy; retry later"}
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
