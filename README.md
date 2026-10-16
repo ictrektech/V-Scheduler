@@ -1,5 +1,7 @@
 # V-Scheduler · 资源调度
 
+七个客户端的迁移分工、统一入口、身份与调度责任，以及尚待完成的逐机验收见[客户端迁移协同契约](docs/client-migration-contract.md)。
+
 网关源码现位于本仓库 `gateway/`，无需另行检出 V-Router；两个镜像仍使用原飞书列，构建命令见[源码与构建](docs/unified-application.md#source-ownership)。
 
 V-Scheduler 统一安装包包含 V-Router 网关与调度控制器，提供一个界面和文档入口。模型目录、上游、自动发现、试聊、协议适配、用量和原有模型 API 由原网关实现保留；任务、许可、节点和资源统计由控制器管理。顶部登录身份使用随主题变化的文字颜色。安装后自动发现支持的应用与模型；界面“应用接入”说明本地、云端及 V-Voice 主动接入方式。API 与端口兼容说明见[统一应用说明](docs/unified-application.md)。 网关接口若返回 HTML 等无效 JSON，界面会提示检查服务与访问路径，不会将错误响应写入模型列表，切换语言仍可使用。
