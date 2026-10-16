@@ -408,22 +408,33 @@ func (t *scheduledTransport) withConfig(r *http.Request, u registry.Upstream, cf
 		}, func() { unlink(); go lease.finish(true, "approved_server_close_after_compute_stopped") })
 		return response, nil
 	}
-	response.Body = &permitBody{ReadCloser: response.Body, ctx: ctx, cancel: cancel, finish: finish, remaining: response.ContentLength, synchronous: job == nil && response.StatusCode != 202}
+	body := &permitBody{ReadCloser: response.Body, ctx: ctx, cancel: cancel, finish: finish, remaining: response.ContentLength, synchronous: job == nil && response.StatusCode != 202}
+	// Our Ollama emits [DONE] only after synchronous generation has stopped.
+	// A client may close immediately after that event, before transport EOF.
+	// Trust this completion contract only for the built-in, fixed-origin backend.
+	if body.synchronous && u.Source == registry.SourceSchedulerOllama && response.StatusCode == http.StatusOK && strings.HasPrefix(strings.ToLower(response.Header.Get("Content-Type")), "text/event-stream") {
+		body.ollamaCompletion = &ollamaSSECompletion{}
+	}
+	response.Body = body
 	return response, nil
 }
 
 type permitBody struct {
 	io.ReadCloser
-	ctx         context.Context
-	cancel      context.CancelFunc
-	finish      func(bool)
-	remaining   int64
-	synchronous bool
-	complete    bool
+	ctx              context.Context
+	cancel           context.CancelFunc
+	finish           func(bool)
+	remaining        int64
+	synchronous      bool
+	complete         bool
+	ollamaCompletion *ollamaSSECompletion
 }
 
 func (b *permitBody) Read(p []byte) (int, error) {
 	n, err := b.ReadCloser.Read(p)
+	if b.ollamaCompletion != nil && b.ollamaCompletion.feed(p[:n]) {
+		b.complete = true
+	}
 	if b.remaining >= 0 {
 		b.remaining -= int64(n)
 	}
