@@ -1,5 +1,7 @@
 # V-Scheduler 网关资源准入
 
+> 接入操作统一参见 [V-Scheduler 统一接入指南](application-integration.md)。本页保留协议或部署参考。
+
 本页说明统一 V-Scheduler 应用中 V-Router 网关组件的准入配置。VOS 只安装 `com.ictrek.v-scheduler`，内部保留网关与调度控制器两个进程，不再另装 V-Router。统一包设置 `V_ROUTER_SCHEDULER_REQUIRED=true`。所有经网关启动的本地及纳管远端模型计算先取得调度授权；云端供应商模型绕过本地调度。提示词和结果仍由网关直接转发。
 
 模型客户端仍调用 `http://v-router:8080/v1/*`，或同域 `/api/com.ictrek.v-scheduler/v1/*`；调度公开 API 使用 `/scheduler/api/v1/*`。地址与原位数据迁移见[统一应用](unified-application.md)，应用任务接入见[应用接入指南](application-integration.md)。

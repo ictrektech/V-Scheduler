@@ -1,5 +1,7 @@
 # Unified model gateway and scheduler
 
+> 接入操作统一参见 [V-Scheduler 统一接入指南](application-integration.md)。本页保留协议或部署参考。
+
 One VOS application, `com.ictrek.v-scheduler`, contains the original V-Router gateway and V-Scheduler controller. The gateway remains a Go process; the controller remains a Rust process with its existing embedded local agent. The Vue application and all new frontend development live in this repository. Backend images retain the existing Feishu component columns `v_router_backend` and `v-scheduler`; no new frontend image column is required.
 
 ## API and feature compatibility

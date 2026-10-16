@@ -1,5 +1,7 @@
 # V-Scheduler 公开 API 与接入标准 v1
 
+> 接入操作统一参见 [V-Scheduler 统一接入指南](application-integration.md)。本页保留协议或部署参考。
+
 日期：2026-10-15。状态：完整目标协议与 MVP 实现范围。适用于所有接入方，不以是否位于 VAI `apps/` 或是否运行 VOS 为前提。[设计](design.md)规定资源与恢复不变量；[OpenAPI](../api/openapi-v1.json)描述当前已实现的 v1 HTTP 路由。三者变更必须一起维护。
 
 本文的 V-Scheduler 指包含 V-Router 网关与调度控制器的统一 VOS 应用；以下协议属于调度控制器。模型请求仍由网关 `/v1/*` 转发。安装迁移见[统一应用](unified-application.md)，选型见[应用接入指南](application-integration.md)。
