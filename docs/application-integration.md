@@ -132,7 +132,9 @@ TTL 支持 30–3600 秒，默认 90 秒。心跳返回 404 时重新执行注�
 }
 ```
 
-`app_id` 应匹配网关 submitter 的 app 身份；示例为 `v-router`。`upstream_urls` 与注册的实际 base URL 必须匹配。模型权重、KV cache 等常驻分配写入节点 `resident_baseline`；executor 写单次允许计算的增量峰值。系统余量写入 `safety_reserve`。不要只按模型文件大小估显存。
+`app_id` 必须匹配实际申请许可的 submitter 身份；示例为 `v-router`。`permit_executors` 只授予执行端核验许可的权限，不能让另一个应用申请该执行器的许可。每个集成使用自己的服务身份及执行器，不借用内置 Ollama 的身份。`upstream_urls` 与注册的实际 base URL 必须匹配。模型权重、KV cache 等常驻分配写入节点 `resident_baseline`；executor 写单次允许计算的增量峰值。系统余量写入 `safety_reserve`。不要只按模型文件大小估显存。
+
+除应用安装时的配置外，受控接入也可由管理员通过 `POST /api/v1/executors/{id}` 创建专属执行器，body 为 `{"version":0,"enabled":true,"definition":<上面的完整执行器定义>}`。该路径属于调度 API base，需管理员身份；新 ID 使用版本 0，后续修改携带返回版本。节点及执行器必须空闲；收到冲突时先查明已有执行，不通过重启或强制释放绕过。实际应用接入由其 VOS App 的管理流程完成，用户无需 SSH 或手工部署 Agent。停用时使用当前版本与同一完整定义提交 `enabled:false`；确认测试许可全部释放后再撤销本次服务身份。
 
 在网关 `/data/scheduler.local.json` 的 `models` 中合并：
 

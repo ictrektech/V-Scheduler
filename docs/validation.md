@@ -143,3 +143,17 @@ HybRAG 0.1.71 的真实 VOS 登录、模型发现和专用网关绑定在三台�
 ### HybRAG 完整文档入库与 RAG 验收
 
 229 的已安装 HybRAG 0.1.71 通过真实 VOS 登录创建本次专用知识库，上传合成文档，等待解析完成，检索命中该文档，再经实际 RAG 会话返回包含文档验证事实的回答。另检查 SSE 的 answer 本体为 180 字符并包含验证事实，未将引用区命中误算为生成回答通过。流程产生七份调度许可，全部正常释放。测试会话与知识库已删除，未修改用户默认模型或既有知识库。脱敏摘要为维护端 `~/dev/build/vai-client-migration/evidence/hybrag-229-rag.json`。此项为代表性文本入库与回答验收，不扩展为任意文件格式、输入规模或模型组合的认证。
+
+### HybRAG 新旧模型入口共存验收
+
+229 以正式发布的 HybRAG 镜像运行独立 PostgreSQL 和隔离 HybRAG 实例，复用原独立 Model Hub 的三个真实 Ollama 后端，启动独立旧 V-Router 0.0.44 镜像。隔离目录显式登记本次三项旧服务；同一 HybRAG 进程同时发现新旧模型目录，并通过真实 `/api/v1/models/{id}/debug` 完成旧路径对话、1024 维向量、重排，以及新 Scheduler 路径向量调用。四项均有实际输出、各一份许可且已释放；新旧密钥分别绑定，新的专用后台密钥未发送给旧 Router。脱敏证据为 `~/dev/build/vai-client-migration/evidence/hybrag-229-coexist.json`。
+
+旧路径使用本次专属 submitter 和三个管理员批准的 executor，各自绑定真实旧后端地址与原有保守预算。`permit_executors` 仅授予验票能力，不代替申请方与 executor 的 `app_id` 匹配。未降低预算、未将本地计算声明为 cloud、未修改统一准入策略。测试实例只允许本次指定的旧 Router 目标；已安装用户实例对临时私网地址的 SSRF 拒绝保持有效。此项证明正式镜像的受控真实共存能力，不表示修改了用户当前默认模型或已安装实例的旧服务配置。
+
+### 0.1.72 启动修复交付与最终回归
+
+共存验收暴露了 HybRAG root 启动时 DuckDB 预装扩展缓存路径不一致的问题：镜像缓存位于 `/home/appuser/.duckdb`，root 使用 `/root/.duckdb`，会触发外网下载。修复仅补齐 root 的预装缓存，保留 DuckDB、XLSX 与访问控制。AMD、ARM 正式后端镜像均在禁止外网的 internal 网络、root 默认 HOME、扩展启用的条件下验证 spatial/excel 可安装及加载，真实 HybRAG 健康。修复通过 [0.1.72 正式发布](https://github.com/ictrektech/WeKnora/releases/tag/v0.1.72)与[发布工作流](https://github.com/ictrektech/WeKnora/actions/runs/38891867689)交付。
+
+192、229 的 HybRAG 使用 `arm`，232 使用 `amd`，三台均为 0.1.72、installed、runtime_ready；这与 Scheduler 自身的 `l4t`/`thor-spark`/`amd` profile 分别选择。三台前后端共六项运行镜像 manifest 与最终发布一致，真实登录、模型发现、独立网关绑定及后台私钥不暴露均通过。229 已安装的正式 0.1.72 再次完成测试文档上传、解析、检索与含验证事实的实际 answer 事件，七张许可全部释放，测试会话及知识库删除。脱敏记录为 `~/dev/build/vai-client-migration/evidence/hybrag-229-rag72.json`。192 的实际容量限制仍按前表记录，不将拒绝冒充输出通过。
+
+旧路径共存测试的最终只读清理确认：临时容器已移除、三个专用测试执行器已停用、专用服务身份已撤销、全部本次许可已释放。未改用户默认模型、原有知识库或原 Model Hub 模型目录。新旧入口的受控真实共存和已安装新入口的完整 RAG 均已验收。
