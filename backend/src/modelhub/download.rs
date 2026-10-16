@@ -11,6 +11,82 @@ use std::{
 };
 use tokio::io::AsyncWriteExt;
 
+#[derive(Debug)]
+struct DownloadHttpError(u16);
+impl std::fmt::Display for DownloadHttpError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "download HTTP {}", self.0)
+    }
+}
+impl std::error::Error for DownloadHttpError {}
+
+// Never expose reqwest's authenticated redirect URL or arbitrary storage paths.
+fn failure_code(error: &anyhow::Error) -> String {
+    if let Some(status) = error.downcast_ref::<DownloadHttpError>() {
+        return format!("HTTP_{}", status.0);
+    }
+    if let Some(request) = error.downcast_ref::<reqwest::Error>() {
+        if let Some(status) = request.status() {
+            return format!("HTTP_{}", status.as_u16());
+        }
+        if request.is_timeout() {
+            return "TRANSFER_TIMEOUT".into();
+        }
+        if request.is_connect() {
+            if error.chain().any(|cause| {
+                let text = cause.to_string().to_lowercase();
+                text.contains("certificate") || text.contains("unknownissuer")
+            }) {
+                return "TLS_CERTIFICATE_ERROR".into();
+            }
+            return "UPSTREAM_CONNECTION_FAILED".into();
+        }
+        return "UPSTREAM_TRANSFER_FAILED".into();
+    }
+    if error
+        .downcast_ref::<tokio::time::error::Elapsed>()
+        .is_some()
+    {
+        return "TRANSFER_IDLE_TIMEOUT".into();
+    }
+    if let Some(storage) = error.downcast_ref::<std::io::Error>() {
+        return if storage.raw_os_error() == Some(libc::ENOSPC) {
+            "STORAGE_FULL"
+        } else if storage.kind() == std::io::ErrorKind::PermissionDenied {
+            "STORAGE_PERMISSION_DENIED"
+        } else {
+            "STORAGE_IO_FAILED"
+        }
+        .into();
+    }
+    match error.to_string().as_str() {
+        "file checksum mismatch" => "CHECKSUM_MISMATCH",
+        "downloaded file has wrong size" => "FILE_SIZE_MISMATCH",
+        "invalid range response" => "INVALID_RANGE_RESPONSE",
+        "cancelled" => "CANCELLED",
+        _ => "DOWNLOAD_FAILED",
+    }
+    .into()
+}
+
+#[cfg(test)]
+mod failure_tests {
+    use super::*;
+    #[test]
+    fn download_failures_are_actionable_without_echoing_secrets() {
+        assert_eq!(failure_code(&DownloadHttpError(403).into()), "HTTP_403");
+        assert_eq!(
+            failure_code(&anyhow::anyhow!("file checksum mismatch")),
+            "CHECKSUM_MISMATCH"
+        );
+        let private = anyhow::anyhow!("https://example.invalid/object?signature=private-value");
+        assert_eq!(failure_code(&private), "DOWNLOAD_FAILED");
+        let storage =
+            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "/private/token-file");
+        assert_eq!(failure_code(&storage.into()), "STORAGE_PERMISSION_DENIED");
+    }
+}
+
 pub fn env(name: &str, default: &str) -> String {
     std::env::var(name).unwrap_or_else(|_| default.into())
 }
@@ -227,13 +303,16 @@ async fn finish_task(hub: &Hub, id: &str, outcome: Result<()>) {
                 task["phase"] = json!("READY");
                 task["progress"] = json!(1.);
                 task["error_msg"] = Value::Null;
+                task["error_code"] = Value::Null;
             }
-            Err(_) => {
+            Err(error) => {
                 // Do not persist upstream errors containing authenticated redirect URLs.
                 task["phase"] = json!("FAILED");
-                task["error_msg"] = json!(
-                    "Download failed or cancelled; existing model preserved. Verify endpoint, permissions and network, then retry."
-                );
+                let code = failure_code(&error);
+                task["error_code"] = json!(code);
+                task["error_msg"] = json!(format!(
+                    "Download failed ({code}); existing model preserved. Verify endpoint, permissions, storage and network, then retry."
+                ));
                 let mut model = task["_previous"].clone();
                 if model.is_null() {
                     if let Ok(m) = hub.store.model(task["model_id"].as_str().unwrap_or("")) {
@@ -377,7 +456,9 @@ async fn pull_repository(hub: &Hub, task: &mut Value) -> Result<()> {
             request = request.header("Range", format!("bytes={offset}-"));
         }
         let mut response = request.send().await?;
-        ensure!(response.status().is_success(), "file download rejected");
+        if !response.status().is_success() {
+            return Err(DownloadHttpError(response.status().as_u16()).into());
+        }
         let append = response.status() == reqwest::StatusCode::PARTIAL_CONTENT;
         if append {
             ensure!(

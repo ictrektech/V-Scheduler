@@ -80,6 +80,7 @@ pub async fn serve(listen: String) -> Result<()> {
     let hub = Arc::new(Hub {
         store,
         client: reqwest::Client::builder()
+            .user_agent("v-scheduler-model-hub")
             .connect_timeout(std::time::Duration::from_secs(15))
             .build()?,
         active: Default::default(),

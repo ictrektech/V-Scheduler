@@ -12,6 +12,8 @@ V-Scheduler 统一安装包包含 V-Router 网关与调度控制器，提供一�
 
 模型管理已使用 Rust/Axum 与 Vue/TypeScript 合并，入口为「模型仓库」：本地模型、HF/ModelScope/Ollama 下载、选定权重文件与追加下载、更新、压缩包导入、下载任务、三类 Ollama 与外部推理服务卡片、别名和容器引用均在同一应用内。安装时选择原 Model Hub 共享目录即可接管，保留原模型文件、注册表和任务；三个预热开关默认关闭。Ollama 仍由 `modules/ollama` 构建，打包继续读取原飞书 `ollama_server` 列。
 
+仓库下载请求携带应用 User-Agent，兼容 ModelScope 权重 CDN；下载失败时，任务提供 HTTP 状态、网络、磁盘空间或校验等安全错误码，保留已有模型与可续传文件。
+
 顶部「关于」在所有页面均可打开，显示当前 VOS App 版本、运行配置和 Scheduler、模型管理、Router、三个 Ollama 实例的镜像名与版本标签。
 
 试聊沿用现有页面。Router 直接连接自带的三个后端，上游名为 `v-scheduler/ollama-qa`、`v-scheduler/ollama-embedding`、`v-scheduler/ollama-rerank`，不通过 Model Hub 发现。模型管理与调度任务使用独立 API 命名空间。内部别名、外部宿主端口、完整 API 与接管说明见[模型管理接入](docs/model-management.md)及应用内「模型管理 API」。
