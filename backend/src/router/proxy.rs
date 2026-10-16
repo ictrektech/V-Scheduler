@@ -66,6 +66,10 @@ fn clean_headers(headers: &HeaderMap) -> HeaderMap {
         "x-vscheduler-executor-id",
         "x-vrouter-upstream",
         "cookie",
+        // Browser origin belongs to this gateway; upstream calls are server-to-server.
+        "origin",
+        // Bridges parse JSON/SSE and must receive an uncompressed provider body.
+        "accept-encoding",
     ] {
         out.remove(name);
     }

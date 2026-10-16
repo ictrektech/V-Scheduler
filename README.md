@@ -26,6 +26,8 @@ v0.0.30 将 Router 与模型仓库合入 Scheduler 的同一 Rust 进程，安�
 
 自带 Ollama 调用中断后，控制器自动向固定后端核验原生加载与进程退出状态；停止已确认就释放残留许可并恢复后续调用。活动调用、停止未确认及其他应用的预约不会被清除。待核验的旧调用占用资源时，接口会明确提示停止核验，而非笼统地提示机器忙。
 
+网关向推理后端转发时移除浏览器 `Origin` 和 `Accept-Encoding`，避免 Ollama 将来自 VOS / V-ChatCut 的服务器调用误判为跨域请求，并确保协议转换可以解析 JSON / SSE。
+
 本地同步推理在资源忙时及时返回 HTTP 429，自动绑定尚未就绪时返回 HTTP 503；网关不再静默等待数分钟而使客户端超时。
 
 试聊沿用现有页面。Router 直接连接自带的三个后端，上游名为 `v-scheduler/ollama-qa`、`v-scheduler/ollama-embedding`、`v-scheduler/ollama-rerank`，不通过 Model Hub 发现。模型管理与调度任务使用独立 API 命名空间。内部别名、外部宿主端口、完整 API 与接管说明见[模型管理接入](docs/model-management.md)及应用内「模型管理 API」。

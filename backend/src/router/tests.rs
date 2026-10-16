@@ -875,3 +875,42 @@ async fn static_ui_loads_before_authentication_while_apis_stay_protected() {
     assert_eq!(dispatch(g, request).await.err().unwrap().status, 401);
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[tokio::test]
+async fn browser_origin_and_compression_headers_do_not_reach_the_native_provider() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let native=Router::new().route("/v1/chat/completions",post(|headers:HeaderMap,Json(v):Json<Value>|async move{
+        // Ollama rejects browser origins outside its own CORS allowlist. The
+        // browser belongs to this gateway, so this is a server-to-server hop.
+        if headers.contains_key("origin"){return StatusCode::FORBIDDEN.into_response();}
+        assert!(!headers.contains_key("accept-encoding"),"protocol bridges must receive uncompressed bodies");
+        if v["stream"]==true{([( "content-type","text/event-stream")],"data: {\"choices\":[{\"delta\":{\"content\":\"browser reply\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n").into_response()}
+        else{Json(json!({"choices":[{"message":{"role":"assistant","content":"browser reply"},"finish_reason":"stop"}]})).into_response()}
+    }));
+    let server = tokio::spawn(async move {
+        axum::serve(listener, native).await.unwrap();
+    });
+    let root = temp();
+    let g = gateway(&root, Router::new());
+    let mut u = upstream("browser");
+    u.base_url = format!("http://127.0.0.1:{port}/v1");
+    g.registry.lock().unwrap().put(u, vec![model("echo")]);
+    for stream in [false, true] {
+        let request=axum::http::Request::builder().method("POST").uri("/v1/chat/completions").header("content-type","application/json").header("origin","https://vos.example.test").header("accept-encoding","gzip, br").body(Body::from(serde_json::to_vec(&json!({"model":"manual/echo","messages":[{"role":"user","content":"hello"}],"stream":stream})).unwrap())).unwrap();
+        let response = proxy::handle(g.clone(), principal("alice"), request)
+            .await
+            .unwrap();
+        assert_eq!(
+            response.status(),
+            200,
+            "browser headers must not cause a provider CORS rejection"
+        );
+        let bytes = axum::body::to_bytes(response.into_body(), 1 << 20)
+            .await
+            .unwrap();
+        assert!(String::from_utf8_lossy(&bytes).contains("browser reply"));
+    }
+    server.abort();
+    std::fs::remove_dir_all(root).unwrap();
+}
