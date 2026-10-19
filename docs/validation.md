@@ -219,7 +219,7 @@ Private operational evidence is stored under `~/dev/build/V-Scheduler/compatibil
 
 ### v0.0.36 publication and installed acceptance
 
-[Workflow 39201212533](https://github.com/ictrektech/V-Scheduler/actions/runs/39201212533) completed GitHub Release and VOS App Store publication on its third attempt. The first two attempts never started a runner because of the organization's Actions billing/limit gate; after the repository became public, the original workflow successfully ran frontend/API checks, all 85 AMD Rust tests, packaging and publication. ARM host tests passed all 86 cases, including the bundled seven legacy Voice plus four bounded music model binding and installed-version gate.
+[Workflow 39201212533](https://github.com/ictrektech/V-Scheduler/actions/runs/39201212533) completed GitHub Release and VOS App Store publication on its third attempt. The first two attempts never started a runner; after the repository became public, the original workflow successfully ran frontend/API checks, all 85 AMD Rust tests, packaging and publication. ARM host tests passed all 86 cases, including the bundled seven legacy Voice plus four bounded music model binding and installed-version gate.
 
 The downloaded pull package SHA-256 is `3d1e9ec81c821ae4ced502e6aaa663c6321aeee3b6038ccddff457db120d61ee`. Its single inner archive, seven rendered core files, published AMD/ARM Scheduler tags and stable aliases passed inspection. Registry manifests and the exact Feishu component cells were checked independently.
 
