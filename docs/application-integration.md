@@ -4,6 +4,7 @@
 
 - [选择接入方式与调度策略](#integration-mode)
 - [地址、端口与身份](#addresses-and-identity)
+- [一个推理实例的完整接入流程：服务管理、模型路由与调度](#managed-inference)
 - [vLLM 主动注册、public/private 与生命周期](#vllm-registration)
 - [启用本实例调度](#scheduled-vllm)
 - [仅路由外部独立资源](#external-vllm)
@@ -18,6 +19,7 @@
 | 需求 | 接入方式 | 谁负责资源 |
 |---|---|---|
 | 只调用统一目录里的模型 | 使用网关 `/v1/*`；普通调用方不另申请许可 | 网关执行该模型已批准的策略 |
+| 同时管理服务卡片、统一调用并调度资源 | 按[完整接入流程](#managed-inference)登记同一实例，分别完成管理契约、网关注册与资源批准 | 实际执行节点的 Scheduler 资源池 |
 | 将 vLLM 等模型加入统一目录 | 启动就绪后主动注册，运行期心跳，退出注销 | 注册本身不纳管算力 |
 | 让本 Scheduler 调度同步或流式计算 | 批准实际节点、executor、服务身份及逐模型 `permit` 策略 | 网关在实际节点申请、续租及释放许可 |
 | 只路由外部独立运行的模型，不交给本 Scheduler 调度 | 管理员批准注册策略 `scheduler.mode=cloud` | 外部服务运行方负责容量、并发与停止 |
@@ -56,6 +58,74 @@ VOS 本机资源采集内置于应用，无需应用开发者部署独立 Agent�
 | 专用后台推理身份 | 如 HybRAG 的受限后台模型调用 | 注册、网关管理、调度管理员权限 |
 
 不同应用使用各自的服务身份；私钥不进入浏览器、discovery、共享模型目录或日志。无效 Bearer 返回 401，不能填写任意占位 Key。注册 `scheduler` 策略需要管理员权限；普通身份提交该字段返回 403。私有模型由注册请求的真实身份决定 owner；系统级管理员注册器不能代替另一个用户创建其私有身份。后台可信交接见 [HybRAG 身份参考](hybrag-gateway-identity.md)。
+
+<a id="managed-inference"></a>
+## 一个推理实例的完整接入流程
+
+模型仓库中的「推理服务」（原 ModelHub 功能）、网关模型目录和 Scheduler 资源授权共同描述同一个实例。接入应用应在自己的 VOS App 启动与健康管理流程中维护这三部分，用稳定的实例 ID 关联它们；最终用户通过 VOS 安装应用，不需要 SSH 或逐台安装 Agent。
+
+| 同一实例的记录 | 入口与职责 | 成功代表什么 |
+|---|---|---|
+| 推理服务卡片 | 模型仓库 `POST /inference-services/register`，保存健康、模型列表、运行状态和可选装卸模型契约 | 可以查看或管理该服务；不会自动加入网关模型目录，也不会创建许可 |
+| 可调用模型 | 网关 `POST /api/v1/registrations`，维护 owner、public/private、原生模型与接口、租约 | 模型进入该身份可见的目录；仍需实际健康和调度批准 |
+| 执行权限与预算 | Scheduler 批准实际节点、executor、服务身份，并配置网关逐模型策略，或完成应用专用自动绑定 | 请求可按批准的输入、资源和停止契约取得 permit/task；不保证任何时刻都有空闲资源 |
+
+### 1. 准备实例、身份和模型文件
+
+以下沿用本文 vLLM 示例：稳定实例 ID 为 `vllm-node-a-1`，网关 upstream ID 为 `registered-vllm-node-a-1`，原生模型 ID 为 `demo-chat`，客户端调用名为 `registered/demo-chat`。卡片、网关注册和执行器中的地址必须指向同一个实际实例；模型仓库的元数据不授予网关 owner 或 Scheduler 权限。
+
+模型从安装时指定的公共目录读取，使用[共享模型目录](#shared-models)中的导出路径。权重下载完成只证明文件就绪，不证明推理进程已加载、接口健康或资源获批。先核验服务版本、模型、最大输入、运行参数及实际节点，按[启用本实例调度](#scheduled-vllm)批准资源与输入范围。服务开始接受计算前须启用原生准入或限制计算入口；健康与列模型接口可以先开放。
+
+### 2. 登记模型仓库的推理服务卡片
+
+首选经过统一网关访问：设 `MODEL_HUB=$GATEWAY/model-hub/api/v1`，其中 `GATEWAY=http://v-scheduler-gateway:8080`（容器内）或 `http://<vos-host>:22888`（宿主机映射），使用网关接受的 VOS 用户身份。它与网关注册入口共享应用入口，但调用者仍须具备各接口要求的权限，不能使用 Scheduler submitter 令牌替代。下例 `GATEWAY_TOKEN` 使用获准管理的 VOS 用户令牌。
+
+需要直连时，模型仓库内部入口为 `http://v-scheduler-model-hub:6005/api/v1`，宿主机默认入口为 `http://<vos-host>:36005/api/v1`。这个独立管理监听器面向可信管理网络，不能把任意 Bearer 当成它已具备网关用户隔离的证明，也不要将管理端口直接暴露给不可信调用方。
+
+为同一 vLLM 实例准备 `service.json`：
+
+```json
+{
+  "service_id": "vllm-node-a-1",
+  "name": "vLLM node A replica 1",
+  "kind": "openai_compatible",
+  "base_url": "http://compute-a.example:8000",
+  "gateway_url": "http://compute-a.example:8000/v1",
+  "api_contract": {
+    "health_path": "/health",
+    "models_path": "/v1/models"
+  },
+  "metadata": {"gateway_upstream_id": "registered-vllm-node-a-1"}
+}
+```
+
+```bash
+curl --fail-with-body "$MODEL_HUB/inference-services/register" \
+  -H "Authorization: Bearer $GATEWAY_TOKEN" \
+  -H 'Content-Type: application/json' --data-binary @service.json
+curl --fail-with-body "$MODEL_HUB/inference-services/vllm-node-a-1" \
+  -H "Authorization: Bearer $GATEWAY_TOKEN"
+```
+
+`base_url` 与契约路径拼接，因此这里使用服务根地址；下一节网关注册的 `base_url` 则包含 `/v1`。`gateway_url` 是服务元数据，不会触发网关注册。`metadata.gateway_upstream_id` 仅供关联查看，不参与鉴权或自动创建调度策略。卡片可在「模型仓库 → 推理服务」找到，也可通过 `GET /inference-services?include_builtin=true` 连同内置服务查看。
+
+原生 Ollama 使用 `kind=ollama`，`base_url` 指向原生 API 根地址，自动补齐 `/api/version`、`/api/tags`、`/api/ps` 及装卸契约。OpenAI/custom 服务必须显式声明自身支持的 `api_contract`；普通 vLLM 没有通用的模型装卸 API，示例只登记健康和模型列表。不要为它填写虚构的 start/stop 路径。当前卡片探测和操作不提供网关上游 `api_key` 的自动注入；需要受保护管理 API 的服务，应由应用提供受控管理适配入口，不能把密钥拼进 URL 或 metadata。
+
+### 3. 注册模型路由并启用调度
+
+对同一实例继续执行下节的完整 `registration.json`、注册及心跳流程，再完成[逐模型 permit 策略](#scheduled-vllm)。一次接入由应用管理流程协调三部分；当前不存在把服务卡片、网关注册、执行器批准合为一次事务的 API，不能只登记卡片便宣称已调度。任一步失败时保留可诊断状态，停止对外宣告就绪并重试失败步骤；没有有效授权时禁止计算。
+
+自带的三个 Ollama 已有卡片，网关直接使用 `v-scheduler/ollama-qa`、`v-scheduler/ollama-embedding`、`v-scheduler/ollama-rerank`，由内置绑定流程配置对应模型策略；无需重新扫描旧 ModelHub 的 Ollama 或重复登记为另一组上游。对 V-Voice、V-Sub 等专用绑定应用，继续使用其 discovery/校准/绑定契约，不另建一套通用 executor 重复预约。
+
+### 4. 调用、装卸、取消与退出采用同一生命周期
+
+- 普通模型调用方使用网关 `/v1/*` 和自己的调用身份；网关取得许可后再转发。同一次计算只预约一次，原生服务按许可核验契约复用该预约。
+- 卡片的 `POST /inference-services/{id}/models/start`、`.../stop` 是管理代理，body 至少含 `model`，可含 `confirm_timeout_seconds`（0–60，默认 8）。它们不会自动申请 Scheduler 许可；start 可能实际预热计算，必须由接入应用在原生管理入口实施准入，并将驻留权重纳入预算。不能用卡片按钮或直连端口绕过调度。
+- 卡片上的 `healthy`、`running_state_observed`、操作返回的确认信息属于管理观测；它们不能代替具体 permit/task 的停止证明。只有计算执行端确认该执行停止后才释放资源；未知状态保留预约并对账。
+- 应用保持网关注册心跳；服务卡片保存在共享注册表中，没有网关注册那样的 TTL。心跳丢失不会自动删除卡片，删除卡片也不会注销网关或停止进程。
+- 正常退出先停止新请求分配（注销网关注册），再完成或取消在途任务，核验原生停止并释放许可，最后卸载模型/关闭服务。永久移除时再 `DELETE /inference-services/{id}` 删除卡片；暂时重启保留卡片，恢复后复用同一 ID 更新卡片与网关注册。停用 executor 前确认对应任务、许可均已结束。
+
+验收必须同时证明：卡片可见且健康、调用者能发现正确模型、资源批准指向实际节点、直调与网关共用一次准入、取消后原生停止、重启后重新绑定/注册可恢复。仅看卡片绿色、注册 HTTP 200 或模型文件存在，不能判定接入完成。
 
 <a id="vllm-registration"></a>
 ## vLLM 主动注册与生命周期
