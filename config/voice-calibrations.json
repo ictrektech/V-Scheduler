@@ -340,6 +340,354 @@
       "application_versions": [
         "0.0.21"
       ]
+    },
+    {
+      "id": "thor-native-musicgen-small-30s-v1",
+      "architecture": "aarch64",
+      "hardware": [
+        {
+          "name": "NVIDIA Thor",
+          "memory_type": "unified"
+        }
+      ],
+      "provider": "cuda",
+      "cpu_models": [],
+      "num_threads": 4,
+      "max_concurrent_inference": 2,
+      "application_versions": [
+        "0.0.21"
+      ],
+      "input_limits_version": 1,
+      "music": {
+        "max_concurrent_jobs": 1,
+        "max_loaded_models": 1,
+        "provider": "cuda",
+        "runtime": "pytorch-music-v1",
+        "steps": 8,
+        "torch_interop_threads": 1,
+        "torch_threads": 4
+      },
+      "resources": {
+        "cpu_millicores": 4500,
+        "memory_mib": 6400,
+        "gpu_slots": 1,
+        "gpu_memory_mib": 0
+      },
+      "max_input_bytes": 16384,
+      "limits": {
+        "n": 1,
+        "batch_count": 1
+      },
+      "sync_models": [
+        "musicgen-small"
+      ],
+      "async_models": [],
+      "secondary_models": {},
+      "model_limits": {
+        "musicgen-small": {
+          "duration_seconds": 30,
+          "negative_prompt_characters": 0,
+          "prompt_characters": 512
+        }
+      },
+      "calibration": {
+        "evidence_id": "music-tc229-70e8746ffc58458c8be941684057631b",
+        "evidence_ids": [
+          "music-tc229-70e8746ffc58458c8be941684057631b",
+          "music-tc229-0844977a3f854c2cac8ffb984ad50a26"
+        ],
+        "image_id": "sha256:b2b65566e603be8c1c05d8314929073361982b5ff39979e608d5868b3ebd4f0e",
+        "peak_memory_mib": 4985,
+        "memory_method": "Maximum of cgroup memory, host available-RAM drop and native CUDA allocator reservation in one unified pool; reservation adds at least 1 GiB or 25 percent margin and rounds up to 256 MiB. Both cases used an unchanged 14 GiB node-approved outer permit and memory/swap hard limits.",
+        "observed_peak_cpu_millicores": 2739,
+        "native_and_container_exit_confirmed": true,
+        "real_permits_released": true,
+        "cases": [
+          "native 30-second generation with bounded prompts and basic signal checks",
+          "cancellation after actual model-load marker, process-group kill/wait and confirmed container exit"
+        ],
+        "modelscope_repo": "vivibit/v-music-musicgen-small",
+        "weights_catalog_sha256": "e27e8b6a1fefe1a3aad58c66a202cbfd5e2bbd558fd4acc7a184b352c320a59d",
+        "runtime_source_sha256": "f65309eb580567d3ab9918e9e3484e372e82c685fbad68e85ec9ab8356709189",
+        "torch_version": "2.8.0a0+34c6371d24.nv25.08",
+        "signal": {
+          "basic_audio_sanity": {
+            "clipping_fraction": 0.0,
+            "finite": true,
+            "note": "Basic signal checks only; no subjective music-quality conclusion.",
+            "peak": 0.623046875,
+            "rms": 0.06389926141940773,
+            "standard_deviation": 0.06389925735872504
+          },
+          "bytes": 1916204,
+          "channels": 1,
+          "duration_seconds": 29.94,
+          "sample_rate": 32000,
+          "sha256": "a28373031de5fb7ac1102f029b7995d67772b7169a0d485fdf36195e767839db"
+        },
+        "subjective_audio_quality_assessed": false
+      }
+    },
+    {
+      "id": "thor-native-stable-audio-3-small-music-30s-v1",
+      "architecture": "aarch64",
+      "hardware": [
+        {
+          "name": "NVIDIA Thor",
+          "memory_type": "unified"
+        }
+      ],
+      "provider": "cuda",
+      "cpu_models": [],
+      "num_threads": 4,
+      "max_concurrent_inference": 2,
+      "application_versions": [
+        "0.0.21"
+      ],
+      "input_limits_version": 1,
+      "music": {
+        "max_concurrent_jobs": 1,
+        "max_loaded_models": 1,
+        "provider": "cuda",
+        "runtime": "pytorch-music-v1",
+        "steps": 8,
+        "torch_interop_threads": 1,
+        "torch_threads": 4
+      },
+      "resources": {
+        "cpu_millicores": 4500,
+        "memory_mib": 6656,
+        "gpu_slots": 1,
+        "gpu_memory_mib": 0
+      },
+      "max_input_bytes": 16384,
+      "limits": {
+        "n": 1,
+        "batch_count": 1
+      },
+      "sync_models": [
+        "stable-audio-3-small-music"
+      ],
+      "async_models": [],
+      "secondary_models": {},
+      "model_limits": {
+        "stable-audio-3-small-music": {
+          "duration_seconds": 30,
+          "negative_prompt_characters": 256,
+          "prompt_characters": 512
+        }
+      },
+      "calibration": {
+        "evidence_id": "music-tc229-1ad0c148c7df4bd294b97c6b2d751d23",
+        "evidence_ids": [
+          "music-tc229-1ad0c148c7df4bd294b97c6b2d751d23",
+          "music-tc229-0a40c409c7eb4e92993158487f4c53be"
+        ],
+        "image_id": "sha256:b2b65566e603be8c1c05d8314929073361982b5ff39979e608d5868b3ebd4f0e",
+        "peak_memory_mib": 5269,
+        "memory_method": "Maximum of cgroup memory, host available-RAM drop and native CUDA allocator reservation in one unified pool; reservation adds at least 1 GiB or 25 percent margin and rounds up to 256 MiB. Both cases used an unchanged 14 GiB node-approved outer permit and memory/swap hard limits.",
+        "observed_peak_cpu_millicores": 3226,
+        "native_and_container_exit_confirmed": true,
+        "real_permits_released": true,
+        "cases": [
+          "native 30-second generation with bounded prompts and basic signal checks",
+          "cancellation after actual model-load marker, process-group kill/wait and confirmed container exit"
+        ],
+        "modelscope_repo": "vivibit/v-music-stable-audio-3-small-music",
+        "weights_catalog_sha256": "6656d8a1c1d8cdee0be7622642ad793529d6aa94c327634350dd46b6f5dc66b9",
+        "runtime_source_sha256": "f65309eb580567d3ab9918e9e3484e372e82c685fbad68e85ec9ab8356709189",
+        "torch_version": "2.8.0a0+34c6371d24.nv25.08",
+        "signal": {
+          "basic_audio_sanity": {
+            "clipping_fraction": 0.0,
+            "finite": true,
+            "note": "Basic signal checks only; no subjective music-quality conclusion.",
+            "peak": 0.71337890625,
+            "rms": 0.07542361614519046,
+            "standard_deviation": 0.07542359856680421
+          },
+          "bytes": 5292044,
+          "channels": 2,
+          "duration_seconds": 30.0,
+          "sample_rate": 44100,
+          "sha256": "c28e22dec319e1fdd37a85680edfe1eb7e509f2f3a6e81be2ed88c5630aa64b4"
+        },
+        "subjective_audio_quality_assessed": false
+      }
+    },
+    {
+      "id": "thor-native-stable-audio-3-medium-30s-v1",
+      "architecture": "aarch64",
+      "hardware": [
+        {
+          "name": "NVIDIA Thor",
+          "memory_type": "unified"
+        }
+      ],
+      "provider": "cuda",
+      "cpu_models": [],
+      "num_threads": 4,
+      "max_concurrent_inference": 2,
+      "application_versions": [
+        "0.0.21"
+      ],
+      "input_limits_version": 1,
+      "music": {
+        "max_concurrent_jobs": 1,
+        "max_loaded_models": 1,
+        "provider": "cuda",
+        "runtime": "pytorch-music-v1",
+        "steps": 8,
+        "torch_interop_threads": 1,
+        "torch_threads": 4
+      },
+      "resources": {
+        "cpu_millicores": 4500,
+        "memory_mib": 14080,
+        "gpu_slots": 1,
+        "gpu_memory_mib": 0
+      },
+      "max_input_bytes": 16384,
+      "limits": {
+        "n": 1,
+        "batch_count": 1
+      },
+      "sync_models": [
+        "stable-audio-3-medium"
+      ],
+      "async_models": [],
+      "secondary_models": {},
+      "model_limits": {
+        "stable-audio-3-medium": {
+          "duration_seconds": 30,
+          "negative_prompt_characters": 256,
+          "prompt_characters": 512
+        }
+      },
+      "calibration": {
+        "evidence_id": "music-tc229-6444d100bc2240b8a8b23073a03ac1c9",
+        "evidence_ids": [
+          "music-tc229-6444d100bc2240b8a8b23073a03ac1c9",
+          "music-tc229-576114e8eea540a5875e57c5a9f6b9e9"
+        ],
+        "image_id": "sha256:b2b65566e603be8c1c05d8314929073361982b5ff39979e608d5868b3ebd4f0e",
+        "peak_memory_mib": 11255,
+        "memory_method": "Maximum of cgroup memory, host available-RAM drop and native CUDA allocator reservation in one unified pool; reservation adds at least 1 GiB or 25 percent margin and rounds up to 256 MiB. Both cases used an unchanged 14 GiB node-approved outer permit and memory/swap hard limits.",
+        "observed_peak_cpu_millicores": 3833,
+        "native_and_container_exit_confirmed": true,
+        "real_permits_released": true,
+        "cases": [
+          "native 30-second generation with bounded prompts and basic signal checks",
+          "cancellation after actual model-load marker, process-group kill/wait and confirmed container exit"
+        ],
+        "modelscope_repo": "vivibit/v-music-stable-audio-3-medium",
+        "weights_catalog_sha256": "4a92b4286390ddba1a5e4bbf180da5862940f0d838117a9a17e62a1f3bee8fa9",
+        "runtime_source_sha256": "f65309eb580567d3ab9918e9e3484e372e82c685fbad68e85ec9ab8356709189",
+        "torch_version": "2.8.0a0+34c6371d24.nv25.08",
+        "signal": {
+          "basic_audio_sanity": {
+            "clipping_fraction": 0.0,
+            "finite": true,
+            "note": "Basic signal checks only; no subjective music-quality conclusion.",
+            "peak": 0.59326171875,
+            "rms": 0.06738016059075257,
+            "standard_deviation": 0.06737965229536902
+          },
+          "bytes": 5292044,
+          "channels": 2,
+          "duration_seconds": 30.0,
+          "sample_rate": 44100,
+          "sha256": "173cf17d27ad31400f61387dc00907b53c3d42de2b7d8297f3efbb12b42f5493"
+        },
+        "subjective_audio_quality_assessed": false
+      }
+    },
+    {
+      "id": "thor-native-ace-step-1.5-turbo-30s-v1",
+      "architecture": "aarch64",
+      "hardware": [
+        {
+          "name": "NVIDIA Thor",
+          "memory_type": "unified"
+        }
+      ],
+      "provider": "cuda",
+      "cpu_models": [],
+      "num_threads": 4,
+      "max_concurrent_inference": 2,
+      "application_versions": [
+        "0.0.21"
+      ],
+      "input_limits_version": 1,
+      "music": {
+        "max_concurrent_jobs": 1,
+        "max_loaded_models": 1,
+        "provider": "cuda",
+        "runtime": "pytorch-music-v1",
+        "steps": 8,
+        "torch_interop_threads": 1,
+        "torch_threads": 4
+      },
+      "resources": {
+        "cpu_millicores": 4500,
+        "memory_mib": 12544,
+        "gpu_slots": 1,
+        "gpu_memory_mib": 0
+      },
+      "max_input_bytes": 16384,
+      "limits": {
+        "n": 1,
+        "batch_count": 1
+      },
+      "sync_models": [
+        "ace-step-1.5-turbo"
+      ],
+      "async_models": [],
+      "secondary_models": {},
+      "model_limits": {
+        "ace-step-1.5-turbo": {
+          "duration_seconds": 30,
+          "negative_prompt_characters": 0,
+          "prompt_characters": 512
+        }
+      },
+      "calibration": {
+        "evidence_id": "music-tc229-e757741c9d134a8eba01afa198b4c754",
+        "evidence_ids": [
+          "music-tc229-e757741c9d134a8eba01afa198b4c754",
+          "music-tc229-90b3b89bdedb4060b621d51b4ad55b38"
+        ],
+        "image_id": "sha256:b2b65566e603be8c1c05d8314929073361982b5ff39979e608d5868b3ebd4f0e",
+        "peak_memory_mib": 9930,
+        "memory_method": "Maximum of cgroup memory, host available-RAM drop and native CUDA allocator reservation in one unified pool; reservation adds at least 1 GiB or 25 percent margin and rounds up to 256 MiB. Both cases used an unchanged 14 GiB node-approved outer permit and memory/swap hard limits.",
+        "observed_peak_cpu_millicores": 2979,
+        "native_and_container_exit_confirmed": true,
+        "real_permits_released": true,
+        "cases": [
+          "native 30-second generation with bounded prompts and basic signal checks",
+          "cancellation after actual model-load marker, process-group kill/wait and confirmed container exit"
+        ],
+        "modelscope_repo": "vivibit/v-music-ace-step-1.5-turbo",
+        "weights_catalog_sha256": "38212880396de0cf42de182501fc334646f4f0da20dbb397709d35495072653d",
+        "runtime_source_sha256": "f65309eb580567d3ab9918e9e3484e372e82c685fbad68e85ec9ab8356709189",
+        "torch_version": "2.8.0a0+34c6371d24.nv25.08",
+        "signal": {
+          "basic_audio_sanity": {
+            "clipping_fraction": 0.0,
+            "finite": true,
+            "note": "Basic signal checks only; no subjective music-quality conclusion.",
+            "peak": 0.8912509083747864,
+            "rms": 0.08150603859610889,
+            "standard_deviation": 0.08149899169544725
+          },
+          "bytes": 11520088,
+          "channels": 2,
+          "duration_seconds": 30.0,
+          "sample_rate": 48000,
+          "sha256": "a467e9c59dfb8258e235194d1bde2ea3f378cc52a072adedae285bf7c8be71ab"
+        },
+        "subjective_audio_quality_assessed": false
+      }
     }
   ]
 }

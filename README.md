@@ -212,3 +212,5 @@ Agent 是本应用在节点上运行的资源采集与任务执行后台进程�
 自动纳管回归测试：在已同步并完成构建的 Linux 测试机执行 `python3 scripts/e2e-builtin-ollama.py`。测试使用独立 PostgreSQL、内部 Docker 网络与模拟后端，覆盖自动登记、私有凭据、三类路由、流式输出、资源等待、许可释放和重启恢复；真实设备验证仍需单独完成。
 
 192 的已实测 CPU 小模型预设使用固定的本地 Ollama 标签，保留原模型与全局默认值：Qwen2.5 0.5B q2（896 MiB）与 all-minilm 22m（512 MiB），每次计算预算 4.5 核、GPU 为 0，上下文 512、输入最多 16 KiB、生成最多 128 tokens。它们通过同一模型仓库卡片、统一网关和真实 Scheduler 许可管理，取消后须取得原生停止证明；不把该实测预算套用到其他权重、硬件或并发设置。详见[统一接入指南](docs/application-integration.md#calibrated-local-models)。
+
+V-Voice 混合绑定同时包含旧语音审批和新音乐输入边界时，双方显式协商 `mixed_input_limits_version=1`，旧兼容模型由受信任审批单独列出；缺少限制不会自动取得豁免。详见[自动绑定契约](docs/v-voice-auto-binding.md#原生模型输入边界)。

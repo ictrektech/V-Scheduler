@@ -262,6 +262,7 @@ fn build(
     let mut gateway_executors = serde_json::Map::new();
     let mut secondary_models = serde_json::Map::new();
     let mut model_limits = serde_json::Map::new();
+    let mut legacy_unbounded_models = std::collections::BTreeSet::new();
     let mut policies = serde_json::Map::new();
     let mut executors = Vec::new();
     let mut adapters = Vec::new();
@@ -409,6 +410,8 @@ fn build(
                         music_settings = Some(approval["music"].clone());
                     }
                     model_limits.insert(model.to_owned(), json!(limits));
+                } else {
+                    legacy_unbounded_models.insert(model.to_owned());
                 }
                 models.insert(model.to_owned(), json!(executor));
                 if task_type == "model.infer" {
@@ -459,6 +462,14 @@ fn build(
         "principals":[{"token":token,"role":"submitter","app_id":APP,"permit_executors":gateway_ids},{"token":gateway_token,"role":"submitter","app_id":"v-scheduler.voice-gateway"}],
         "executors":executors,"adapters":adapters,
         "gateway":{"url":URL,"token":gateway_token,"require_model_policy":true,"models":policies}});
+    if !model_limits.is_empty() && !legacy_unbounded_models.is_empty() {
+        ensure!(
+            contract["mixed_input_limits_version"] == 1,
+            "mixed model input limits capability required"
+        );
+        state["binding"]["mixed_input_limits_version"] = json!(1);
+        state["binding"]["legacy_unbounded_models"] = json!(legacy_unbounded_models);
+    }
     if !model_limits.is_empty() {
         state["binding"]["input_limits_version"] = json!(1);
         state["binding"]["model_limits"] = json!(model_limits);
@@ -725,7 +736,14 @@ mod tests {
         let missing = build(&runtime, &contract, &approvals, None).unwrap();
         assert!(missing["binding"]["models"].get("music-fixture").is_none());
         approvals["approvals"][1]["music"] = music.clone();
+        assert!(build(&runtime, &contract, &approvals, None).is_err());
+        contract["mixed_input_limits_version"] = json!(2);
+        assert!(build(&runtime, &contract, &approvals, None).is_err());
+        contract["mixed_input_limits_version"] = json!(1);
         let approved = build(&runtime, &contract, &approvals, None).unwrap();
+        assert_eq!(approved["binding"]["mixed_input_limits_version"], 1);
+        assert_eq!(approved["binding"]["legacy_unbounded_models"], json!(["asr", "speaker", "tts"]));
+        assert_eq!(approved["binding"]["model_limits"].as_object().unwrap().len(), 1);
         assert_eq!(approved["binding"]["execution_settings"]["music"], music);
         assert!(approved["binding"]["models"].get("music-fixture").is_some());
         assert_eq!(approved["gateway"]["models"]["app-v-voice/music-fixture"]["limits"]["duration"],30);
@@ -736,6 +754,48 @@ mod tests {
         contract["execution_settings"]["music"] = music;
         approvals["approvals"][1]["model_limits"]["music-fixture"]["prompt_characters"] = json!(0);
         assert!(build(&runtime, &contract, &approvals, None).is_err());
+    }
+
+    #[test]
+    #[cfg(target_arch = "aarch64")]
+    fn bundled_thor_music_approvals_preserve_legacy_voice_and_version_gate() {
+        let (runtime, mut contract, _) = fixtures();
+        let approvals: Value = serde_json::from_str(include_str!("../../config/voice-calibrations.json")).unwrap();
+        let voice = &approvals["approvals"][0];
+        contract["provider"] = voice["provider"].clone();
+        contract["cpu_models"] = voice["cpu_models"].clone();
+        contract["_execution_hardware"] = voice["hardware"].clone();
+        contract["_application_version"] = json!("0.0.21");
+        contract["input_limits_version"] = json!(1);
+        contract["mixed_input_limits_version"] = json!(1);
+        contract["execution_settings"] = json!({"music":approvals["approvals"][5]["music"]});
+        let mut sync = Vec::new();
+        let mut async_models = Vec::new();
+        for approval in approvals["approvals"].as_array().unwrap().iter().filter(|a| a["hardware"] == voice["hardware"]) {
+            for model in approval["sync_models"].as_array().unwrap() {
+                sync.push(json!({"id":model,"task_type":"model.infer","kind":if approval["music"].is_object() {"music"} else {"voice"}}));
+            }
+            for model in approval["async_models"].as_array().unwrap() {
+                async_models.push(json!({"id":model,"task_type":"voice.generate"}));
+            }
+        }
+        contract["_ready_sync"] = json!(sync.iter().map(|r| r["id"].clone()).collect::<Vec<_>>());
+        contract["_ready_async"] = json!(async_models.iter().map(|r| r["id"].clone()).collect::<Vec<_>>());
+        contract["sync_models"] = json!(sync);
+        contract["async_models"] = json!(async_models);
+        let state = build(&runtime, &contract, &approvals, None).unwrap();
+        assert_eq!(state["binding"]["models"].as_object().unwrap().len(), 11);
+        assert_eq!(state["binding"]["model_limits"].as_object().unwrap().len(), 4);
+        let legacy = state["binding"]["legacy_unbounded_models"].as_array().unwrap();
+        assert_eq!(legacy.len(), 7);
+        assert!(legacy.contains(&json!("kokoro-multilang")));
+        assert!(legacy.contains(&json!("kokoro-82m-q8")));
+        assert!(!legacy.contains(&json!("musicgen-small")));
+        contract["_application_version"] = json!("0.0.20");
+        let old = build(&runtime, &contract, &approvals, None).unwrap();
+        assert_eq!(old["binding"]["models"].as_object().unwrap().len(), 7);
+        assert!(old["binding"].get("model_limits").is_none());
+        assert!(old["binding"].get("legacy_unbounded_models").is_none());
     }
 
     #[test]
