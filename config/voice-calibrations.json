@@ -214,7 +214,7 @@
       "input_limits_version": 1,
       "resources": {
         "cpu_millicores": 4500,
-        "memory_mib": 1792,
+        "memory_mib": 2304,
         "gpu_slots": 1,
         "gpu_memory_mib": 0
       },
@@ -243,10 +243,10 @@
         }
       },
       "calibration": {
-        "evidence_id": "voice-tc192-99f4c4ea7c87426da6f94b089dd334cf",
-        "peak_memory_mib": 1402,
-        "memory_method": "Maximum of cgroup memory and host available-memory drop in the unified pool; V-Voice 0.0.20 applies the CPU override to ASR but Kokoro remains CUDA, so one GPU slot is reserved.",
-        "observed_peak_cpu_millicores": 3957,
+        "evidence_id": "voice-tc192-e2341ec4c33e4d669a68f5e2ae045abb",
+        "peak_memory_mib": 1939,
+        "memory_method": "Maximum of cgroup memory (1246 MiB) and host available-memory drop (1939 MiB) in the unified pool. Native CUDA allocations are not fully charged to the container cgroup, so the application budget is 2304 MiB despite a successful 1536 MiB cgroup run. V-Voice 0.0.20 uses CPU for ASR but CUDA for Kokoro, retaining one GPU slot.",
+        "observed_peak_cpu_millicores": 3701,
         "native_and_container_exit_confirmed": true,
         "cases": [
           "native Kokoro TTS 512 characters at speed 1",

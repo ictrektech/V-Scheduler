@@ -18,7 +18,8 @@ V-Voice 直接调用则申请自己的许可。ASR 与声纹组合必须落在�
 存在 `application_versions` 时，还须匹配控制器从 VOS 安装详情核验的应用版本；缺少或
 不匹配时不采用该记录，不能用客户端自报版本代替。修改 provider 选择或内存回收实现后，
 旧版本的测量不会自动授权新运行时。CPU 覆盖配置也须核对实际原生工厂使用的 provider。
-192 的 `0.0.20` 混合执行记录仍预约 GPU 槽；修复 CPU provider 与卸载回收后的
+192 的 `0.0.20` 混合执行记录预约 2.25 GiB RAM 和 GPU 槽；CUDA 分配不完全计入
+容器内存，不能仅凭 cgroup 硬限制调低预约。修复 CPU provider 与卸载回收后的
 `0.0.21` 记录仅覆盖 Kokoro 和 SenseVoice，使用 1.5 GiB RAM、4.5 CPU、GPU 0，
 要求 `CPU_MODELS` 为 `kokoro-multilang,paraformer-zh,sensevoice-int8`，但不批准未实测的
 Paraformer。该记录不等于 Voice 新版本已经发布或已在当前 VOS 安装。
