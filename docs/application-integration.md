@@ -375,3 +375,6 @@ V-Voice 已提供同一 VOS 内的专用授权接收端。统一应用可自动�
 ## 协议参考与历史说明
 
 本页维护操作步骤；[OpenAPI](../api/openapi-v1.json)、[调度接入标准](integration-standard.md)、[网关资源准入](resource-scheduling.md)维护字段、权限及停止契约。已发布版本的具体部署与真实验证记录见[验证记录](validation.md)。旧 vLLM 和独立 V-Router 接入地址保留兼容入口，新的接入流程统一从本文开始。
+
+
+V-Voice 已验证版本的 Python 直调在准入响应丢失后，可按[未认领许可恢复规则](v-voice-auto-binding.md#准入响应丢失时的未认领许可恢复)自动回收过期且从未认领的预约。此规则不适用于 Router 的其他推理路径，也不把租约到期当成已启动计算的停止证明。

@@ -490,6 +490,53 @@ fn build(
     Ok(state)
 }
 
+// V-Voice 0.0.21's audited Python direct path must atomically claim before
+// loading/running a model. A lost acquire receipt can therefore be recovered
+// after expiry only while no claim exists. Do not apply this to Router or tasks.
+async fn recover_unclaimed_direct(
+    db: &PgPool,
+    state: &Value,
+    version: &str,
+) -> anyhow::Result<u64> {
+    if version != "0.0.21" {
+        return Ok(0);
+    }
+    let node = state["executors"]
+        .as_array()
+        .context("executor definitions required")?
+        .iter()
+        .filter(|executor| {
+            executor["app_id"] == APP
+                && executor["task_type"] == "model.infer"
+                && executor["id"]
+                    .as_str()
+                    .is_some_and(|id| id.ends_with(".infer"))
+        })
+        .filter_map(|executor| Some((executor["id"].as_str()?, executor["node_id"].as_str()?)))
+        .collect::<std::collections::HashMap<_, _>>();
+    let mapping = state["binding"]["models"]
+        .as_object()
+        .context("direct model mappings required")?;
+    let mut tx = db.begin().await?;
+    let mut released = 0;
+    for (model, executor) in mapping {
+        let Some(executor) = executor.as_str() else {
+            continue;
+        };
+        let Some(node) = node.get(executor) else {
+            continue;
+        };
+        // PostgreSQL rechecks this predicate under the same row lock used by
+        // claim/renew. A committed claim wins even if its HTTP reply was lost;
+        // once recovery wins, every late claim sees a released permit.
+        released += sqlx::query("UPDATE vrs_permits SET state='released',evidence='vvoice_expired_without_execution_claim',released_at=clock_timestamp() WHERE app=$1 AND executor=$2 AND node=$3 AND parent_attempt IS NULL AND delegated_resources='{}'::jsonb AND NOT EXISTS(SELECT 1 FROM vrs_permit_placements x WHERE x.permit_id=vrs_permits.id) AND metadata->'placements'='[]'::jsonb AND (metadata-ARRAY['model_id','placements','upstream_url','execution_token_hash'])='{}'::jsonb AND state IN ('active','suspect') AND lease_until<=clock_timestamp() AND NOT(metadata ? 'execution_id') AND metadata->>'model_id'=$4 AND metadata->>'upstream_url'=$5 AND metadata->>'execution_token_hash' ~ '^[0-9a-f]{64}$' AND metadata->>'execution_token_hash'<>'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'")
+            .bind(APP).bind(executor).bind(node).bind(model).bind(UPSTREAM)
+            .execute(&mut *tx).await?.rows_affected();
+    }
+    tx.commit().await?;
+    Ok(released)
+}
+
 async fn reconcile(path: &Path, runtime: &Runtime, db: &PgPool) -> anyhow::Result<()> {
     let directory = path.parent().context("missing config directory")?;
     let gateway =
@@ -599,6 +646,12 @@ async fn reconcile(path: &Path, runtime: &Runtime, db: &PgPool) -> anyhow::Resul
         None
     };
     let state = build(runtime, &contract, &approvals, old.as_ref())?;
+    recover_unclaimed_direct(
+        db,
+        &state,
+        contract["_application_version"].as_str().unwrap_or(""),
+    )
+    .await?;
     if old.as_ref() != Some(&state) {
         // 轮换不能使未知计算失去预算；保持旧授权，待所有活动许可/任务明确停止。
         runtime.ready.store(false, Ordering::Release);
@@ -916,3 +969,7 @@ mod tests {
         assert!(build(&runtime, &contract, &approvals, Some(&rotated)).is_err());
     }
 }
+
+#[cfg(test)]
+#[path = "voice_unclaimed_tests.rs"]
+mod unclaimed_tests;
