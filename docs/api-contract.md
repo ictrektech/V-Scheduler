@@ -80,3 +80,4 @@ HTTP 429 的 `WAIT_MEMORY_HEADROOM` 表示观测可用 RAM 小于本次预算、
 完成同步 JSON、音频/文本流 EOF、SSE 终帧和服务端 WebSocket 关闭时，网关先等待该许可的释放调用，再向调用方交付完成边界，避免上一笔结果已返回但异步释放尚未写入 Controller，导致紧接着的新请求被 `WAIT_RESOURCE` 拒绝。释放接口不可用时保留原有失败与对账语义；截断、客户端中断或原生停止未知仍不会被当成已停止。
 
 内置 Ollama 的人工校准策略会补齐并验证批准的 `options.num_ctx`、`options.num_thread`、`options.num_gpu`、`options.num_batch` 和输出 token 上限；超界请求在申请许可前拒绝。输入字节超限的 413 错误同时给出实际字节数和已批准上限。自动估算模型与其他节点的预算不因此降低。
+人工校准的上下文、线程数和 batch 必须为正值；`0` 不得启用未实测的原生自动设置。CPU 执行的 `num_gpu=0` 保持有效。

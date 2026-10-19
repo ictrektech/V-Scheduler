@@ -1076,5 +1076,10 @@ fn calibrated_ollama_defaults_are_enforced_before_native_execution() {
         oversized["options"][key]=json!(value);
         assert!(lease::validate(&approval,&u,&mut oversized,100).is_err(),"{key} bypassed the calibrated bound");
     }
+    for key in ["num_ctx", "num_thread", "num_batch"] {
+        let mut automatic = request.clone();
+        automatic["options"][key] = json!(0);
+        assert!(lease::validate(&approval,&u,&mut automatic,100).is_err(),"{key}=0 enabled unmeasured native defaults");
+    }
     assert!(lease::validate(&approval,&u,&mut request,4097).is_err());
 }

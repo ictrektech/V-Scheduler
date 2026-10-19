@@ -416,6 +416,13 @@ pub(super) fn validate(
                 if value["options"][key].is_null() && !approved.is_null() {
                     value["options"][key] = approved.clone();
                 }
+                if key != "num_gpu"
+                    && value["options"][key].as_f64()
+                        .or_else(|| value["options"][key].as_str().and_then(|v| v.parse().ok()))
+                        == Some(0.0)
+                {
+                    return Err(Failure::new(422, format!("options.{key} must be positive for a calibrated model")));
+                }
             }
             if u.role == "generate" {
                 if value["max_tokens"].is_null() && value["max_output_tokens"].is_null() {
