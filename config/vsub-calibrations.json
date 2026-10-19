@@ -127,6 +127,68 @@
         "kernel": "6.8.12-1021-tegra",
         "sample_target_seconds": 0.25
       }
+    },
+    {
+      "architecture": "x86_64",
+      "profile": "amd-cuda",
+      "hardware": [
+        {
+          "name": "NVIDIA RTX 5880 Ada Generation",
+          "memory_type": "dedicated"
+        }
+      ],
+      "native_model": "builtin/tiny-q5_1",
+      "execution_settings": {
+        "profile": "amd-cuda",
+        "runtime": "whisper.cpp",
+        "addon": "/opt/v-sub/extraResources/addons/addon.node",
+        "backend": "cpu",
+        "parameters": {
+          "language": "auto",
+          "model": "/modelhub/ms/vivibit/v-sub-whisper-tiny-q5_1/current/ggml-tiny-q5_1.bin",
+          "use_gpu": false,
+          "flash_attn": false,
+          "no_prints": false,
+          "comma_in_time": false,
+          "translate": false,
+          "no_timestamps": false,
+          "audio_ctx": 0,
+          "token_timestamps": true,
+          "max_len": 0,
+          "print_progress": true,
+          "max_context": -1,
+          "vad": true,
+          "vad_model": "/opt/v-sub/extraResources/ggml-silero-v6.2.0.bin",
+          "vad_threshold": 0.5,
+          "vad_min_speech_duration_ms": 250,
+          "vad_min_silence_duration_ms": 100,
+          "vad_max_speech_duration_s": 0,
+          "vad_speech_pad_ms": 200,
+          "vad_samples_overlap": 0.1
+        }
+      },
+      "resources": {
+        "cpu_millicores": 4500,
+        "memory_mib": 2048,
+        "gpu_slots": 0,
+        "gpu_memory_mib": 0
+      },
+      "max_input_bytes": 1048576,
+      "model_limits": {
+        "input_bytes": 1048576,
+        "duration_seconds": 20,
+        "prompt_characters": 0
+      },
+      "limits": {},
+      "evidence": {
+        "id": "vsub-local-5369bf55e08449379f57e115645843bb",
+        "cancellation_evidence_id": "vsub-local-695efefb53764e48a06c59c44fdc0d81",
+        "peak_memory_mib": 1229,
+        "observed_peak_cpu_millicores": 4031,
+        "confirmed_stopped": true,
+        "memory_method": "Conservative sum of kernel cgroup memory.peak and host available-memory decrease across normal/cancel cases",
+        "sample_target_seconds": 0.25
+      }
     }
   ]
 }

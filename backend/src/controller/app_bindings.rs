@@ -611,6 +611,29 @@ async fn reconcile(
     Ok(())
 }
 
+fn safe_failure(error: &anyhow::Error) -> &'static str {
+    const REASONS: &[&str] = &[
+        "unsupported application calibration format",
+        "credential epoch cannot roll back",
+        "invalid measured resources",
+        "measurement and stop evidence required",
+        "duplicate model calibration",
+        "application binding waits for active or unknown execution",
+        "application executor was disabled or changed",
+        "application service identity was revoked",
+        "application binding pending acceptance",
+        "application identity required",
+        "actual application profile required",
+        "unsupported application profile",
+    ];
+    for cause in error.chain() {
+        if let Some(reason) = REASONS.iter().find(|reason| cause.to_string() == **reason) {
+            return reason;
+        }
+    }
+    "identity, transport or storage unavailable"
+}
+
 pub(super) fn start(shared: SharedApp, configuration: PathBuf) {
     if std::env::var_os("VOS_APP_VERSION").is_none() {
         return;
@@ -637,13 +660,13 @@ pub(super) fn start(shared: SharedApp, configuration: PathBuf) {
             })();
             if let Ok(approvals) = result {
                 for application in APPLICATIONS {
-                    if reconcile(&shared, &configuration, application, &client, &approvals)
-                        .await
-                        .is_err()
+                    if let Err(error) =
+                        reconcile(&shared, &configuration, application, &client, &approvals).await
                     {
                         eprintln!(
-                            "application calibrated binding pending ({})",
-                            application.slug
+                            "application calibrated binding pending ({}): {}",
+                            application.slug,
+                            safe_failure(&error)
                         );
                     }
                 }

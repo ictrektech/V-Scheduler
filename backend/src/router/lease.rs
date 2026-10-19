@@ -174,6 +174,8 @@ pub(super) async fn call(
             },
             if value["code"] == "WAIT_STOP_CONFIRMATION" {
                 "previous inference is awaiting native stop confirmation; recovery is in progress"
+            } else if value["code"] == "WAIT_MEMORY_HEADROOM" {
+                "insufficient available memory after the system reserve; unload idle models or use a smaller model/context"
             } else if status == StatusCode::TOO_MANY_REQUESTS {
                 "local resources busy; retry later"
             } else {
@@ -496,6 +498,30 @@ pub(super) fn validate(
     }
     Ok(())
 }
+// Retry only a rejected admission while the controller verifies the previous
+// native stop. No provider request has started and no resource is released here.
+pub(super) async fn admit(
+    g: &Gateway,
+    token: &str,
+    path: &str,
+    body: Value,
+    wait: Duration,
+) -> Api<Value> {
+    let deadline = tokio::time::Instant::now() + wait;
+    loop {
+        match call(g, token, path, body.clone(), true).await {
+            Err(error) if error.code.as_deref() == Some("WAIT_STOP_CONFIRMATION") => {
+                let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+                if remaining.is_zero() {
+                    return Err(error);
+                }
+                tokio::time::sleep(remaining.min(Duration::from_millis(200))).await;
+            }
+            result => return result,
+        }
+    }
+}
+
 pub(super) async fn acquire(
     g: Arc<Gateway>,
     approval: &Approval,
@@ -539,7 +565,7 @@ pub(super) async fn acquire(
         }
         "/permits"
     };
-    let response = call(&g, &token, path, body, true).await?;
+    let response = admit(&g, &token, path, body, Duration::from_secs(8)).await?;
     let permit = text(&response, "permit_id").to_string();
     if permit.is_empty() {
         return Err(Failure::new(503, "invalid local permit"));

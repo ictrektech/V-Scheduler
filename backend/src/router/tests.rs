@@ -914,3 +914,84 @@ async fn browser_origin_and_compression_headers_do_not_reach_the_native_provider
     server.abort();
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[tokio::test]
+async fn admission_waits_for_native_stop_confirmation_before_sending_new_inference() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let seen = attempts.clone();
+    let controller = Router::new().route(
+        "/api/v1/permits",
+        post(move || {
+            let attempt = seen.fetch_add(1, Ordering::SeqCst);
+            async move {
+                if attempt < 2 {
+                    (
+                        StatusCode::TOO_MANY_REQUESTS,
+                        Json(json!({"code":"WAIT_STOP_CONFIRMATION"})),
+                    )
+                } else {
+                    (
+                        StatusCode::OK,
+                        Json(json!({"code":"OK","data":{"permit_id":"confirmed-permit"}})),
+                    )
+                }
+            }
+        }),
+    );
+    let root = temp();
+    let g = gateway(&root, controller);
+    let approval = lease::Approval {
+        config: json!({"token":"fixture-private-token"}),
+        policy: json!({"mode":"permit","executor_id":"fixture"}),
+    };
+    let result = lease::acquire(
+        g,
+        &approval,
+        &upstream("fixture"),
+        "echo",
+        &HeaderMap::new(),
+        &principal("alice"),
+        false,
+    )
+    .await;
+    assert!(
+        result.is_ok(),
+        "a confirmed stop should recover within the same request"
+    );
+    assert_eq!(attempts.load(Ordering::SeqCst), 3);
+    drop(result);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
+async fn admission_does_not_retry_capacity_denial_or_release_an_unknown_stop() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    for code in ["WAIT_RESOURCE", "WAIT_STOP_CONFIRMATION"] {
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let seen = attempts.clone();
+        let controller = Router::new().route(
+            "/api/v1/permits",
+            post(move || {
+                seen.fetch_add(1, Ordering::SeqCst);
+                async move { (StatusCode::TOO_MANY_REQUESTS, Json(json!({"code":code}))) }
+            }),
+        );
+        let root = temp();
+        let g = gateway(&root, controller);
+        let error = lease::admit(
+            &g,
+            "fixture",
+            "/permits",
+            json!({}),
+            Duration::from_millis(30),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.code.as_deref(), Some(code));
+        if code == "WAIT_RESOURCE" {
+            assert_eq!(attempts.load(Ordering::SeqCst), 1);
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+}

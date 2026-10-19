@@ -1,4 +1,5 @@
 export const messages:Record<string,[string,string]>={
+"可用内存不足，请卸载空闲模型或选择更小的模型配置":["Insufficient available memory. Unload idle models or choose a smaller model configuration.","可用記憶體不足，請卸載閒置模型或選擇更小的模型設定"],
 "等待停止确认":["Waiting for confirmed stop", "等待停止確認"],
 "镜像信息来自当前安装配置；Scheduler 内置 Router、模型仓库与界面。":["Image versions come from the installed configuration; Scheduler includes Router, model management and the UI.", "鏡像資訊來自目前安裝設定；Scheduler 內建 Router、模型倉庫與介面。"],
 "关于":["About", "關於"],

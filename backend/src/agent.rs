@@ -216,6 +216,19 @@ mod tests {
         );
     }
 }
+pub(crate) fn available_memory_mib() -> Option<i64> {
+    let memory = std::fs::read_to_string("/proc/meminfo").ok()?;
+    memory
+        .lines()
+        .find(|line| line.starts_with("MemAvailable:"))?
+        .split_whitespace()
+        .nth(1)?
+        .parse::<i64>()
+        .ok()
+        .filter(|n| *n >= 0)
+        .map(|n| n / 1024)
+}
+
 pub(crate) fn host_probe(previous: &mut Option<CpuSnapshot>) -> Value {
     let observed_at = chrono::Utc::now();
     let current = cpu_sample().unwrap_or_default();

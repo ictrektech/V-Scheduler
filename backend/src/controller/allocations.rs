@@ -38,8 +38,10 @@ pub(super) async fn room(
     node: &PgRow,
     cost: &Resources,
     executor: &str,
+    memory: Option<i64>,
 ) -> Api<()> {
     ready(node, executor)?;
+    let report = admission_report(&node.get("report"), memory);
     let id: String = node.get("id");
     let capacity: Resources =
         serde_json::from_value(node.get("capacities")).map_err(|_| invalid())?;
@@ -62,20 +64,56 @@ pub(super) async fn room(
     .map_err(unavailable)?;
     let reserve: Resources =
         serde_json::from_value(node.get("safety_reserve")).map_err(|_| invalid())?;
-    if queued
-        || !cost.fits(&used, &capacity)
-        || !cost.fits_guarded(&used, &node.get("report"), &reserve)
-    {
+    if queued || !cost.fits(&used, &capacity) || !cost.fits_guarded(&used, &report, &reserve) {
         let pending_stop: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM vrs_permits WHERE node=$1 AND state='suspect') OR EXISTS(SELECT 1 FROM vrs_reservations WHERE node=$1 AND state='suspect')")
             .bind(&id).fetch_one(&mut **tx).await.map_err(unavailable)?;
         return Err(Error(
             StatusCode::TOO_MANY_REQUESTS,
             if pending_stop {
                 "WAIT_STOP_CONFIRMATION"
+            } else if !queued
+                && cost.fits(&used, &capacity)
+                && report["memory_available_mib"].as_i64().unwrap_or(0)
+                    < cost.host_memory_need(&used, &report, &reserve)
+            {
+                "WAIT_MEMORY_HEADROOM"
             } else {
                 "WAIT_RESOURCE"
             },
         ));
     }
     Ok(())
+}
+
+// Refresh only local host RAM; never make stale CPU/GPU telemetry look fresh.
+fn admission_report(snapshot: &Value, memory: Option<i64>) -> Value {
+    let mut report = snapshot.clone();
+    if let Some(memory) = memory.filter(|n| *n >= 0) {
+        report["memory_available_mib"] = json!(memory);
+    }
+    report
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn fresh_local_memory_recovers_after_unload_without_refreshing_other_telemetry() {
+        let old = json!({"observed_at":"old-sample","memory_available_mib":1024,"memory_total_mib":16384,"cpu_logical_count":8,"cpu_used_percent":10,"gpus":[]});
+        let current = admission_report(&old, Some(5120));
+        assert_eq!(current["observed_at"], old["observed_at"]);
+        assert_eq!(current["gpus"], old["gpus"]);
+        let request = Resources {
+            memory_mib: 2048,
+            ..Default::default()
+        };
+        assert!(!request.fits_guarded(&Resources::default(), &old, &Resources::default()));
+        assert!(request.fits_guarded(&Resources::default(), &current, &Resources::default()));
+        assert_eq!(admission_report(&old, None), old);
+        assert!(!request.fits_guarded(
+            &Resources::default(),
+            &admission_report(&old, Some(512)),
+            &Resources::default()
+        ));
+    }
 }

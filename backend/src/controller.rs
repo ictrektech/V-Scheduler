@@ -1164,7 +1164,19 @@ async fn permit_acquire(
             .iter()
             .find(|node| node.get::<String, _>("id") == part.node_id)
             .ok_or(invalid())?;
-        allocations::room(&mut tx, node, &part.resources, &e.id).await?;
+        let local_memory = if std::env::var("SCHEDULER_EMBEDDED_AGENT").as_deref() != Ok("false")
+            && std::env::var_os("VOS_APP_VERSION").is_some()
+            && a.config
+                .local_agent
+                .as_ref()
+                .and_then(|agent| agent["node_id"].as_str())
+                == Some(part.node_id.as_str())
+        {
+            crate::agent::available_memory_mib()
+        } else {
+            None
+        };
+        allocations::room(&mut tx, node, &part.resources, &e.id, local_memory).await?;
     }
     let id = Uuid::new_v4().to_string();
     sqlx::query(

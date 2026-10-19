@@ -1,7 +1,38 @@
 {
- "version":"1",
- "category":"v-scheduler",
- "required_error_fields":["code","category","data","msg","version","request_id","error"],
- "http_codes":{"400":"INVALID_REQUEST","401":"UNAUTHENTICATED","403":"FORBIDDEN","404":"NOT_FOUND","405":"METHOD_NOT_ALLOWED","409":"STATE_CONFLICT","413":"REQUEST_TOO_LARGE","422":"INVALID_REQUEST","429":"WAIT_RESOURCE","500":"INTERNAL_ERROR","502":"UPSTREAM_UNAVAILABLE","503":"TEMPORARILY_UNAVAILABLE","504":"TEMPORARILY_UNAVAILABLE"},
- "notes":["Specific Scheduler business codes are preserved across the gateway.","Upstream service credentials are not caller credentials; their rejection remains HTTP 503 at the inference edge.","Legacy error.message, model-management detail, and Messages type=error are preserved.","Successful legacy payloads and upstream inference streams remain unchanged."]
+  "version": "1",
+  "category": "v-scheduler",
+  "required_error_fields": [
+    "code",
+    "category",
+    "data",
+    "msg",
+    "version",
+    "request_id",
+    "error"
+  ],
+  "http_codes": {
+    "400": "INVALID_REQUEST",
+    "401": "UNAUTHENTICATED",
+    "403": "FORBIDDEN",
+    "404": "NOT_FOUND",
+    "405": "METHOD_NOT_ALLOWED",
+    "409": "STATE_CONFLICT",
+    "413": "REQUEST_TOO_LARGE",
+    "422": "INVALID_REQUEST",
+    "429": "WAIT_RESOURCE",
+    "500": "INTERNAL_ERROR",
+    "502": "UPSTREAM_UNAVAILABLE",
+    "503": "TEMPORARILY_UNAVAILABLE",
+    "504": "TEMPORARILY_UNAVAILABLE"
+  },
+  "notes": [
+    "Specific Scheduler business codes are preserved across the gateway.",
+    "Upstream service credentials are not caller credentials; their rejection remains HTTP 503 at the inference edge.",
+    "Legacy error.message, model-management detail, and Messages type=error are preserved.",
+    "Successful legacy payloads and upstream inference streams remain unchanged."
+  ],
+  "business_codes": {
+    "WAIT_MEMORY_HEADROOM": "Insufficient observed available RAM after safety reserve and outstanding commitments. Unload idle models or explicitly select a lower-memory execution configuration.",
+    "WAIT_STOP_CONFIRMATION": "Prior native computation has not yet supplied a valid stop receipt; the inference gateway retries rejected admission for up to eight seconds without sending a provider request."
+  }
 }

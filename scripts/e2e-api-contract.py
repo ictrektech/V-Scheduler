@@ -65,7 +65,7 @@ def failure(origin,path,status,token=None,body=None):
  return v
 try:
  env=private('pg.env',f'POSTGRES_USER=scheduler\nPOSTGRES_PASSWORD={keys["db"]}\nPOSTGRES_DB=scheduler\n')
- subprocess.run(['docker','run','-d','--name',container,'--env-file',str(env),'-p',f'127.0.0.1:{ports["db"]}:5432','registry.ictrek.internal/library/postgres:18'],check=True,stdout=subprocess.DEVNULL)
+ subprocess.run(['docker','run','-d','--name',container,'--env-file',str(env),'-p',f'127.0.0.1:{ports["db"]}:5432',os.environ.get('SCHEDULER_TEST_PG_IMAGE','registry.ictrek.internal/library/postgres:18')],check=True,stdout=subprocess.DEVNULL)
  for _ in range(60):
   if subprocess.run(['docker','exec',container,'pg_isready','-h','127.0.0.1','-U','scheduler'],capture_output=True).returncode==0:break
   time.sleep(.2)

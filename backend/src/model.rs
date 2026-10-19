@@ -65,6 +65,18 @@ impl Resources {
     // Keep VOS responsive even when approved reservations have not materialized
     // in the latest sample yet. Count all commitments conservatively against
     // available memory; observed utilization is never a free capacity promise.
+    pub fn host_memory_need(&self, used: &Self, observed: &Value, reserve: &Self) -> i64 {
+        let mut committed = used.clone();
+        committed.add(self);
+        let unified = observed["gpus"]
+            .as_array()
+            .is_some_and(|gpus| gpus.iter().any(|gpu| gpu["memory_type"] == "unified"));
+        committed
+            .memory_mib
+            .saturating_add(reserve.safety_floor(observed).memory_mib)
+            .saturating_add(if unified { committed.gpu_memory_mib } else { 0 })
+    }
+
     pub fn fits_guarded(&self, used: &Self, observed: &Value, reserve: &Self) -> bool {
         if !self.valid() || !used.valid() || !reserve.valid() {
             return false;
@@ -91,10 +103,7 @@ impl Resources {
         let unified = observed["gpus"]
             .as_array()
             .is_some_and(|gpus| gpus.iter().any(|gpu| gpu["memory_type"] == "unified"));
-        let host_need = committed
-            .memory_mib
-            .saturating_add(headroom.memory_mib)
-            .saturating_add(if unified { committed.gpu_memory_mib } else { 0 });
+        let host_need = self.host_memory_need(used, observed, reserve);
         if observed["memory_available_mib"].as_i64().unwrap_or(0) < host_need {
             return false;
         }

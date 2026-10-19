@@ -89,7 +89,7 @@
       "input_limits_version": 1,
       "resources": {
         "cpu_millicores": 4500,
-        "memory_mib": 4096,
+        "memory_mib": 2304,
         "gpu_slots": 1,
         "gpu_memory_mib": 0
       },
@@ -118,10 +118,10 @@
         }
       },
       "calibration": {
-        "evidence_id": "voice-tc192-117c8124374043b3aaa908b4fdcb3aed",
-        "peak_memory_mib": 3455,
-        "memory_method": "conservative sum of sampled cgroup current and host available-memory decrease; not kernel cgroup high-water",
-        "observed_peak_cpu_millicores": 3988,
+        "evidence_id": "voice-tc192-73f5ebe1112d49c189c737ce85087bf3",
+        "peak_memory_mib": 1911,
+        "memory_method": "Maximum of cgroup memory and host available-memory decrease in the same unified pool, across two full 512-character TTS / 20-second ASR runs; 2304 MiB calibration cgroup bound verified",
+        "observed_peak_cpu_millicores": 3977,
         "native_and_container_exit_confirmed": true,
         "cases": [
           "native Kokoro TTS 512 characters at speed 1",
@@ -130,7 +130,8 @@
         ],
         "observed_concurrency": 1,
         "kernel": "5.15.148-tegra",
-        "sample_target_seconds": 0.25
+        "sample_target_seconds": 0.25,
+        "repeat_evidence_id": "voice-tc192-3584d94a724a4aa2a2d2fe54c4293f45"
       }
     },
     {
@@ -190,6 +191,70 @@
         ],
         "observed_concurrency": 1,
         "kernel": "5.15.0-118-generic",
+        "sample_target_seconds": 0.25
+      }
+    },
+    {
+      "provider": "cuda",
+      "cpu_models": [
+        "kokoro-multilang",
+        "paraformer-zh",
+        "sensevoice-int8"
+      ],
+      "num_threads": 4,
+      "max_concurrent_inference": 2,
+      "id": "orin-voice-cpu-bounded-v1",
+      "architecture": "aarch64",
+      "hardware": [
+        {
+          "name": "Orin (nvgpu)",
+          "memory_type": "unified"
+        }
+      ],
+      "input_limits_version": 1,
+      "resources": {
+        "cpu_millicores": 4500,
+        "memory_mib": 1792,
+        "gpu_slots": 0,
+        "gpu_memory_mib": 0
+      },
+      "max_input_bytes": 1048576,
+      "limits": {
+        "n": 1,
+        "batch_count": 1
+      },
+      "sync_models": [
+        "kokoro-multilang",
+        "sensevoice-int8"
+      ],
+      "async_models": [],
+      "secondary_models": {},
+      "model_limits": {
+        "kokoro-multilang": {
+          "text_characters": 512,
+          "speed_min": 1.0,
+          "speed_max": 1.0
+        },
+        "sensevoice-int8": {
+          "duration_seconds": 20,
+          "sample_rate": 24000,
+          "hotwords_characters": 0,
+          "input_bytes": 1048576
+        }
+      },
+      "calibration": {
+        "evidence_id": "voice-tc192-99f4c4ea7c87426da6f94b089dd334cf",
+        "peak_memory_mib": 1402,
+        "memory_method": "Maximum of cgroup memory and host available-memory drop in the unified pool; native CPU pinned models verified inside a 1792 MiB cgroup",
+        "observed_peak_cpu_millicores": 3957,
+        "native_and_container_exit_confirmed": true,
+        "cases": [
+          "native Kokoro TTS 512 characters at speed 1",
+          "SenseVoice ASR 20 seconds at 24kHz",
+          "both model runtimes unloaded"
+        ],
+        "observed_concurrency": 1,
+        "kernel": "5.15.148-tegra",
         "sample_target_seconds": 0.25
       }
     }
