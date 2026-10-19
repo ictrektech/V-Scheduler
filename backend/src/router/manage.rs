@@ -396,7 +396,7 @@ pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) ->
             "/api/v1/auth/me"=>return Ok(Json(json!({"identity":{"sub":id.owner,"username":id.username,"email":id.email,"admin":id.admin},"auth_method":if env("V_ROUTER_AUTH_DISABLED","")=="true"{"auth_disabled"}else if id.admin{"gateway_key"}else{"vos_oidc"},"permissions":["inference","management","upstream_resources"],"resource_isolation":true,"registration_scopes":["public","private"]})).into_response()),
             "/api/v1/upstreams"=>return Ok(Json(json!({"upstreams":upstream_views(&r,id)})).into_response()),
             "/api/v1/models"=>return Ok(Json(json!({"models":model_views(&r,id)})).into_response()),
-            "/api/v1/status"=>return Ok(Json(json!({"version":version(),"upstreams_total":r.upstreams.values().filter(|u|u.visible(id)).count(),"upstreams_healthy":r.upstreams.values().filter(|u|u.visible(id)&&u.live()).count(),"models":r.list_models(id).len(),"requests_total":g.usage.lock().unwrap().len(),"key_required":env("V_ROUTER_REQUIRE_KEY","")=="true","oidc_enabled":true,"user":id.username,"is_admin":id.admin,"base_urls":{"internal":"http://v-router:8080/v1","lan":format!("http://<vos-host>:{}/v1",env("V_ROUTER_HOST_PORT","22888")),"same_origin":"/api/com.ictrek.v-scheduler/v1"}})).into_response()),
+            "/api/v1/status"=>return Ok(Json(json!({"version":version(),"upstreams_total":r.upstreams.values().filter(|u|u.visible(id)).count(),"upstreams_healthy":r.upstreams.values().filter(|u|u.visible(id)&&u.live()).count(),"models":r.list_models(id).len(),"requests_total":g.usage.lock().unwrap().len(),"key_required":env("V_ROUTER_REQUIRE_KEY","")=="true","oidc_enabled":true,"user":id.username,"is_admin":id.admin,"base_urls":gateway_base_urls()})).into_response()),
             "/api/v1/usage"=>return Ok(Json(g.usage.lock().unwrap().snapshot(request.uri().query().unwrap_or(""))).into_response()),
             "/api/v1/apidoc"=>{let query=request.uri().query().unwrap_or("");let mut response=Json(documentation(query)).into_response();response.headers_mut().insert("cache-control","no-store".parse().unwrap());response.headers_mut().insert("content-language",if usage::url_query(query,"lang").is_some_and(|s|s.to_ascii_lowercase().starts_with("en")){"en"}else{"zh-CN"}.parse().unwrap());return Ok(response);},
             "/api/v1/openapi.json"=>return Ok(Json(openapi(request.uri().query().unwrap_or(""))).into_response()),
@@ -761,6 +761,14 @@ async fn register(g: &Gateway, id: &Identity, p: Value) -> Api<Response> {
             .into_response(),
     )
 }
+fn gateway_base_urls() -> Value {
+    json!({
+        "internal": "http://v-scheduler-gateway:8080/v1",
+        "compatibility_aliases": ["http://v-router:8080/v1", "http://v-router-backend:8080/v1"],
+        "lan": format!("http://<vos-host>:{}/v1", env("V_ROUTER_HOST_PORT", "22888")),
+        "same_origin": "/api/com.ictrek.v-scheduler/v1"
+    })
+}
 fn documentation(query: &str) -> Value {
     let english =
         usage::url_query(query, "lang").is_some_and(|s| s.to_ascii_lowercase().starts_with("en"));
@@ -771,6 +779,7 @@ fn documentation(query: &str) -> Value {
     };
     let mut doc: Value = serde_json::from_str(source).expect("validated gateway documentation");
     doc["version"] = json!(version());
+    doc["base_urls"] = gateway_base_urls();
     doc["key_required"] = json!(env("V_ROUTER_REQUIRE_KEY", "") == "true");
     doc["oidc_enabled"] = json!(env("V_ROUTER_AUTH_DISABLED", "") != "true");
     doc

@@ -1,4 +1,5 @@
 export const messages:Record<string,[string,string]>={
+"网关代理":["Gateway proxy", "閘道代理"],
 "正式 host alias : 内部端口":["Primary host alias : internal port", "正式 host alias : 內部連接埠"],
 "其他正式别名 / 兼容别名":["Other primary aliases / compatibility aliases", "其他正式別名 / 相容別名"],
 "兼容":["Compatibility", "相容"],

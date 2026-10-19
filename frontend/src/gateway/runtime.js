@@ -967,7 +967,8 @@ const app = {
     VRouterI18n.bind($("apidocIntro"), "innerHTML", () => table(
       [VRouterI18n.t("调用方"), VRouterI18n.t("地址")],
       [
-        [VRouterI18n.t("VOS 内应用（免验证）"), `<span class="mono">${esc(bases.internal)}</span><div class="hint">${VRouterI18n.t("容器网络直连")}，${VRouterI18n.t("内网免鉴权")}；${VRouterI18n.t("携带")} fastpath token ${VRouterI18n.t("则按用户归集")}</div>`],
+        [VRouterI18n.t("VOS 内应用（正式地址）"), `<span class="mono">${esc(bases.internal)}</span><div class="hint">${VRouterI18n.t("容器网络直连")}，${VRouterI18n.t("内网免鉴权")}；${VRouterI18n.t("携带")} fastpath token ${VRouterI18n.t("则按用户归集")}</div>`],
+        [VRouterI18n.t("VOS 内应用（兼容地址）"), (bases.compatibility_aliases || []).map(url => `<div class="mono">${esc(url)}</div>`).join("") + `<div class="hint">${VRouterI18n.t("新旧地址指向同一统一容器的网关端口，旧地址保留供已有应用使用。")}</div>`],
         [VRouterI18n.t("局域网客户端"), `<span class="mono">${esc(lanBaseURL(bases))}</span><div class="hint">host-port ${VRouterI18n.t("为安装参数")} V_ROUTER_HOST_PORT（${VRouterI18n.t("默认")} 22888）</div>`],
         [VRouterI18n.t("同域页面 / 其他 VOS 应用前端"), `<span class="mono">${esc(bases.same_origin)}</span><div class="hint">${VRouterI18n.t("携带自身")} VOS fastpath token ${VRouterI18n.t("即可")}，${VRouterI18n.t("无需向")} V-Router ${VRouterI18n.t("注册")}</div>`],
         [
@@ -977,7 +978,7 @@ const app = {
             : VRouterI18n.t("内网免鉴权；宿主机端口暴露到不可信网络时建议在安装参数中开启"),
         ],
       ],
-    ) + `<div class="hint" style="margin-top:10px">${VRouterI18n.t("以下文档由运行中的网关实时生成")}（v${esc(doc.version)}），${VRouterI18n.t("与当前版本支持的接口保持一致")}。</div>`);
+    ) + `<p class="hint">${VRouterI18n.t("多个 host alias 是同一个容器的 DNS 名称，按原服务角色保留；不会增加容器。8080、38120、6005 分别是网关、调度和模型管理入口，三个 Ollama 实例各自使用独立容器。")}</p>` + `<div class="hint" style="margin-top:10px">${VRouterI18n.t("以下文档由运行中的网关实时生成")}（v${esc(doc.version)}），${VRouterI18n.t("与当前版本支持的接口保持一致")}。</div>`);
 
     VRouterI18n.bind($("apidocIdentity"), "innerHTML", () => (doc.identity || [])
       .map(

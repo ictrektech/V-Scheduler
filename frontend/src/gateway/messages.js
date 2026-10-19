@@ -445,5 +445,9 @@ export const VRouterMessages = {
   "先点“测试”获取模型列表；选择后会切换到单模型注册，可再选择能力预设。": {"en": "Test fetches the model list. Selecting a model switches to single-model registration, where you can choose a capability preset."},
   "对话 / 生成（Chat + Responses + Messages）": {"en": "Chat / generation (Chat + Responses + Messages)"},
   "单个模型只能按模型真实能力选择；不要给单个模型声明它实际不支持的接口。": {"en": "Select only the model’s actual capabilities. Do not declare unsupported endpoints."},
-  "后端服务应在过期前调用 heartbeat。界面注册适合静态服务；动态副本建议用 API 自动注册。": {"en": "Backend services should call heartbeat before expiry. UI registration suits static services; use the API to register dynamic replicas automatically."}
+  "后端服务应在过期前调用 heartbeat。界面注册适合静态服务；动态副本建议用 API 自动注册。": {"en": "Backend services should call heartbeat before expiry. UI registration suits static services; use the API to register dynamic replicas automatically."},
+  "VOS 内应用（正式地址）": {"en": "VOS apps (primary address)", "zh-TW": "VOS 內應用（正式位址）"},
+  "VOS 内应用（兼容地址）": {"en": "VOS apps (compatibility addresses)", "zh-TW": "VOS 內應用（相容位址）"},
+  "新旧地址指向同一统一容器的网关端口，旧地址保留供已有应用使用。": {"en": "Both primary and compatibility addresses reach the gateway port of the same unified container. Existing apps can keep using the old addresses.", "zh-TW": "新舊位址指向同一統一容器的閘道連接埠，舊位址保留供既有應用使用。"},
+  "多个 host alias 是同一个容器的 DNS 名称，按原服务角色保留；不会增加容器。8080、38120、6005 分别是网关、调度和模型管理入口，三个 Ollama 实例各自使用独立容器。": {"en": "Multiple host aliases are DNS names for the same container, retained for the original service roles; they do not add containers. Ports 8080, 38120 and 6005 serve the gateway, scheduler and model manager. The three Ollama instances each use a separate container.", "zh-TW": "多個 host alias 是同一容器的 DNS 名稱，按原服務角色保留；不會增加容器。8080、38120、6005 分別是閘道、排程和模型管理入口，三個 Ollama 執行個體各自使用獨立容器。"}
 };
