@@ -286,7 +286,7 @@
       "input_limits_version": 1,
       "resources": {
         "cpu_millicores": 4500,
-        "memory_mib": 1536,
+        "memory_mib": 1792,
         "gpu_slots": 0,
         "gpu_memory_mib": 0
       },
@@ -315,22 +315,23 @@
         }
       },
       "calibration": {
-        "evidence_id": "voice-tc192-60138d2a104a4973b48ce1be1e498fd2",
-        "peak_memory_mib": 1088,
-        "memory_method": "Maximum of cgroup memory (967 MiB) and host available-memory drop (1088 MiB); native CPU factories verified under a 1536 MiB memory/swap limit and real outer permit. Three complete rounds; source 61abf55 mounted read-only on the installed L4T native runtime.",
-        "observed_peak_cpu_millicores": 4025,
+        "evidence_id": "voice-tc192-71684af2b0c7454586315b47bea6d82f",
+        "image_id": "sha256:2738549f5984b29926e928f4c3ac6bbdc02e73066fa0d77953b8d3d9ab76c3a3",
+        "peak_memory_mib": 1498,
+        "memory_method": "Maximum of sampled cgroup memory (1498 MiB) and host available-memory drop (971 MiB). Three native CPU rounds completed under a 1536 MiB memory/swap hard limit and real outer permit; approve 1792 MiB to retain service/runtime margin. Final L4T image tested without source mounts.",
+        "observed_peak_cpu_millicores": 4023,
         "native_and_container_exit_confirmed": true,
         "cases": [
           "native Kokoro TTS 512 characters at speed 1, three rounds",
           "SenseVoice ASR 20 seconds at 24kHz, three rounds",
           "six native factory provider assertions are CPU",
-          "both runtimes unloaded after each round; final process RSS about 82 MiB"
+          "both runtimes unloaded after each round; process RSS returns to 85-88 MiB"
         ],
         "observed_concurrency": 1,
         "kernel": "5.15.148-tegra",
         "sample_target_seconds": 0.25,
         "provider_verification": {
-          "source_commit": "61abf55",
+          "runtime_py_sha256": "0de2b8a42d0e86c943383d2472f0f7e33a88d2946bbd5c12fd9998ec3f4c3c61",
           "kokoro-multilang": "cpu",
           "sensevoice-int8": "cpu",
           "uninstalled_models_tested": false

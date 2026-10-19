@@ -20,7 +20,7 @@ V-Voice 直接调用则申请自己的许可。ASR 与声纹组合必须落在�
 旧版本的测量不会自动授权新运行时。CPU 覆盖配置也须核对实际原生工厂使用的 provider。
 192 的 `0.0.20` 混合执行记录预约 2.25 GiB RAM 和 GPU 槽；CUDA 分配不完全计入
 容器内存，不能仅凭 cgroup 硬限制调低预约。修复 CPU provider 与卸载回收后的
-`0.0.21` 记录仅覆盖 Kokoro 和 SenseVoice，使用 1.5 GiB RAM、4.5 CPU、GPU 0，
+`0.0.21` 记录仅覆盖 Kokoro 和 SenseVoice，使用 1.75 GiB RAM、4.5 CPU、GPU 0，
 要求 `CPU_MODELS` 为 `kokoro-multilang,paraformer-zh,sensevoice-int8`，但不批准未实测的
 Paraformer。该记录不等于 Voice 新版本已经发布或已在当前 VOS 安装。
 模型自报的权重大小不授予资源；声明支持但文件未就绪的模型也不会建立绑定。
@@ -41,6 +41,17 @@ Paraformer。该记录不等于 Voice 新版本已经发布或已在当前 VOS �
 
 节点遥测、执行器健康与资源余量仍由原有准入逻辑判断。发现成功、绑定成功均不代表
 当前有空闲资源，也不代表所有目录模型已经获准运行。
+
+原生音乐仍走 V-Voice 的同一组直接调用、网关许可认领和原生停止契约，但不能借用
+语音模型的审批。声明为 `kind=music` 的同步模型要求审批中的 `music` 与 discovery 的
+`execution_settings.music` 完全一致，并具备输入限制协议 1；控制器只在实际批准了音乐
+模型时下发这组执行设置。线程、步数或其他音乐设置变化后，旧音乐审批不再匹配，
+不影响仍匹配的语音模型。
+
+每个音乐模型的 `model_limits` 必须完整包含 `duration_seconds`、`prompt_characters`、
+`negative_prompt_characters`；前两项为正，负提示允许 0。网关同时使用该模型实测的时长
+上限，V-Voice 在计算前核验三项边界。未完成真实权重、候选镜像、输入范围及原生停止
+校准的模型不添加默认审批；目录可见或 adapter 导入成功不能替代真实生成与取消验收。
 
 ## 持久化与重试
 

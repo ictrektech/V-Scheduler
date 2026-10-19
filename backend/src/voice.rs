@@ -266,6 +266,7 @@ fn build(
     let mut executors = Vec::new();
     let mut adapters = Vec::new();
     let mut gateway_ids = Vec::new();
+    let mut music_settings = None;
     for approval in approvals["approvals"]
         .as_array()
         .context("missing approvals")?
@@ -355,7 +356,10 @@ fn build(
                 .filter(|id| {
                     declared
                         .iter()
-                        .any(|row| row["id"] == *id && row["task_type"] == task_type)
+                        .any(|row| row["id"] == *id && row["task_type"] == task_type
+                            && (row["kind"] != "music" || (task_type == "model.infer"
+                                && bounded_inputs && approval["music"].is_object()
+                                && approval["music"] == contract["execution_settings"]["music"])))
                         && contract[if task_type == "model.infer" {
                             "_ready_sync"
                         } else {
@@ -384,6 +388,7 @@ fn build(
             adapters.push(json!({"id":executor,"url":ORIGIN,"token":executor_token,"health_url":format!("{ORIGIN}/health")}));
             for model in approved {
                 ensure!(!models.contains_key(model), "duplicate model approval");
+                let is_music = declared.iter().any(|row| row["id"] == model && row["kind"] == "music");
                 if bounded_inputs {
                     let limits = approval["model_limits"][model]
                         .as_object()
@@ -395,6 +400,14 @@ fn build(
                                 .is_some_and(|n| n.is_finite() && n >= 0.0)),
                         "invalid calibrated model input limits"
                     );
+                    if is_music {
+                        ensure!(limits.len() == 3
+                            && limits.get("duration_seconds").and_then(Value::as_f64).is_some_and(|v| (10.0..=300.0).contains(&v))
+                            && limits.get("prompt_characters").and_then(Value::as_f64).is_some_and(|v| (1.0..=4000.0).contains(&v))
+                            && limits.get("negative_prompt_characters").and_then(Value::as_f64).is_some_and(|v| (0.0..=4000.0).contains(&v)),
+                            "complete calibrated music input limits required");
+                        music_settings = Some(approval["music"].clone());
+                    }
                     model_limits.insert(model.to_owned(), json!(limits));
                 }
                 models.insert(model.to_owned(), json!(executor));
@@ -416,7 +429,12 @@ fn build(
                         })
                         .unwrap_or_default();
                     secondary_models.insert(model.to_owned(), json!(secondary));
-                    policies.insert(format!("app-v-voice/{model}"),json!({"mode":"permit","executor_id":gateway,"completion":"synchronous","max_input_bytes":max_input,"limits":approval["limits"],"secondary_models":secondary}));
+                    let mut limits = approval["limits"].clone();
+                    if is_music {
+                        limits["duration"] = approval["model_limits"][model]["duration_seconds"].clone();
+                        limits["duration_seconds"] = limits["duration"].clone();
+                    }
+                    policies.insert(format!("app-v-voice/{model}"),json!({"mode":"permit","executor_id":gateway,"completion":"synchronous","max_input_bytes":max_input,"limits":limits,"secondary_models":secondary}));
                 }
             }
             if task_type == "model.infer" {
@@ -444,6 +462,9 @@ fn build(
     if !model_limits.is_empty() {
         state["binding"]["input_limits_version"] = json!(1);
         state["binding"]["model_limits"] = json!(model_limits);
+    }
+    if let Some(music) = music_settings {
+        state["binding"]["execution_settings"] = json!({"music":music});
     }
     if let Some(old) = old {
         let revision = old["binding"]["binding_revision"]
@@ -682,6 +703,38 @@ mod tests {
         contract["_application_version"] = json!("0.0.21");
         assert!(build(&runtime, &contract, &approvals, None).is_err());
         approvals["approvals"][0]["application_versions"] = json!([null]);
+        assert!(build(&runtime, &contract, &approvals, None).is_err());
+    }
+
+    #[test]
+    fn music_binding_requires_measured_runtime_and_complete_input_limits() {
+        let (runtime, mut contract, mut approvals) = fixtures();
+        contract["input_limits_version"] = json!(1);
+        contract["sync_models"].as_array_mut().unwrap().push(json!({"id":"music-fixture","kind":"music","task_type":"model.infer"}));
+        contract["_ready_sync"].as_array_mut().unwrap().push(json!("music-fixture"));
+        let music = json!({"provider":"cpu","torch_threads":4,"torch_interop_threads":1,"max_concurrent_jobs":1,"max_loaded_models":1,"steps":8,"runtime":"pytorch-music-v1"});
+        contract["execution_settings"] = json!({"music":music});
+        let mut measured = approvals["approvals"][0].clone();
+        measured["id"] = json!("measured-music");
+        measured["sync_models"] = json!(["music-fixture"]);
+        measured["async_models"] = json!([]);
+        measured["secondary_models"] = json!({});
+        measured["input_limits_version"] = json!(1);
+        measured["model_limits"] = json!({"music-fixture":{"duration_seconds":30,"prompt_characters":512,"negative_prompt_characters":0}});
+        approvals["approvals"].as_array_mut().unwrap().push(measured);
+        let missing = build(&runtime, &contract, &approvals, None).unwrap();
+        assert!(missing["binding"]["models"].get("music-fixture").is_none());
+        approvals["approvals"][1]["music"] = music.clone();
+        let approved = build(&runtime, &contract, &approvals, None).unwrap();
+        assert_eq!(approved["binding"]["execution_settings"]["music"], music);
+        assert!(approved["binding"]["models"].get("music-fixture").is_some());
+        assert_eq!(approved["gateway"]["models"]["app-v-voice/music-fixture"]["limits"]["duration"],30);
+        contract["execution_settings"]["music"]["steps"] = json!(16);
+        let changed = build(&runtime, &contract, &approvals, None).unwrap();
+        assert!(changed["binding"]["models"].get("music-fixture").is_none());
+        assert!(changed["binding"]["models"].get("asr").is_some());
+        contract["execution_settings"]["music"] = music;
+        approvals["approvals"][1]["model_limits"]["music-fixture"]["prompt_characters"] = json!(0);
         assert!(build(&runtime, &contract, &approvals, None).is_err());
     }
 
