@@ -15,6 +15,13 @@ V-Voice 直接调用则申请自己的许可。ASR 与声纹组合必须落在�
 
 [内置校准清单](../config/voice-calibrations.json) 只包含经过实测的固定预算。
 匹配项包括架构、实际 GPU 名称及内存类型、provider、CPU 模型覆盖、线程数与并发设置。
+存在 `application_versions` 时，还须匹配控制器从 VOS 安装详情核验的应用版本；缺少或
+不匹配时不采用该记录，不能用客户端自报版本代替。修改 provider 选择或内存回收实现后，
+旧版本的测量不会自动授权新运行时。CPU 覆盖配置也须核对实际原生工厂使用的 provider。
+192 的 `0.0.20` 混合执行记录仍预约 GPU 槽；修复 CPU provider 与卸载回收后的
+`0.0.21` 记录仅覆盖 Kokoro 和 SenseVoice，使用 1.5 GiB RAM、4.5 CPU、GPU 0，
+要求 `CPU_MODELS` 为 `kokoro-multilang,paraformer-zh,sensevoice-int8`，但不批准未实测的
+Paraformer。该记录不等于 Voice 新版本已经发布或已在当前 VOS 安装。
 模型自报的权重大小不授予资源；声明支持但文件未就绪的模型也不会建立绑定。
 同步模型使用原生 ID，创作兼容 API 的 ID 带 `audiocpp-`，异步创作使用裸 ID。
 

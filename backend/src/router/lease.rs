@@ -27,6 +27,7 @@ pub(super) const RESOURCE_PARAMETERS: &[&str] = &[
     "options.num_batch",
     "options.num_gpu",
     "options.num_thread",
+    "options.num_predict",
     "context_length",
     "num_ctx",
     "num_batch",
@@ -398,7 +399,7 @@ pub(super) fn validate(
     if bytes as u64 > maximum {
         return Err(Failure::new(
             413,
-            "model input exceeds approved byte budget",
+            format!("model input exceeds approved byte budget ({bytes} > {maximum})"),
         ));
     }
     if u.source == "v-scheduler" {
@@ -410,8 +411,11 @@ pub(super) fn validate(
             if !value["options"].is_object() {
                 return Err(Failure::new(422, "options must be an object"));
             }
-            if value["options"]["num_ctx"].is_null() {
-                value["options"]["num_ctx"] = p["limits"]["options.num_ctx"].clone();
+            for key in ["num_ctx", "num_thread", "num_gpu", "num_batch"] {
+                let approved = &p["limits"][format!("options.{key}")];
+                if value["options"][key].is_null() && !approved.is_null() {
+                    value["options"][key] = approved.clone();
+                }
             }
             if u.role == "generate" {
                 if value["max_tokens"].is_null() && value["max_output_tokens"].is_null() {

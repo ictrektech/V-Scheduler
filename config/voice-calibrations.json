@@ -203,7 +203,7 @@
       ],
       "num_threads": 4,
       "max_concurrent_inference": 2,
-      "id": "orin-voice-cpu-bounded-v1",
+      "id": "orin-voice-mixed-bounded-v1",
       "architecture": "aarch64",
       "hardware": [
         {
@@ -215,7 +215,7 @@
       "resources": {
         "cpu_millicores": 4500,
         "memory_mib": 1792,
-        "gpu_slots": 0,
+        "gpu_slots": 1,
         "gpu_memory_mib": 0
       },
       "max_input_bytes": 1048576,
@@ -245,7 +245,7 @@
       "calibration": {
         "evidence_id": "voice-tc192-99f4c4ea7c87426da6f94b089dd334cf",
         "peak_memory_mib": 1402,
-        "memory_method": "Maximum of cgroup memory and host available-memory drop in the unified pool; native CPU pinned models verified inside a 1792 MiB cgroup",
+        "memory_method": "Maximum of cgroup memory and host available-memory drop in the unified pool; V-Voice 0.0.20 applies the CPU override to ASR but Kokoro remains CUDA, so one GPU slot is reserved.",
         "observed_peak_cpu_millicores": 3957,
         "native_and_container_exit_confirmed": true,
         "cases": [
@@ -255,8 +255,90 @@
         ],
         "observed_concurrency": 1,
         "kernel": "5.15.148-tegra",
-        "sample_target_seconds": 0.25
-      }
+        "sample_target_seconds": 0.25,
+        "provider_verification": {
+          "v_voice_version": "0.0.20",
+          "tts": "cuda (installed runtime tts() uses detect_provider directly)",
+          "asr": "cpu (per-model CPU override)"
+        }
+      },
+      "application_versions": [
+        "0.0.20"
+      ]
+    },
+    {
+      "provider": "cuda",
+      "cpu_models": [
+        "kokoro-multilang",
+        "paraformer-zh",
+        "sensevoice-int8"
+      ],
+      "num_threads": 4,
+      "max_concurrent_inference": 2,
+      "id": "orin-voice-cpu-reclaimed-bounded-v1",
+      "architecture": "aarch64",
+      "hardware": [
+        {
+          "name": "Orin (nvgpu)",
+          "memory_type": "unified"
+        }
+      ],
+      "input_limits_version": 1,
+      "resources": {
+        "cpu_millicores": 4500,
+        "memory_mib": 1536,
+        "gpu_slots": 0,
+        "gpu_memory_mib": 0
+      },
+      "max_input_bytes": 1048576,
+      "limits": {
+        "n": 1,
+        "batch_count": 1
+      },
+      "sync_models": [
+        "kokoro-multilang",
+        "sensevoice-int8"
+      ],
+      "async_models": [],
+      "secondary_models": {},
+      "model_limits": {
+        "kokoro-multilang": {
+          "text_characters": 512,
+          "speed_min": 1.0,
+          "speed_max": 1.0
+        },
+        "sensevoice-int8": {
+          "duration_seconds": 20,
+          "sample_rate": 24000,
+          "hotwords_characters": 0,
+          "input_bytes": 1048576
+        }
+      },
+      "calibration": {
+        "evidence_id": "voice-tc192-60138d2a104a4973b48ce1be1e498fd2",
+        "peak_memory_mib": 1088,
+        "memory_method": "Maximum of cgroup memory (967 MiB) and host available-memory drop (1088 MiB); native CPU factories verified under a 1536 MiB memory/swap limit and real outer permit. Three complete rounds; source 61abf55 mounted read-only on the installed L4T native runtime.",
+        "observed_peak_cpu_millicores": 4025,
+        "native_and_container_exit_confirmed": true,
+        "cases": [
+          "native Kokoro TTS 512 characters at speed 1, three rounds",
+          "SenseVoice ASR 20 seconds at 24kHz, three rounds",
+          "six native factory provider assertions are CPU",
+          "both runtimes unloaded after each round; final process RSS about 82 MiB"
+        ],
+        "observed_concurrency": 1,
+        "kernel": "5.15.148-tegra",
+        "sample_target_seconds": 0.25,
+        "provider_verification": {
+          "source_commit": "61abf55",
+          "kokoro-multilang": "cpu",
+          "sensevoice-int8": "cpu",
+          "uninstalled_models_tested": false
+        }
+      },
+      "application_versions": [
+        "0.0.21"
+      ]
     }
   ]
 }

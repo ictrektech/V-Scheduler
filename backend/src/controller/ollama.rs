@@ -246,7 +246,9 @@ async fn recover_stopped(a: &App, client: &reqwest::Client, role: &str) -> anyho
         else {
             continue;
         };
-        if !executor.starts_with("builtin-ollama-auto-") || metadata["upstream_url"] != origin {
+        if !(executor.starts_with("builtin-ollama-auto-")
+            || executor.starts_with("builtin-ollama-calibrated-"))
+            || metadata["upstream_url"] != origin {
             continue;
         }
         let active: bool = sqlx::query_scalar(

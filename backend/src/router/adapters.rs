@@ -154,6 +154,7 @@ pub(super) async fn forward(
             };
             if let Some(lease) = exchange.lease.as_mut() {
                 lease.complete("synchronous_response_completed");
+                lease.release_confirmed("synchronous_response_completed").await;
             }
             Ok(Json(out).into_response())
         }
@@ -237,6 +238,7 @@ async fn ml(
         e.status = 200;
         if let Some(lease) = e.lease.as_mut() {
             lease.complete("synchronous_response_completed");
+            lease.release_confirmed("synchronous_response_completed").await;
         }
         return Ok(Json(json!({"object":"list","model":e.native,"data":rows})).into_response());
     }

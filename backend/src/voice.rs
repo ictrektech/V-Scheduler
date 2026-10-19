@@ -281,6 +281,13 @@ fn build(
         {
             continue;
         }
+        if let Some(versions) = approval.get("application_versions") {
+            let versions = versions.as_array().context("invalid calibrated application versions")?;
+            ensure!(!versions.is_empty() && versions.len() <= 16 && versions.iter().all(|v| v.as_str().is_some_and(|s| !s.is_empty() && s.len() <= 32)), "invalid calibrated application versions");
+            if !versions.iter().any(|v| v == &contract["_application_version"]) {
+                continue;
+            }
+        }
         let bounded_inputs = !approval["input_limits_version"].is_null();
         if bounded_inputs {
             ensure!(
@@ -527,6 +534,7 @@ async fn reconcile(path: &Path, runtime: &Runtime, db: &PgPool) -> anyhow::Resul
         detail["code"] == 0 && detail["data"]["state"] == "installed",
         "application must be installed on this VOS"
     );
+    contract["_application_version"] = detail["data"]["manifest"]["version"].clone();
     let node_id = runtime
         .base
         .local_agent
@@ -661,6 +669,20 @@ mod tests {
             1
         );
         assert!(ready["binding"]["model_limits"].get("speaker").is_none());
+    }
+
+    #[test]
+    fn version_specific_voice_measurements_do_not_authorize_other_installed_versions() {
+        let (runtime, mut contract, mut approvals) = fixtures();
+        approvals["approvals"][0]["application_versions"] = json!(["0.0.20"]);
+        assert!(build(&runtime, &contract, &approvals, None).is_err());
+        contract["_application_version"] = json!("0.0.20");
+        let approved = build(&runtime, &contract, &approvals, None).unwrap();
+        assert!(!approved["binding"]["models"].as_object().unwrap().is_empty());
+        contract["_application_version"] = json!("0.0.21");
+        assert!(build(&runtime, &contract, &approvals, None).is_err());
+        approvals["approvals"][0]["application_versions"] = json!([null]);
+        assert!(build(&runtime, &contract, &approvals, None).is_err());
     }
 
     #[test]

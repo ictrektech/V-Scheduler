@@ -739,6 +739,8 @@ pub(super) async fn finish_response(
         .with_request(exchange.bridge_request.clone());
         let renewal = renewal_watch(&exchange);
         let stream = ResponseStream {
+            completion: None,
+            finished: false,
             renewal,
             inner: Box::pin(response.bytes_stream()),
             exchange: Some(exchange),
@@ -757,15 +759,13 @@ pub(super) async fn finish_response(
         }
         if let Some(lease) = exchange.lease.as_mut() {
             lease.complete("synchronous_response_completed");
+            lease.release_confirmed("synchronous_response_completed").await;
         }
         let mut chat: Value = serde_json::from_slice(&bytes)
             .map_err(|_| Failure::new(502, "upstream returned invalid chat JSON"))?;
         bridge::validate_response(&chat)?;
         chat["model"] = json!(exchange.native);
         exchange.usage = chat["usage"].clone();
-        if let Some(lease) = exchange.lease.as_mut() {
-            lease.complete("synchronous_response_completed");
-        }
         let mut out = axum::Json(bridge::response(
             &chat,
             conversion,
@@ -794,6 +794,7 @@ pub(super) async fn finish_response(
         if !asynchronous {
             if let Some(lease) = exchange.lease.as_mut() {
                 lease.complete("synchronous_response_completed");
+                lease.release_confirmed("synchronous_response_completed").await;
             }
         }
         let mut out = Response::new(Body::from(bytes));
@@ -805,6 +806,8 @@ pub(super) async fn finish_response(
     let decoder = bridge::Stream::new("", &exchange.native);
     let renewal = renewal_watch(&exchange);
     let stream = ResponseStream {
+        completion: None,
+        finished: false,
         renewal,
         inner: Box::pin(response.bytes_stream()),
         exchange: Some(exchange),
@@ -835,6 +838,8 @@ fn renewal_watch(
     })
 }
 struct ResponseStream {
+    completion: Option<Pin<Box<dyn std::future::Future<Output = Bytes> + Send>>>,
+    finished: bool,
     renewal: Option<Pin<Box<dyn std::future::Future<Output = ()> + Send>>>,
     inner: Pin<Box<dyn Stream<Item = Result<Bytes, reqwest::Error>> + Send>>,
     exchange: Option<Exchange>,
@@ -844,6 +849,20 @@ struct ResponseStream {
 impl Stream for ResponseStream {
     type Item = Result<Bytes, std::io::Error>;
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        if let Some(completion) = self.completion.as_mut() {
+            match completion.as_mut().poll(cx) {
+                Poll::Pending => return Poll::Pending,
+                Poll::Ready(bytes) => {
+                    self.completion = None;
+                    if !bytes.is_empty() {
+                        return Poll::Ready(Some(Ok(bytes)));
+                    }
+                }
+            }
+        }
+        if self.finished {
+            return Poll::Ready(None);
+        }
         if self.decoder.failed {
             self.exchange.take();
             return Poll::Ready(None);
@@ -892,6 +911,11 @@ impl Stream for ResponseStream {
                         if terminal {
                             if let Some(mut lease) = exchange.lease.take() {
                                 lease.complete("upstream_sse_terminal_received");
+                                self.completion = Some(Box::pin(async move {
+                                    lease.release_confirmed("upstream_sse_terminal_received").await;
+                                    Bytes::from(output)
+                                }));
+                                return self.poll_next(cx);
                             }
                         }
                     }
@@ -912,6 +936,14 @@ impl Stream for ResponseStream {
                         if !sse || terminal {
                             if let Some(lease) = exchange.lease.as_mut() {
                                 lease.complete("synchronous_response_completed");
+                            }
+                            if let Some(mut lease) = exchange.lease.take() {
+                                self.finished = true;
+                                self.completion = Some(Box::pin(async move {
+                                    lease.release_confirmed("synchronous_response_completed").await;
+                                    Bytes::from(final_events)
+                                }));
+                                return self.poll_next(cx);
                             }
                         }
                     }
@@ -1031,7 +1063,7 @@ async fn websocket(
             },
             frame=upstream_rx.next()=>{
                 let Some(Ok(frame))=frame else{break;};
-                let frame=match frame{UpMessage::Text(t)=>DownMessage::Text(t.as_str().into()),UpMessage::Binary(b)=>DownMessage::Binary(b),UpMessage::Ping(b)=>DownMessage::Ping(b),UpMessage::Pong(b)=>DownMessage::Pong(b),UpMessage::Close(c)=>{if let Some(lease)=exchange.lease.as_mut(){lease.complete("websocket_server_close_received");}let _=downstream.send(DownMessage::Close(c.map(|c|axum::extract::ws::CloseFrame{code:c.code.into(),reason:c.reason.as_str().into()}))).await;break;},UpMessage::Frame(_)=>continue};
+                let frame=match frame{UpMessage::Text(t)=>DownMessage::Text(t.as_str().into()),UpMessage::Binary(b)=>DownMessage::Binary(b),UpMessage::Ping(b)=>DownMessage::Ping(b),UpMessage::Pong(b)=>DownMessage::Pong(b),UpMessage::Close(c)=>{if let Some(lease)=exchange.lease.as_mut(){lease.complete("websocket_server_close_received");lease.release_confirmed("websocket_server_close_received").await;}let _=downstream.send(DownMessage::Close(c.map(|c|axum::extract::ws::CloseFrame{code:c.code.into(),reason:c.reason.as_str().into()}))).await;break;},UpMessage::Frame(_)=>continue};
                 if downstream.send(frame).await.is_err(){break;}
             },
             _=&mut close_deadline,if closing=>break,

@@ -995,3 +995,86 @@ async fn admission_does_not_retry_capacity_denial_or_release_an_unknown_stop() {
         std::fs::remove_dir_all(root).unwrap();
     }
 }
+
+#[tokio::test]
+async fn synchronous_response_waits_for_controller_release_before_next_request() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let held = Arc::new(AtomicBool::new(false));
+    let acquiring = held.clone();
+    let releasing = held.clone();
+    let controller = Router::new()
+        .route("/api/v1/permits", post(move || {
+            let busy = acquiring.swap(true, Ordering::SeqCst);
+            async move {
+                if busy {
+                    (StatusCode::TOO_MANY_REQUESTS, Json(json!({"code":"WAIT_RESOURCE"})))
+                } else {
+                    (StatusCode::OK, Json(json!({"data":{"permit_id":"serial-permit"}})))
+                }
+            }
+        }))
+        .route("/api/v1/permits/{id}/release", post(move |Json(body): Json<Value>| {
+            let releasing = releasing.clone();
+            async move {
+                assert_eq!(body["stopped"], true);
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                releasing.store(false, Ordering::SeqCst);
+                Json(json!({"data":{"state":"released"}}))
+            }
+        }));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let server = tokio::spawn(async move {
+        axum::serve(listener, Router::new().route("/v1/chat/completions", post(|Json(request):Json<Value>| async move {
+            if request["stream"] == true {
+                let mut response = Response::new(Body::from("data: {\"choices\":[{\"delta\":{\"content\":\"hello\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"));
+                response.headers_mut().insert("content-type","text/event-stream".parse().unwrap());
+                response
+            } else {
+                Json(json!({"model":"echo","choices":[{"message":{"role":"assistant","content":"hello"},"finish_reason":"stop"}]})).into_response()
+            }
+        }))).await.unwrap();
+    });
+    let root = temp();
+    let g = gateway(&root, controller);
+    let mut u = upstream("serial");
+    u.base_url = format!("http://127.0.0.1:{port}/v1");
+    let cfg = json!({"url":"http://v-scheduler:38120/api/v1","token":"private-scoped-submitter-credential-1234567890","require_model_policy":true,"models":{"serial/echo":{"mode":"permit","executor_id":"fake-approved-executor","completion":"synchronous","max_input_bytes":4096}}});
+    use std::os::unix::fs::PermissionsExt;
+    let path = root.join("scheduler.local.json");
+    std::fs::write(&path, serde_json::to_vec(&cfg).unwrap()).unwrap();
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).unwrap();
+    g.registry.lock().unwrap().put(u, vec![model("echo")]);
+    for stream in [false,true,false] {
+        let request = axum::http::Request::builder().method("POST")
+            .uri("/v1/chat/completions").header("content-type","application/json")
+            .body(Body::from(serde_json::to_vec(&json!({"model":"manual/echo","stream":stream,"messages":[{"role":"user","content":"hello"}]})).unwrap())).unwrap();
+        let response = proxy::handle(g.clone(), principal("alice"), request).await.unwrap();
+        let bytes = axum::body::to_bytes(response.into_body(), 1 << 20).await.unwrap();
+        assert!(String::from_utf8_lossy(&bytes).contains("hello"));
+        assert!(!held.load(Ordering::SeqCst), "response escaped before controller released its permit");
+    }
+    server.abort();
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn calibrated_ollama_defaults_are_enforced_before_native_execution() {
+    let mut u = upstream("v-scheduler/ollama-qa");
+    u.source = "v-scheduler".into();
+    u.role = "generate".into();
+    let approval = lease::Approval {
+        config: json!({}),
+        policy: json!({"executor_id":"builtin-ollama-calibrated-fixture","max_input_bytes":4096,"limits":{"max_tokens":128,"options.num_ctx":512,"options.num_thread":4,"options.num_gpu":0,"options.num_batch":128,"options.num_predict":128}}),
+    };
+    let mut request = json!({"messages":[{"role":"user","content":"hello"}]});
+    lease::validate(&approval, &u, &mut request, 100).unwrap();
+    assert_eq!(request["options"], json!({"num_ctx":512,"num_thread":4,"num_gpu":0,"num_batch":128,"num_predict":128}));
+    assert_eq!(request["max_tokens"],128);
+    for (key, value) in [("num_ctx",513),("num_thread",5),("num_gpu",1),("num_batch",129),("num_predict",129)] {
+        let mut oversized = request.clone();
+        oversized["options"][key]=json!(value);
+        assert!(lease::validate(&approval,&u,&mut oversized,100).is_err(),"{key} bypassed the calibrated bound");
+    }
+    assert!(lease::validate(&approval,&u,&mut request,4097).is_err());
+}
