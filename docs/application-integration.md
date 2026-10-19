@@ -322,6 +322,8 @@ V-Voice 已提供同一 VOS 内的专用授权接收端。统一应用可自动�
 执行器及网关同步验票权限，省去用户手工分发令牌；仍只允许已校准且就绪的模型。
 流程、校准清单、持久 revision 与凭据轮换见 [V-Voice 主动接入](v-voice-auto-binding.md)。
 
+V-Voice 已验证版本的 Python 直调在准入响应丢失后，可按[未认领许可恢复规则](v-voice-auto-binding.md#准入响应丢失时的未认领许可恢复)自动回收过期且从未认领的预约。此规则不适用于 Router 的其他推理路径，也不把租约到期当成已启动计算的停止证明。
+
 - VOS 包依赖只检查应用安装及运行，不提供 Scheduler URL、令牌、节点容量或执行器。服务令牌放在 A 或 V-Router 的私有数据目录，权限 `0600`；浏览器与普通用户不能持有它。为不同应用绑定各自 `app_id` 和允许的 executor。
 - 对每个节点分别验证：真实模型完成一项任务、重复提交仅执行一次、忙碌/过期遥测/排空时请求不能到达执行端、取消后有停止证据、断连与重启后资源状态正确。云端请求不产生本地 permit。检查实际执行节点，而非仅看另一个节点的成功结果。
 - 当前实现的精确字段和能力以 [`GET /discovery`、公开 API 与接入标准](integration-standard.md)和 [OpenAPI](../api/openapi-v1.json)为准；V-Router 的具体配置和桥接协议见[网关资源准入参考](resource-scheduling.md)。
@@ -375,6 +377,3 @@ V-Voice 已提供同一 VOS 内的专用授权接收端。统一应用可自动�
 ## 协议参考与历史说明
 
 本页维护操作步骤；[OpenAPI](../api/openapi-v1.json)、[调度接入标准](integration-standard.md)、[网关资源准入](resource-scheduling.md)维护字段、权限及停止契约。已发布版本的具体部署与真实验证记录见[验证记录](validation.md)。旧 vLLM 和独立 V-Router 接入地址保留兼容入口，新的接入流程统一从本文开始。
-
-
-V-Voice 已验证版本的 Python 直调在准入响应丢失后，可按[未认领许可恢复规则](v-voice-auto-binding.md#准入响应丢失时的未认领许可恢复)自动回收过期且从未认领的预约。此规则不适用于 Router 的其他推理路径，也不把租约到期当成已启动计算的停止证明。
