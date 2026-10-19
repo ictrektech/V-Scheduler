@@ -22,11 +22,13 @@ Node management reuses the installed ModelInfer app’s remote-node inventory an
 
 The defaults below apply to every profile. Replace `<vos-host>` with the installed VOS host IP/name. Docker aliases resolve on `vos_default`; prefix addresses with `http://`. All listed host ports are installer parameters. The in-app API guide displays the configured values.
 
+The unified container has one primary host alias: `v-scheduler`. Ports `8080`, `38120` and `6005` select gateway, scheduling and model management. All other names for this container are compatibility aliases. New applications and future updates to existing applications should use `v-scheduler`. The three Ollama containers keep their own names.
+
 | Function | All Docker aliases : internal port | Host : published port | API / installer parameter |
 |---|---|---|---|
-| Unified inference, gateway management and UI | `v-router:8080`, `v-router-backend:8080` | `<vos-host>:22888` | `/v1/*`, `/api/v1/*`, `/`; `V_ROUTER_HOST_PORT` |
-| Scheduling, takeover and resources | `v-scheduler:38120`, `v-scheduler-backend:38120`, `v-scheduler-frontend:38120` | `<vos-host>:38120` | `/api/v1/*`; `SCHEDULER_HOST_PORT` |
-| Model library management | `v-scheduler-model-hub:6005`, `v-scheduler-model-hub-backend:6005` | `<vos-host>:36005` | `/api/v1/*`, `/openapi.json`; `MODEL_HUB_BACKEND_HOST_PORT` |
+| Unified inference, gateway management and UI | `v-scheduler:8080`; compatibility: `v-scheduler-gateway:8080`, `v-router:8080`, `v-router-backend:8080` | `<vos-host>:22888` | `/v1/*`, `/api/v1/*`, `/`; `V_ROUTER_HOST_PORT` |
+| Scheduling, takeover and resources | `v-scheduler:38120`; compatibility: `v-scheduler-backend:38120`, `v-scheduler-frontend:38120` | `<vos-host>:38120` | `/api/v1/*`; `SCHEDULER_HOST_PORT` |
+| Model library management | `v-scheduler:6005`; compatibility: `v-scheduler-model-hub:6005`, `v-scheduler-model-hub-backend:6005` | `<vos-host>:36005` | `/api/v1/*`, `/openapi.json`; `MODEL_HUB_BACKEND_HOST_PORT` |
 | Ollama QA native management | `v-scheduler-ollama-qa:11434` | `<vos-host>:12434` | `/api/*`; `OLLAMA_QA_HOST_PORT` |
 | Ollama QA inference and metrics | `v-scheduler-ollama-qa:11535` | `<vos-host>:12535` | `/v1/chat/completions`, `/metrics`; `OLLAMA_QA_GATEWAY_HOST_PORT` |
 | Ollama embedding native management | `v-scheduler-ollama-embedding:11434` | `<vos-host>:12435` | `/api/*`; `OLLAMA_EMBEDDING_HOST_PORT` |

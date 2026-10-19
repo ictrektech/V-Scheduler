@@ -22,11 +22,13 @@
 
 以下是所有 profile 共用的默认映射。`<vos-host>` 为安装该应用的 VOS 宿主机 IP 或域名；192、229、232 三台测试机分别使用 `192.168.1.192`、`192.168.1.229`、`192.168.1.232`。内部地址仅在 Docker `vos_default` 网络解析，完整 URL 在地址前加 `http://`。安装时修改端口参数后，以实际安装值为准；应用内「API 文档 → 模型管理 API」显示配置后的地址。
 
+统一容器的正式 host alias 只有 `v-scheduler`，通过 `8080`、`38120`、`6005` 区分网关、调度和模型管理；该容器其余名称全部保留为兼容别名。新应用和已有应用后续适配均推荐使用 `v-scheduler`。三个 Ollama 独立容器保留各自名称。
+
 | 功能 | Docker host alias:内部端口（含全部兼容别名） | 宿主机 host:外部端口 | 主要路径与用途 |
 |---|---|---|---|
-| 统一推理、网关管理及统一界面 | `v-router:8080`、`v-router-backend:8080` | `<vos-host>:22888` | `/v1/*` 推理；`/api/v1/*` 网关管理；`/` 界面 |
-| 调度接管与资源管理 | `v-scheduler:38120`、`v-scheduler-backend:38120`、`v-scheduler-frontend:38120` | `<vos-host>:38120` | `/api/v1/*` 任务、许可、节点、执行器及统计 |
-| 模型仓库管理 | `v-scheduler-model-hub:6005`、`v-scheduler-model-hub-backend:6005` | `<vos-host>:36005` | `/api/v1/*` 模型、选中文件下载、更新、导入、别名、引用和后端管理；`/openapi.json` |
+| 统一推理、网关管理及统一界面 | `v-scheduler:8080`; 兼容：`v-scheduler-gateway:8080`、`v-router:8080`、`v-router-backend:8080` | `<vos-host>:22888` | `/v1/*` 推理；`/api/v1/*` 网关管理；`/` 界面 |
+| 调度接管与资源管理 | `v-scheduler:38120`; 兼容：`v-scheduler-backend:38120`、`v-scheduler-frontend:38120` | `<vos-host>:38120` | `/api/v1/*` 任务、许可、节点、执行器及统计 |
+| 模型仓库管理 | `v-scheduler:6005`; 兼容：`v-scheduler-model-hub:6005`、`v-scheduler-model-hub-backend:6005` | `<vos-host>:36005` | `/api/v1/*` 模型、选中文件下载、更新、导入、别名、引用和后端管理；`/openapi.json` |
 | Ollama QA 原生管理 | `v-scheduler-ollama-qa:11434` | `<vos-host>:12434` | `/api/*` 模型清单、拉取、详情、加载/卸载及原生推理 |
 | Ollama QA 推理网关 | `v-scheduler-ollama-qa:11535` | `<vos-host>:12535` | `/v1/chat/completions` 聊天；`/metrics` 指标 |
 | Ollama Embedding 原生管理 | `v-scheduler-ollama-embedding:11434` | `<vos-host>:12435` | `/api/*` 原生模型管理及向量推理 |
@@ -48,6 +50,6 @@
 
 同一行的兼容别名指向同一个容器和端口，不产生额外服务或宿主机映射。`host.docker.internal` 是网关容器中的 Docker 宿主机别名（`host-gateway`），用于访问宿主机已发布端口，例如 `host.docker.internal:38120`；它不是新增服务，也没有单独的固定端口。
 
-网关还在同一 `22888` 端口提供 `/scheduler/api/v1/*` 调度代理和 `/model-hub/api/v1/*` 模型管理代理。VOS 内统一入口为 `/app/com.ictrek.v-scheduler/`；模型管理前缀为 `/app/com.ictrek.v-scheduler/model-hub/api/v1/*`，网关 API 前缀为 `/api/com.ictrek.v-scheduler`。三个 Ollama 的 `11535` 是各后端推理/指标入口；跨后端统一模型名和调度入口使用 `v-router:8080/v1/*` 或 `<vos-host>:22888/v1/*`。
+网关还在同一 `22888` 端口提供 `/scheduler/api/v1/*` 调度代理和 `/model-hub/api/v1/*` 模型管理代理。VOS 内统一入口为 `/app/com.ictrek.v-scheduler/`；模型管理前缀为 `/app/com.ictrek.v-scheduler/model-hub/api/v1/*`，网关 API 前缀为 `/api/com.ictrek.v-scheduler`。三个 Ollama 的 `11535` 是各后端推理/指标入口；跨后端统一模型名和调度入口使用 `v-scheduler:8080/v1/*` 或 `<vos-host>:22888/v1/*`。
 
 这些别名由 V-Scheduler 自己声明；原 Model Hub 的别名、端口及共享目录保持原应用所有权。共享模型目录仍在安装时选择，沿用原 Model Hub 所选公共目录即可。
