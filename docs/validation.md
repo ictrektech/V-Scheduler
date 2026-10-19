@@ -216,3 +216,23 @@ Each machine passed a fresh bounded one-minute health probe during the client ch
 Private operational evidence is stored under `~/dev/build/V-Scheduler/compatibility-20261016-231300/` on the test hosts and the local development machine. `gateway-browser.json`, `post-clients.json`, per-case logs, `upgrade/audit.json` and `stability-0.0.31.json` retain distinct success, blocked and unavailable outcomes. Older baseline results remain separate from post-upgrade results; a zero script exit alone is not counted as native inference success.
 
 232 subsequently passed the complete RAG retry: the returned answer contained the synthetic fact, all seven new permits released, and both test session and knowledge base were deleted. The transient first-attempt refusal remains recorded above. Final idle audits on all three machines found no active/suspect permits, running compute tasks, native active slots or model downloads.
+
+### v0.0.36 publication and installed acceptance
+
+[Workflow 39201212533](https://github.com/ictrektech/V-Scheduler/actions/runs/39201212533) completed GitHub Release and VOS App Store publication on its third attempt. The first two attempts never started a runner because of the organization's Actions billing/limit gate; after the repository became public, the original workflow successfully ran frontend/API checks, all 85 AMD Rust tests, packaging and publication. ARM host tests passed all 86 cases, including the bundled seven legacy Voice plus four bounded music model binding and installed-version gate.
+
+The downloaded pull package SHA-256 is `3d1e9ec81c821ae4ced502e6aaa663c6321aeee3b6038ccddff457db120d61ee`. Its single inner archive, seven rendered core files, published AMD/ARM Scheduler tags and stable aliases passed inspection. Registry manifests and the exact Feishu component cells were checked independently.
+
+| VOS test machine | Preserved profile | Original models/files retained | Healthy containers | Alias/host endpoint pairs | Successful 60-second probes |
+|---|---|---|---:|---:|---:|
+| 192 | `l4t` | 13 / 478 | 4 | 9 | 180 |
+| 229 | `thor-spark` | 28 / 601 | 4 | 9 | 180 |
+| 232 | `amd` | 19 / 491 | 4 | 9 | 174 |
+
+All three actual installed versions and image identities match 0.0.36. Shared-directory UUIDs, storage paths and original file inode/size/mtime were preserved. About reports four image name:tag entries. All bounded probes passed without errors, new restarts or OOM; this is a one-minute check, not a long-duration soak.
+
+232's first upgrade failed because three old Scheduler Ollama containers retained host port 12434. The failed workflow rolled back and deleted its installation record; a generic platform `installed` status was not counted as successful upgrade. After rollback completed, the three containers were confirmed idle and stopped. Recovery installation reused the verified original storage volume, shared directory, profile and saved configuration. Its workflow completed and the full version/image/file/endpoint audit passed. No model data or shared directories were removed.
+
+On installed 0.0.36, 232 passes V-ChatCut non-streaming followed immediately by streaming, real V-Voice TTS WAV plus nonempty ASR, and V-Sub direct/gateway, oversize/settings rejection, native cancellation and worker-generation recovery. All eight permits released; the chat checks use no client-side retry. Evidence is retained under `~/dev/build/V-Scheduler/p0-20261019/`, with `upgrade36/`, `regression36-results.json` and `stability-0.0.36.json` kept separate from earlier releases.
+
+The new Voice 0.0.21 CPU/music approvals still require that application's matching trusted installed version and advertised capabilities. Native calibration and this Scheduler release do not by themselves prove that Voice 0.0.21 has been packaged, deployed or accepted. Its final image and deployed API checks remain a separate delivery gate.
