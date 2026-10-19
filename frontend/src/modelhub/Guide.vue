@@ -8,7 +8,7 @@ const visible=computed(()=>operations.value.filter(op=>`${op.path} ${op.summary}
 const operation=computed(()=>operations.value.find(op=>op.key===operationKey.value)||operations.value[0])
 function expand(value:any,depth=0):any {if(depth>12||!value||typeof value!=='object')return value;if(value.$ref){const target=value.$ref.split('/').slice(1).reduce((obj:any,key:string)=>obj?.[key],spec.value);return expand(target,depth+1)}if(Array.isArray(value))return value.map(item=>expand(item,depth+1));return Object.fromEntries(Object.entries(value).map(([key,item])=>[key,expand(item,depth+1)]))}
 const curl=computed(()=>{const op=operation.value;if(!op)return '';const example=op.requestBody?.content?.['application/json']?.example;const query=(op.parameters||[]).filter((p:any)=>p.in==='query').map((p:any)=>`${p.name}=${p.name==='source'?'hf':'hf%3A%2F%2Forg%2Frepo'}`).join('&');return `curl -fsS -X ${op.method.toUpperCase()} 'http://${externalHost.value||'<vos-host>'}:${integration.value?.endpoints?.find((e:any)=>e.name==='Model management')?.host_port||36005}${op.path.replace('{id}','<task-or-service-id>')}${query?'?'+query:''}'`+(example?` \\\n  -H 'Content-Type: application/json' \\\n  -d '${JSON.stringify(example)}'`:op.path.endsWith('import-archive')?` \\\n  -F source=hf -F model_id=local/my-model -F archive=@model.tar.gz`:'')})
-const downloadExample=`BASE=http://v-scheduler-model-hub:6005
+const downloadExample=`BASE=http://v-scheduler:6005
 # External caller: BASE=http://<vos-host>:36005
 curl -fsS --get "$BASE/api/v1/models/repository-files" \\
   --data-urlencode source=hf --data-urlencode model_id=org/repo
@@ -27,7 +27,7 @@ curl -fsS -X POST "$BASE/api/v1/tasks/<task_id>/cancel"
 curl -fsS -X POST "$BASE/api/v1/tasks/<task_id>/retry"`
 const pythonExample=`import json, time
 from urllib.request import Request, urlopen
-BASE = "http://v-scheduler-model-hub:6005"
+BASE = "http://v-scheduler:6005"
 def request(path, body=None):
     data = None if body is None else json.dumps(body).encode()
     req = Request(BASE + path, data=data,
@@ -61,7 +61,7 @@ volumes:
   - \${MODEL_HUB_SHARED_MODELS_PATH}:/modelhub:ro
 # Example inference model path:
 /modelhub/export/hf/org/repo/current/weights/model-Q4_K_M.gguf`
-const registration=`curl -fsS -X POST http://v-scheduler-model-hub:6005/api/v1/inference-services/register \\
+const registration=`curl -fsS -X POST http://v-scheduler:6005/api/v1/inference-services/register \\
  -H 'Content-Type: application/json' \\
  -d '{"service_id":"vllm-qwen","name":"vLLM Qwen","kind":"openai_compatible","base_url":"http://vllm:8000","gateway_url":"http://vllm:8000","role":"generate","api_contract":{"health_path":"/health","models_path":"/v1/models","running_models_path":"/v1/models","metrics_path":"/management/metrics","start_model_path":"/management/start","stop_model_path":"/management/stop","model_action_status_path":"/management/action-status"}}'
 # Custom paths above are an example contract; provide paths implemented by your backend.
@@ -76,7 +76,8 @@ onMounted(async()=>{try{[integration.value,spec.value]=await Promise.all([reques
   <h3 id="hub-endpoints">{{t('调用入口与认证边界')}}</h3>
   <label>{{t('VOS 宿主机地址')}} <input v-model="externalHost" placeholder="<vos-host>"></label>
   <p>{{t('Docker DNS 地址用于同一 vos_default 网络内的应用；外部调用使用宿主机地址与映射端口。')}}</p>
-  <div class="table-wrap"><table><thead><tr><th>{{t('用途')}}</th><th>{{t('正式 host alias : 内部端口')}}</th><th>{{t('其他正式别名 / 兼容别名')}}</th><th>{{t('宿主机地址 : 映射端口')}}</th><th>{{t('认证')}}</th></tr></thead><tbody><tr v-for="endpoint in integration?.endpoints||[]" :key="endpoint.name"><td>{{endpoint.name}}</td><td><code>{{endpoint.internal}}{{endpoint.path}}</code></td><td><div v-for="alias in endpoint.aliases||[]" :key="alias"><code>{{alias}}</code></div><div v-for="alias in endpoint.compatibility_aliases||[]" :key="alias">{{t('兼容')}}：<code>{{alias}}</code></div><span v-if="!endpoint.aliases?.length&&!endpoint.compatibility_aliases?.length">—</span></td><td><code>http://{{externalHost||'&lt;vos-host&gt;'}}:{{endpoint.host_port}}{{endpoint.path}}</code></td><td>{{endpoint.authentication}}</td></tr></tbody></table></div>
+  <p>{{t('统一容器的正式 host alias 只有 v-scheduler：8080 为网关，38120 为调度，6005 为模型管理。表中其余名称均为兼容别名，指向同一容器；三个 Ollama 是独立容器。新应用和已有应用后续适配均推荐使用 v-scheduler。')}}</p>
+  <div class="table-wrap"><table><thead><tr><th>{{t('用途')}}</th><th>{{t('正式 host alias : 内部端口')}}</th><th>{{t('兼容别名')}}</th><th>{{t('宿主机地址 : 映射端口')}}</th><th>{{t('认证')}}</th></tr></thead><tbody><tr v-for="endpoint in integration?.endpoints||[]" :key="endpoint.name"><td>{{endpoint.name}}</td><td><code>{{endpoint.internal}}{{endpoint.path}}</code></td><td><div v-for="alias in endpoint.aliases||[]" :key="alias"><code>{{alias}}</code></div><div v-for="alias in endpoint.compatibility_aliases||[]" :key="alias">{{t('兼容')}}：<code>{{alias}}</code></div><span v-if="!endpoint.aliases?.length&&!endpoint.compatibility_aliases?.length">—</span></td><td><code>http://{{externalHost||'&lt;vos-host&gt;'}}:{{endpoint.host_port}}{{endpoint.path}}</code></td><td>{{endpoint.authentication}}</td></tr></tbody></table></div>
   <p>{{t('模型管理 API 保持 Model Hub 原有匿名调用契约；VOS HTTPS 不等同于 API 身份认证。管理端口应限定在受控网络。调度 API 与统一推理 API 继续使用各自的身份校验。')}}</p>
   <p>{{t('VOS 页面内的模型管理入口：')}}<code>/app/com.ictrek.v-scheduler/model-hub/api/v1</code> · <a :href="base+'/openapi.json'" target="_blank" rel="noopener">OpenAPI JSON</a></p>
   <h3 id="hub-download">{{t('选择下载与追加文件')}}</h3><p>{{t('先查询仓库文件列表，再传入精确相对路径。省略 files 下载整仓；append=true 补下载已有模型，保留旧文件。选择范围不支持通配符、绝对路径或上级目录。')}}</p><pre>{{downloadExample}}</pre>

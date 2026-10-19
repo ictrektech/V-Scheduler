@@ -1,4 +1,6 @@
 export const messages:Record<string,[string,string]>={
+"统一容器的正式 host alias 只有 v-scheduler：8080 为网关，38120 为调度，6005 为模型管理。表中其余名称均为兼容别名，指向同一容器；三个 Ollama 是独立容器。新应用和已有应用后续适配均推荐使用 v-scheduler。":["The unified container has one primary host alias, v-scheduler: port 8080 is the gateway, 38120 the scheduler, and 6005 model management. All other names in these rows are compatibility aliases for the same container. The three Ollama instances are separate containers. New apps and future updates to existing apps should use v-scheduler.", "統一容器的正式 host alias 只有 v-scheduler：8080 為閘道，38120 為排程，6005 為模型管理。表中其餘名稱均為相容別名，指向同一容器；三個 Ollama 是獨立容器。新應用與既有應用後續適配均建議使用 v-scheduler。"],
+"兼容别名":["Compatibility aliases","相容別名"],
 "网关代理":["Gateway proxy", "閘道代理"],
 "正式 host alias : 内部端口":["Primary host alias : internal port", "正式 host alias : 內部連接埠"],
 "其他正式别名 / 兼容别名":["Other primary aliases / compatibility aliases", "其他正式別名 / 相容別名"],

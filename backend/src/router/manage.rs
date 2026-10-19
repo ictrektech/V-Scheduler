@@ -763,8 +763,8 @@ async fn register(g: &Gateway, id: &Identity, p: Value) -> Api<Response> {
 }
 fn gateway_base_urls() -> Value {
     json!({
-        "internal": "http://v-scheduler-gateway:8080/v1",
-        "compatibility_aliases": ["http://v-router:8080/v1", "http://v-router-backend:8080/v1"],
+        "internal": "http://v-scheduler:8080/v1",
+        "compatibility_aliases": ["http://v-scheduler-gateway:8080/v1", "http://v-router:8080/v1", "http://v-router-backend:8080/v1"],
         "lan": format!("http://<vos-host>:{}/v1", env("V_ROUTER_HOST_PORT", "22888")),
         "same_origin": "/api/com.ictrek.v-scheduler/v1"
     })

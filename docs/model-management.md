@@ -23,7 +23,7 @@ These are defaults; all published ports are installation parameters. The applica
 | Unified model inference | `v-router:8080` | `<vos-host>:22888` | `/v1` |
 | Gateway management | `v-router:8080` | `<vos-host>:22888` | `/api/v1` |
 | Scheduler management/takeover | `v-scheduler:38120` | `<vos-host>:38120` | `/api/v1` |
-| Model management | `v-scheduler-model-hub:6005` | `<vos-host>:36005` | `/api/v1` |
+| Model management | `v-scheduler:6005` | `<vos-host>:36005` | `/api/v1` |
 | Ollama QA native management | `v-scheduler-ollama-qa:11434` | `<vos-host>:12434` | `/api` |
 | Ollama QA metered inference | `v-scheduler-ollama-qa:11535` | `<vos-host>:12535` | `/v1` |
 | Ollama embedding native management | `v-scheduler-ollama-embedding:11434` | `<vos-host>:12435` | `/api` |
@@ -40,7 +40,7 @@ Model management preserves Model Hub's anonymous API contract, including writes.
 ## Download exact weights
 
 ```sh
-BASE=http://v-scheduler-model-hub:6005
+BASE=http://v-scheduler:6005
 # Outside Docker: BASE=http://<vos-host>:36005
 curl -fsS --get "$BASE/api/v1/models/repository-files" \
   --data-urlencode source=hf --data-urlencode model_id=org/repo
@@ -73,7 +73,7 @@ Other apps can mount the installer-selected shared directory read-only at `/mode
 
 The global **About / 关于** button shows the VOS App version, installation profile and each configured image name/tag (without a registry URL), including the separate model-management service and three Ollama instances. Values come from the actual packaged profile, including distinct L4T/Thor Ollama tags; absent metadata is shown as unknown.
 
-Full operation reference: `http://v-scheduler-model-hub:6005/openapi.json`, host `http://<vos-host>:36005/openapi.json`, and the application API tab.
+Full operation reference: `http://v-scheduler:6005/openapi.json`, host `http://<vos-host>:36005/openapi.json`, and the application API tab.
 
 ## Built-in Ollama automatic scheduling
 

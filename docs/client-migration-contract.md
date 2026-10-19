@@ -11,7 +11,7 @@
 | 统一推理 | `http://v-router:8080/v1` | `http://<vos-host>:22888/v1` |
 | 调度 | `http://v-scheduler:38120/api/v1` | `http://<vos-host>:38120/api/v1` |
 | 调度经网关代理 | `http://v-router:8080/scheduler/api/v1` | `http://<vos-host>:22888/scheduler/api/v1` |
-| 模型仓库 | `http://v-scheduler-model-hub:6005/api/v1` | `http://<vos-host>:36005/api/v1` |
+| 模型仓库 | `http://v-scheduler:6005/api/v1` | `http://<vos-host>:36005/api/v1` |
 
 完整九项端口、兼容别名和安装参数见 [README](../README.md#host-alias内部端口与宿主机端口)。宿主机端口允许安装时修改，客户端容器应使用稳定的内部别名。
 

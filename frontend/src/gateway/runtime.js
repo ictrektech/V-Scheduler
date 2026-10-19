@@ -568,7 +568,7 @@ const app = {
     VRouterI18n.bind($("aboutBody"), "innerHTML", () => [
       [VRouterI18n.t("版本"), st?.version ? "v" + st.version : VRouterI18n.t("未知")],
       [VRouterI18n.t("应用 ID"), "com.ictrek.v-router"],
-      [VRouterI18n.t("VOS 内调用"), "http://v-scheduler-gateway:8080/v1"],
+      [VRouterI18n.t("VOS 内调用"), "http://v-scheduler:8080/v1"],
       [VRouterI18n.t("局域网调用"), "http://<vos-host>:22888/v1"],
       [VRouterI18n.t("API 文档"), VRouterI18n.t("本页面「API 文档」页签，由网关实时生成")],
       [VRouterI18n.t("项目仓库"), "github.com/ictrektech/V-Scheduler"],
@@ -968,7 +968,7 @@ const app = {
       [VRouterI18n.t("调用方"), VRouterI18n.t("地址")],
       [
         [VRouterI18n.t("VOS 内应用（正式地址）"), `<span class="mono">${esc(bases.internal)}</span><div class="hint">${VRouterI18n.t("容器网络直连")}，${VRouterI18n.t("内网免鉴权")}；${VRouterI18n.t("携带")} fastpath token ${VRouterI18n.t("则按用户归集")}</div>`],
-        [VRouterI18n.t("VOS 内应用（兼容地址）"), (bases.compatibility_aliases || []).map(url => `<div class="mono">${esc(url)}</div>`).join("") + `<div class="hint">${VRouterI18n.t("新旧地址指向同一统一容器的网关端口，旧地址保留供已有应用使用。")}</div>`],
+        [VRouterI18n.t("VOS 内应用（兼容地址）"), (bases.compatibility_aliases || []).map(url => `<div class="mono">${esc(url)}</div>`).join("") + `<div class="hint">${VRouterI18n.t("正式地址统一使用 v-scheduler；其他名称均为兼容地址。新应用和已有应用后续适配均推荐使用 v-scheduler。")}</div>`],
         [VRouterI18n.t("局域网客户端"), `<span class="mono">${esc(lanBaseURL(bases))}</span><div class="hint">host-port ${VRouterI18n.t("为安装参数")} V_ROUTER_HOST_PORT（${VRouterI18n.t("默认")} 22888）</div>`],
         [VRouterI18n.t("同域页面 / 其他 VOS 应用前端"), `<span class="mono">${esc(bases.same_origin)}</span><div class="hint">${VRouterI18n.t("携带自身")} VOS fastpath token ${VRouterI18n.t("即可")}，${VRouterI18n.t("无需向")} V-Router ${VRouterI18n.t("注册")}</div>`],
         [

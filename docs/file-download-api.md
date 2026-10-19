@@ -1,4 +1,4 @@
-> 此接口现由 V-Scheduler 模型仓库提供：内部 `http://v-scheduler-model-hub:6005`，默认宿主机 `http://<vos-host>:36005`。共享目录、安装参数及完整接入见[模型管理](model-management.md)。
+> 此接口现由 V-Scheduler 模型仓库提供：内部 `http://v-scheduler:6005`，默认宿主机 `http://<vos-host>:36005`。共享目录、安装参数及完整接入见[模型管理](model-management.md)。
 
 # 仓库文件下载 API / Repository File Downloads
 

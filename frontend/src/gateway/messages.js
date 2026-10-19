@@ -448,6 +448,6 @@ export const VRouterMessages = {
   "后端服务应在过期前调用 heartbeat。界面注册适合静态服务；动态副本建议用 API 自动注册。": {"en": "Backend services should call heartbeat before expiry. UI registration suits static services; use the API to register dynamic replicas automatically."},
   "VOS 内应用（正式地址）": {"en": "VOS apps (primary address)", "zh-TW": "VOS 內應用（正式位址）"},
   "VOS 内应用（兼容地址）": {"en": "VOS apps (compatibility addresses)", "zh-TW": "VOS 內應用（相容位址）"},
-  "新旧地址指向同一统一容器的网关端口，旧地址保留供已有应用使用。": {"en": "Both primary and compatibility addresses reach the gateway port of the same unified container. Existing apps can keep using the old addresses.", "zh-TW": "新舊位址指向同一統一容器的閘道連接埠，舊位址保留供既有應用使用。"},
+  "正式地址统一使用 v-scheduler；其他名称均为兼容地址。新应用和已有应用后续适配均推荐使用 v-scheduler。": {"en": "Use v-scheduler as the primary host alias. All other names are compatibility addresses. New apps and future updates to existing apps should use v-scheduler.", "zh-TW": "正式位址統一使用 v-scheduler；其他名稱均為相容位址。新應用與既有應用後續適配均建議使用 v-scheduler。"},
   "多个 host alias 是同一个容器的 DNS 名称，按原服务角色保留；不会增加容器。8080、38120、6005 分别是网关、调度和模型管理入口，三个 Ollama 实例各自使用独立容器。": {"en": "Multiple host aliases are DNS names for the same container, retained for the original service roles; they do not add containers. Ports 8080, 38120 and 6005 serve the gateway, scheduler and model manager. The three Ollama instances each use a separate container.", "zh-TW": "多個 host alias 是同一容器的 DNS 名稱，按原服務角色保留；不會增加容器。8080、38120、6005 分別是閘道、排程和模型管理入口，三個 Ollama 執行個體各自使用獨立容器。"}
 };

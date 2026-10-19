@@ -20,7 +20,7 @@ Installer `MODEL_HUB_SHARED_MODELS_PATH`, default `/data/vos_workspace/model_hub
 
 ## Endpoint plan
 
-Model management internal `v-scheduler-model-hub:6005`, host default `36005` (old Model Hub 5005/35005 plus1000). Preserve original `/api/v1/...` model APIs on this listener. Embedded UI uses `/app/com.ictrek.v-scheduler/model-hub/api/v1/...`, keeping scheduler task APIs separate. Unified inference `v-router:8080` / host22888. Scheduler `v-scheduler:38120` / configurable host38120. Ollama DNS `v-scheduler-ollama-{qa,embedding,rerank}`; native11434 and gateway11535, each role gets distinct configurable host mappings. Original Model Hub did not expose the three Ollamas on host ports; use a documented consecutive range in the new app instead of claiming nonexistent old mappings.
+Model management internal `v-scheduler:6005` (compatibility `v-scheduler-model-hub:6005`), host default `36005` (old Model Hub 5005/35005 plus1000). Preserve original `/api/v1/...` model APIs on this listener. Embedded UI uses `/app/com.ictrek.v-scheduler/model-hub/api/v1/...`, keeping scheduler task APIs separate. Unified inference `v-scheduler:8080` (compatibility `v-router:8080`) / host22888. Scheduler `v-scheduler:38120` / configurable host38120. Ollama DNS `v-scheduler-ollama-{qa,embedding,rerank}`; native11434 and gateway11535, each role gets distinct configurable host mappings. Original Model Hub did not expose the three Ollamas on host ports; use a documented consecutive range in the new app instead of claiming nonexistent old mappings.
 
 ## Verification before publication
 
