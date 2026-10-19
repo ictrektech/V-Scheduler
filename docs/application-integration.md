@@ -50,6 +50,23 @@ VOS 本机资源采集内置于应用，无需应用开发者部署独立 Agent�
 
 模型仓库内部入口为 `http://v-scheduler-model-hub:6005/api/v1`，默认宿主机入口为 `http://<vos-host>:36005/api/v1`。所有九项内外端口、兼容别名及安装参数见 [README 端口表](../README.md#host-alias内部端口与宿主机端口)。应用内「API 文档 → 应用接入」显示当前安装配置的实际端口。
 
+以下是 `docker-compose.yml` 实际声明的 host alias，所有 profile 共用；正式地址用于新接入，兼容地址用于已有客户端。`<vos-host>` 为安装该应用的宿主机 IP 或域名，外部端口是安装默认值，可在安装参数中修改。应用内两处接入指南均显示当前安装的实际映射端口。
+
+| 功能 | 正式 host alias:内部端口 | 其他正式别名 | 兼容别名 | 宿主机 host:默认外部端口 |
+|---|---|---|---|---|
+| 统一推理 `/v1/*`、网关管理 `/api/v1/*`、界面 `/` | `v-scheduler-gateway:8080` | — | `v-router:8080`、`v-router-backend:8080` | `<vos-host>:22888` |
+| 调度接管 `/api/v1/*` | `v-scheduler:38120` | `v-scheduler-backend:38120`、`v-scheduler-frontend:38120` | — | `<vos-host>:38120` |
+| 模型仓库 `/api/v1/*`、`/openapi.json` | `v-scheduler-model-hub:6005` | `v-scheduler-model-hub-backend:6005` | — | `<vos-host>:36005` |
+| Ollama QA 原生管理 `/api/*` | `v-scheduler-ollama-qa:11434` | — | — | `<vos-host>:12434` |
+| Ollama QA 推理 `/v1/chat/completions`、指标 `/metrics` | `v-scheduler-ollama-qa:11535` | — | — | `<vos-host>:12535` |
+| Ollama Embedding 原生管理 `/api/*` | `v-scheduler-ollama-embedding:11434` | — | — | `<vos-host>:12435` |
+| Ollama Embedding 推理 `/v1/embeddings`、指标 `/metrics` | `v-scheduler-ollama-embedding:11535` | — | — | `<vos-host>:12536` |
+| Ollama Rerank 原生管理 `/api/*` | `v-scheduler-ollama-rerank:11434` | — | — | `<vos-host>:12436` |
+| Ollama Rerank 推理 `/v1/rerank`、指标 `/metrics` | `v-scheduler-ollama-rerank:11535` | — | — | `<vos-host>:12537` |
+
+别名在 Docker `vos_default` 网络中解析；同一行的别名指向同一个容器，不会启动额外容器。Scheduler、Router、模型仓库和界面共用统一容器，三个 Ollama 各为独立容器。新客户端不要只配置 `v-router`：若仍安装旧独立 Router，该兼容名可能解析到旧容器。`host.docker.internal` 是统一容器用于访问宿主机映射端口的 `host-gateway` 别名，不是服务入口。单个 Ollama 入口不替代统一网关的模型命名和调度策略。
+
+
 | 凭据 | 用途 | 不能替代 |
 |---|---|---|
 | VOS 用户 Bearer / 管理员配置的网关 Key | 模型调用；有相应权限时注册服务 | 调度 submitter 凭据 |

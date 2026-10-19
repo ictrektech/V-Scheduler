@@ -7,6 +7,22 @@ pub fn integration() -> Value {
         json!({"name":"Scheduler management","internal":"http://v-scheduler:38120","host_port":env("SCHEDULER_HOST_PORT","38120"),"path":"/api/v1","authentication":"Scoped service bearer or VOS administrator"}),
         json!({"name":"Model management","internal":"http://v-scheduler-model-hub:6005","host_port":env("MODEL_HUB_BACKEND_HOST_PORT","36005"),"path":"/api/v1","authentication":"Same API contract as Model Hub; restrict management ports to trusted network"}),
     ];
+    // These are declared network aliases of the unified container, not extra services.
+    for endpoint in &mut endpoints {
+        let (aliases, compatibility) = match endpoint["name"].as_str().unwrap_or("") {
+            "Unified inference" | "Gateway management" => {
+                (vec![], vec!["v-router:8080", "v-router-backend:8080"])
+            }
+            "Scheduler management" => (
+                vec!["v-scheduler-backend:38120", "v-scheduler-frontend:38120"],
+                vec![],
+            ),
+            "Model management" => (vec!["v-scheduler-model-hub-backend:6005"], vec![]),
+            _ => (vec![], vec![]),
+        };
+        endpoint["aliases"] = json!(aliases);
+        endpoint["compatibility_aliases"] = json!(compatibility);
+    }
     for (role, api, gateway) in [
         ("qa", "12434", "12535"),
         ("embedding", "12435", "12536"),

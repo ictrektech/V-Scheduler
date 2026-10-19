@@ -10,8 +10,9 @@ defineProps<{t:(value:string)=>string}>()
  <article class="integration-guide panel">
   <h2>{{t('应用接入')}}</h2>
   <p>{{t('模型客户端继续使用网关 API；调度管理使用独立前缀。')}}</p>
-  <div class="endpoint-table"><table><thead><tr><th>{{t('用途')}}</th><th>Docker host alias : port</th><th>{{t('宿主机地址 : 映射端口')}}</th></tr></thead><tbody><tr v-for="endpoint in endpoints" :key="endpoint.name"><td>{{endpoint.name}}</td><td><code>{{endpoint.internal}}{{endpoint.path}}</code></td><td><code>http://{{locationHost}}:{{endpoint.host_port}}{{endpoint.path}}</code></td></tr></tbody></table></div>
+  <div class="endpoint-table"><table><thead><tr><th>{{t('用途')}}</th><th>{{t('正式 host alias : 内部端口')}}</th><th>{{t('其他正式别名 / 兼容别名')}}</th><th>{{t('宿主机地址 : 映射端口')}}</th></tr></thead><tbody><tr v-for="endpoint in endpoints" :key="endpoint.name"><td>{{endpoint.name}}</td><td><code>{{endpoint.internal}}{{endpoint.path}}</code></td><td><div v-for="alias in endpoint.aliases||[]" :key="alias"><code>{{alias}}</code></div><div v-for="alias in endpoint.compatibility_aliases||[]" :key="alias">{{t('兼容')}}：<code>{{alias}}</code></div><span v-if="!endpoint.aliases?.length&&!endpoint.compatibility_aliases?.length">—</span></td><td><code>http://{{locationHost}}:{{endpoint.host_port}}{{endpoint.path}}</code></td></tr></tbody></table></div>
   <p>{{t('端口显示当前安装配置。模型管理 API、选定权重文件下载及三个 Ollama 接口的详细说明见「模型管理 API」。')}}</p>
+  <p>{{t('正式别名由当前 V-Scheduler 安装声明；兼容别名仅供旧客户端使用。新应用优先使用正式别名；与旧 V-Router 共存时不要向兼容别名发送私有凭据。所有别名均指向现有容器，不新增服务。')}}</p>
   <h3>{{t('本地与云端模型')}}</h3>
   <p>{{t('本地和纳管远端模型先取得资源许可；云端供应商模型不占本地资源预约。资源忙时遵守重试提示，不能绕过网关直接启动同一次计算。')}}</p>
   <h3>{{t('应用和模型自动发现')}}</h3>

@@ -1,5 +1,10 @@
 // Simplified Chinese is the source text; each entry supplies Traditional Chinese and English.
 export const messages: Record<string, readonly [string, string]> = {
+"正式 host alias : 内部端口":["正式 host alias : 內部連接埠", "Primary host alias : internal port"],
+"其他正式别名 / 兼容别名":["其他正式別名 / 相容別名", "Other primary aliases / compatibility aliases"],
+"兼容":["相容", "Compatibility"],
+"正式别名由当前 V-Scheduler 安装声明；兼容别名仅供旧客户端使用。新应用优先使用正式别名；与旧 V-Router 共存时不要向兼容别名发送私有凭据。所有别名均指向现有容器，不新增服务。":["正式別名由目前 V-Scheduler 安裝宣告；相容別名供舊用戶端使用。新應用優先使用正式別名；與舊 V-Router 共存時不要向相容別名傳送私有憑據。所有別名均指向現有容器，不新增服務。", "Primary aliases are declared by this V-Scheduler installation. Compatibility aliases support existing clients. New applications should use primary aliases; do not send private credentials to compatibility aliases when a standalone V-Router coexists. Aliases point to existing containers and add no services."],
+
   '调用方 Python 完整示例：创建任务并等待完成': ['呼叫端 Python 完整範例：建立任務並等待完成', 'Complete Python caller: create a task and await completion'],
   '示例只依赖 Python 标准库，不发送 Authorization。替换 BASE、SOURCE、MODEL_ID 和 FILES 后可用于内部后端或受控网络中的外部客户端。总等待超时只停止客户端等待，不自动取消服务器任务。': ['範例僅使用 Python 標準函式庫，不傳送 Authorization。替換 BASE、SOURCE、MODEL_ID 和 FILES 後，可用於內部後端或受控網路的外部客戶端。總等待逾時只停止客戶端等待，不會自動取消伺服器任務。', 'This standard-library Python example sends no Authorization header. Replace BASE, SOURCE, MODEL_ID and FILES for an internal backend or an external caller on a controlled network. The overall timeout stops client polling, not the server task.'],
   '字段': ['欄位', 'Field'],

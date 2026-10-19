@@ -236,3 +236,19 @@ All three actual installed versions and image identities match 0.0.36. Shared-di
 On installed 0.0.36, 232 passes V-ChatCut non-streaming followed immediately by streaming, real V-Voice TTS WAV plus nonempty ASR, and V-Sub direct/gateway, oversize/settings rejection, native cancellation and worker-generation recovery. All eight permits released; the chat checks use no client-side retry. Evidence is retained under `~/dev/build/V-Scheduler/p0-20261019/`, with `upgrade36/`, `regression36-results.json` and `stability-0.0.36.json` kept separate from earlier releases.
 
 The new Voice 0.0.21 CPU/music approvals still require that application's matching trusted installed version and advertised capabilities. Native calibration and this Scheduler release do not by themselves prove that Voice 0.0.21 has been packaged, deployed or accepted. Its final image and deployed API checks remain a separate delivery gate.
+
+## P0 最终交叉验收（2026-10-19，Scheduler 0.0.36 / V-Voice 0.0.21）
+
+V-Voice 0.0.21 的正式 Release 与商店发布成功，192、229、232 均通过 VOS 升级到该版本。实际 profile 分别为 `l4t`、`thor`、`amd`；Scheduler 分别为 `l4t`、`thor-spark`、`amd`。核验运行镜像、原生源码哈希、About 和前端版本，保留原共享目录、应用数据目录、CPU 模型选择与运行参数。Scheduler 模型文件仍为 192 的 13 模型 / 478 文件、229 的 28 / 601、232 的 19 / 491。
+
+| 测试机 | 真实功能验收 | 最后稳定性 |
+|---|---|---|
+| 192 | Voice 直调/网关 TTS、ASR，512 字符 TTS / 20 秒 ASR 边界；连续试聊、停止后下一次调用；脱敏 NER、OCR；受限轻量 RAG；V-Sub 六项含取消与重启恢复 | 300.7 秒、1088 次成功探测，五容器健康，无新增重启/OOM/探测错误 |
+| 229 | Voice 旧语音、说话人、网关 TTS/ASR；四个音乐模型实际 WAV、网关 FLAC；自动绑定完整 11 模型；真实 VOS UI 多语言、生成、播放、下载及边界拦截 | 至少 300 秒、21 次采样，五容器健康，无新增重启/OOM，预约归零 |
+| 232 | Voice 同上六项正例及输入越界拒绝；V-ChatCut 连续 JSON → SSE；脱敏 NER、OCR；完整 RAG 精确事实验证；V-Sub 六项 | 300.2 秒、1144 次成功探测，五容器健康，无新增重启/OOM/探测错误 |
+
+192/232 的原生无效输入不产生许可；网关校验拒绝涉及的许可全部释放。真实 RAG 测试使用独立测试知识库、会话和 agent，测试后清理，未删除用户模型。Orin CPU Voice 仅批准匹配校准的 Kokoro / SenseVoice，未将 Paraformer 或其他模型据此放行。
+
+232 首轮 V-Sub 重启测试的脚本误将就绪期间 HTTP 503 当成终止错误；保留该失败记录，改为有界等待新 worker PID 与 generation 后，六项复测全通过。此修改仅属于测试脚本，没有降低应用预算或绕过准入。
+
+音乐 HTTP 客户端断开时，服务保留许可直到原生工作退出，随后释放；后续请求实测成功。这不是立即终止原生音乐计算的保证。上述范围不包含 Image Studio 当前不可用的 P1 环境问题，也不代表未测模型或其他硬件 profile 已获批准。
