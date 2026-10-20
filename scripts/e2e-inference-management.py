@@ -61,6 +61,7 @@ if(req.url==='/api/scheduler/confirm-stopped'){
  if(valid){unloads++;loaded.delete(body.model);}
  return reply({protocol_version:1,model:body.model,nonce:valid?body.nonce:'stale',stopped:valid,native_exit_barrier:valid});
 }
+if(req.url==='/v1000/user/check')return reply({code:0,data:{id:'fixture-user',role_code:'user',enable:1,delete:0}});
 if(req.url==='/v1000/oauth2/userinfo')return reply({sub:req.headers.authorization?.endsWith('bob')?'bob':'alice',preferred_username:'fixture'});
 if(req.url==='/v1/chat/completions'){
  if(!req.headers['x-vscheduler-permit-id'])return reply({error:'no permit'},500);

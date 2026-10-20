@@ -390,6 +390,21 @@ async fn probe_model(g: &Gateway, u: &Upstream, model: &str) -> Api<()> {
 pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) -> Api<Response> {
     let path = request.uri().path().to_string();
     let method = request.method().as_str().to_string();
+    // OIDC userinfo establishes the owner, but does not expose platform roles.
+    // Reuse the controller's verified role check for these administrative APIs;
+    // never infer an administrator from a username or a gateway registration.
+    let mut scoped_identity = id.clone();
+    if !id.admin && (matches!(path.as_str(), "/api/v1/model-residency" | "/api/v1/model-lifecycle" | "/api/v1/inference-queue")
+        || path.starts_with("/api/v1/inference-queue/")) {
+        match crate::identity::verify(request.headers()).await {
+            Ok(_) => scoped_identity.admin = true,
+            Err(StatusCode::FORBIDDEN) => {}, // ordinary users retain their own queue
+            Err(status) => return Err(Failure::new(status.as_u16(), if status == StatusCode::UNAUTHORIZED {
+                "VOS access token is invalid or expired"
+            } else { "VOS administrator verification is unavailable" })),
+        }
+    }
+    let id = &scoped_identity;
     if path=="/api/v1/inference-queue" && method=="GET" {
         if id.owner.is_empty() && !id.admin {return Err(Failure::new(401,"queue inspection requires a verified identity"));}
         return Ok(Json(g.queue.lock().unwrap().snapshot(id)).into_response());

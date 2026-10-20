@@ -79,6 +79,13 @@ try:
  for path in ['/api/v1/status','/model-hub/api/v1/models']:failure(gate,path,401)
  check(request(gate,'/api/v1/status',keys['vos_user'])[0]==200,'VOS account authenticates gateway')
  check(request(gate,'/model-hub/api/v1/models',keys['vos_user'])[:2]==(200,[]),'same account authenticates model workspace; legacy success array preserved')
+ for path in ['/api/v1/model-residency','/api/v1/model-lifecycle']:
+  assert request(gate,path,keys['vos_admin'])[0]==200,path
+  failure(gate,path,403,keys['vos_user'])
+ assert request(gate,'/api/v1/model-residency',keys['vos_admin'],{'idle_seconds':60},'PUT')[0]==200
+ assert request(gate,'/api/v1/model-residency',keys['vos_user'],{'idle_seconds':60},'PUT')[0]==403
+ check(True,'verified VOS administrator manages residency and model lifecycle; ordinary users cannot')
+
  for token,status in [(keys['vos_admin'],200),(keys['vos_user'],403),(keys['submitter'],403),(keys['gateway'],401),('expired',401)]:
   if status!=200:failure(gate,'/scheduler/api/v1/nodes',status,token)
   else:assert request(gate,'/scheduler/api/v1/nodes',token)[0]==200
