@@ -348,7 +348,7 @@ pub(super) async fn handle(g: Arc<Gateway>, id: Identity, request: Request) -> A
         .map_err(|_| Failure::new(429, "gateway request capacity exhausted"))?;
     let query = request.uri().query().unwrap_or("").to_string();
     let method = request.method().clone();
-    let headers = request.headers().clone();
+    let mut headers = request.headers().clone();
     let is_websocket = headers
         .get("upgrade")
         .and_then(|v| v.to_str().ok())
@@ -605,6 +605,14 @@ pub(super) async fn handle(g: Arc<Gateway>, id: Identity, request: Request) -> A
             value["keep_alive"]=json!(g.residency.seconds());
         }
         exchange.retained = u.source=="v-scheduler" && value["keep_alive"].as_u64().unwrap_or(0)>0;
+        // Retained owned models must hand off their exclusive reservation to
+        // concurrent existing clients as well. Only verified identities get
+        // bounded automatic waiting; explicit zero keeps immediate admission.
+        if exchange.retained && residency::native_origin(&u).is_some()
+            && !id.owner.is_empty() && approval.policy["mode"] != "delegated"
+            && !headers.contains_key("x-vscheduler-queue-wait-seconds") {
+            headers.insert("x-vscheduler-queue-wait-seconds", "30".parse().unwrap());
+        }
         // Waiting bodies stay bounded by the input buffer, but do not consume
         // an execution slot: queued background callers must not prevent a new
         // interactive caller from entering the priority queue.

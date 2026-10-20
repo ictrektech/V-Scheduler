@@ -41,3 +41,5 @@ The unified container has one primary host alias: `v-scheduler`. Ports `8080`, `
 Aliases in one row reach the same container/port. `host.docker.internal` is the gateway container's `host-gateway` alias for the Docker host, e.g. `host.docker.internal:38120`; it is not a separate service or port.
 
 The gateway also proxies scheduling at port 22888 `/scheduler/api/v1/*` and model management at `/model-hub/api/v1/*`. The VOS UI uses `/app/com.ictrek.v-scheduler/`; the model-management API uses `/app/com.ictrek.v-scheduler/model-hub/api/v1/*`; the gateway API prefix is `/api/com.ictrek.v-scheduler`. Use the unified gateway `/v1/*` for cross-backend model names and scheduling. Retain the original Model Hub installer-selected public directory to adopt existing models in place.
+
+With idle retention enabled, verified callers to built-in Ollama wait up to 30 seconds by default for model handoff and concurrent work. Explicit X-VScheduler-Queue-Wait-Seconds: 0 preserves immediate admission. Anonymous callers and other backends keep the previous behavior.

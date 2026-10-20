@@ -55,3 +55,5 @@
 閘道亦在相同 `22888` 連接埠提供 `/scheduler/api/v1/*` 調度代理及 `/model-hub/api/v1/*` 模型管理代理。VOS 內的統一入口為 `/app/com.ictrek.v-scheduler/`；模型管理前綴為 `/app/com.ictrek.v-scheduler/model-hub/api/v1/*`，閘道 API 前綴為 `/api/com.ictrek.v-scheduler`。三個 Ollama 的 `11535` 是各後端推理/指標入口；跨後端統一模型名稱及調度入口使用 `v-scheduler:8080/v1/*` 或 `<vos-host>:22888/v1/*`。
 
 這些別名由 V-Scheduler 自行宣告；原 Model Hub 的別名、連接埠及共用目錄維持原應用所有權。共用模型目錄仍於安裝時選取，沿用原 Model Hub 選取的公共目錄即可。
+
+開啟駐留時，已驗證身分呼叫內建 Ollama 且未指定排隊標頭，預設有界等待 30 秒；明確指定 0、匿名呼叫及其他後端維持立即准入或拒絕。

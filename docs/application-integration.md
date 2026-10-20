@@ -398,7 +398,7 @@ X-VScheduler-Priority: interactive
 X-VScheduler-Request-ID: unique-request-uuid
 ```
 
-等待范围为 1..300 秒；`0` 或省略表示不排队。交互请求使用 `interactive`，后台批量请求使用 `background`。每等待 30 秒增加一级优先级，同级按到达顺序；原生后台任务也参与等待老化，不强制抢占已经运行的计算。队列最多 64 条、每个身份最多 8 条，同时仍受网关活动连接和输入缓冲上限约束。
+等待范围为 1..300 秒；显式 `0` 表示不排队。省略时，已验证用户或应用调用自带 Ollama 且启用了驻留，会自动有界等待最多 30 秒，以协调并发请求和模型切换；关闭驻留、匿名调用和其他后端保持立即准入或拒绝。交互请求使用 `interactive`，后台批量请求使用 `background`。每等待 30 秒增加一级优先级，同级按到达顺序；原生后台任务也参与等待老化，不强制抢占已经运行的计算。队列最多 64 条、每个身份最多 8 条，同时仍受网关活动连接和输入缓冲上限约束。
 
 - `GET http://v-scheduler:8080/api/v1/inference-queue`：查看请求 ID、模型、位置、等待时长和等待原因；普通用户/应用仅看自己的请求，管理员可看全部。
 - `DELETE http://v-scheduler:8080/api/v1/inference-queue/<request-id>`：取消尚未执行的请求。`execution_started: false` 才表示确认取消了等待项；`null` 表示登记了取消意图，不能据此认定已运行计算停止。取消与 POST 到达顺序相反时，也会按身份保存有界取消标记。

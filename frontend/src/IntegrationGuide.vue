@@ -20,7 +20,7 @@ defineProps<{t:(value:string)=>string}>()
   <p>{{t('安装支持的应用后，网关会按发现间隔读取其可用模型与服务。内置三个 Ollama 由本应用直接接入；其他应用支持 Image Studio、V-Voice、V-Music、ML Server 和视频结构化服务。')}}</p>
   <p>{{t('V-Voice 就绪后会主动接入调度器，自动绑定已校准的执行器与模型映射。外部云端服务可在上游页面配置。')}}</p>
   <h3>{{t('推理等待队列')}}</h3>
-  <p>{{t('本地推理设置 X-VScheduler-Queue-Wait-Seconds（1..300）、X-VScheduler-Priority（interactive/background）和唯一 X-VScheduler-Request-ID。未设置等待时保持立即准入。试聊默认等待 120 秒，可查看位置并取消。')}}</p>
+  <p>{{t('本地推理设置 X-VScheduler-Queue-Wait-Seconds（1..300）、X-VScheduler-Priority（interactive/background）和唯一 X-VScheduler-Request-ID。开启内置驻留且身份已验证时，未设置等待默认等 30 秒；显式 0 保持立即准入。试聊默认等待 120 秒，可查看位置并取消。')}}</p>
   <p><code>GET /api/v1/inference-queue</code> · <code>DELETE /api/v1/inference-queue/{id}</code></p>
   <p>{{t('队列按用户和应用隔离；每等待 30 秒提升一级优先级，不抢占运行中的计算。等待不预约资源，重启不重放请求；总超时应覆盖排队、冷加载和推理。')}}</p>
   <h3>{{t('模型驻留与卸载')}}</h3>

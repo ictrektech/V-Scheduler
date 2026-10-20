@@ -109,6 +109,16 @@ try:
  check(sql("SELECT count(*) FROM vrs_permits WHERE state='active';")=='1','warm memory retains its resource reservation')
  check(chat(stream=True)[0]==200 and api('/api/v1/model-residency')[1]['resident']['permit_id']==first_id,'same model SSE reuses reserved warm model')
  check(sql("SELECT metadata->>'resident_reuses' FROM vrs_permits WHERE state='active';")=='1','controller records reuse with rotated execution proof')
+ with concurrent.futures.ThreadPoolExecutor() as pool:
+  held=pool.submit(chat,text='hold')
+  until(lambda:request(peerurl+'/stats')[1]['active']==1,'implicit queue hold not active')
+  calls=request(peerurl+'/stats')[1]['calls']
+  immediate=request(gate+'/v1/chat/completions',{'model':'v-scheduler/ollama-qa/other:latest','messages':[{'role':'user','content':'hello'}]},keys['gateway'],headers={'X-VScheduler-Queue-Wait-Seconds':'0'})
+  check(immediate[0]==429 and request(peerurl+'/stats')[1]['calls']==calls,'explicit zero retains immediate refusal while an owned model is active')
+  implicit=pool.submit(chat,'other:latest')
+  check(held.result()[0]==200 and implicit.result()[0]==200,'resident-mode verified clients wait for owned model handoff without new headers')
+ check(request(peerurl+'/stats')[1]['peak']==1,'automatic waiting never overlaps exclusive native execution')
+
  check(chat('other:latest')[0]==200,'model switch unloads prior model before admitting the replacement')
  check(first_id!=api('/api/v1/model-residency')[1]['resident']['permit_id'] and request(peerurl+'/stats')[1]['unloads']>=1,'switch creates a fresh reservation after native stop proof')
  api('/api/v1/model-residency',{'idle_seconds':1},'PUT')
