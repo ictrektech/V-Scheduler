@@ -24,6 +24,8 @@
 
 绑定包含 `protocol_version=1`、单调递增 `binding_revision`、`app_id`、固定调度 `url=http://v-router:8080/scheduler/api/v1`、本应用的 `token` 与 `executor_token`、固定 `upstream_url`、`execution_settings`、`models`、`gateway_executors`、`model_limits` 及 Image Studio 的 `model_parameters`。客户端先核验 VOS 身份、固定地址和控制器执行器，再以 0600 原子落盘；服务凭据不得交给业务用户。
 
+这里的 `v-router` 是上述三款已发布旧客户端的固定兼容契约，实际指向 `v-scheduler` 统一容器。新客户端推荐正式 `v-scheduler` 地址；这些旧客户端后续切换时须同步核验收发两端契约，不能只改文档或放宽地址白名单。
+
 - Music 限额包含 `duration_seconds`、`prompt_characters`、`negative_prompt_characters`。
 - Desensitize NER 包含 `text_characters`、`max_tokens`；OCR 包含 `input_bytes`、`input_width`、`input_height`、`input_pixels`、`input_pages`。解码前及实际推理前均检查。
 - Image Studio 包含图像、批次、视频、hires 和文本范围；`model_parameters` 完整匹配实测 JobRecord 的 19 个运行参数及 `has_reference`，使用 `model@variant` 原生 ID。不能用默认参数的预算放行其他 offload、缓存、后端或参考图组合。
@@ -36,7 +38,7 @@
 
 内容相同时保留 revision 和凭据。变更必须等待本应用活动任务、许可及停止未知的预约结束；提高 `credential_epoch` 才轮换凭据，并撤销旧身份。管理员已禁用的执行器和已撤销的身份不会被同一配置重新启用。运行配置不再匹配时，旧自动执行器退出可执行集合；即使客户端尚持旧快照，也不能据此取得执行授权。
 
-[V-Sub 每用户 worker / Root broker](v-sub-auto-binding.md) 和 [HybRAG 后台网关凭据](hybrag-gateway-identity.md) 使用各自契约，不属于本固定三应用模块。协议测试与真实任务验收分别记录，见[迁移协同契约](client-migration-contract.md)。
+[V-Sub 每用户 worker / Root broker](v-sub-auto-binding.md) 和 [HybRAG 后台网关凭据](hybrag-gateway-identity.md) 使用各自契约，不属于本固定三应用模块。协议测试与真实任务验收分别记录，见[发布验收记录](validation.md)。
 
 ## 当前实测清单
 
