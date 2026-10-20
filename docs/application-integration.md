@@ -64,7 +64,7 @@ VOS 本机资源采集内置于应用，无需应用开发者部署独立 Agent�
 | Ollama Rerank 原生管理 `/api/*` | `v-scheduler-ollama-rerank:11434` | — | `<vos-host>:12436` |
 | Ollama Rerank 推理 `/v1/rerank`、指标 `/metrics` | `v-scheduler-ollama-rerank:11535` | — | `<vos-host>:12537` |
 
-新应用和已有应用后续适配均推荐使用正式名称 `v-scheduler`，通过端口区分三个入口；其他统一容器名称全部为兼容别名，现有配置继续可用。已有自动绑定凭据若限定兼容地址，沿用原契约，不直接修改私钥或绕过来源校验。别名在 Docker `vos_default` 网络中解析；同一行的别名指向同一个容器，不会启动额外容器。Scheduler、Router、模型仓库和界面共用统一容器，三个 Ollama 各为独立容器。新客户端不要只配置 `v-router`：若仍安装旧独立 Router，该兼容名可能解析到旧容器。`host.docker.internal` 是统一容器用于访问宿主机映射端口的 `host-gateway` 别名，不是服务入口。单个 Ollama 入口不替代统一网关的模型命名和调度策略。
+新应用和已有应用后续适配均推荐使用正式名称 `v-scheduler`，通过端口区分三个入口；其他统一容器名称全部为兼容别名，现有配置继续可用。旧客户端自动绑定沿用已核验的兼容地址；支持 `canonical-v-scheduler-v1` 的 HybRAG / V-Sub 先确认能力再迁移正式地址，保留原凭据并递增 revision。V-Voice 0.0.22 使用正式地址且复用 0.0.21 原生镜像。其他固定绑定仍按各自可信契约交接，不直接修改私钥或绕过来源校验。别名在 Docker `vos_default` 网络中解析；同一行的别名指向同一个容器，不会启动额外容器。Scheduler、Router、模型仓库和界面共用统一容器，三个 Ollama 各为独立容器。新客户端不要只配置 `v-router`：若仍安装旧独立 Router，该兼容名可能解析到旧容器。`host.docker.internal` 是统一容器用于访问宿主机映射端口的 `host-gateway` 别名，不是服务入口。单个 Ollama 入口不替代统一网关的模型命名和调度策略。
 
 
 | 凭据 | 用途 | 不能替代 |
@@ -377,3 +377,9 @@ V-Voice 已验证版本的 Python 直调在准入响应丢失后，可按[未认
 ## 协议参考与历史说明
 
 本页维护操作步骤；[OpenAPI](../api/openapi-v1.json)、[调度接入标准](integration-standard.md)、[网关资源准入](resource-scheduling.md)维护字段、权限及停止契约。已发布版本的具体部署与真实验证记录见[验证记录](validation.md)。旧 vLLM 和独立 V-Router 接入地址保留兼容入口，新的接入流程统一从本文开始。
+
+## 启动与故障定位
+
+模型调用前可查询 `GET http://v-scheduler:8080/readyz`（宿主机 `http://<vos-host>:22888/readyz`）。它不需要认证，不会加载模型，返回内置后端的首次发现与健康状态。`/healthz` 仅代表进程存活。`MODEL_CATALOG_INITIALIZING` 是尚在发现，`UPSTREAM_UNAVAILABLE` 是已探测后端不可用，404 才表示当前健康目录找不到模型；已就绪的其他模型仍可调用。
+
+`SCHEDULER_ADMISSION_TIMEOUT` 是控制器准入响应超时，推理尚未发出；429 的 `WAIT_MEMORY_HEADROOM` / `WAIT_STOP_CONFIRMATION` 则是资源或原生停止核验条件。排查时保留 `code` 和 `request_id`，不要把这些错误都归为“模型不存在”，也不要因传输超时重放可能已开始的推理。

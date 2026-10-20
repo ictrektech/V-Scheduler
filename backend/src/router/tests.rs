@@ -50,6 +50,7 @@ fn gateway(root: &Path, controller: Router) -> Arc<Gateway> {
         buffered: Arc::new(tokio::sync::Semaphore::new(65536)),
         jobs_lock: Mutex::new(()),
         ui: None,
+        initial_discovery: Mutex::new(Default::default()),
     })
 }
 #[test]
@@ -1082,4 +1083,76 @@ fn calibrated_ollama_defaults_are_enforced_before_native_execution() {
         assert!(lease::validate(&approval,&u,&mut automatic,100).is_err(),"{key}=0 enabled unmeasured native defaults");
     }
     assert!(lease::validate(&approval,&u,&mut request,4097).is_err());
+}
+
+#[tokio::test]
+async fn startup_catalog_is_retryable_instead_of_empty_or_missing() {
+    let root = temp();
+    let g = gateway(&root, Router::new());
+    g.initial_discovery.lock().unwrap().insert("qa".into());
+    let request = Request::builder().uri("/v1/models").body(Body::empty()).unwrap();
+    let error = proxy::handle(g.clone(), principal("alice"), request).await.err();
+    assert_eq!(error.map(|e| e.status), Some(StatusCode::SERVICE_UNAVAILABLE),
+        "an initial discovery window must not look like a ready empty catalog");
+    let request = Request::builder().method("POST").uri("/v1/chat/completions")
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"model":"v-scheduler/ollama-qa/starting","messages":[{"role":"user","content":"hello"}]}"#)).unwrap();
+    let error = proxy::handle(g.clone(), principal("alice"), request).await.err().unwrap();
+    assert_eq!(error.status, StatusCode::SERVICE_UNAVAILABLE,
+        "a model not yet discovered during startup must not be reported as missing");
+    assert_eq!(error.code.as_deref(), Some("MODEL_CATALOG_INITIALIZING"));
+    let response = error.into_response();
+    assert_eq!(response.headers()["retry-after"], "1");
+    g.initial_discovery.lock().unwrap().clear();
+    let request = Request::builder().uri("/v1/models").body(Body::empty()).unwrap();
+    assert_eq!(proxy::handle(g, principal("alice"), request).await.unwrap().status(), 200);
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[tokio::test]
+async fn local_startup_does_not_hide_discovered_cloud_models() {
+    let root = temp();
+    let g = gateway(&root, Router::new());
+    g.initial_discovery.lock().unwrap().insert("qa".into());
+    g.registry.lock().unwrap().put(upstream("cloud"), vec![model("echo")]);
+    let request = Request::builder().uri("/v1/models").body(Body::empty()).unwrap();
+    let response = proxy::handle(g.clone(), principal("alice"), request).await.unwrap();
+    assert_eq!(response.status(), 200);
+    let value: Value = serde_json::from_slice(&axum::body::to_bytes(response.into_body(), 65536).await.unwrap()).unwrap();
+    assert_eq!(value["data"].as_array().unwrap().len(), 1);
+    assert_eq!(readiness::response(&g).status(), 503);
+    assert!(g.local_model_readiness("manual/echo").is_ok());
+    g.initial_discovery.lock().unwrap().clear();
+    assert_eq!(readiness::response(&g).status(), 200);
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn failed_builtin_discovery_is_unavailable_but_unknown_healthy_model_is_not_found() {
+    let root = temp();
+    let g = gateway(&root, Router::new());
+    let mut u = upstream("v-scheduler/ollama-qa");
+    u.healthy = false;
+    g.registry.lock().unwrap().put(u.clone(), vec![]);
+    assert_eq!(g.local_model_readiness("v-scheduler/ollama-qa/missing").unwrap_err().status, 503);
+    u.healthy = true;
+    g.registry.lock().unwrap().put(u, vec![]);
+    assert!(g.local_model_readiness("v-scheduler/ollama-qa/missing").is_ok());
+    assert_eq!(g.registry.lock().unwrap().acquire("v-scheduler/ollama-qa/missing", "/chat/completions", "", &principal("alice")).err().unwrap().status, 404);
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[tokio::test]
+async fn admission_deadline_covers_stalled_response_body() {
+    let root = temp();
+    let controller = Router::new().route("/api/v1/permits", post(|| async {
+        Body::from_stream(futures_util::stream::pending::<Result<Bytes, std::io::Error>>())
+    }));
+    let g = gateway(&root, controller);
+    let error = tokio::time::timeout(Duration::from_secs(4),
+        lease::call(&g, "fixture", "/permits", json!({}), true)).await
+        .expect("admission must not hang after response headers").unwrap_err();
+    assert_eq!(error.code.as_deref(), Some("SCHEDULER_ADMISSION_TIMEOUT"));
+    assert_eq!(error.status, 503);
+    std::fs::remove_dir_all(root).unwrap();
 }

@@ -8,7 +8,7 @@ use std::{path::Path, time::Duration};
 const APP: &str = "com.ictrek.v-sub";
 const GATEWAY_APP: &str = "v-scheduler.app-gateway.v-sub";
 const ORIGIN: &str = "http://v-sub-backend:7090";
-const CONTROLLER: &str = "http://v-router:8080/scheduler/api/v1";
+const CONTROLLER: &str = "http://v-scheduler:8080/scheduler/api/v1";
 fn hex(value: &str, length: usize) -> bool {
     value.len() == length
         && value
@@ -71,6 +71,11 @@ fn build(
         approvals["protocol_version"] == 1,
         "unsupported V-Sub calibration format"
     );
+    let controller = if discovery["capabilities"].as_array().is_some_and(|caps| caps.iter().any(|cap| cap == "canonical-v-scheduler-v1")) {
+        CONTROLLER
+    } else {
+        "http://v-router:8080/scheduler/api/v1"
+    };
     let epoch = approvals["credential_epoch"]
         .as_u64()
         .context("V-Sub credential epoch required")?;
@@ -171,10 +176,10 @@ fn build(
             executors.push(json!({"id":executor,"app_id":app,"node_id":node,"contract_version":"1","task_type":"model.infer","resources":resources,"upstream_urls":[upstream],"placements":[],"retry_mode":"none","max_attempts":1}));
         }
         gateway_ids.push(gateway.clone());
-        let cfg=gateway_namespaces.entry(namespace.clone()).or_insert_with(||json!({"url":CONTROLLER,"token":gateway_token,"require_model_policy":true,"models":{}}));
+        let cfg=gateway_namespaces.entry(namespace.clone()).or_insert_with(||json!({"url":controller,"token":gateway_token,"require_model_policy":true,"models":{}}));
         cfg["models"][&id] = json!({"mode":"permit","executor_id":gateway,"completion":"synchronous","upstream_url":upstream,"max_input_bytes":max_input,"limits":approval["limits"].as_object().cloned().unwrap_or_default()});
     }
-    let mut state = json!({"credential_epoch":epoch,"binding":{"protocol_version":1,"binding_revision":1,"app_id":APP,"url":CONTROLLER,"token":token,"models":models,"gateway_executors":gateway_executors,"namespaces":namespaces,"model_generations":generations,"upstreams":upstreams,"model_limits":limits,"model_execution_settings":settings},"principals":[{"token":token,"role":"submitter","app_id":APP,"permit_executors":gateway_ids},{"token":gateway_token,"role":"submitter","app_id":GATEWAY_APP}],"executors":executors,"adapters":[],"gateway":{"token":gateway_token},"gateway_snapshot":{"protocol_version":1,"app_id":APP,"namespaces":gateway_namespaces}});
+    let mut state = json!({"credential_epoch":epoch,"binding":{"protocol_version":1,"binding_revision":1,"app_id":APP,"url":controller,"token":token,"models":models,"gateway_executors":gateway_executors,"namespaces":namespaces,"model_generations":generations,"upstreams":upstreams,"model_limits":limits,"model_execution_settings":settings},"principals":[{"token":token,"role":"submitter","app_id":APP,"permit_executors":gateway_ids},{"token":gateway_token,"role":"submitter","app_id":GATEWAY_APP}],"executors":executors,"adapters":[],"gateway":{"token":gateway_token},"gateway_snapshot":{"protocol_version":1,"app_id":APP,"namespaces":gateway_namespaces}});
     if let Some(old) = old {
         let revision = old["binding"]["binding_revision"]
             .as_u64()
@@ -446,6 +451,19 @@ mod tests {
         let approvals = json!({"protocol_version":1,"credential_epoch":1,"approvals":[{"architecture":std::env::consts::ARCH,"profile":"l4t","hardware":[],"native_model":"builtin/tiny-q5_1","execution_settings":{"profile":"l4t","runtime":"fixture"},"resources":{"cpu_millicores":4500,"memory_mib":2048},"evidence":{"id":"isolated-unit-only","confirmed_stopped":true,"peak_memory_mib":800,"observed_peak_cpu_millicores":4021},"max_input_bytes":1048576,"model_limits":{"input_bytes":1048576,"duration_seconds":20,"prompt_characters":0},"limits":{}}]});
         (discovery, approvals)
     }
+    #[test]
+    fn canonical_origin_requires_capability_and_preserves_identity() {
+        let (mut discovery, approvals) = fixture();
+        let cap = Resources { cpu_millicores: 8000, memory_mib: 16000, ..Default::default() };
+        let first = build("local", &cap, &Resources::default(), &json!({"gpus":[]}), "l4t", &discovery, &approvals, None).unwrap();
+        assert_eq!(first["binding"]["url"], "http://v-router:8080/scheduler/api/v1");
+        discovery["capabilities"] = json!(["canonical-v-scheduler-v1"]);
+        let next = build("local", &cap, &Resources::default(), &json!({"gpus":[]}), "l4t", &discovery, &approvals, Some(&first)).unwrap();
+        assert_eq!(next["binding"]["url"], CONTROLLER);
+        assert_eq!(next["binding"]["token"], first["binding"]["token"]);
+        assert_eq!(next["binding"]["binding_revision"], 2);
+    }
+
     #[test]
     fn diagnostics_never_log_unknown_error_content() {
         let secret = anyhow::anyhow!("private token and signed URL must remain private");

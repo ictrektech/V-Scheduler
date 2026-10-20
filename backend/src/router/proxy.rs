@@ -106,7 +106,7 @@ pub(super) fn outgoing(
 pub(super) async fn management(g: &Gateway, mut request: Request, path: &str) -> Api<Response> {
     let raw = env(
         "V_SCHEDULER_MODEL_MANAGEMENT_URL",
-        "http://v-scheduler-model-hub:6005",
+        "http://v-scheduler:6005",
     );
     let base = reqwest::Url::parse(&raw)
         .map_err(|_| Failure::new(503, "Model management endpoint configuration is invalid"))?;
@@ -331,6 +331,9 @@ pub(super) async fn handle(g: Arc<Gateway>, id: Identity, request: Request) -> A
         return Ok(axum::Json(json!({"available":detect&&structure,"services":{"scene_detect":detect,"structure":structure}})).into_response());
     }
     if path == "/v1/models" && pinned.is_empty() {
+        if g.catalog_initializing() && g.registry.lock().unwrap().list_models(&id).is_empty() {
+            return Err(super::readiness::initializing());
+        }
         return Ok(axum::Json(json!({"object":"list","data":g.registry.lock().unwrap().list_models(&id).iter().map(|m|json!({"id":m.qualified,"object":"model","created":0,"owned_by":m.owned_by})).collect::<Vec<_>>()})).into_response());
     }
     let slot = g
@@ -489,6 +492,7 @@ pub(super) async fn handle(g: Arc<Gateway>, id: Identity, request: Request) -> A
         } else {
             &suffix
         };
+        g.local_model_readiness(&requested)?;
         g.registry
             .lock()
             .unwrap()

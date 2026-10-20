@@ -33,6 +33,8 @@
   ],
   "business_codes": {
     "WAIT_MEMORY_HEADROOM": "Insufficient observed available RAM after safety reserve and outstanding commitments. Unload idle models or explicitly select a lower-memory execution configuration.",
-    "WAIT_STOP_CONFIRMATION": "Prior native computation has not yet supplied a valid stop receipt; the inference gateway retries rejected admission for up to eight seconds without sending a provider request."
+    "WAIT_STOP_CONFIRMATION": "Prior native computation has not yet supplied a valid stop receipt; the inference gateway retries rejected admission for up to eight seconds without sending a provider request.",
+    "MODEL_CATALOG_INITIALIZING": "Initial model discovery is pending; retry after the Retry-After interval. No inference request has been sent.",
+    "SCHEDULER_ADMISSION_TIMEOUT": "The in-process controller did not complete admission within three seconds, including its response body. No provider request has been sent. Check controller and database health; this is not a capacity refusal."
   }
 }

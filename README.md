@@ -219,3 +219,9 @@ Agent 是本应用在节点上运行的资源采集与任务执行后台进程�
 192 的已实测 CPU 小模型预设使用固定的本地 Ollama 标签，保留原模型与全局默认值：Qwen2.5 0.5B q2（896 MiB）与 all-minilm 22m（512 MiB），每次计算预算 4.5 核、GPU 为 0，上下文 512、输入最多 16 KiB、生成最多 128 tokens。它们通过同一模型仓库卡片、统一网关和真实 Scheduler 许可管理，取消后须取得原生停止证明；不把该实测预算套用到其他权重、硬件或并发设置。详见[统一接入指南](docs/application-integration.md#calibrated-local-models)。
 
 V-Voice 混合绑定同时包含旧语音审批和新音乐输入边界时，双方显式协商 `mixed_input_limits_version=1`，旧兼容模型由受信任审批单独列出；缺少限制不会自动取得豁免。详见[自动绑定契约](docs/v-voice-auto-binding.md#原生模型输入边界)。
+
+### 启动状态与地址迁移
+
+网关 `/healthz` 为进程存活，`/readyz` 为内置模型目录就绪状态；两者均免鉴权。首次发现返回 `503 MODEL_CATALOG_INITIALIZING`，不会提前给出“没有模型”的成功空列表。管理页面显示自动更新的发现/后端故障提示。控制器准入（含响应正文）的三秒超时使用独立 `SCHEDULER_ADMISSION_TIMEOUT`，资源不足仍保留具体 429 业务码，详见[错误契约](docs/api-contract.md)。
+
+新客户端统一推荐 `v-scheduler`；HybRAG、V-Sub 的受限绑定按能力协商迁移并保留凭据与 revision 单调性。旧版本和显式兼容配置继续按原契约工作，不覆盖公共模型目录、用户模型选择或原生运行设置。

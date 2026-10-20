@@ -169,6 +169,16 @@ const app = {
       ]);
       this.state = { ...this.state, status, models: models.models, upstreams: upstreams.upstreams, usage };
       this.showError("");
+      const catalog = status.catalog_readiness;
+      const notice = $("catalogNotice");
+      VRouterI18n.bind(notice, "textContent", () => {
+        if (!catalog || catalog.ready) return "";
+        const pending = Object.values(catalog.backends || {}).includes("initializing");
+        return VRouterI18n.t(pending
+          ? "正在发现内置模型，列表将自动更新；已就绪模型仍可调用。"
+          : "部分内置推理后端不可用，请在模型仓库检查推理服务；其他就绪模型仍可调用。");
+      });
+      notice.hidden = !notice.textContent;
       this.renderAll();
       if (this.state.tab === "apidoc") this.renderApiDoc();
     } catch (err) {
@@ -369,7 +379,7 @@ const app = {
             !m.short && m.kind !== "service" ? `<button class="btn" onclick="app.tryModel('${esc(m.qualified)}')">${VRouterI18n.t("测试")}</button>` : "",
           ]),
         )
-      : `<div class="empty">${VRouterI18n.t("暂无模型")}。${VRouterI18n.t("请在模型仓库下载模型，或在上游页添加后端。")}</div>`);
+      : `<div class="empty">${this.state.status?.catalog_readiness?.ready === false ? VRouterI18n.t("模型目录尚未就绪。") : VRouterI18n.t("暂无模型") + "。" + VRouterI18n.t("请在模型仓库下载模型，或在上游页添加后端。")}</div>`);
   },
 
   renderUpstreams() {

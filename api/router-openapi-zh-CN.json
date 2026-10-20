@@ -11116,6 +11116,21 @@
         ],
         "x-gateway-auth": "manage"
       }
+    },
+    "/readyz": {
+      "get": {
+        "summary": "模型目录就绪状态",
+        "description": "Public readiness for built-in model discovery; healthz remains process liveness. Does not load or warm models.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Enabled discovery backends ready (or disabled)"
+          },
+          "503": {
+            "description": "Initializing or unavailable; inspect backends. Retry-After: 1."
+          }
+        }
+      }
     }
   },
   "servers": [

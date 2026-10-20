@@ -145,6 +145,11 @@ async fn unclaimed_voice_recovery_preserves_claims_and_fences_late_claims() {
             );
         }
     }
+    // 安装参数迁移版本复用相同原生镜像，仍只回收未认领且过期的直接许可。
+    sqlx::query("INSERT INTO vrs_permits(id,app,executor,node,state,lease_until,metadata) VALUES('orphan-22',$1,'voice.cpu.infer','local','suspect',clock_timestamp()-interval '600 seconds',$2)")
+        .bind(APP).bind(&base).execute(&pool).await.unwrap();
+    assert_eq!(recover_unclaimed_direct(&pool, &state, "0.0.22").await.unwrap(), 1);
+    assert_eq!(recover_unclaimed_direct(&pool, &state, "0.0.22").await.unwrap(), 0);
     // A claim that commits while recovery waits must remain reserved.
     sqlx::query("INSERT INTO vrs_permits(id,app,executor,node,state,lease_until,metadata) VALUES('claim-race',$1,'voice.cpu.infer','local','active',clock_timestamp()-interval '1 second',$2)").bind(APP).bind(&base).execute(&pool).await.unwrap();
     let mut claim = pool.begin().await.unwrap();
@@ -152,7 +157,7 @@ async fn unclaimed_voice_recovery_preserves_claims_and_fences_late_claims() {
     let other = pool.clone();
     let binding = state.clone();
     let recovering = tokio::spawn(async move {
-        recover_unclaimed_direct(&other, &binding, "0.0.21")
+        recover_unclaimed_direct(&other, &binding, "0.0.22")
             .await
             .unwrap()
     });

@@ -9,6 +9,7 @@ mod lease;
 mod manage;
 mod proxy;
 mod registry;
+mod readiness;
 #[cfg(test)]
 mod tests;
 mod usage;
@@ -95,7 +96,7 @@ impl IntoResponse for Failure {
                 .headers_mut()
                 .insert("www-authenticate", "Bearer".parse().unwrap());
         }
-        if self.status == StatusCode::TOO_MANY_REQUESTS {
+        if self.status == StatusCode::TOO_MANY_REQUESTS || code == "MODEL_CATALOG_INITIALIZING" {
             response
                 .headers_mut()
                 .insert("retry-after", "1".parse().unwrap());
@@ -115,6 +116,7 @@ struct Gateway {
     buffered: Arc<tokio::sync::Semaphore>,
     jobs_lock: Mutex<()>,
     ui: Option<PathBuf>,
+    initial_discovery: Mutex<std::collections::BTreeSet<String>>,
 }
 fn env(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.into())
@@ -261,6 +263,7 @@ pub(crate) async fn start(
             number("V_ROUTER_MAX_BUFFERED_INPUT_MIB", 64) * 1024,
         )),
         jobs_lock: Mutex::new(()),
+        initial_discovery: Mutex::new(readiness::initial_roles()),
     });
     let router = Router::new().fallback(handle).with_state(state.clone());
     let socket = tokio::net::TcpListener::bind(&listen).await?;
@@ -329,6 +332,9 @@ async fn dispatch(g: Arc<Gateway>, mut request: Request) -> Api<Response> {
     let path = request.uri().path().to_string();
     if path == "/healthz" {
         return Ok((StatusCode::OK, "ok").into_response());
+    }
+    if path == "/readyz" && request.method() == "GET" {
+        return Ok(readiness::response(&g));
     }
     if path.starts_with("/scheduler/") {
         let suffix = request

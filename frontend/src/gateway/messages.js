@@ -1,5 +1,8 @@
 "use strict";
 export const VRouterMessages = {
+ "模型目录尚未就绪。":{"en":"The model catalog is not ready yet.","zh-TW":"模型目錄尚未就緒。"},
+ "正在发现内置模型，列表将自动更新；已就绪模型仍可调用。":{"en":"Discovering built-in models. The list updates automatically; ready models remain available.","zh-TW":"正在探索內建模型，清單將自動更新；已就緒模型仍可呼叫。"},
+ "部分内置推理后端不可用，请在模型仓库检查推理服务；其他就绪模型仍可调用。":{"en":"Some built-in inference backends are unavailable. Check Inference services in Model library; other ready models remain available.","zh-TW":"部分內建推理後端無法使用，請在模型儲存庫檢查推理服務；其他就緒模型仍可呼叫。"},
  "等待服务响应":{"en":"Waiting for service response","zh-TW":"等待服務回應"},
  "等待模型输出":{"en":"Waiting for model output","zh-TW":"等待模型輸出"},
  "模型正在思考":{"en":"Model is thinking","zh-TW":"模型正在思考"},

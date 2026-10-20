@@ -89,7 +89,7 @@ class ModelManagementPackagingTests(unittest.TestCase):
                 self.assertEqual(len(services),1)
                 service=services[0]
                 self.assertTrue(service['image'].startswith('${OLLAMA_SERVER_'))
-                self.assertEqual(service['environment']['MODEL_HUB_REGISTER_URL'],'http://v-scheduler-model-hub:6005')
+                self.assertEqual(service['environment']['MODEL_HUB_REGISTER_URL'],'http://v-scheduler:6005')
                 self.assertTrue(set(service['volumes']).issubset(storage[0]['volumes']))
                 self.assertEqual(len(service['ports']),2)
                 ports.extend(service['ports'])

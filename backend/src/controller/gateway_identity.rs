@@ -6,17 +6,18 @@ use std::{path::Path, time::Duration};
 const APP: &str = "com.ictrek.hybrag";
 const ORIGIN: &str = "http://hybrag-app:8080";
 const ENDPOINT: &str = "/api/v1/scheduler/gateway-binding";
-const URL: &str = "http://v-scheduler-gateway:8080/v1";
+const URL: &str = "http://v-scheduler:8080/v1";
+const COMPAT_URL: &str = "http://v-scheduler-gateway:8080/v1";
 const LEGACY_URL: &str = "http://v-router:8080/v1";
 const SCOPE: &str = "gateway-inference-v1";
 
-fn binding(old: Option<&Value>) -> anyhow::Result<Value> {
+fn binding(old: Option<&Value>, url: &str) -> anyhow::Result<Value> {
     if let Some(state) = old {
         let value = &state["binding"];
         ensure!(
             value["protocol_version"] == 1
                 && value["app_id"] == APP
-                && (value["url"] == URL || value["url"] == LEGACY_URL)
+                && [URL, COMPAT_URL, LEGACY_URL].iter().any(|url| value["url"] == *url)
                 && value["scope"] == SCOPE,
             "invalid persisted gateway identity"
         );
@@ -35,8 +36,8 @@ fn binding(old: Option<&Value>) -> anyhow::Result<Value> {
         );
         if state["active"] == true {
             let mut current = value.clone();
-            if current["url"] != URL {
-                current["url"] = json!(URL);
+            if current["url"] != url {
+                current["url"] = json!(url);
                 current["binding_revision"] = json!(
                     revision
                         .checked_add(1)
@@ -46,15 +47,15 @@ fn binding(old: Option<&Value>) -> anyhow::Result<Value> {
             return Ok(current);
         }
         return Ok(new_binding(
-            revision
+            url, revision
                 .checked_add(1)
                 .context("gateway identity revision exhausted")?,
         ));
     }
-    Ok(new_binding(1))
+    Ok(new_binding(url, 1))
 }
-fn new_binding(revision: u64) -> Value {
-    json!({"protocol_version":1,"binding_revision":revision,"app_id":APP,"url":URL,"token":format!("vs-app-{}{}",Uuid::new_v4().simple(),Uuid::new_v4().simple()),"scope":SCOPE})
+fn new_binding(url: &str, revision: u64) -> Value {
+    json!({"protocol_version":1,"binding_revision":revision,"app_id":APP,"url":url,"token":format!("vs-app-{}{}",Uuid::new_v4().simple(),Uuid::new_v4().simple()),"scope":SCOPE})
 }
 fn snapshot(binding: &Value, enabled: bool) -> anyhow::Result<Value> {
     let token = binding["token"]
@@ -145,7 +146,8 @@ async fn reconcile(configuration: &Path, client: &reqwest::Client) -> anyhow::Re
     if discovery["backend"] == "model-hub" {
         return deactivate(&path, &gateway, old.as_ref());
     }
-    let binding = binding(old.as_ref())?;
+    let canonical = discovery["capabilities"].as_array().is_some_and(|caps| caps.iter().any(|cap| cap == "canonical-v-scheduler-v1"));
+    let binding = binding(old.as_ref(), if canonical { URL } else { COMPAT_URL })?;
     let state = json!({"binding":binding,"active":true});
     if old.as_ref() != Some(&state) {
         save_private(&path, &state)?;
@@ -193,9 +195,9 @@ mod tests {
     use super::*;
     #[test]
     fn gateway_identity_is_scoped_persistent_and_rotates_after_deactivation() {
-        let first = binding(None).unwrap();
+        let first = binding(None, URL).unwrap();
         let state = json!({"binding":first,"active":true});
-        assert_eq!(binding(Some(&state)).unwrap(), first);
+        assert_eq!(binding(Some(&state), URL).unwrap(), first);
         let digest = snapshot(&first, true).unwrap();
         assert!(digest.get("token").is_none());
         assert_eq!(digest["token_hash"].as_str().unwrap().len(), 64);
@@ -206,23 +208,23 @@ mod tests {
         );
         let mut disabled = state.clone();
         disabled["active"] = json!(false);
-        let next = binding(Some(&disabled)).unwrap();
+        let next = binding(Some(&disabled), URL).unwrap();
         assert_eq!(next["binding_revision"], 2);
         assert_ne!(next["token"], first["token"]);
         let mut invalid = state;
         invalid["binding"]["url"] = json!("http://other/v1");
-        assert!(binding(Some(&invalid)).is_err());
+        assert!(binding(Some(&invalid), URL).is_err());
     }
     #[test]
     fn legacy_gateway_origin_migrates_with_revision_and_same_key() {
-        let mut old = binding(None).unwrap();
+        let mut old = binding(None, URL).unwrap();
         old["url"] = json!(LEGACY_URL);
-        let migrated = binding(Some(&json!({"binding":old,"active":true}))).unwrap();
+        let migrated = binding(Some(&json!({"binding":old,"active":true})), URL).unwrap();
         assert_eq!(migrated["url"], URL);
         assert_eq!(migrated["binding_revision"], 2);
         assert_eq!(migrated["token"], old["token"]);
         assert_eq!(
-            binding(Some(&json!({"binding":migrated,"active":true}))).unwrap(),
+            binding(Some(&json!({"binding":migrated,"active":true})), URL).unwrap(),
             migrated
         );
     }

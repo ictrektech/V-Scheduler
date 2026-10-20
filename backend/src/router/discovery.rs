@@ -86,6 +86,7 @@ pub(super) fn start(g: Arc<Gateway>) -> Vec<tokio::task::JoinHandle<()>> {
         tasks.push(tokio::spawn(async move {
             loop {
                 ollama(&g, role).await;
+                g.initial_discovery.lock().unwrap().remove(role);
                 tokio::time::sleep(Duration::from_secs(seconds)).await;
             }
         }));

@@ -9,7 +9,7 @@ Router、Scheduler 与模型仓库在同一 Rust 进程运行，使用同一份[
 | `SCHEDULER_VOS_URL` | 网关与控制器共用的 VOS 根地址；只接受不带凭据、查询参数或子路径的 HTTP(S) origin。空值沿用 VOS 注入的 `VOS_HOST_GW_IP:8105`。 |
 | `VOS_OIDC_USERINFO_URL` | 保留的网关 userinfo 精确地址覆盖；未设置时从上述共同根地址解析。控制器仍使用同一 VOS 的 `/v1000/user/check` 核验管理员。 |
 | `V_ROUTER_CONTROLLER_URL` | 兼容保留的控制器地址；统一进程使用内存分发，安装地址仍为 `http://v-scheduler:38120`。 |
-| `V_SCHEDULER_MODEL_MANAGEMENT_URL` | 网关到模型仓库的内部根地址，安装默认 `http://v-scheduler-model-hub:6005`。配置无效或服务离线返回明确的 JSON 503。 |
+| `V_SCHEDULER_MODEL_MANAGEMENT_URL` | 网关到模型仓库的内部根地址，安装默认 `http://v-scheduler:6005`。配置无效或服务离线返回明确的 JSON 503。 |
 
 前端统一解析三种服务路径：网关 `/api/v1/*`、控制器 `/scheduler/api/v1/*`、模型仓库 `/model-hub/api/v1/*`。VOS 页面全部使用 `/api/com.ictrek.v-scheduler` 前缀；宿主端口页面使用同域根路径。任务与下载任务保持独立命名空间。九组内外端口及全部兼容别名见 [README](../README.md#host-alias内部端口与宿主机端口)。
 
@@ -81,3 +81,9 @@ HTTP 429 的 `WAIT_MEMORY_HEADROOM` 表示观测可用 RAM 小于本次预算、
 
 内置 Ollama 的人工校准策略会补齐并验证批准的 `options.num_ctx`、`options.num_thread`、`options.num_gpu`、`options.num_batch` 和输出 token 上限；超界请求在申请许可前拒绝。输入字节超限的 413 错误同时给出实际字节数和已批准上限。自动估算模型与其他节点的预算不因此降低。
 人工校准的上下文、线程数和 batch 必须为正值；`0` 不得启用未实测的原生自动设置。CPU 执行的 `num_gpu=0` 保持有效。
+
+## 启动与准入诊断
+
+`GET http://v-scheduler:8080/healthz` 只报告进程存活。`GET /readyz` 免鉴权，报告内置模型目录的 `initializing/ready/unavailable/disabled`；未就绪返回 503 与 `Retry-After: 1`，不加载或预热模型。管理状态 `/api/v1/status` 同时提供 `catalog_readiness`，界面自动更新提示；已有健康云模型不会被首次内置发现阻塞。
+
+首次发现尚未结束且没有可见模型时，`/v1/models` 返回 `503 MODEL_CATALOG_INITIALIZING`；已探测但不可用的内置后端返回 `503 UPSTREAM_UNAVAILABLE`，健康后端真正缺少的模型仍返回 404。`SCHEDULER_ADMISSION_TIMEOUT` 表示内存分发的控制器在三秒内未完成准入或正文读取，不等于资源不足，也不表示推理已经发送。容量不足继续使用 429 和具体 WAIT 码。客户端仅对可重试的发现操作重试，不自动重放推理创建。

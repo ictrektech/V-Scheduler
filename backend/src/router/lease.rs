@@ -156,14 +156,18 @@ pub(super) async fn call(
     let request = req
         .body(Body::from(serde_json::to_vec(&body).unwrap()))
         .map_err(|_| Failure::new(503, "invalid internal admission request"))?;
-    let response = tokio::time::timeout(Duration::from_secs(3), g.controller().oneshot(request))
-        .await
-        .map_err(|_| Failure::new(503, "scheduler admission timed out"))?
-        .unwrap();
-    let status = response.status();
-    let bytes = axum::body::to_bytes(response.into_body(), 65536)
-        .await
-        .map_err(|_| Failure::new(503, "scheduler admission response unavailable"))?;
+    // 同一截止时间覆盖处理器和响应体，防止已返回响应头但正文卡住。
+    let (status, bytes) = tokio::time::timeout(Duration::from_secs(3), async {
+        let response = g.controller().oneshot(request).await.unwrap();
+        let status = response.status();
+        let bytes = axum::body::to_bytes(response.into_body(), 65536).await
+            .map_err(|_| Failure::new(503, "scheduler admission response unavailable"))?;
+        Ok::<_, Failure>((status, bytes))
+    }).await.map_err(|_| {
+        let mut error = Failure::new(503, "scheduler admission timed out before inference started");
+        error.code = Some("SCHEDULER_ADMISSION_TIMEOUT".into());
+        error
+    })??;
     let value: Value = serde_json::from_slice(&bytes)
         .map_err(|_| Failure::new(503, "invalid scheduler admission response"))?;
     if !status.is_success() {
@@ -328,7 +332,7 @@ pub(super) fn approval(
             "v-music" => "http://v-music-backend:7080/v1",
             _ => "http://desensitize-backend:5000/v1",
         };
-        if u.base_url != fixed || cfg["url"] != "http://v-router:8080/scheduler/api/v1" {
+        if u.base_url != fixed || !["http://v-scheduler:8080/scheduler/api/v1", "http://v-router:8080/scheduler/api/v1", "http://v-scheduler-gateway:8080/scheduler/api/v1"].iter().any(|url| cfg["url"] == *url) {
             return Err(Failure::new(
                 503,
                 "application origin no longer matches binding",

@@ -44,7 +44,7 @@ x-model-storage-env: &model-storage-env
 
 x-router-environment: &router-environment
     V_ROUTER_CONTROLLER_URL: http://v-scheduler:38120
-    V_SCHEDULER_MODEL_MANAGEMENT_URL: http://v-scheduler-model-hub:6005
+    V_SCHEDULER_MODEL_MANAGEMENT_URL: http://v-scheduler:6005
     V_ROUTER_ADDR: :8080
     V_ROUTER_HOST_PORT: "${V_ROUTER_HOST_PORT:-22888}"
     V_ROUTER_STATE_PATH: /data/state.json
@@ -161,7 +161,7 @@ x-ollama-env: &ollama-env
   OLLAMA_COMPAT_LISTEN: 0.0.0.0:11535
   OLLAMA_KEEP_ALIVE: "${OLLAMA_KEEP_ALIVE:--1m}"
   OLLAMA_MODELS: /data/ollama/models
-  MODEL_HUB_REGISTER_URL: http://v-scheduler-model-hub:6005
+  MODEL_HUB_REGISTER_URL: http://v-scheduler:6005
 
 x-ollama: &ollama
   restart: unless-stopped

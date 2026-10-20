@@ -338,7 +338,8 @@
         }
       },
       "application_versions": [
-        "0.0.21"
+        "0.0.21",
+        "0.0.22"
       ]
     },
     {
@@ -355,7 +356,8 @@
       "num_threads": 4,
       "max_concurrent_inference": 2,
       "application_versions": [
-        "0.0.21"
+        "0.0.21",
+        "0.0.22"
       ],
       "input_limits_version": 1,
       "music": {
@@ -442,7 +444,8 @@
       "num_threads": 4,
       "max_concurrent_inference": 2,
       "application_versions": [
-        "0.0.21"
+        "0.0.21",
+        "0.0.22"
       ],
       "input_limits_version": 1,
       "music": {
@@ -529,7 +532,8 @@
       "num_threads": 4,
       "max_concurrent_inference": 2,
       "application_versions": [
-        "0.0.21"
+        "0.0.21",
+        "0.0.22"
       ],
       "input_limits_version": 1,
       "music": {
@@ -616,7 +620,8 @@
       "num_threads": 4,
       "max_concurrent_inference": 2,
       "application_versions": [
-        "0.0.21"
+        "0.0.21",
+        "0.0.22"
       ],
       "input_limits_version": 1,
       "music": {

@@ -458,10 +458,14 @@ fn build(
             );
         }
     }
-    let mut state = json!({"credential_epoch":epoch,"binding":{"protocol_version":1,"binding_revision":1,"app_id":APP,"url":URL,"token":token,"executor_token":executor_token,"upstream_url":UPSTREAM,"models":models,"gateway_executors":gateway_executors,"secondary_models":secondary_models},
+    // 0.0.22 仅改变安装地址，复用经核验的 0.0.21 原生镜像。
+    let controller_url = if contract["_application_version"] == "0.0.22" {
+        "http://v-scheduler:8080/scheduler/api/v1"
+    } else { URL };
+    let mut state = json!({"credential_epoch":epoch,"binding":{"protocol_version":1,"binding_revision":1,"app_id":APP,"url":controller_url,"token":token,"executor_token":executor_token,"upstream_url":UPSTREAM,"models":models,"gateway_executors":gateway_executors,"secondary_models":secondary_models},
         "principals":[{"token":token,"role":"submitter","app_id":APP,"permit_executors":gateway_ids},{"token":gateway_token,"role":"submitter","app_id":"v-scheduler.voice-gateway"}],
         "executors":executors,"adapters":adapters,
-        "gateway":{"url":URL,"token":gateway_token,"require_model_policy":true,"models":policies}});
+        "gateway":{"url":controller_url,"token":gateway_token,"require_model_policy":true,"models":policies}});
     if !model_limits.is_empty() && !legacy_unbounded_models.is_empty() {
         ensure!(
             contract["mixed_input_limits_version"] == 1,
@@ -498,7 +502,7 @@ async fn recover_unclaimed_direct(
     state: &Value,
     version: &str,
 ) -> anyhow::Result<u64> {
-    if version != "0.0.21" {
+    if !["0.0.21", "0.0.22"].contains(&version) {
         return Ok(0);
     }
     let node = state["executors"]
@@ -732,6 +736,20 @@ mod tests {
         let approvals = json!({"protocol_version":1,"approvals":[{"id":"measured","architecture":std::env::consts::ARCH,"provider":"cpu","cpu_models":[],"num_threads":4,"max_concurrent_inference":2,"hardware":[],"calibration":{"evidence_id":"unit-fixture","peak_memory_mib":1024},"resources":{"cpu_millicores":4000,"memory_mib":2048},"max_input_bytes":1048576,"limits":{},"sync_models":["asr","speaker"],"async_models":["tts"],"secondary_models":{"asr":["speaker"]}}]});
         (runtime, contract, approvals)
     }
+    #[test]
+    fn packaging_only_voice_upgrade_preserves_identity_and_budget() {
+        let (runtime, mut contract, approvals) = fixtures();
+        contract["_application_version"] = json!("0.0.21");
+        let before = build(&runtime, &contract, &approvals, None).unwrap();
+        contract["_application_version"] = json!("0.0.22");
+        let after = build(&runtime, &contract, &approvals, Some(&before)).unwrap();
+        assert_eq!(after["binding"]["url"], "http://v-scheduler:8080/scheduler/api/v1");
+        assert_eq!(after["binding"]["binding_revision"], 2);
+        assert_eq!(after["binding"]["token"], before["binding"]["token"]);
+        assert_eq!(after["executors"], before["executors"]);
+        assert_eq!(after["adapters"], before["adapters"]);
+    }
+
     #[test]
     fn new_voice_input_approvals_require_capability_and_bound_each_ready_model() {
         let (runtime, mut contract, mut approvals) = fixtures();

@@ -2,13 +2,13 @@
 
 > 接入操作统一参见 [V-Scheduler 统一接入指南](application-integration.md)。本页保留协议或部署参考。
 
-本页说明统一 V-Scheduler 应用中 V-Router 网关组件的准入配置。VOS 只安装 `com.ictrek.v-scheduler`，内部保留网关与调度控制器两个进程，不再另装 V-Router。统一包设置 `V_ROUTER_SCHEDULER_REQUIRED=true`。所有经网关启动的本地及纳管远端模型计算先取得调度授权；云端供应商模型绕过本地调度。提示词和结果仍由网关直接转发。
+本页说明统一 V-Scheduler 应用中 V-Router 网关组件的准入配置。VOS 只安装 `com.ictrek.v-scheduler`，网关、控制器与模型仓库运行于同一个 Rust 进程，不再另装 V-Router。统一包设置 `V_ROUTER_SCHEDULER_REQUIRED=true`。所有经网关启动的本地及纳管远端模型计算先取得调度授权；云端供应商模型绕过本地调度。提示词和结果仍由网关直接转发。
 
-模型客户端仍调用 `http://v-router:8080/v1/*`，或同域 `/api/com.ictrek.v-scheduler/v1/*`；调度公开 API 使用 `/scheduler/api/v1/*`。地址与原位数据迁移见[统一应用](unified-application.md)，应用任务接入见[应用接入指南](application-integration.md)。
+模型客户端仍调用 `http://v-scheduler:8080/v1/*`，或同域 `/api/com.ictrek.v-scheduler/v1/*`；调度公开 API 使用 `/scheduler/api/v1/*`。地址与原位数据迁移见[统一应用](unified-application.md)，应用任务接入见[应用接入指南](application-integration.md)。
 
 ## 管理员配置
 
-在私有数据目录创建 `scheduler.local.json`（容器内 `/data/scheduler.local.json`），权限 `0600`；也可用 `V_ROUTER_SCHEDULER_CONFIG` 指定路径。使用调度控制器 URL（同一包内直连 `http://v-scheduler:38120/api/v1`；经网关则使用 `http://v-router:8080/scheduler/api/v1`）和受限 `v-router` submitter 令牌。修改后重启网关。安装依赖不会自动注入凭据或资源模板。
+在私有数据目录创建 `scheduler.local.json`（容器内 `/gateway-data/scheduler.local.json`），权限 `0600`；也可用 `V_ROUTER_SCHEDULER_CONFIG` 指定路径。使用调度控制器 URL（同一包内直连 `http://v-scheduler:38120/api/v1`；经网关则使用 `http://v-scheduler:8080/scheduler/api/v1`）和受限 `v-router` submitter 令牌。统一应用自动绑定的私有快照逐请求读取；手工配置不得覆盖自动绑定。安装依赖不会自动注入凭据或资源模板。
 
 参照 [网关配置示例](../config/scheduler.example.json)，在 `models` 中按 `upstreamID/nativeModelID` 逐模型批准 `executor_id`、`max_input_bytes`（最高 32 MiB）、`limits`。VOS 强制逐模型策略：未批准模型返回 503，超输入预算返回 413，未批准或超限的资源参数返回 422。limits 包括输出 token、上下文、批量、图像尺寸、视频长度等实际支持字段；带 `speaker_model` 时还须在 `secondary_models` 明确批准联合预算。模板须覆盖服务默认参数、装载峰值和允许的最大输入，示例值不是生产容量承诺。
 
@@ -50,6 +50,6 @@ V-Voice 等已适配执行端以自己的受限 submitter 调用 Scheduler
 
 测试覆盖原生 HTTP、Responses/Messages 转换、WebSocket 双向帧、异步终态/用户隔离/恢复、资源参数和云端边界；Scheduler PostgreSQL 验证覆盖关联许可、预算和接力。见[验证记录](validation.md)。
 
-内置 Ollama 同步请求遵循相同的响应规则：准入忙立即返回 429，缺少逐模型私有绑定立即返回 503。客户端可稍后重试；网关不在 HTTP 请求中隐藏等待或重复申请许可。
+内置 Ollama 同步请求遵循相同的响应规则：一般容量不足立即返回 429；仅 `WAIT_STOP_CONFIRMATION` 在发送推理前最多等待八秒停止恢复，超时仍返回 429。其他准入忙立即返回 429，缺少逐模型私有绑定立即返回 503。客户端可稍后重试；除上述明确的停止恢复窗口外，网关不隐藏等待或重放推理。
 
 自带 Ollama 的 `suspect` 许可由控制器周期性核验。仅处理本应用、当前本机、自动执行器及固定三类后端的许可；存在活动许可时跳过。原生后端必须返回匹配模型与本次 nonce 的停止回执，确认加载循环和进程退出屏障后，才记录 `builtin_ollama_native_stop_confirmed` 并释放。旧版后端不支持回执、网络异常、过期回执或真正未退出时继续保留预约。其他应用和远端执行器不走此恢复路径。因待停止核验的预约无法准入时，API 返回 HTTP 429 / `WAIT_STOP_CONFIRMATION`。

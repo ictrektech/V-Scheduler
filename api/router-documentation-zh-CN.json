@@ -1,7 +1,11 @@
 {
   "base_urls": {
     "internal": "http://v-scheduler:8080/v1",
-    "compatibility_aliases": ["http://v-scheduler-gateway:8080/v1", "http://v-router:8080/v1", "http://v-router-backend:8080/v1"],
+    "compatibility_aliases": [
+      "http://v-scheduler-gateway:8080/v1",
+      "http://v-router:8080/v1",
+      "http://v-router-backend:8080/v1"
+    ],
     "lan": "http://<vos-host>:22888/v1",
     "same_origin": "/api/com.ictrek.v-scheduler/v1"
   },
@@ -14,6 +18,14 @@
           "summary": "健康检查",
           "desc": "容器健康检查端点，返回 200 和 ok，无需鉴权。",
           "auth": "public"
+        },
+        {
+          "method": "GET",
+          "path": "/readyz",
+          "summary": "模型目录就绪检查",
+          "desc": "首次发现未完成或内置后端不可用时返回 503 和 Retry-After: 1；不会加载模型。/healthz 只报告进程存活。",
+          "auth": "public",
+          "example": "curl -i http://v-scheduler:8080/readyz"
         },
         {
           "method": "GET",

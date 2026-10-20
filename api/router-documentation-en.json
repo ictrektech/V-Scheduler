@@ -1,7 +1,11 @@
 {
   "base_urls": {
     "internal": "http://v-scheduler:8080/v1",
-    "compatibility_aliases": ["http://v-scheduler-gateway:8080/v1", "http://v-router:8080/v1", "http://v-router-backend:8080/v1"],
+    "compatibility_aliases": [
+      "http://v-scheduler-gateway:8080/v1",
+      "http://v-router:8080/v1",
+      "http://v-router-backend:8080/v1"
+    ],
     "lan": "http://<vos-host>:22888/v1",
     "same_origin": "/api/com.ictrek.v-scheduler/v1"
   },
@@ -14,6 +18,14 @@
           "method": "GET",
           "path": "/healthz",
           "summary": "Health check"
+        },
+        {
+          "auth": "public",
+          "desc": "Returns 503 and Retry-After: 1 while initial discovery is pending or a built-in backend is unavailable. Does not load models; /healthz remains process liveness.",
+          "method": "GET",
+          "path": "/readyz",
+          "summary": "Model catalog readiness",
+          "example": "curl -i http://v-scheduler:8080/readyz"
         },
         {
           "auth": "public",

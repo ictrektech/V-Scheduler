@@ -4,7 +4,7 @@
 
 控制器核验自己的 VOS 应用 context 身份，再向同一 VOS 确认 `com.ictrek.hybrag` 已安装。仅访问固定 `http://hybrag-app:8080/api/v1/scheduler/gateway-binding`，不接受发现结果指定的回调地址，不跟随重定向。GET 必须声明 `protocol_version=1`、固定 app/endpoint、`gateway-inference-v1` 能力与实际后端模式。`model-hub` 模式不激活本身份。
 
-POST 使用 Scheduler 的 VOS context Bearer；交接包含版本、单调递增的 `binding_revision`、固定 app、`url=http://v-router:8080/v1`、独立随机 token 和 `scope=gateway-inference-v1`。客户端核验 VOS 身份后以 0600 原子持久化，并在实际发起内置模型请求时读取，以支持后台任务和已有客户端热更新。普通用户 API、日志、模型共享目录、DB 和内置模型 YAML 不应保存或返回该 token；旧 Model Hub 模式与用户自建模型保留其原凭据。
+POST 使用 Scheduler 的 VOS context Bearer；交接包含版本、单调递增的 `binding_revision`、固定 app、`url=http://v-scheduler:8080/v1`（新客户端声明 `canonical-v-scheduler-v1` 后；旧客户端仍交接 `v-scheduler-gateway` 兼容地址）、独立随机 token 和 `scope=gateway-inference-v1`。客户端核验 VOS 身份后以 0600 原子持久化，并在实际发起内置模型请求时读取，以支持后台任务和已有客户端热更新。普通用户 API、日志、模型共享目录、DB 和内置模型 YAML 不应保存或返回该 token；旧 Model Hub 模式与用户自建模型保留其原凭据。
 
 网关只授予以下路由，原有逐模型 Scheduler 策略继续生效：
 
