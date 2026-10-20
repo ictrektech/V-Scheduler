@@ -1150,8 +1150,11 @@ async fn permit_inspect(
     let ready = nodes
         .iter()
         .all(|node| allocations::ready(node, &e.id).is_ok());
+    let outstanding: i64 = sqlx::query_scalar("SELECT count(*) FROM vrs_permits WHERE app=$1 AND metadata->>'model_id'=$2 AND metadata->>'upstream_url'=$3 AND state<>'released'")
+        .bind(&p.app_id).bind(&b.model_id).bind(&b.upstream_url)
+        .fetch_one(&mut *tx).await.map_err(unavailable)?;
     Ok(ok(
-        json!({"binding_ready":true,"node_ready":ready,"resource_admission":"checked-at-request-time"}),
+        json!({"outstanding_permits":outstanding,"binding_ready":true,"node_ready":ready,"resource_admission":"checked-at-request-time"}),
     ))
 }
 async fn permit_acquire(

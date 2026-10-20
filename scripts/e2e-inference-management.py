@@ -34,16 +34,27 @@ def check(ok,label):assert ok,label;checks.append(label);print('PASS:',label,flu
 def sql(text):return docker('exec','-i',pg,'psql','-U','postgres','-d','test','-At','-v','ON_ERROR_STOP=1',input=text)
 fixture=private('fixture.mjs',r'''
 import {createServer} from 'node:http';
-let active=0,peak=0,calls=0,unloads=0,valid=true,loaded=new Set(),history=[];
+let active=0,peak=0,calls=0,unloads=0,valid=true,loaded=new Set(),history=[],mutations=[];
 const models=[{name:'chat:latest',size:1048576},{name:'other:latest',size:1048576}];
 const handler=async(req,res)=>{res.setHeader('Content-Type','application/json');let text='';for await(const c of req)text+=c;const body=text?JSON.parse(text):{};
 const reply=(value,status=200)=>{res.statusCode=status;res.end(JSON.stringify(value));};
 if(req.url==='/api/tags')return reply({models});
+if(req.url==='/api/pull'){
+ mutations.push({kind:'pull',active,loaded:[...loaded]});
+ await new Promise(r=>setTimeout(r,1500));
+ const model=models.find(m=>m.name===body.model);if(model)model.size+=1048576;
+ res.setHeader('Content-Type','application/x-ndjson');return res.end(JSON.stringify({status:'success'})+'\n');
+}
+if(req.url==='/api/delete'){
+ mutations.push({kind:'delete',active,loaded:[...loaded]});
+ const index=models.findIndex(m=>m.name===body.model);if(index>=0)models.splice(index,1);
+ return reply({});
+}
 if(req.url==='/api/show')return reply({capabilities:['completion']});
 if(req.url==='/v1/models')return reply({data:models.map(m=>({id:m.name}))});
 if(req.url==='/api/version')return reply({version:'fixture'});
 if(req.url==='/api/ps')return reply({models:[...loaded].map(name=>({name}))});
-if(req.url==='/stats')return reply({active,peak,calls,unloads,loaded:[...loaded],history});
+if(req.url==='/stats')return reply({active,peak,calls,unloads,loaded:[...loaded],history,mutations});
 if(req.url==='/proof-mode'){valid=body.valid;return reply({});}
 if(req.url==='/api/scheduler/confirm-stopped'){
  if(active)return reply({error:'active'},409);
@@ -208,6 +219,24 @@ try:
  check(warm[0]==200 and warm[1]['managed'] and warm[1]['confirmed'],'model service Start uses the same queue and reserved warmup path')
  cooled=api('/model-hub/api/v1/inference-services/v-scheduler-ollama-qa/models/stop',{'model':'chat:latest'})
  check(cooled[0]==200 and cooled[1]['confirmed'] and sql("SELECT count(*) FROM vrs_permits WHERE state<>'released';")=='0','model service Stop confirms unloading and releases the resident reservation')
+ # Mutations must not race queued/running inference or invalidate warm leases.
+ api('/api/v1/model-residency',{'idle_seconds':30},'PUT')
+ with concurrent.futures.ThreadPoolExecutor() as pool:
+  running=pool.submit(chat,text='hold')
+  until(lambda:request(peerurl+'/stats')[1]['active']==1,'mutation test inference not active')
+  result=api('/model-hub/api/v1/models?model_id=ollama%3A%2F%2Fchat%3Alatest',method='DELETE')
+  check(result[0]==409 and not request(peerurl+'/stats')[1]['mutations'],'weight deletion rejects active inference before native mutation')
+  assert running.result()[0]==200
+ updating=api('/model-hub/api/v1/models/pull',{'source':'ollama','model_id':'ollama://chat:latest','force':True})
+ assert updating[0]==200,updating
+ check(chat()[0]==409,'new inference waits for a repository download to complete')
+ until(lambda:api('/model-hub/api/v1/tasks/detail/'+updating[1]['task_id'])[1].get('phase')=='READY','updated weights not ready')
+ check(all(m['active']==0 and not m['loaded'] for m in request(peerurl+'/stats')[1]['mutations']),'updating warm weights confirms native stop before pulling')
+ until(lambda:chat()[0]==200,'updated weights did not receive fresh resource approval')
+ check(sql("SELECT count(*) FROM vrs_permits WHERE state='suspect';")=='0','weight update keeps the resource ledger reconcilable')
+ deleted=api('/model-hub/api/v1/models?model_id=ollama%3A%2F%2Fchat%3Alatest',method='DELETE')
+ check(deleted[0]==200 and sql("SELECT count(*) FROM vrs_permits WHERE state<>'released';")=='0','deleting warm weights unloads and releases reservations before removing the manifest')
+ check(not any(m['id'].endswith('/chat:latest') for m in api('/v1/models')[1]['data']),'deleted model is immediately removed from the owned gateway catalog')
  private('result.json',{'passed':checks,'fixture_native':True,'installed_data_touched':False})
  print(json.dumps({'passed':len(checks),'evidence':str(run/'result.json')}),flush=True)
 finally:

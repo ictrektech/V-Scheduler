@@ -10,6 +10,7 @@ mod manage;
 mod proxy;
 mod queue;
 mod residency;
+mod weights;
 mod lifecycle;
 mod registry;
 mod readiness;
@@ -509,3 +510,5 @@ pub(crate) async fn yield_idle_model() {
         residency::yield_idle(&g).await;
     }
 }
+
+pub(crate) use weights::{forget_builtin_model, prepare_model_change};

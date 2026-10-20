@@ -153,6 +153,13 @@ pub(super) async fn stop_idle(g: &Arc<Gateway>, role: &str, model: &str) -> Valu
     };
     json!({"service_id":format!("v-scheduler-ollama-{role}"),"model":model,"accepted":true,"confirmed":confirmed,"stopped":confirmed,"target_state":"stopped","managed":true})
 }
+pub(super) async fn unload_for_change(g: &Arc<Gateway>, model: &str) -> bool {
+    let mut cache = g.residency.cached.lock().await;
+    if cache.as_ref().is_some_and(|r| super::weights::native_name(&r.model) == model) {
+        return evict(g, cache.take().unwrap()).await;
+    }
+    true
+}
 pub(super) async fn yield_idle(g: &Arc<Gateway>) {
     let mut cache = g.residency.cached.lock().await;
     if let Some(resident) = cache.take() {

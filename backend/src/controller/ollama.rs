@@ -109,7 +109,7 @@ async fn register(
     let model = format!("v-scheduler/ollama-{role}/{name}");
     let path = binding_path(directory, &model);
     let origin = format!("http://v-scheduler-ollama-{role}:11535/v1");
-    let fingerprint = json!([model, node, cost, origin, "automatic-v1"]);
+    let fingerprint = json!([model, node, cost, origin, "automatic-v2", bytes]);
     let digest = format!("{:x}", Sha256::digest(serde_json::to_vec(&fingerprint)?));
     let executor_id = format!("builtin-ollama-auto-{}", &digest[..24]);
     if path.exists() {
@@ -154,7 +154,7 @@ async fn register(
         &path,
         &json!({"url":"http://v-scheduler:38120/api/v1","token":token,"require_model_policy":true,
         "models":{model:{"mode":"permit","executor_id":executor_id,"completion":"synchronous","upstream_url":origin,
-            "max_input_bytes":33554432}}}),
+            "max_input_bytes":33554432,"native_model_size_bytes":bytes}}}),
     )?;
     Ok(())
 }

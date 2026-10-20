@@ -117,7 +117,14 @@ async fn inspect(g: &Gateway, id: &Identity) -> Api<Value> {
                 {
                     Ok(Some(approval)) => {
                         let result=lease::call(g,text(&approval.config,"token"),"/permits/inspect",json!({"executor_id":approval.policy["executor_id"],"upstream_url":u.base_url,"model_id":m.id}),false).await;
+                        let size_current = !text(&approval.policy,"executor_id").starts_with("builtin-ollama-auto-")
+                            || approval.policy["native_model_size_bytes"].as_i64().filter(|n|*n>0)
+                                .is_some_and(|size| weight["size"].as_i64()==Some(size));
                         match result {
+                            Ok(_) if !size_current => {
+                                blockers.push("SCHEDULER_BINDING_PENDING");
+                                "pending"
+                            }
                             Ok(state) if state["node_ready"] == true => "binding_ready",
                             Ok(_) => {
                                 blockers.push("EXECUTION_NODE_UNAVAILABLE");

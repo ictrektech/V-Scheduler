@@ -20,6 +20,7 @@ pub(super) struct Exchange {
     buffer: Option<tokio::sync::OwnedSemaphorePermit>,
     pub lease: Option<lease::Lease>,
     retained: bool,
+    _model_guard: Option<tokio::sync::OwnedRwLockReadGuard<()>>,
     pub usage: Value,
     bridge_request: Value,
     pub async_job: Option<Value>,
@@ -516,6 +517,7 @@ pub(super) async fn handle(g: Arc<Gateway>, id: Identity, request: Request) -> A
         buffer,
         lease: None,
         retained: false,
+        _model_guard: None,
         usage: Value::Null,
         bridge_request: Value::Null,
         async_job: None,
@@ -598,7 +600,10 @@ pub(super) async fn handle(g: Arc<Gateway>, id: Identity, request: Request) -> A
                 ));
             }
         }
-        if residency::native_origin(&u).is_some() { value["keep_alive"]=json!(g.residency.seconds()); }
+        if residency::native_origin(&u).is_some() {
+            exchange._model_guard=crate::modelhub::inference_guard(&native).await.map_err(|e|Failure::new(409,e.to_string()))?;
+            value["keep_alive"]=json!(g.residency.seconds());
+        }
         exchange.retained = u.source=="v-scheduler" && value["keep_alive"].as_u64().unwrap_or(0)>0;
         // Waiting bodies stay bounded by the input buffer, but do not consume
         // an execution slot: queued background callers must not prevent a new

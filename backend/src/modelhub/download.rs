@@ -209,7 +209,7 @@ pub async fn create(hub: Arc<Hub>, mut request: Value) -> Result<Value> {
     let source = request["source"].as_str().unwrap_or("").to_owned();
     let id = normalize_id(&source, request["model_id"].as_str().unwrap_or(""))?;
     request["model_id"] = json!(id);
-    let _guard = hub.lock_model(&id).await;
+    let _guard = hub.lock_model_change(&id).await?;
     let mut files = BTreeSet::new();
     if let Some(items) = request["files"].as_array() {
         for file in items {
@@ -235,7 +235,7 @@ pub async fn create(hub: Arc<Hub>, mut request: Value) -> Result<Value> {
         json!(files)
     };
     let task_id = format!("task-{}", uuid::Uuid::new_v4());
-    let mut active = hub.active.lock().await;
+    let active = hub.active.lock().await;
     ensure!(
         !active.values().any(|(model, _)| model == &id),
         "model already has an active task"
@@ -267,6 +267,8 @@ pub async fn create(hub: Arc<Hub>, mut request: Value) -> Result<Value> {
             || !previous.as_ref().is_some_and(|m| m["status"] == "ready"),
         "model is already installed; use force to update"
     );
+    drop(active);
+    if source=="ollama" {crate::router::prepare_model_change(id.trim_start_matches("ollama://")).await?;}
     let model = previous.clone().unwrap_or(json!({"model_id":id,"source":source,"name":request["name"].as_str().unwrap_or(&id),"created_at":now(),"path":hub.store.model_root(&source,&id)?,"size":0,"version":null,"sha256":null,"files":null}));
     let mut task = json!({"task_id":task_id,"model_id":id,"progress":0.,"speed":null,"eta":null,"phase":"PENDING","error_msg":null,"files":request["files"],"append":append,"_request":request,"_previous":previous,"_owner":"v-scheduler"});
     // Snapshot the old record before publishing a pulling state so interruption can restore it.
@@ -275,6 +277,7 @@ pub async fn create(hub: Arc<Hub>, mut request: Value) -> Result<Value> {
     pulling["status"] = json!("pulling");
     hub.store.put_model(pulling)?;
     let (cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
+    let mut active=hub.active.lock().await;
     active.insert(task_id.clone(), (id.clone(), cancel_tx));
     drop(active);
     let result = json!({"task_id":task_id,"model_id":id});

@@ -24,20 +24,40 @@ pub struct Hub {
     store: Store,
     client: reqwest::Client,
     active: Active,
-    model_locks: tokio::sync::Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
+    model_locks: tokio::sync::Mutex<HashMap<String, Arc<tokio::sync::RwLock<()>>>>,
+}
+static ACTIVE_HUB: std::sync::OnceLock<std::sync::Weak<Hub>> = std::sync::OnceLock::new();
+fn model_lock_key(id:&str)->String {
+    if let Some(name)=id.strip_prefix("ollama://") {
+        if !name.rsplit('/').next().unwrap_or("").contains(':') {return format!("{id}:latest");}
+    }
+    id.into()
 }
 impl Hub {
-    async fn lock_model(&self, id: &str) -> tokio::sync::OwnedMutexGuard<()> {
-        let lock = self
-            .model_locks
-            .lock()
-            .await
-            .entry(id.to_owned())
-            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
-            .clone();
-        lock.lock_owned().await
+    async fn model_lock(&self,id:&str)->Arc<tokio::sync::RwLock<()>> {
+        self.model_locks.lock().await.entry(model_lock_key(id))
+            .or_insert_with(||Arc::new(tokio::sync::RwLock::new(()))).clone()
+    }
+    async fn lock_model(&self,id:&str)->tokio::sync::OwnedRwLockWriteGuard<()> {
+        self.model_lock(id).await.write_owned().await
+    }
+    async fn lock_model_change(&self,id:&str)->Result<tokio::sync::OwnedRwLockWriteGuard<()>> {
+        let lock=self.model_lock(id).await;
+        if id.starts_with("ollama://") && std::env::var("V_ROUTER_ADDR").is_ok_and(|v|!v.is_empty()) {
+            return lock.try_write_owned().map_err(|_|anyhow::anyhow!("model has queued or active inference; stop its requests before changing weights"));
+        }
+        Ok(lock.write_owned().await)
     }
 }
+pub(crate) async fn inference_guard(native:&str)->Result<Option<tokio::sync::OwnedRwLockReadGuard<()>>> {
+    let Some(hub)=ACTIVE_HUB.get().and_then(std::sync::Weak::upgrade) else {return Ok(None)};
+    let id=model_lock_key(&format!("ollama://{native}"));
+    let guard=hub.model_lock(&id).await.try_read_owned()
+        .map_err(|_|anyhow::anyhow!("model weights are being changed; retry after model management completes"))?;
+    ensure!(!hub.active.lock().await.values().any(|(model,_)|model_lock_key(model)==id),"model weights are downloading; retry after the download task completes");
+    Ok(Some(guard))
+}
+
 struct Error(StatusCode, String);
 impl From<anyhow::Error> for Error {
     fn from(error: anyhow::Error) -> Self {
@@ -87,6 +107,7 @@ pub async fn start(listen: String) -> Result<tokio::task::JoinHandle<Result<()>>
         active: Default::default(),
         model_locks: Default::default(),
     });
+    let _=ACTIVE_HUB.set(Arc::downgrade(&hub));
     // Do not mark another application's active tasks failed. Only recover our own interrupted workers.
     for mut task in hub.store.tasks()? {
         if task["_owner"] == "v-scheduler" && !terminal(&task) {
@@ -549,7 +570,7 @@ async fn delete_model_impl(h: &Hub, model_id: &str) -> Result<Value> {
         .as_str()
         .unwrap()
         .to_owned();
-    let _guard = h.lock_model(&canonical).await;
+    let _guard = h.lock_model_change(&canonical).await?;
     let model = h.store.model(model_id)?;
     let id = model["model_id"].as_str().unwrap();
     ensure!(
@@ -572,6 +593,7 @@ async fn delete_model_impl(h: &Hub, model_id: &str) -> Result<Value> {
         "model is referenced by a container"
     );
     let freed = if model["source"] == "ollama" {
+        crate::router::prepare_model_change(id.trim_start_matches("ollama://")).await?;
         let r = h
             .client
             .delete(format!(
@@ -607,6 +629,7 @@ async fn delete_model_impl(h: &Hub, model_id: &str) -> Result<Value> {
         data.as_object_mut().unwrap().retain(|_, v| v != id);
         Ok(())
     })?;
+    if model["source"]=="ollama" {crate::router::forget_builtin_model(id.trim_start_matches("ollama://"));}
     Ok(json!({"model_id":id,"deleted":true,"freed_bytes":freed,"message":"Model deleted"}))
 }
 async fn cleanup(State(h): State<Arc<Hub>>) -> Api<Json<Value>> {
@@ -630,4 +653,22 @@ async fn cleanup(State(h): State<Arc<Hub>>) -> Api<Json<Value>> {
 }
 async fn integration() -> Json<Value> {
     Json(specification::integration())
+}
+
+#[cfg(test)]
+mod mutation_tests {
+    use super::*;
+    #[tokio::test]
+    async fn latest_alias_shares_inference_mutation_lock() {
+        assert_eq!(model_lock_key("ollama://org/model"), model_lock_key("ollama://org/model:latest"));
+        assert_ne!(model_lock_key("ollama://model:2b"), model_lock_key("ollama://model:latest"));
+        let lock = Arc::new(tokio::sync::RwLock::new(()));
+        let reader = lock.clone().try_read_owned().unwrap();
+        assert!(lock.clone().try_write_owned().is_err());
+        drop(reader);
+        let writer = lock.clone().try_write_owned().unwrap();
+        assert!(lock.clone().try_read_owned().is_err());
+        drop(writer);
+        assert!(lock.try_read_owned().is_ok());
+    }
 }

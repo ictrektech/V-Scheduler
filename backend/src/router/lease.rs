@@ -548,6 +548,23 @@ pub(super) async fn acquire(
     id: &Identity,
     asynchronous: bool,
 ) -> Api<Lease> {
+    if text(&approval.policy,"executor_id").starts_with("builtin-ollama-auto-") {
+        if let Some(origin)=residency::native_origin(u) {
+            let tags=tokio::time::timeout(Duration::from_secs(3),async {
+                let response=g.client.get(format!("{origin}/api/tags")).send().await
+                    .map_err(|_|Failure::new(503,"native model catalog is unavailable"))?;
+                if !response.status().is_success(){return Err(Failure::new(503,"native model catalog is unavailable"));}
+                read_json(response,4<<20).await
+            }).await.map_err(|_|Failure::new(503,"native model catalog inspection timed out"))??;
+            let current=tags["models"].as_array().into_iter().flatten().find(|m|m["name"]==model || m["name"]==format!("{model}:latest"));
+            let expected=approval.policy["native_model_size_bytes"].as_i64().filter(|v|*v>0);
+            if expected.is_none() || current.and_then(|m|m["size"].as_i64()).filter(|v|*v>0)!=expected {
+                let mut failure=Failure::new(503,"model resource binding is not ready; wait for discovery or check model size and node budget");
+                failure.code=Some("MODEL_BINDING_PENDING".into());
+                return Err(failure);
+            }
+        }
+    }
     let token = text(&approval.config, "token").to_string();
     let policy = &approval.policy;
     let proof = format!(
