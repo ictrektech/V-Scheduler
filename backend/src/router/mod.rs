@@ -8,6 +8,9 @@ mod jobs;
 mod lease;
 mod manage;
 mod proxy;
+mod queue;
+mod residency;
+mod lifecycle;
 mod registry;
 mod readiness;
 #[cfg(test)]
@@ -105,8 +108,11 @@ impl IntoResponse for Failure {
     }
 }
 type Api<T> = Result<T, Failure>;
+static MANAGED_GATEWAY: std::sync::OnceLock<std::sync::Weak<Gateway>> = std::sync::OnceLock::new();
 struct Gateway {
     registry: Mutex<Registry>,
+    queue: Mutex<queue::Queue>,
+    residency: residency::Residency,
     state_path: PathBuf,
     controller: RwLock<Router>,
     client: reqwest::Client,
@@ -210,9 +216,9 @@ pub(crate) struct Runtime {
 impl Runtime {
     pub fn abort(self) {
         self.server.abort();
-        for task in self.background.into_inner().unwrap() {
-            task.abort();
-        }
+        for task in self.background.into_inner().unwrap() { task.abort(); }
+        let state=self.state.clone();
+        tokio::spawn(async move {state.residency.abandon().await;});
     }
     pub fn is_ready(&self) -> bool {
         self.ready.load(Ordering::Acquire)
@@ -243,6 +249,8 @@ pub(crate) async fn start(
     let state_path = PathBuf::from(env("V_ROUTER_STATE_PATH", "/gateway-data/state.json"));
     let state = Arc::new(Gateway {
         registry: Mutex::new(Registry::open(&state_path)?),
+        queue: Mutex::new(Default::default()),
+        residency: residency::Residency::open(&state_path)?,
         usage: Mutex::new(usage::Usage::open(&PathBuf::from(env(
             "V_ROUTER_USAGE_PATH",
             "/gateway-data/usage.jsonl",
@@ -265,9 +273,11 @@ pub(crate) async fn start(
         jobs_lock: Mutex::new(()),
         initial_discovery: Mutex::new(readiness::initial_roles()),
     });
+    let _=MANAGED_GATEWAY.set(Arc::downgrade(&state));
     let router = Router::new().fallback(handle).with_state(state.clone());
     let socket = tokio::net::TcpListener::bind(&listen).await?;
-    let background = discovery::start(state.clone());
+    let mut background = discovery::start(state.clone());
+    background.push(residency::start(state.clone()));
     eprintln!("V-Scheduler Rust router listening on {listen}");
     Ok(Some(Runtime {
         server: tokio::spawn(async move {
@@ -426,4 +436,76 @@ async fn dispatch(g: Arc<Gateway>, mut request: Request) -> Api<Response> {
         return Ok(response.map(Body::new));
     }
     Err(Failure::new(404, "not found"))
+}
+
+// Model-management native ports remain trusted-container APIs. Restrict this
+// bridge to fixed owned Ollama roles; it grants no arbitrary proxy capability.
+pub(crate) async fn builtin_model_action(
+    role: &str,
+    model: &str,
+    start: bool,
+) -> anyhow::Result<Value> {
+    anyhow::ensure!(
+        ["qa", "embedding", "rerank"].contains(&role) && !model.is_empty() && model.len() <= 512,
+        "invalid built-in model action"
+    );
+    let g = MANAGED_GATEWAY
+        .get()
+        .and_then(std::sync::Weak::upgrade)
+        .ok_or_else(|| anyhow::anyhow!("gateway is not ready"))?;
+    if !start {
+        return Ok(residency::stop_idle(&g, role, model).await);
+    }
+    anyhow::ensure!(
+        g.residency.seconds() > 0,
+        "enable model idle retention before starting a resident model"
+    );
+    let qualified = format!("v-scheduler/ollama-{role}/{model}");
+    let (suffix, body) = match role {
+        "embedding" => ("embeddings", json!({"model":qualified,"input":"warmup"})),
+        "rerank" => (
+            "rerank",
+            json!({"model":qualified,"query":"warmup","documents":["warmup"]}),
+        ),
+        _ => (
+            "chat/completions",
+            json!({"model":qualified,"messages":[{"role":"user","content":"warmup"}],"stream":false,"max_tokens":1,"options":{"num_predict":1}}),
+        ),
+    };
+    let request = axum::http::Request::builder()
+        .method("POST")
+        .uri(format!("/v1/{suffix}"))
+        .header("content-type", "application/json")
+        .header("x-vscheduler-queue-wait-seconds", "120")
+        .header("x-vscheduler-priority", "background")
+        .body(Body::from(serde_json::to_vec(&body)?))?;
+    let response = proxy::handle(
+        g.clone(),
+        Identity {
+            owner: "model-management".into(),
+            username: "model-management".into(),
+            ..Default::default()
+        },
+        request,
+    )
+    .await
+    .map_err(|error| anyhow::anyhow!("{}", error.message))?;
+    anyhow::ensure!(
+        response.status().is_success(),
+        "managed model warmup failed"
+    );
+    let _ = axum::body::to_bytes(response.into_body(), 1 << 20).await?;
+    let state = g.residency.snapshot().await;
+    let confirmed = state["resident"]["model_id"] == model;
+    Ok(
+        json!({"service_id":format!("v-scheduler-ollama-{role}"),"model":model,"accepted":true,"confirmed":confirmed,"started":confirmed,"target_state":"running","managed":true}),
+    )
+}
+
+/// Existing applications may acquire permits directly instead of traversing the
+/// gateway. Yield only idle owned models; active requests are never interrupted.
+pub(crate) async fn yield_idle_model() {
+    if let Some(g) = MANAGED_GATEWAY.get().and_then(std::sync::Weak::upgrade) {
+        residency::yield_idle(&g).await;
+    }
 }

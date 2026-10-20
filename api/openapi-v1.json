@@ -2917,6 +2917,60 @@
         },
         "x-required-scope": "admin"
       }
+    },
+    "/inference-waiters": {
+      "post": {
+        "summary": "Internal bounded admission priority hints",
+        "x-internal": true,
+        "description": "Internal gateway coordination. Applications use gateway inference headers instead. Admission hints never reserve resources or replay execution. Warm reuse checks current identity/executor/node and refuses claimed or changed reservations.",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Structured scheduler rejection"
+          }
+        }
+      }
+    },
+    "/permits/{id}/reuse-resident": {
+      "post": {
+        "summary": "Rotate a reserved built-in resident execution proof",
+        "x-internal": true,
+        "description": "Internal gateway coordination. Applications use gateway inference headers instead. Admission hints never reserve resources or replay execution. Warm reuse checks current identity/executor/node and refuses claimed or changed reservations.",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Structured scheduler rejection"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/permits/inspect": {
+      "post": {
+        "summary": "Inspect current binding and execution-node eligibility without reserving resources",
+        "x-internal": true,
+        "responses": {
+          "200": {
+            "description": "Binding and node eligibility; not a capacity guarantee"
+          },
+          "default": {
+            "description": "Structured scheduler rejection"
+          }
+        }
+      }
     }
   },
   "components": {

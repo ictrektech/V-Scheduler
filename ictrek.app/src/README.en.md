@@ -1,5 +1,7 @@
 # V-Scheduler Resource Scheduling
 
+New: Inference queue and Model library → Model integration status. Playground waits up to 120 seconds with position and cancellation; applications opt into interactive/background waiting through gateway request headers. Built-in Ollama models retain idle weights for 60 seconds by default and reuse them for consecutive calls. The full reservation remains held until confirmed unloading on model switch, idle expiry or manual stop. Administrators can set 0..600 seconds; 0 unloads after each call. Service metadata.model_bindings links exact repository IDs and native served names; one status page combines routes, backend health and scheduler bindings. Existing model storage, nine published endpoints, host aliases and four containers remain compatible.
+
 The unified package includes the model gateway and scheduling controller. Model clients use host port 22888 /v1; scheduling uses /scheduler/api/v1. Router connects directly to its three built-in Ollama backends without Model Hub discovery. It also discovers available models from Image Studio, V-Voice, V-Music, ML Server, and Video Structure. Once ready, V-Voice connects automatically and binds calibrated executors and model mappings. See Application integration in the UI.
 
 Version __APP_VERSION__

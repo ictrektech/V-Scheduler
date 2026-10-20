@@ -81,6 +81,21 @@ pub fn validate_registration(mut value: Value) -> Result<Value> {
     if value["metadata"].is_null() {
         value["metadata"] = json!({});
     }
+    ensure!(value["metadata"].is_object(), "invalid service metadata");
+    if let Some(links) = value["metadata"].get("model_bindings") {
+        let links = links
+            .as_object()
+            .ok_or_else(|| anyhow::anyhow!("invalid model_bindings"))?;
+        ensure!(
+            links.len() <= 256
+                && links.iter().all(|(name, id)| !name.is_empty()
+                    && name.len() <= 512
+                    && id
+                        .as_str()
+                        .is_some_and(|id| !id.is_empty() && id.len() <= 1024)),
+            "invalid model_bindings"
+        );
+    }
     value["updated_at"] = json!(now());
     Ok(value)
 }
@@ -321,6 +336,15 @@ pub async fn action(hub: &Hub, service: &Value, request: Value, start: bool) -> 
         .as_str()
         .filter(|x| !x.is_empty())
         .ok_or_else(|| anyhow::anyhow!("model is required"))?;
+    if service["metadata"]["builtin"] == true
+        && std::env::var("V_ROUTER_ADDR").is_ok_and(|v| !v.is_empty())
+    {
+        let role = service["service_id"]
+            .as_str()
+            .and_then(|id| id.strip_prefix("v-scheduler-ollama-"))
+            .ok_or_else(|| anyhow::anyhow!("invalid built-in service"))?;
+        return crate::router::builtin_model_action(role, model, start).await;
+    }
     let ollama = service["kind"] == "ollama";
     let role = request["mode"]
         .as_str()

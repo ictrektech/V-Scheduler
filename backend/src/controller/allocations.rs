@@ -39,6 +39,8 @@ pub(super) async fn room(
     cost: &Resources,
     executor: &str,
     memory: Option<i64>,
+    queue_id: Option<&str>,
+    app_id: &str,
 ) -> Api<()> {
     ready(node, executor)?;
     let report = admission_report(&node.get("report"), memory);
@@ -56,9 +58,12 @@ pub(super) async fn room(
         used.add(&serde_json::from_value(row.get("resources")).map_err(|_| invalid())?);
     }
     let queued: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM vrs_tasks WHERE node=$1 AND status='queued')",
+        "SELECT EXISTS(SELECT 1 FROM vrs_tasks t WHERE node=$1 AND status='queued' AND floor(extract(epoch FROM (now()-t.created_at))/30)>=COALESCE((SELECT priority+floor(extract(epoch FROM (now()-arrived_at))/30) FROM vrs_inference_waiters WHERE app=$2 AND id=$3 AND node=$1 AND executor=$4 AND valid_until>now()),0))",
     )
     .bind(&id)
+    .bind(app_id)
+    .bind(queue_id)
+    .bind(executor)
     .fetch_one(&mut **tx)
     .await
     .map_err(unavailable)?;

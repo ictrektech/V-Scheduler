@@ -19,6 +19,7 @@ pub(super) struct Exchange {
     _slot: Option<tokio::sync::OwnedSemaphorePermit>,
     buffer: Option<tokio::sync::OwnedSemaphorePermit>,
     pub lease: Option<lease::Lease>,
+    retained: bool,
     pub usage: Value,
     bridge_request: Value,
     pub async_job: Option<Value>,
@@ -65,6 +66,9 @@ fn clean_headers(headers: &HeaderMap) -> HeaderMap {
         "x-vscheduler-execution-token",
         "x-vscheduler-executor-id",
         "x-vrouter-upstream",
+        "x-vscheduler-queue-wait-seconds",
+        "x-vscheduler-priority",
+        "x-vscheduler-request-id",
         "cookie",
         // Browser origin belongs to this gateway; upstream calls are server-to-server.
         "origin",
@@ -511,6 +515,7 @@ pub(super) async fn handle(g: Arc<Gateway>, id: Identity, request: Request) -> A
         _slot: Some(slot),
         buffer,
         lease: None,
+        retained: false,
         usage: Value::Null,
         bridge_request: Value::Null,
         async_job: None,
@@ -593,6 +598,14 @@ pub(super) async fn handle(g: Arc<Gateway>, id: Identity, request: Request) -> A
                 ));
             }
         }
+        if residency::native_origin(&u).is_some() { value["keep_alive"]=json!(g.residency.seconds()); }
+        exchange.retained = u.source=="v-scheduler" && value["keep_alive"].as_u64().unwrap_or(0)>0;
+        // Waiting bodies stay bounded by the input buffer, but do not consume
+        // an execution slot: queued background callers must not prevent a new
+        // interactive caller from entering the priority queue.
+        let queued=headers.get("x-vscheduler-queue-wait-seconds").and_then(|v|v.to_str().ok()).and_then(|v|v.parse::<u64>().ok()).is_some_and(|v|v>0)
+            && !(approval.policy["mode"]=="delegated" && headers.get("x-vscheduler-task-id").and_then(|v|v.to_str().ok()).is_some_and(|v|!v.is_empty()));
+        if queued {exchange._slot.take();}
         exchange.lease = Some(
             lease::acquire(
                 g.clone(),
@@ -605,6 +618,7 @@ pub(super) async fn handle(g: Arc<Gateway>, id: Identity, request: Request) -> A
             )
             .await?,
         );
+        if let Some(slot)=exchange.lease.as_mut().and_then(|lease|lease.request_slot.take()) {exchange._slot=Some(slot);}
     }
     exchange.bridge_request = bridge::context(&value);
     let actual_suffix = if conversion.is_empty() {
@@ -761,10 +775,7 @@ pub(super) async fn finish_response(
         if bytes.len() > 32 << 20 {
             return Err(Failure::new(502, "upstream response exceeds 32 MiB"));
         }
-        if let Some(lease) = exchange.lease.as_mut() {
-            lease.complete("synchronous_response_completed");
-            lease.release_confirmed("synchronous_response_completed").await;
-        }
+        complete_lease(&mut exchange,"synchronous_response_completed").await;
         let mut chat: Value = serde_json::from_slice(&bytes)
             .map_err(|_| Failure::new(502, "upstream returned invalid chat JSON"))?;
         bridge::validate_response(&chat)?;
@@ -796,10 +807,7 @@ pub(super) async fn finish_response(
             return Err(Failure::new(503, "async receipt is invalid"));
         }
         if !asynchronous {
-            if let Some(lease) = exchange.lease.as_mut() {
-                lease.complete("synchronous_response_completed");
-                lease.release_confirmed("synchronous_response_completed").await;
-            }
+            complete_lease(&mut exchange,"synchronous_response_completed").await;
         }
         let mut out = Response::new(Body::from(bytes));
         *out.status_mut() = status;
@@ -822,6 +830,20 @@ pub(super) async fn finish_response(
     *out.status_mut() = status;
     *out.headers_mut() = headers;
     Ok(out)
+}
+async fn complete_lease(exchange: &mut Exchange, evidence: &'static str) {
+    if let Some(lease) = exchange.lease.take() {
+        residency::complete(
+            exchange.g.clone(),
+            exchange.u.clone(),
+            exchange.native.clone(),
+            exchange.status,
+            exchange.retained,
+            lease,
+            evidence,
+        )
+        .await;
+    }
 }
 fn renewal_watch(
     exchange: &Exchange,
@@ -913,10 +935,10 @@ impl Stream for ResponseStream {
                     if let Some(exchange) = self.exchange.as_mut() {
                         exchange.usage = usage;
                         if terminal {
-                            if let Some(mut lease) = exchange.lease.take() {
-                                lease.complete("upstream_sse_terminal_received");
+                            if let Some(lease) = exchange.lease.take() {
+                                let (g,u,model,status,retained)=(exchange.g.clone(),exchange.u.clone(),exchange.native.clone(),exchange.status,exchange.retained);
                                 self.completion = Some(Box::pin(async move {
-                                    lease.release_confirmed("upstream_sse_terminal_received").await;
+                                    residency::complete(g,u,model,status,retained,lease,"upstream_sse_terminal_received").await;
                                     Bytes::from(output)
                                 }));
                                 return self.poll_next(cx);
@@ -938,13 +960,10 @@ impl Stream for ResponseStream {
                     let terminal = self.decoder.terminal;
                     if let Some(mut exchange) = self.exchange.take() {
                         if !sse || terminal {
-                            if let Some(lease) = exchange.lease.as_mut() {
-                                lease.complete("synchronous_response_completed");
-                            }
-                            if let Some(mut lease) = exchange.lease.take() {
+                            if let Some(lease) = exchange.lease.take() {
                                 self.finished = true;
                                 self.completion = Some(Box::pin(async move {
-                                    lease.release_confirmed("synchronous_response_completed").await;
+                                    residency::complete(exchange.g.clone(),exchange.u.clone(),exchange.native.clone(),exchange.status,exchange.retained,lease,"synchronous_response_completed").await;
                                     Bytes::from(final_events)
                                 }));
                                 return self.poll_next(cx);

@@ -1055,7 +1055,9 @@ const app = {
 
   pgStop() {
     if (!this.pgRequest || this.pgRequest.signal.aborted) return;
+    const requestId = this.pgQueueId;
     this.pgRequest.abort();
+    if(requestId) void this.api('DELETE','/api/v1/inference-queue/'+encodeURIComponent(requestId)).catch(()=>{});
     $("pgSend").disabled = true;
   },
   async pgSend() {
@@ -1072,25 +1074,43 @@ const app = {
     const out = this.pgAppend("assistant", "…");
     const controller = new AbortController();
     this.pgRequest = controller;
+    const queueId = crypto.randomUUID();
+    this.pgQueueId = queueId;
     VRouterI18n.bind($("pgSend"), "textContent", () => VRouterI18n.t("停止"));
     const stream = endpoint.stream && $("pgStream").checked;
     const started = performance.now();
     let firstToken = null;
-    let phase = "等待服务响应";
+    let phase = "等待排队或服务响应";
+    let queuePoll = false;
+    let headersReceived = false;
+    let queuePosition = null;
     let reasoningLength = 0;
     let answer = "";
     const showProgress = () => {
       const seconds = ((performance.now() - started) / 1000).toFixed(1);
-      const status = `${VRouterI18n.t(phase)} · ${seconds}s` + (reasoningLength ? ` · ${reasoningLength} ${VRouterI18n.t("思考字符")}` : "");
+      const status = `${VRouterI18n.t(phase)}${queuePosition===null?"":` · #${queuePosition}`} · ${seconds}s` + (reasoningLength ? ` · ${reasoningLength} ${VRouterI18n.t("思考字符")}` : "");
       $("pgMeta").textContent = status;
       if (!answer) out.textContent = status;
     };
     showProgress();
-    const progressTimer = setInterval(showProgress, 1000);
+    const progressTimer = setInterval(() => {
+      showProgress();
+      if(queuePoll||controller.signal.aborted||headersReceived)return;
+      queuePoll=true;
+      void this.api('GET','/api/v1/inference-queue').then(data=>{
+        if(controller.signal.aborted||headersReceived)return;
+        const entry=data.items.find(item=>item.request_id===queueId);
+        queuePosition=entry?.position??null;
+        if(entry)phase="等待计算资源";
+      }).catch(()=>{}).finally(()=>{queuePoll=false});
+    }, 1000);
     try {
       const headers = await this.authHeaders();
       headers["Content-Type"] = "application/json";
       headers["X-VRouter-Upstream"] = pinned;
+      headers["X-VScheduler-Queue-Wait-Seconds"] = "120";
+      headers["X-VScheduler-Priority"] = "interactive";
+      headers["X-VScheduler-Request-ID"] = queueId;
       const body = this.playgroundRequestBody(endpoint.id, native, text, stream);
       const res = await fetch(API + "/v1" + endpoint.path, {
         method: "POST",
@@ -1110,6 +1130,8 @@ const app = {
         this.pgAppend("error", msg);
         return;
       }
+      headersReceived=true;
+      queuePosition=null;
       phase = "等待模型输出";
       showProgress();
       if (!stream) {

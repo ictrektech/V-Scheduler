@@ -3763,6 +3763,38 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Queue-Wait-Seconds",
+            "in": "header",
+            "description": "Local inference accepts X-VScheduler-Queue-Wait-Seconds: 1..300, X-VScheduler-Priority: interactive or background, and a unique X-VScheduler-Request-ID. Omitted/zero wait preserves immediate admission. Priority ages every 30 seconds; active computation is never preempted. Waiting reserves no resources. The queue is in memory; restart never replays requests. GET is scoped to the verified user/application; administrators see all. DELETE cancels only waiting requests. Stop active execution through client cancellation and native stop verification.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 300,
+              "default": 0
+            }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "interactive",
+                "background"
+              ],
+              "default": "interactive"
+            }
+          },
+          {
+            "name": "X-VScheduler-Request-ID",
+            "in": "header",
+            "description": "Unique waiting request ID; not an inference idempotency key.",
+            "schema": {
+              "type": "string",
+              "maxLength": 96
+            }
           }
         ],
         "requestBody": {
@@ -5018,6 +5050,38 @@
             "required": false,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "X-VScheduler-Queue-Wait-Seconds",
+            "in": "header",
+            "description": "Local inference accepts X-VScheduler-Queue-Wait-Seconds: 1..300, X-VScheduler-Priority: interactive or background, and a unique X-VScheduler-Request-ID. Omitted/zero wait preserves immediate admission. Priority ages every 30 seconds; active computation is never preempted. Waiting reserves no resources. The queue is in memory; restart never replays requests. GET is scoped to the verified user/application; administrators see all. DELETE cancels only waiting requests. Stop active execution through client cancellation and native stop verification.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 300,
+              "default": 0
+            }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "interactive",
+                "background"
+              ],
+              "default": "interactive"
+            }
+          },
+          {
+            "name": "X-VScheduler-Request-ID",
+            "in": "header",
+            "description": "Unique waiting request ID; not an inference idempotency key.",
+            "schema": {
+              "type": "string",
+              "maxLength": 96
             }
           }
         ],
@@ -6800,6 +6864,38 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Queue-Wait-Seconds",
+            "in": "header",
+            "description": "Local inference accepts X-VScheduler-Queue-Wait-Seconds: 1..300, X-VScheduler-Priority: interactive or background, and a unique X-VScheduler-Request-ID. Omitted/zero wait preserves immediate admission. Priority ages every 30 seconds; active computation is never preempted. Waiting reserves no resources. The queue is in memory; restart never replays requests. GET is scoped to the verified user/application; administrators see all. DELETE cancels only waiting requests. Stop active execution through client cancellation and native stop verification.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 300,
+              "default": 0
+            }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "interactive",
+                "background"
+              ],
+              "default": "interactive"
+            }
+          },
+          {
+            "name": "X-VScheduler-Request-ID",
+            "in": "header",
+            "description": "Unique waiting request ID; not an inference idempotency key.",
+            "schema": {
+              "type": "string",
+              "maxLength": 96
+            }
           }
         ],
         "requestBody": {
@@ -8280,6 +8376,38 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Queue-Wait-Seconds",
+            "in": "header",
+            "description": "Local inference accepts X-VScheduler-Queue-Wait-Seconds: 1..300, X-VScheduler-Priority: interactive or background, and a unique X-VScheduler-Request-ID. Omitted/zero wait preserves immediate admission. Priority ages every 30 seconds; active computation is never preempted. Waiting reserves no resources. The queue is in memory; restart never replays requests. GET is scoped to the verified user/application; administrators see all. DELETE cancels only waiting requests. Stop active execution through client cancellation and native stop verification.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 300,
+              "default": 0
+            }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "interactive",
+                "background"
+              ],
+              "default": "interactive"
+            }
+          },
+          {
+            "name": "X-VScheduler-Request-ID",
+            "in": "header",
+            "description": "Unique waiting request ID; not an inference idempotency key.",
+            "schema": {
+              "type": "string",
+              "maxLength": 96
+            }
           }
         ],
         "requestBody": {
@@ -8489,6 +8617,38 @@
             "required": false,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "X-VScheduler-Queue-Wait-Seconds",
+            "in": "header",
+            "description": "Local inference accepts X-VScheduler-Queue-Wait-Seconds: 1..300, X-VScheduler-Priority: interactive or background, and a unique X-VScheduler-Request-ID. Omitted/zero wait preserves immediate admission. Priority ages every 30 seconds; active computation is never preempted. Waiting reserves no resources. The queue is in memory; restart never replays requests. GET is scoped to the verified user/application; administrators see all. DELETE cancels only waiting requests. Stop active execution through client cancellation and native stop verification.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 300,
+              "default": 0
+            }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "interactive",
+                "background"
+              ],
+              "default": "interactive"
+            }
+          },
+          {
+            "name": "X-VScheduler-Request-ID",
+            "in": "header",
+            "description": "Unique waiting request ID; not an inference idempotency key.",
+            "schema": {
+              "type": "string",
+              "maxLength": 96
             }
           }
         ],
@@ -11128,6 +11288,131 @@
           },
           "503": {
             "description": "Initializing or unavailable; inspect backends. Retry-After: 1."
+          }
+        }
+      }
+    },
+    "/api/v1/inference-queue": {
+      "get": {
+        "summary": "Inference waiting queue",
+        "description": "Local inference accepts X-VScheduler-Queue-Wait-Seconds: 1..300, X-VScheduler-Priority: interactive or background, and a unique X-VScheduler-Request-ID. Omitted/zero wait preserves immediate admission. Priority ages every 30 seconds; active computation is never preempted. Waiting reserves no resources. The queue is in memory; restart never replays requests. GET is scoped to the verified user/application; administrators see all. DELETE cancels only waiting requests. Stop active execution through client cancellation and native stop verification.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Structured gateway error"
+          }
+        }
+      }
+    },
+    "/api/v1/inference-queue/{id}": {
+      "delete": {
+        "summary": "Cancel waiting inference",
+        "description": "Local inference accepts X-VScheduler-Queue-Wait-Seconds: 1..300, X-VScheduler-Priority: interactive or background, and a unique X-VScheduler-Request-ID. Omitted/zero wait preserves immediate admission. Priority ages every 30 seconds; active computation is never preempted. Waiting reserves no resources. The queue is in memory; restart never replays requests. GET is scoped to the verified user/application; administrators see all. DELETE cancels only waiting requests. Stop active execution through client cancellation and native stop verification.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Structured gateway error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 96
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/model-residency": {
+      "get": {
+        "summary": "Model residency and unloading policy",
+        "description": "Only administrators may inspect/change this setting. idle_seconds is 0..600 (default 60); 0 unloads after each call. Warm models retain their full reservation; native stop proof is required before release.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Structured gateway error"
+          }
+        }
+      },
+      "put": {
+        "summary": "Set idle retention duration",
+        "description": "Only administrators may inspect/change this setting. idle_seconds is 0..600 (default 60); 0 unloads after each call. Warm models retain their full reservation; native stop proof is required before release.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Structured gateway error"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "idle_seconds"
+                ],
+                "properties": {
+                  "idle_seconds": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 600,
+                    "default": 60
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/model-lifecycle": {
+      "get": {
+        "summary": "Weights, services, routes and scheduler linkage",
+        "description": "Exact repository model links, discovered gateway routes, backend health and private binding availability. Ready bindings do not guarantee current capacity. Selected files being ready does not mean the entire repository is downloaded.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Structured gateway error"
           }
         }
       }

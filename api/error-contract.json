@@ -35,6 +35,11 @@
     "WAIT_MEMORY_HEADROOM": "Insufficient observed available RAM after safety reserve and outstanding commitments. Unload idle models or explicitly select a lower-memory execution configuration.",
     "WAIT_STOP_CONFIRMATION": "Prior native computation has not yet supplied a valid stop receipt; the inference gateway retries rejected admission for up to eight seconds without sending a provider request.",
     "MODEL_CATALOG_INITIALIZING": "Initial model discovery is pending; retry after the Retry-After interval. No inference request has been sent.",
-    "SCHEDULER_ADMISSION_TIMEOUT": "The in-process controller did not complete admission within three seconds, including its response body. No provider request has been sent. Check controller and database health; this is not a capacity refusal."
+    "SCHEDULER_ADMISSION_TIMEOUT": "The in-process controller did not complete admission within three seconds, including its response body. No provider request has been sent. Check controller and database health; this is not a capacity refusal.",
+    "QUEUE_FULL": "Bounded inference queue or owner waiting capacity exhausted. No execution started.",
+    "QUEUE_TIMEOUT": "Queue deadline elapsed before execution. Provider request was not sent.",
+    "QUEUE_CANCELLED": "Request was cancelled before execution.",
+    "QUEUE_ID_IN_USE": "Request ID already waiting; no execution replayed.",
+    "RESIDENT_REUSE_NOT_ALLOWED": "Warm reservation reuse is restricted to the owning built-in Ollama identity."
   }
 }

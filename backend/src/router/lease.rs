@@ -40,7 +40,7 @@ pub(super) const RESOURCE_PARAMETERS: &[&str] = &[
 ];
 pub(super) struct Lease {
     g: Arc<Gateway>,
-    token: String,
+    pub(super) token: String,
     pub id: String,
     pub proof: String,
     pub executor: String,
@@ -49,6 +49,7 @@ pub(super) struct Lease {
     pub stopped: Arc<AtomicBool>,
     pub evidence: &'static str,
     release_on_drop: bool,
+    pub request_slot: Option<tokio::sync::OwnedSemaphorePermit>,
 }
 pub(super) async fn guard<T, F>(lease: Option<&Lease>, future: F) -> Api<T>
 where
@@ -87,6 +88,7 @@ impl Lease {
         {
             self.complete(evidence);
             self.release_on_drop = false;
+            self.request_slot.take();
             self.renewal.abort();
             true
         } else {
@@ -580,14 +582,76 @@ pub(super) async fn acquire(
         }
         "/permits"
     };
-    let response = admit(&g, &token, path, body, Duration::from_secs(8)).await?;
+    let ticket = if path == "/permits" {
+        queue::Ticket::enter(g.clone(), id, headers, model)?
+    } else {
+        None
+    };
+    let mut request_slot = None;
+    let response = if let Some(ticket) = &ticket {
+        loop {
+            if !ticket.check()? {
+                request_slot.take();
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                continue;
+            }
+            if request_slot.is_none() {
+                match g.slots.clone().try_acquire_owned() {
+                    Ok(slot) => request_slot = Some(slot),
+                    Err(_) => {
+                        ticket.reason("WAIT_GATEWAY_CAPACITY");
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                        continue;
+                    }
+                }
+            }
+            ticket.heartbeat(&token, &executor).await?;
+            if let Some(mut lease) = residency::take(&g, approval, u, model).await? {
+                ticket.check()?;
+                lease.request_slot = request_slot.take();
+                return Ok(lease);
+            }
+            body["queue_id"] = json!(ticket.id);
+            match call(&g, &token, path, body.clone(), true).await {
+                Err(error) if error.status == StatusCode::TOO_MANY_REQUESTS => {
+                    ticket.reason(error.code.as_deref().unwrap_or("WAIT_RESOURCE"));
+                    tokio::time::sleep(Duration::from_millis(200)).await;
+                }
+                result => break result?,
+            }
+        }
+    } else {
+        if path == "/permits" {
+            if !g.queue.lock().unwrap().snapshot(&Identity {
+                admin: true,
+                ..Default::default()
+            })["items"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+            {
+                return Err(Failure::new(
+                    429,
+                    "inference queue has waiting requests; use bounded queue admission",
+                ));
+            }
+            if let Some(lease) = residency::take(&g, approval, u, model).await? {
+                return Ok(lease);
+            }
+        }
+        admit(&g, &token, path, body, Duration::from_secs(8)).await?
+    };
     let permit = text(&response, "permit_id").to_string();
     if permit.is_empty() {
         return Err(Failure::new(503, "invalid local permit"));
     }
     let mut lease = resume(g, token, permit, proof, executor);
+    lease.request_slot = request_slot;
     lease.stopped.store(true, Ordering::Release);
     lease.evidence = "inference_request_not_started";
+    if let Some(ticket) = ticket.as_ref() {
+        ticket.check()?;
+    }
     Ok(lease)
 }
 pub(super) fn resume(
@@ -630,5 +694,6 @@ pub(super) fn resume(
         stopped: Arc::new(AtomicBool::new(false)),
         evidence: "transport_closed_without_stop_confirmation",
         release_on_drop: true,
+        request_slot: None,
     }
 }

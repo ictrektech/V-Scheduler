@@ -390,6 +390,18 @@ async fn probe_model(g: &Gateway, u: &Upstream, model: &str) -> Api<()> {
 pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) -> Api<Response> {
     let path = request.uri().path().to_string();
     let method = request.method().as_str().to_string();
+    if path=="/api/v1/inference-queue" && method=="GET" {
+        if id.owner.is_empty() && !id.admin {return Err(Failure::new(401,"queue inspection requires a verified identity"));}
+        return Ok(Json(g.queue.lock().unwrap().snapshot(id)).into_response());
+    }
+    if let Some(request_id)=path.strip_prefix("/api/v1/inference-queue/") {
+        if method=="DELETE" {return Ok(Json(g.queue.lock().unwrap().cancel(id,request_id)?).into_response());}
+    }
+    if path=="/api/v1/model-lifecycle" && method=="GET" {return Ok(Json(lifecycle::snapshot(g,id).await?).into_response());}
+    if path=="/api/v1/model-residency" && method=="GET" {
+        if !id.admin {return Err(Failure::new(403,"residency management requires an administrator"));}
+        return Ok(Json(g.residency.snapshot().await).into_response());
+    }
     if method == "GET" {
         let catalog_readiness = readiness::snapshot(g);
         let r = g.registry.lock().unwrap();
@@ -412,6 +424,12 @@ pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) ->
     } else {
         serde_json::from_slice(&bytes).map_err(|_| Failure::new(400, "invalid JSON request"))?
     };
+    if path=="/api/v1/model-residency" && method=="PUT" {
+        if !id.admin {return Err(Failure::new(403,"residency management requires an administrator"));}
+        let seconds=payload["idle_seconds"].as_u64().ok_or_else(||Failure::new(422,"idle_seconds must be 0..600"))?;
+        g.residency.configure(g,seconds)?;
+        return Ok(Json(g.residency.snapshot().await).into_response());
+    }
     if path == "/api/v1/registrations" && method == "POST" {
         return register(g, id, payload).await;
     }

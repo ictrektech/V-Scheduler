@@ -1753,5 +1753,10 @@
     "method": "DELETE",
     "path": "/api/v1/registrations/{id}",
     "summary": "注销推理后端"
-  }
+  },
+  {"method": "GET", "path": "/api/v1/inference-queue", "auth": "inference", "group": "management", "summary": "推理等待队列", "desc": "推理等待队列", "example": ""},
+  {"method": "DELETE", "path": "/api/v1/inference-queue/{id}", "auth": "inference", "group": "management", "summary": "取消尚未执行的推理请求", "desc": "取消尚未执行的推理请求", "example": ""},
+  {"method": "GET", "path": "/api/v1/model-residency", "auth": "manage", "group": "management", "summary": "模型驻留策略与资源占用", "desc": "模型驻留策略与资源占用", "example": ""},
+  {"method": "PUT", "path": "/api/v1/model-residency", "auth": "manage", "group": "management", "summary": "设置模型空闲卸载时间", "desc": "设置模型空闲卸载时间", "example": ""},
+  {"method": "GET", "path": "/api/v1/model-lifecycle", "auth": "manage", "group": "management", "summary": "模型权重与服务接入状态", "desc": "模型权重与服务接入状态", "example": ""}
 ]

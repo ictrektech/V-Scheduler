@@ -11,6 +11,7 @@
 - [同步许可与异步任务](#application-contract)
 - [共享模型目录](#shared-models)
 - [远端节点与当前能力边界](#remote-nodes)
+- [推理排队、模型驻留与服务关联](#inference-queue-residency)
 - [上线验收](#acceptance)
 
 <a id="integration-mode"></a>
@@ -383,3 +384,70 @@ V-Voice 已验证版本的 Python 直调在准入响应丢失后，可按[未认
 模型调用前可查询 `GET http://v-scheduler:8080/readyz`（宿主机 `http://<vos-host>:22888/readyz`）。它不需要认证，不会加载模型，返回内置后端的首次发现与健康状态。`/healthz` 仅代表进程存活。`MODEL_CATALOG_INITIALIZING` 是尚在发现，`UPSTREAM_UNAVAILABLE` 是已探测后端不可用，404 才表示当前健康目录找不到模型；已就绪的其他模型仍可调用。
 
 `SCHEDULER_ADMISSION_TIMEOUT` 是控制器准入响应超时，推理尚未发出；429 的 `WAIT_MEMORY_HEADROOM` / `WAIT_STOP_CONFIRMATION` 则是资源或原生停止核验条件。排查时保留 `code` 和 `request_id`，不要把这些错误都归为“模型不存在”，也不要因传输超时重放可能已开始的推理。
+
+<a id="inference-queue-residency"></a>
+## 推理排队、模型驻留与服务关联
+
+普通应用继续请求 `http://v-scheduler:8080/v1/*`（宿主机默认 `http://<vos-host>:22888/v1/*`），不要为同一次网关推理额外申请一份许可。旧客户端未指定排队等待时间时，仍保留立即准入或返回 429 的行为。
+
+需要等待资源的客户端应携带自身 VOS 用户身份或独立应用推理凭据，设置以下请求头；内网匿名请求不能查看、管理或加入身份隔离的等待队列：
+
+```http
+X-VScheduler-Queue-Wait-Seconds: 120
+X-VScheduler-Priority: interactive
+X-VScheduler-Request-ID: unique-request-uuid
+```
+
+等待范围为 1..300 秒；`0` 或省略表示不排队。交互请求使用 `interactive`，后台批量请求使用 `background`。每等待 30 秒增加一级优先级，同级按到达顺序；原生后台任务也参与等待老化，不强制抢占已经运行的计算。队列最多 64 条、每个身份最多 8 条，同时仍受网关活动连接和输入缓冲上限约束。
+
+- `GET http://v-scheduler:8080/api/v1/inference-queue`：查看请求 ID、模型、位置、等待时长和等待原因；普通用户/应用仅看自己的请求，管理员可看全部。
+- `DELETE http://v-scheduler:8080/api/v1/inference-queue/<request-id>`：取消尚未执行的请求。`execution_started: false` 才表示确认取消了等待项；`null` 表示登记了取消意图，不能据此认定已运行计算停止。取消与 POST 到达顺序相反时，也会按身份保存有界取消标记。
+- `QUEUE_TIMEOUT` / `QUEUE_CANCELLED`：本次排队请求没有开始推理；`QUEUE_FULL` 表示等待容量已满；`QUEUE_ID_IN_USE` 表示同 ID 仍在等待。请求 ID 是排队关联标识，不是跨完成记录的推理幂等键。
+
+等待不占资源预约；只有排到后且真实准入成功才执行一次原始请求。队列不保存推理正文或凭据，也不会在进程重启后重放请求。客户端总超时应覆盖排队时间、模型冷加载和生成时间；网络断开后不要盲目重放未知执行结果。试聊默认等待 120 秒，显示队列位置，「停止」会同时取消等待并中断本次传输。
+
+### 驻留与自动卸载
+
+管理员在「模型仓库 → 模型接入状态」设置空闲保留时间，默认 60 秒，范围 0..600；`0` 恢复每次调用后卸载。设置保存在本实例的网关数据目录，升级/重启保留，不修改共享模型权重或原仓库注册表。
+
+```sh
+# These are gateway management endpoints, not port 6005 model download APIs.
+# Host equivalent: BASE=http://<vos-host>:22888
+BASE=http://v-scheduler:8080
+curl -fsS "$BASE/api/v1/model-residency" -H "Authorization: Bearer $VOS_ADMIN_TOKEN"
+curl -fsS -X PUT "$BASE/api/v1/model-residency" \
+  -H "Authorization: Bearer $VOS_ADMIN_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"idle_seconds":60}'
+```
+
+当前实现保守保留一份空闲驻留预约，不并发复用同一许可。自带三个 Ollama 中，同一模型的连续调用可复用已加载权重及其预约，控制器重新核验身份、执行器、节点和资源定义并轮换执行证明。驻留期间保留完整的保守计算/内存预算，界面中的活动许可可能代表空闲驻留而非正在生成。遇到另一个本地模型/应用的准入（包括旧应用直接请求调度 API、原生后台任务领取）、空闲到期或手动停止时，先向固定原生后端取得匹配模型和挑战值的停止证明，再释放资源。证明失败仍保持预约或进入停止待核验；不能用超时、租约到期或空的运行列表冒充停止。
+
+内置 Ollama 服务卡片的「启动模型」通过同一排队和资源准入链路预热，「停止模型」通过原生停止核验释放驻留预约。保留时间为 0 时，应先启用驻留再手动启动模型。默认不打开安装时的三个预热开关；本功能不会自动下载权重。外部推理后端继续使用已声明的管理接口，其驻留由外部运行时负责。
+
+### 权重、服务、路由和调度状态
+
+「模型仓库 → 模型接入状态」与管理员 API `GET http://v-scheduler:8080/api/v1/model-lifecycle` 展示同一关联结果。Ollama 使用精确模型名关联；HF/MS 与其他后端使用显式映射，不按名称相似度猜测：
+
+```json
+{
+  "metadata": {
+    "model_bindings": {
+      "backend-served-model-name": "hf://org/repository"
+    }
+  }
+}
+```
+
+该字段附在[完整接入流程](#managed-inference)的推理服务管理注册体中；界面的「关联仓库模型」和「后端实际模型名称」提供相同设置。服务卡片、网关注册和资源批准仍各有职责，但状态页会统一显示它们是否齐备：
+
+| 状态码 | 含义与处理 |
+|---|---|
+| `NO_LINKED_GATEWAY_SERVICE` | 尚未关联服务；先登记服务及精确权重映射 |
+| `GATEWAY_MODEL_NOT_DISCOVERED` | 服务已关联，网关尚无对应模型；检查网关注册、模型 ID、能力及可见范围 |
+| `UPSTREAM_UNAVAILABLE` | 已知后端不可达；检查服务健康和网络 |
+| `EXECUTION_NODE_UNAVAILABLE` | 执行节点、心跳或执行器健康尚未就绪 |
+| `ROUTING_PAUSED` | 路由暂停；检查上游路由设置 |
+| `WEIGHTS_NOT_READY` | 权重下载、导入或校验尚未完成 |
+| `SCHEDULER_BINDING_PENDING` | 缺少对应调度绑定或模型策略；完成资源批准及可信绑定 |
+
+`configured_callable` 表示接入配置齐备，不承诺当前容量一定可用；真实资源仍在调用时原子检查。所选文件下载完成的 `READY` 仅代表所选范围，不意味着已下载完整仓库或已经部署推理后端。

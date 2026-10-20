@@ -323,8 +323,8 @@ configs:
       zh-CN: 模型常驻时间
       en: Model Keep Alive
     description:
-      zh-CN: Ollama keep_alive 参数。默认 -1m 表示常驻直到手动停止或容器停止。
-      en: Ollama keep_alive value. The default -1m keeps models resident until stopped manually or the container exits.
+      zh-CN: 原生 Ollama 管理接口的 keep_alive 默认值。统一网关调用由模型仓库中的驻留策略管理（默认空闲保留 60 秒），不会直接沿用此值。
+      en: Default keep_alive for native Ollama management calls. Unified gateway inference uses the Model library residency policy (60 idle seconds by default) instead.
     default: "-1m"
 
   - name: SCHEDULER_HOST_PORT

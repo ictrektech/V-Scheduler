@@ -370,6 +370,41 @@
           "method": "DELETE",
           "path": "/api/v1/registrations/{id}",
           "summary": "Unregister an inference backend"
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/inference-queue",
+          "auth": "inference",
+          "summary": "Inference waiting queue",
+          "desc": "Local inference accepts X-VScheduler-Queue-Wait-Seconds: 1..300, X-VScheduler-Priority: interactive or background, and a unique X-VScheduler-Request-ID. Omitted/zero wait preserves immediate admission. Priority ages every 30 seconds; active computation is never preempted. Waiting reserves no resources. The queue is in memory; restart never replays requests. GET is scoped to the verified user/application; administrators see all. DELETE cancels only waiting requests. Stop active execution through client cancellation and native stop verification."
+        },
+        {
+          "method": "DELETE",
+          "path": "/api/v1/inference-queue/{id}",
+          "auth": "inference",
+          "summary": "Cancel waiting inference",
+          "desc": "Local inference accepts X-VScheduler-Queue-Wait-Seconds: 1..300, X-VScheduler-Priority: interactive or background, and a unique X-VScheduler-Request-ID. Omitted/zero wait preserves immediate admission. Priority ages every 30 seconds; active computation is never preempted. Waiting reserves no resources. The queue is in memory; restart never replays requests. GET is scoped to the verified user/application; administrators see all. DELETE cancels only waiting requests. Stop active execution through client cancellation and native stop verification."
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/model-residency",
+          "auth": "manage",
+          "summary": "Model residency and unloading policy",
+          "desc": "Only administrators may inspect/change this setting. idle_seconds is 0..600 (default 60); 0 unloads after each call. Warm models retain their full reservation; native stop proof is required before release."
+        },
+        {
+          "method": "PUT",
+          "path": "/api/v1/model-residency",
+          "auth": "manage",
+          "summary": "Set idle retention duration",
+          "desc": "Only administrators may inspect/change this setting. idle_seconds is 0..600 (default 60); 0 unloads after each call. Warm models retain their full reservation; native stop proof is required before release."
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/model-lifecycle",
+          "auth": "manage",
+          "summary": "Weights, services, routes and scheduler linkage",
+          "desc": "Exact repository model links, discovered gateway routes, backend health and private binding availability. Ready bindings do not guarantee current capacity. Selected files being ready does not mean the entire repository is downloaded."
         }
       ],
       "id": "manage",

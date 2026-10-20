@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {computed,onMounted,onUnmounted,ref,watch} from 'vue'
 import Icon from './Icon.vue'
+import InferenceQueue from './InferenceQueue.vue'
 import {duration,occupancyMs,permitBudget,type Permit,type Resources,type Statistics,type Timing} from './activity'
 const props=defineProps<{request:(path:string)=>Promise<any>,connected:boolean,demo:boolean,t:(text:string)=>string,nodeName:(id:string)=>string,locale:string}>()
 const statistics=ref<Statistics|null>(null),permits=ref<Permit[]>([]),state=ref(''),cursor=ref('0'),nextCursor=ref<string|null>(null)
@@ -43,6 +44,7 @@ function evidence(p:Permit){if(p.state==='active')return props.t('等待执行�
 const budget=permitBudget
 </script>
 <template>
+ <InferenceQueue :t="t" :enabled="connected&&!demo"/>
  <section class="section panel activity-statistics" :aria-busy="statsBusy">
   <div class="section-head"><div><h2>{{t('负载与可靠性')}}</h2><p>{{t('最近 24 小时；每 30 秒更新。')}}</p></div><small v-if="displayedStats">{{t('统计时间')}} {{pretty(displayedStats.window.until)}}</small></div>
   <p v-if="statsError" class="activity-error" role="alert">{{t('统计暂不可用；上次数据可能已过期。')}}</p>

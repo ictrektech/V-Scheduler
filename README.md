@@ -2,6 +2,8 @@
 
 统一入口、身份与调度责任见[统一接入指南](docs/application-integration.md)，各 profile 的实际发布与验收范围见[验收记录](docs/validation.md)。
 
+本轮新增：资源页的「推理等待队列」、试聊有界排队和取消、交互/后台优先级与等待老化；模型仓库的「模型接入状态」统一关联权重、推理服务、网关和调度绑定。自带 Ollama 默认保留空闲模型 60 秒，连续调用可复用；切换或到期确认卸载后释放，驻留期间保留完整预算。管理员可设置 0..600 秒，0 保留每次卸载的行为。旧客户端不携带排队请求头时仍立即准入或返回 429。使用方式、内外地址和边界见[排队与驻留接入](docs/application-integration.md#inference-queue-residency)。
+
 原仓库的[文件选择下载 API](docs/file-download-api.md)、[网关协议](gateway/docs/api-protocols.md)、[注册与路由](gateway/docs/routing.md)、[鉴权](gateway/docs/auth.md)及其他网关指南已集中到本仓库；各文档标明统一应用入口与历史验证内容。
 
 [HybRAG 后台网关身份](docs/hybrag-gateway-identity.md) 使用同 VOS 可信交接和独立推理凭据；不使用 Scheduler submitter token 代替网关 key，不授予管理权限。新 Voice 输入边界见其接入文档。

@@ -3763,6 +3763,38 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Queue-Wait-Seconds",
+            "in": "header",
+            "description": "本地推理可设置 X-VScheduler-Queue-Wait-Seconds: 1..300、X-VScheduler-Priority: interactive 或 background、唯一 X-VScheduler-Request-ID。未设置等待或为 0 保留立即准入行为。交互优先，等待每 30 秒提升一级；不会抢占运行中的计算。等待不占资源预约。队列仅驻留内存，重启不重放请求。GET 按当前用户/应用隔离，管理员可查看全部；DELETE 仅取消尚未开始的请求，执行中应使用客户端取消及原生停止核验。",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 300,
+              "default": 0
+            }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "interactive",
+                "background"
+              ],
+              "default": "interactive"
+            }
+          },
+          {
+            "name": "X-VScheduler-Request-ID",
+            "in": "header",
+            "description": "Unique waiting request ID; not an inference idempotency key.",
+            "schema": {
+              "type": "string",
+              "maxLength": 96
+            }
           }
         ],
         "requestBody": {
@@ -5018,6 +5050,38 @@
             "required": false,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "X-VScheduler-Queue-Wait-Seconds",
+            "in": "header",
+            "description": "本地推理可设置 X-VScheduler-Queue-Wait-Seconds: 1..300、X-VScheduler-Priority: interactive 或 background、唯一 X-VScheduler-Request-ID。未设置等待或为 0 保留立即准入行为。交互优先，等待每 30 秒提升一级；不会抢占运行中的计算。等待不占资源预约。队列仅驻留内存，重启不重放请求。GET 按当前用户/应用隔离，管理员可查看全部；DELETE 仅取消尚未开始的请求，执行中应使用客户端取消及原生停止核验。",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 300,
+              "default": 0
+            }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "interactive",
+                "background"
+              ],
+              "default": "interactive"
+            }
+          },
+          {
+            "name": "X-VScheduler-Request-ID",
+            "in": "header",
+            "description": "Unique waiting request ID; not an inference idempotency key.",
+            "schema": {
+              "type": "string",
+              "maxLength": 96
             }
           }
         ],
@@ -6800,6 +6864,38 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Queue-Wait-Seconds",
+            "in": "header",
+            "description": "本地推理可设置 X-VScheduler-Queue-Wait-Seconds: 1..300、X-VScheduler-Priority: interactive 或 background、唯一 X-VScheduler-Request-ID。未设置等待或为 0 保留立即准入行为。交互优先，等待每 30 秒提升一级；不会抢占运行中的计算。等待不占资源预约。队列仅驻留内存，重启不重放请求。GET 按当前用户/应用隔离，管理员可查看全部；DELETE 仅取消尚未开始的请求，执行中应使用客户端取消及原生停止核验。",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 300,
+              "default": 0
+            }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "interactive",
+                "background"
+              ],
+              "default": "interactive"
+            }
+          },
+          {
+            "name": "X-VScheduler-Request-ID",
+            "in": "header",
+            "description": "Unique waiting request ID; not an inference idempotency key.",
+            "schema": {
+              "type": "string",
+              "maxLength": 96
+            }
           }
         ],
         "requestBody": {
@@ -8280,6 +8376,38 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Queue-Wait-Seconds",
+            "in": "header",
+            "description": "本地推理可设置 X-VScheduler-Queue-Wait-Seconds: 1..300、X-VScheduler-Priority: interactive 或 background、唯一 X-VScheduler-Request-ID。未设置等待或为 0 保留立即准入行为。交互优先，等待每 30 秒提升一级；不会抢占运行中的计算。等待不占资源预约。队列仅驻留内存，重启不重放请求。GET 按当前用户/应用隔离，管理员可查看全部；DELETE 仅取消尚未开始的请求，执行中应使用客户端取消及原生停止核验。",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 300,
+              "default": 0
+            }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "interactive",
+                "background"
+              ],
+              "default": "interactive"
+            }
+          },
+          {
+            "name": "X-VScheduler-Request-ID",
+            "in": "header",
+            "description": "Unique waiting request ID; not an inference idempotency key.",
+            "schema": {
+              "type": "string",
+              "maxLength": 96
+            }
           }
         ],
         "requestBody": {
@@ -8489,6 +8617,38 @@
             "required": false,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "X-VScheduler-Queue-Wait-Seconds",
+            "in": "header",
+            "description": "本地推理可设置 X-VScheduler-Queue-Wait-Seconds: 1..300、X-VScheduler-Priority: interactive 或 background、唯一 X-VScheduler-Request-ID。未设置等待或为 0 保留立即准入行为。交互优先，等待每 30 秒提升一级；不会抢占运行中的计算。等待不占资源预约。队列仅驻留内存，重启不重放请求。GET 按当前用户/应用隔离，管理员可查看全部；DELETE 仅取消尚未开始的请求，执行中应使用客户端取消及原生停止核验。",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 300,
+              "default": 0
+            }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "interactive",
+                "background"
+              ],
+              "default": "interactive"
+            }
+          },
+          {
+            "name": "X-VScheduler-Request-ID",
+            "in": "header",
+            "description": "Unique waiting request ID; not an inference idempotency key.",
+            "schema": {
+              "type": "string",
+              "maxLength": 96
             }
           }
         ],
@@ -11128,6 +11288,131 @@
           },
           "503": {
             "description": "Initializing or unavailable; inspect backends. Retry-After: 1."
+          }
+        }
+      }
+    },
+    "/api/v1/inference-queue": {
+      "get": {
+        "summary": "推理等待队列",
+        "description": "本地推理可设置 X-VScheduler-Queue-Wait-Seconds: 1..300、X-VScheduler-Priority: interactive 或 background、唯一 X-VScheduler-Request-ID。未设置等待或为 0 保留立即准入行为。交互优先，等待每 30 秒提升一级；不会抢占运行中的计算。等待不占资源预约。队列仅驻留内存，重启不重放请求。GET 按当前用户/应用隔离，管理员可查看全部；DELETE 仅取消尚未开始的请求，执行中应使用客户端取消及原生停止核验。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Structured gateway error"
+          }
+        }
+      }
+    },
+    "/api/v1/inference-queue/{id}": {
+      "delete": {
+        "summary": "取消等待中的推理",
+        "description": "本地推理可设置 X-VScheduler-Queue-Wait-Seconds: 1..300、X-VScheduler-Priority: interactive 或 background、唯一 X-VScheduler-Request-ID。未设置等待或为 0 保留立即准入行为。交互优先，等待每 30 秒提升一级；不会抢占运行中的计算。等待不占资源预约。队列仅驻留内存，重启不重放请求。GET 按当前用户/应用隔离，管理员可查看全部；DELETE 仅取消尚未开始的请求，执行中应使用客户端取消及原生停止核验。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Structured gateway error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 96
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/model-residency": {
+      "get": {
+        "summary": "模型驻留与卸载策略",
+        "description": "仅管理员可查看和调整驻留策略，idle_seconds 为 0..600（默认 60），0 表示每次调用后卸载。驻留保留完整资源预约；仅原生停止确认后释放。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Structured gateway error"
+          }
+        }
+      },
+      "put": {
+        "summary": "设置空闲保留时间",
+        "description": "仅管理员可查看和调整驻留策略，idle_seconds 为 0..600（默认 60），0 表示每次调用后卸载。驻留保留完整资源预约；仅原生停止确认后释放。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Structured gateway error"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "idle_seconds"
+                ],
+                "properties": {
+                  "idle_seconds": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 600,
+                    "default": 60
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/model-lifecycle": {
+      "get": {
+        "summary": "权重、服务、路由与调度关联",
+        "description": "关联仓库模型、已发现的网关路由、后端健康和调度绑定；绑定就绪不代表当前资源一定可用。所选文件 READY 不代表完整仓库已下载。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Structured gateway error"
           }
         }
       }

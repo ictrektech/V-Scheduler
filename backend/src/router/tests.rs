@@ -38,6 +38,8 @@ fn temp() -> PathBuf {
 fn gateway(root: &Path, controller: Router) -> Arc<Gateway> {
     Arc::new(Gateway {
         registry: Mutex::new(Registry::default()),
+        queue: Mutex::new(Default::default()),
+        residency: residency::Residency::disabled(),
         state_path: root.join("state.json"),
         controller: RwLock::new(controller),
         client: reqwest::Client::builder()
@@ -1154,5 +1156,142 @@ async fn admission_deadline_covers_stalled_response_body() {
         .expect("admission must not hang after response headers").unwrap_err();
     assert_eq!(error.code.as_deref(), Some("SCHEDULER_ADMISSION_TIMEOUT"));
     assert_eq!(error.status, 503);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
+async fn queued_admission_prioritizes_interaction_and_cancels_without_execution() {
+    use std::sync::atomic::AtomicBool;
+    let busy = Arc::new(AtomicBool::new(true));
+    let order = Arc::new(Mutex::new(Vec::<String>::new()));
+    let acquiring = busy.clone();
+    let acquired = order.clone();
+    let releasing = busy.clone();
+    let controller = Router::new()
+        .route(
+            "/api/v1/inference-waiters",
+            post(|| async { Json(json!({"data":{"updated":true}})) }),
+        )
+        .route(
+            "/api/v1/permits",
+            post(move |Json(body): Json<Value>| {
+                let busy = acquiring.clone();
+                let order = acquired.clone();
+                async move {
+                    if busy.swap(true, Ordering::SeqCst) {
+                        (
+                            StatusCode::TOO_MANY_REQUESTS,
+                            Json(json!({"code":"WAIT_RESOURCE"})),
+                        )
+                    } else {
+                        order.lock().unwrap().push(text(&body, "model_id").into());
+                        (
+                            StatusCode::OK,
+                            Json(json!({"data":{"permit_id":uuid::Uuid::new_v4().to_string()}})),
+                        )
+                    }
+                }
+            }),
+        )
+        .route(
+            "/api/v1/permits/{id}/release",
+            post(move || {
+                let busy = releasing.clone();
+                async move {
+                    busy.store(false, Ordering::SeqCst);
+                    Json(json!({"data":{"state":"released"}}))
+                }
+            }),
+        );
+    let root = temp();
+    let g = gateway(&root, controller);
+    let approval = lease::Approval {
+        config: json!({"token":"private-admission-test-credential-123456789"}),
+        policy: json!({"mode":"permit","executor_id":"test"}),
+    };
+    let spawn = |name: &'static str, priority: &'static str, wait: &'static str| {
+        let g = g.clone();
+        let approval = approval.clone();
+        tokio::spawn(async move {
+            let mut headers = HeaderMap::new();
+            headers.insert("x-vscheduler-queue-wait-seconds", wait.parse().unwrap());
+            headers.insert("x-vscheduler-priority", priority.parse().unwrap());
+            headers.insert("x-vscheduler-request-id", name.parse().unwrap());
+            lease::acquire(
+                g,
+                &approval,
+                &upstream("test"),
+                name,
+                &headers,
+                &principal("alice"),
+                false,
+            )
+            .await
+        })
+    };
+    let background = spawn("background", "background", "5");
+    tokio::time::sleep(Duration::from_millis(40)).await;
+    let interactive = spawn("interactive", "interactive", "5");
+    let cancelled = spawn("cancelled", "background", "5");
+    tokio::time::sleep(Duration::from_millis(40)).await;
+    let snapshot = g.queue.lock().unwrap().snapshot(&principal("alice"));
+    assert_eq!(snapshot["items"][0]["request_id"], "interactive");
+    assert!(
+        g.queue.lock().unwrap().snapshot(&principal("bob"))["items"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    g.queue
+        .lock()
+        .unwrap()
+        .cancel(&principal("alice"), "cancelled")
+        .unwrap();
+    assert_eq!(
+        cancelled.await.unwrap().err().unwrap().code.as_deref(),
+        Some("QUEUE_CANCELLED")
+    );
+    assert!(order.lock().unwrap().is_empty());
+    busy.store(false, Ordering::SeqCst);
+    let mut first = interactive.await.unwrap().unwrap();
+    assert_eq!(*order.lock().unwrap(), vec!["interactive"]);
+    first
+        .release_confirmed("inference_request_not_started")
+        .await;
+    let mut second = background.await.unwrap().unwrap();
+    second
+        .release_confirmed("inference_request_not_started")
+        .await;
+    assert_eq!(*order.lock().unwrap(), vec!["interactive", "background"]);
+    assert!(
+        g.queue.lock().unwrap().snapshot(&principal("alice"))["items"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    busy.store(true, Ordering::SeqCst);
+    let expired = spawn("timeout", "interactive", "1")
+        .await
+        .unwrap()
+        .err()
+        .unwrap();
+    assert_eq!(expired.code.as_deref(), Some("QUEUE_TIMEOUT"));
+    assert_eq!(
+        order.lock().unwrap().len(),
+        2,
+        "timeout or cancellation started execution"
+    );
+    // A stop click may arrive before the inference POST has been authenticated.
+    g.queue
+        .lock()
+        .unwrap()
+        .cancel(&principal("alice"), "early-stop")
+        .unwrap();
+    let late = spawn("early-stop", "interactive", "5")
+        .await
+        .unwrap()
+        .err()
+        .unwrap();
+    assert_eq!(late.code.as_deref(), Some("QUEUE_CANCELLED"));
     std::fs::remove_dir_all(root).unwrap();
 }

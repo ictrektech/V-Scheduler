@@ -454,6 +454,9 @@ async fn services(
 }
 async fn register(State(h): State<Arc<Hub>>, Json(v): Json<Value>) -> Api<Json<Value>> {
     let mut value = runtime::validate_registration(v)?;
+    if let Some(links)=value["metadata"]["model_bindings"].as_object() {
+        for target in links.values() {h.store.model(target.as_str().unwrap())?;}
+    }
     let id = value["service_id"].as_str().unwrap().to_owned();
     h.store.registry("inference_services", |data| {
         value["registered_at"] = data[&id]["registered_at"]

@@ -370,6 +370,41 @@
           "summary": "注销推理后端",
           "desc": "立即退出新请求分配，已开始的请求继续完成。只允许注销主动注册来源。",
           "auth": "manage"
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/inference-queue",
+          "auth": "inference",
+          "summary": "推理等待队列",
+          "desc": "本地推理可设置 X-VScheduler-Queue-Wait-Seconds: 1..300、X-VScheduler-Priority: interactive 或 background、唯一 X-VScheduler-Request-ID。未设置等待或为 0 保留立即准入行为。交互优先，等待每 30 秒提升一级；不会抢占运行中的计算。等待不占资源预约。队列仅驻留内存，重启不重放请求。GET 按当前用户/应用隔离，管理员可查看全部；DELETE 仅取消尚未开始的请求，执行中应使用客户端取消及原生停止核验。"
+        },
+        {
+          "method": "DELETE",
+          "path": "/api/v1/inference-queue/{id}",
+          "auth": "inference",
+          "summary": "取消等待中的推理",
+          "desc": "本地推理可设置 X-VScheduler-Queue-Wait-Seconds: 1..300、X-VScheduler-Priority: interactive 或 background、唯一 X-VScheduler-Request-ID。未设置等待或为 0 保留立即准入行为。交互优先，等待每 30 秒提升一级；不会抢占运行中的计算。等待不占资源预约。队列仅驻留内存，重启不重放请求。GET 按当前用户/应用隔离，管理员可查看全部；DELETE 仅取消尚未开始的请求，执行中应使用客户端取消及原生停止核验。"
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/model-residency",
+          "auth": "manage",
+          "summary": "模型驻留与卸载策略",
+          "desc": "仅管理员可查看和调整驻留策略，idle_seconds 为 0..600（默认 60），0 表示每次调用后卸载。驻留保留完整资源预约；仅原生停止确认后释放。"
+        },
+        {
+          "method": "PUT",
+          "path": "/api/v1/model-residency",
+          "auth": "manage",
+          "summary": "设置空闲保留时间",
+          "desc": "仅管理员可查看和调整驻留策略，idle_seconds 为 0..600（默认 60），0 表示每次调用后卸载。驻留保留完整资源预约；仅原生停止确认后释放。"
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/model-lifecycle",
+          "auth": "manage",
+          "summary": "权重、服务、路由与调度关联",
+          "desc": "关联仓库模型、已发现的网关路由、后端健康和调度绑定；绑定就绪不代表当前资源一定可用。所选文件 READY 不代表完整仓库已下载。"
         }
       ],
       "id": "manage",
