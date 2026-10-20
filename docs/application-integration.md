@@ -138,7 +138,7 @@ curl --fail-with-body "$MODEL_HUB/inference-services/vllm-node-a-1" \
 ### 4. 调用、装卸、取消与退出采用同一生命周期
 
 - 普通模型调用方使用网关 `/v1/*` 和自己的调用身份；网关取得许可后再转发。同一次计算只预约一次，原生服务按许可核验契约复用该预约。
-- 卡片的 `POST /inference-services/{id}/models/start`、`.../stop` 是管理代理，body 至少含 `model`，可含 `confirm_timeout_seconds`（0–60，默认 8）。它们不会自动申请 Scheduler 许可；start 可能实际预热计算，必须由接入应用在原生管理入口实施准入，并将驻留权重纳入预算。不能用卡片按钮或直连端口绕过调度。
+- 卡片的 `POST /inference-services/{id}/models/start`、`.../stop`，body 至少含 `model`，可含 `confirm_timeout_seconds`（0–60，默认 8）。内置 Ollama 的启动通过统一排队与资源准入链路预热，停止通过原生停止核验释放驻留预约；详见[驻留与自动卸载](#inference-queue-residency)。外部服务的卡片操作仍是管理代理，不会自动申请 Scheduler 许可；start 可能实际预热计算，必须由接入应用在原生管理入口实施准入，并将驻留权重纳入预算。不能用卡片按钮或直连端口绕过调度。
 - 卡片上的 `healthy`、`running_state_observed`、操作返回的确认信息属于管理观测；它们不能代替具体 permit/task 的停止证明。只有计算执行端确认该执行停止后才释放资源；未知状态保留预约并对账。
 - 应用保持网关注册心跳；服务卡片保存在共享注册表中，没有网关注册那样的 TTL。心跳丢失不会自动删除卡片，删除卡片也不会注销网关或停止进程。
 - 正常退出先停止新请求分配（注销网关注册），再完成或取消在途任务，核验原生停止并释放许可，最后卸载模型/关闭服务。永久移除时再 `DELETE /inference-services/{id}` 删除卡片；暂时重启保留卡片，恢复后复用同一 ID 更新卡片与网关注册。停用 executor 前确认对应任务、许可均已结束。
@@ -157,7 +157,7 @@ curl --fail-with-body "$MODEL_HUB/inference-services/vllm-node-a-1" \
 | `v-scheduler/ollama-qa/v-scheduler-lite-qa:qwen2.5-0.5b-q2-20261019` | 896 MiB | CPU 4.5 核、GPU 0、context 512、batch 128、输出最多 128 tokens |
 | `v-scheduler/ollama-embedding/v-scheduler-lite-embedding:all-minilm-22m-20261019` | 512 MiB | CPU 4.5 核、GPU 0、context 512、batch 128、向量维度 384 |
 
-两者请求体上限均为 16 KiB；网关补齐已批准的运行参数，超界请求在计算前拒绝。控制器保留正常事务预约、系统安全余量、取消后的原生停止核验及独立服务身份。模型仓库的启动/停止管理代理不会因此自动取得这些许可。
+两者请求体上限均为 16 KiB；网关补齐已批准的运行参数，超界请求在计算前拒绝。控制器保留正常事务预约、系统安全余量、取消后的原生停止核验及独立服务身份。内置 Ollama 卡片启动复用上述受控链路；外部服务的启动/停止管理代理不会因此自动取得这些许可。
 
 HybRAG 从「已注册的 V-Scheduler 模型」选择这两个调用名，embedding 维度选择 384；在这个低内存配置中关闭额外重排、查询改写和后台摘要，使用 512 上下文与 128 输出 token。已有知识库和默认模型不被替换，重新建库时才选择新 embedding 维度。HybRAG 需使用支持动态 Scheduler 模型身份交接的已发布版本（0.1.73 起），不将服务密钥填入模型表单。
 
@@ -388,7 +388,7 @@ V-Voice 已验证版本的 Python 直调在准入响应丢失后，可按[未认
 <a id="inference-queue-residency"></a>
 ## 推理排队、模型驻留与服务关联
 
-普通应用继续请求 `http://v-scheduler:8080/v1/*`（宿主机默认 `http://<vos-host>:22888/v1/*`），不要为同一次网关推理额外申请一份许可。旧客户端未指定排队等待时间时，仍保留立即准入或返回 429 的行为。
+普通应用继续请求 `http://v-scheduler:8080/v1/*`（宿主机默认 `http://<vos-host>:22888/v1/*`），不要为同一次网关推理额外申请一份许可。未指定排队等待时间时，已验证用户或应用调用启用驻留的内置 Ollama，默认最多等待 30 秒；其他情况保持立即准入或返回 429。需要明确禁止排队时设置 `X-VScheduler-Queue-Wait-Seconds: 0`。
 
 需要等待资源的客户端应携带自身 VOS 用户身份或独立应用推理凭据，设置以下请求头；内网匿名请求不能查看、管理或加入身份隔离的等待队列：
 
