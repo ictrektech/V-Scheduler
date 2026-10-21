@@ -220,23 +220,7 @@ async fn reconcile(
     let context = std::fs::read_to_string("/var/lib/vos-context/access-token")
         .context("V-Sub phase: context read")?;
     let vos = crate::identity::base().context("VOS identity endpoint required")?;
-    let identity = bounded_json(
-        client
-            .get(format!(
-                "{}/v1000/oauth2/userinfo",
-                vos.trim_end_matches('/')
-            ))
-            .bearer_auth(context.trim())
-            .send()
-            .await
-            .context("V-Sub phase: identity HTTP")?,
-    )
-    .await
-    .context("V-Sub phase: identity response")?;
-    ensure!(
-        identity["sub"] == "com.ictrek.v-scheduler" && identity["enable"] == 1,
-        "Scheduler application identity required"
-    );
+    crate::identity::application(client, &vos, &context, "com.ictrek.v-scheduler").await?;
     let installed = bounded_vos_installation(
         client
             .get(format!(

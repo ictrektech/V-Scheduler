@@ -53,6 +53,17 @@ pub(super) const VSUB: Application = Application {
     asynchronous: false,
 };
 
+// CPU 总核数属于主机观测；已固定 --threads 4 的图像运行时仍按原批准预算准入。
+fn execution_settings_match(application: Application, expected: &Value, actual: &Value) -> bool {
+    if application.slug != "image-studio" || expected["sd_cpp_extra_args_sha256"] != "d020f4ca7c181c781d4ef5f4343d0bb4410a8806ce547538fac1e6b92a123579" {
+        return expected == actual;
+    }
+    let (Some(mut expected), Some(mut actual)) = (expected.as_object().cloned(), actual.as_object().cloned()) else { return false; };
+    expected.remove("logical_cpu_count");
+    actual.remove("logical_cpu_count");
+    expected == actual
+}
+
 fn supported_profile(application: Application, profile: &str) -> bool {
     let profiles: &[&str] = if application.slug == "desensitize" {
         &[
@@ -164,7 +175,7 @@ fn build(
             || approval["architecture"].as_str() != Some(std::env::consts::ARCH)
             || approval["profile"] != profile
             || approval["hardware"] != actual_hardware
-            || approval["execution_settings"] != contract["execution_settings"]
+            || !execution_settings_match(application, &approval["execution_settings"], &contract["execution_settings"])
         {
             continue;
         }
@@ -505,21 +516,7 @@ async fn reconcile(
     }
     let context_token = std::fs::read_to_string("/var/lib/vos-context/access-token")?;
     let vos = crate::identity::base().context("VOS identity endpoint required")?;
-    let identity = bounded_json(
-        client
-            .get(format!(
-                "{}/v1000/oauth2/userinfo",
-                vos.trim_end_matches('/')
-            ))
-            .bearer_auth(context_token.trim())
-            .send()
-            .await?,
-    )
-    .await?;
-    ensure!(
-        identity["sub"] == "com.ictrek.v-scheduler" && identity["enable"] == 1,
-        "Scheduler application identity required"
-    );
+    crate::identity::application(client, &vos, &context_token, "com.ictrek.v-scheduler").await?;
     let installed = bounded_vos_installation(
         client
             .get(format!(
@@ -710,6 +707,19 @@ pub(super) fn start(shared: SharedApp, configuration: PathBuf) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fixed_image_threads_do_not_pin_approval_to_host_core_count() {
+        let image = APPLICATIONS.iter().find(|app| app.slug == "image-studio").copied().unwrap();
+        let expected = json!({"profile":"thor","runtime":"stable-diffusion.cpp","logical_cpu_count":14,"max_concurrency":1,"sd_cpp_extra_args_sha256":"d020f4ca7c181c781d4ef5f4343d0bb4410a8806ce547538fac1e6b92a123579"});
+        let mut actual = expected.clone(); actual["logical_cpu_count"] = json!(12);
+        assert!(execution_settings_match(image, &expected, &actual));
+        actual["max_concurrency"] = json!(2);
+        assert!(!execution_settings_match(image, &expected, &actual));
+        actual["max_concurrency"] = json!(1); actual["sd_cpp_extra_args_sha256"] = json!("different-threads");
+        assert!(!execution_settings_match(image, &expected, &actual));
+        assert!(!execution_settings_match(APPLICATIONS[1], &expected, &actual));
+    }
 
     #[test]
     fn target_application_profiles_are_not_scheduler_profile_names() {

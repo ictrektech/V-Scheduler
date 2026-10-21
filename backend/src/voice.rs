@@ -471,7 +471,7 @@ fn build_for_node(
         }
     }
     // 0.0.22 仅改变安装地址，复用经核验的 0.0.21 原生镜像。
-    let controller_url = if ["0.0.22", "0.0.23", "0.0.24"].contains(&contract["_application_version"].as_str().unwrap_or("")) {
+    let controller_url = if ["0.0.22", "0.0.23", "0.0.24", "0.0.25"].contains(&contract["_application_version"].as_str().unwrap_or("")) {
         "http://v-scheduler:8080/scheduler/api/v1"
     } else { URL };
     let mut state = json!({"credential_epoch":epoch,"binding":{"protocol_version":1,"binding_revision":1,"app_id":APP,"url":controller_url,"token":token,"executor_token":executor_token,"upstream_url":UPSTREAM,"models":models,"gateway_executors":gateway_executors,"secondary_models":secondary_models},
@@ -517,7 +517,7 @@ async fn recover_unclaimed_direct(
     state: &Value,
     version: &str,
 ) -> anyhow::Result<u64> {
-    if !["0.0.21", "0.0.22", "0.0.23", "0.0.24"].contains(&version) {
+    if !["0.0.21", "0.0.22", "0.0.23", "0.0.24", "0.0.25"].contains(&version) {
         return Ok(0);
     }
     let node = state["executors"]
@@ -598,23 +598,7 @@ async fn reconcile(path: &Path, runtime: &Runtime, db: &PgPool) -> anyhow::Resul
             .collect::<Vec<_>>()
     );
     let vos = crate::identity::base().context("VOS discovery unavailable")?;
-    let identity = client
-        .get(format!(
-            "{}/v1000/oauth2/userinfo",
-            vos.trim_end_matches('/')
-        ))
-        .bearer_auth(token.trim())
-        .send()
-        .await?;
-    ensure!(
-        identity.status().is_success(),
-        "application identity verification unavailable"
-    );
-    let identity: Value = identity.json().await?;
-    ensure!(
-        identity["sub"] == "com.ictrek.v-scheduler" && identity["enable"] == 1,
-        "Scheduler application identity required"
-    );
+    crate::identity::application(&client, &vos, &token, "com.ictrek.v-scheduler").await?;
     let response = client
         .get(format!(
             "{}/v1000/app/detail?app_id={APP}",

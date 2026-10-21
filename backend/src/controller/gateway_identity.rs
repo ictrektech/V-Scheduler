@@ -106,21 +106,7 @@ async fn reconcile(configuration: &Path, client: &reqwest::Client) -> anyhow::Re
     };
     let token = std::fs::read_to_string("/var/lib/vos-context/access-token")?;
     let vos = crate::identity::base().context("VOS identity endpoint required")?;
-    let identity = bounded_json(
-        client
-            .get(format!(
-                "{}/v1000/oauth2/userinfo",
-                vos.trim_end_matches('/')
-            ))
-            .bearer_auth(token.trim())
-            .send()
-            .await?,
-    )
-    .await?;
-    ensure!(
-        identity["sub"] == "com.ictrek.v-scheduler" && identity["enable"] == 1,
-        "Scheduler application identity required"
-    );
+    crate::identity::application(client, &vos, &token, "com.ictrek.v-scheduler").await?;
     let installed = bounded_vos_installation(
         client
             .get(format!(
