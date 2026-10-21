@@ -1,4 +1,4 @@
-export type Task={app_task_id?:string,executor_id?:string,task_id:string,app_id:string,status:string,node_id:string|null,version:number,attempt_count:number,can_retry:boolean,progress:{percent?:number,stage?:string,message?:string},wait_reasons:string[],created_at:string,result:unknown}
+export type Task={scheduling?:{priority?:string},app_task_id?:string,executor_id?:string,task_id:string,app_id:string,status:string,node_id:string|null,version:number,attempt_count:number,can_retry:boolean,progress:{percent?:number,stage?:string,message?:string},wait_reasons:string[],created_at:string,result:unknown}
 export type Attempt={attempt_id:string,fence:number,node_id:string,status:string,result:unknown,created_at:string,stopped_at:string|null}
 export type TaskEvent={cursor:number,task_id:string,status:string,version:number,progress:Task['progress'],created_at:string}
 export const waitReasons:Record<string,[string,string]>={
@@ -20,4 +20,9 @@ export function matchesTask(task:Task,query:string,app:string,node:string,target
 }
 export function mergeEvents(previous:TaskEvent[],incoming:TaskEvent[]){
  return [...new Map([...previous,...incoming].map(event=>[event.cursor,event])).values()].sort((a,b)=>b.cursor-a.cursor)
+}
+
+export function compareWaitingTasks(a:Task,b:Task,now:number){
+ const score=(task:Task)=>({background:0,interactive:1,high:2}[task.scheduling?.priority||'background']||0)+Math.max(0,Math.floor((now-Date.parse(task.created_at))/30000)||0)
+ return score(b)-score(a)||a.created_at.localeCompare(b.created_at)||a.task_id.localeCompare(b.task_id)
 }
