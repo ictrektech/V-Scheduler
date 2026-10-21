@@ -208,7 +208,7 @@ export const messages:Record<string,[string,string]>={
 '最近结束':['Recently finished','最近結束'],
 '任务排布':['Task Schedule','任務排布'],
 '按目标节点查看执行与等待顺序；确认停止后才释放资源。':['View execution and queue order by target node; resources release only after confirmed stop.','按目標節點查看執行與等待順序；確認停止後才釋放資源。'],
-'队列顺序：先提交先执行':['Queue order: first submitted, first executed','佇列順序：先提交先執行'],
+'队列顺序：优先级与等待老化，同级先到先执行':['Queue order: priority and aging, arrival order for ties','佇列順序：優先級與等待老化，同級先到先執行'],
 '等待':['waiting','等待'], '正在执行':['Executing now','正在執行'], '当前空闲':['Currently idle','目前閒置'], '等待队列':['Waiting queue','等待佇列'], '没有等待任务':['No waiting tasks','沒有等待任務'],
 '演示模式':['Demo mode','演示模式'], '查看任务管理演示':['Preview task management','查看任務管理演示'], '连接真实调度器':['Connect to real scheduler','連接實際調度器'],
 '样例数据；操作只影响当前演示，不会执行计算或修改真实任务。':['Sample data. Actions affect this demo only; no computation or real task changes.','樣例資料；操作僅影響目前演示，不會執行計算或修改實際任務。'],
