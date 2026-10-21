@@ -1,9 +1,9 @@
 //! 同一 VOS 内 V-Voice 的受限授权交接。发现声明不能替代资源批准。
-use crate::model::{Config, Executor, ManagedConfig, Principal, Resources};
+use crate::model::{Config, Executor, ManagedConfig, Node, Principal, Resources};
 use anyhow::{Context, ensure};
 use chrono::{DateTime, Utc};
 use serde_json::{Value, json};
-use sqlx::PgPool;
+use sqlx::{PgPool, Row};
 use std::{
     path::{Path, PathBuf},
     sync::{
@@ -218,6 +218,7 @@ fn declaration(discovery: &Value) -> anyhow::Result<&Value> {
 }
 
 // 只接受管理员保存的校准策略；模型发现中的权重、provider 或线程数不授予资源。
+#[cfg(test)]
 fn build(
     runtime: &Runtime,
     contract: &Value,
@@ -239,6 +240,17 @@ fn build(
         .iter()
         .find(|node| node.id == node_id)
         .context("unknown local node")?;
+    build_for_node(node, contract, approvals, old)
+}
+
+fn build_for_node(
+    node: &Node,
+    contract: &Value,
+    approvals: &Value,
+    old: Option<&Value>,
+) -> anyhow::Result<Value> {
+    ensure!(approvals["protocol_version"] == 1, "unsupported approval format");
+    let node_id = &node.id;
     let epoch = approvals["credential_epoch"].as_u64().unwrap_or(0);
     ensure!(
         old.is_none_or(|state| epoch >= state["credential_epoch"].as_u64().unwrap_or(0)),
@@ -627,10 +639,20 @@ async fn reconcile(path: &Path, runtime: &Runtime, db: &PgPool) -> anyhow::Resul
         .as_ref()
         .and_then(|v| v["node_id"].as_str())
         .context("missing local node")?;
-    let report: Value = sqlx::query_scalar("SELECT report FROM vrs_nodes WHERE id=$1")
+    // 与其他执行应用一致，读取心跳更新后的容量；启动快照可能尚未发现 GPU。
+    let row = sqlx::query("SELECT capacities,resident_baseline,report,management_enabled,heartbeat FROM vrs_nodes WHERE id=$1")
         .bind(node_id)
         .fetch_one(db)
         .await?;
+    ensure!(row.get::<bool, _>("management_enabled"), "local node disabled");
+    let heartbeat: Option<DateTime<Utc>> = row.get("heartbeat");
+    ensure!(heartbeat.is_some_and(|at| (0..12).contains(&(Utc::now() - at).num_seconds())), "local node telemetry stale");
+    let current = runtime.snapshot();
+    let mut node = current.nodes.iter().find(|node| node.id == node_id)
+        .context("unknown local node")?.clone();
+    node.capacities = serde_json::from_value(row.get("capacities"))?;
+    node.resident_baseline = serde_json::from_value(row.get("resident_baseline"))?;
+    let report: Value = row.get("report");
     let hardware = report["gpus"]
         .as_array()
         .map(|gpus| {
@@ -652,7 +674,7 @@ async fn reconcile(path: &Path, runtime: &Runtime, db: &PgPool) -> anyhow::Resul
     } else {
         None
     };
-    let state = build(runtime, &contract, &approvals, old.as_ref())?;
+    let state = build_for_node(&node, &contract, &approvals, old.as_ref())?;
     recover_unclaimed_direct(
         db,
         &state,
@@ -739,6 +761,25 @@ mod tests {
         let approvals = json!({"protocol_version":1,"approvals":[{"id":"measured","architecture":std::env::consts::ARCH,"provider":"cpu","cpu_models":[],"num_threads":4,"max_concurrent_inference":2,"hardware":[],"calibration":{"evidence_id":"unit-fixture","peak_memory_mib":1024},"resources":{"cpu_millicores":4000,"memory_mib":2048},"max_input_bytes":1048576,"limits":{},"sync_models":["asr","speaker"],"async_models":["tts"],"secondary_models":{"asr":["speaker"]}}]});
         (runtime, contract, approvals)
     }
+    #[test]
+    fn voice_binding_uses_heartbeat_capacity_after_cpu_only_startup() {
+        let (runtime, contract, mut approvals) = fixtures();
+        let mut startup = (*runtime.snapshot()).clone();
+        startup.nodes[0].capacities.gpu_slots = 0;
+        startup.nodes[0].capacities.gpu_memory_mib = 0;
+        *runtime.current.write().unwrap() = Arc::new(startup.clone());
+        approvals["approvals"][0]["resources"]["gpu_slots"] = json!(1);
+        assert!(build(&runtime, &contract, &approvals, None).is_err());
+        let mut measured = startup.nodes[0].clone();
+        measured.capacities.gpu_slots = 1;
+        measured.capacities.gpu_memory_mib = 8192;
+        let state = build_for_node(&measured, &contract, &approvals, None).unwrap();
+        assert_eq!(state["executors"][0]["resources"]["gpu_slots"], 1);
+        // 仍按当前节点预算核验，不能借更新容量绕过准入。
+        measured.capacities.memory_mib = 1024;
+        assert!(build_for_node(&measured, &contract, &approvals, None).is_err());
+    }
+
     #[test]
     fn packaging_only_voice_upgrade_preserves_identity_and_budget() {
         let (runtime, mut contract, approvals) = fixtures();
