@@ -216,3 +216,11 @@ VOS 网关必须在私有配置 `models[upstreamID/nativeModelID]` 批准输入�
 ### VOS App 管理约束
 
 最终用户只通过 VOS 安装和管理应用，不手工部署外部 Agent。登记协议是应用内部组件接口，不能据此要求用户到计算节点执行命令。ModelInfer 的发现与监控复用现有 VOS App；`POST /node-sources/modelinfer/{id}` 只保存规划，`POST /node-sources/modelinfer/{id}/control` 当前返回 501 `VOS_NODE_CONTROL_PENDING_VERIFICATION`。规划节点不会创建 worker、心跳或预约能力。真实远端调度须完成管理适配器的执行/停止/故障恢复验证后启用。
+
+## 应用统一生命周期（已实现）
+
+`GET /discovery` 声明 `application-lifecycle-v1` 与 `cooperative-model-stop` 时，应用可用私有 submitter 身份 `POST /integrations` 引用已批准的执行器，并按响应间隔调用 `/integrations/heartbeat`。`GET /integrations` 按应用隔离地返回节点新鲜度、批准预算和执行；管理员可汇总。此登记不授予节点、预算、模型可见性或任意控制 URL。
+
+节点报告约 2 秒一次、12 秒过期；应用当前约 5 秒心跳、20 秒过期。两者独立影响新准入，失联不释放既有预约。`POST /permits/{id}/stop` 写入持久停止意图并阻止后续认领/验票及续租，由接收应用通过 heartbeat 获取并幂等取消、卸载，最后以原执行凭据、nonce 和原生退出屏障回报 `/permits/{id}/stopped`。回执失败保留预约，成功重试幂等。`DELETE /integrations` 仅允许无在途工作时注销。异步任务继续使用原 task/attempt/fence 停止流程。
+
+VOS App 自动运行节点组件并交接服务身份，不要求最终用户手工部署 Agent。旧应用自动绑定保持兼容；ModelInfer 远端控制未经验证时保持观察状态。完整请求、响应与恢复流程见[统一接入指南](application-integration.md#unified-lifecycle)，当前精确字段见 OpenAPI。
