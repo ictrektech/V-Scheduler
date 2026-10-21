@@ -3,7 +3,9 @@
 use super::*;
 use std::{os::unix::fs::PermissionsExt, path::Path, time::Duration};
 
-const CONTROLLER: &str = "http://v-scheduler:38120/api/v1";
+// Existing execution apps validate this binding URL strictly. Public callers
+// use the canonical v-scheduler endpoints documented in the integration guide.
+const CONTROLLER: &str = "http://v-router:8080/scheduler/api/v1";
 
 #[derive(Clone, Copy)]
 pub(super) struct Application {
@@ -373,7 +375,7 @@ pub(super) async fn persist(
         .bind(node)
         .fetch_one(&mut *tx)
         .await?;
-    let busy: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM vrs_permits WHERE app IN ($1,$2) AND state<>'released') OR EXISTS(SELECT 1 FROM vrs_reservations r JOIN vrs_tasks t ON t.id=r.task WHERE t.app=$1 AND r.state<>'released')")
+    let busy: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM vrs_permits WHERE app IN ($1,$2) AND state<>'released') OR EXISTS(SELECT 1 FROM vrs_reservations r JOIN vrs_tasks t ON t.id=r.task WHERE t.app=$1 AND r.state<>'released') OR EXISTS(SELECT 1 FROM vrs_tasks WHERE app=$1 AND status NOT IN ('succeeded','failed','cancelled'))")
         .bind(application.id).bind(&owner).fetch_one(&mut *tx).await?;
     ensure!(
         !busy,

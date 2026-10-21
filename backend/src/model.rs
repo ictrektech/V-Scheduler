@@ -189,6 +189,9 @@ mod tests {
         let body=serde_json::json!({"protocol_version":1,"app_task_id":"old","executor":{"id":"test","contract_version":"1","task_type":"test"},"parameters":{},"inputs":[],"idempotency_key":null});
         let parsed:TaskSubmit=serde_json::from_value(body.clone()).unwrap();
         assert_eq!(serde_json::to_value(parsed).unwrap(),body);
+        let command=serde_json::json!({"command_id":"old","task_id":"old","attempt_id":"old","fence":1,"executor_id":"test","parameters":{},"lease_seconds":30,"cancel":false});
+        let parsed:Command=serde_json::from_value(command.clone()).unwrap();
+        assert_eq!(serde_json::to_value(parsed).unwrap(),command,"default commands must remain readable by strict legacy workers");
         assert!(serde_json::from_value::<Scheduling>(serde_json::json!({"priority":"arbitrary"})).is_err());
         assert!(serde_json::from_value::<Scheduling>(serde_json::json!({"force_admission":"true"})).is_err());
         assert!(serde_json::from_value::<Scheduling>(serde_json::json!({"resource_budget":1})).is_err());
@@ -451,6 +454,7 @@ pub enum Priority { #[default] Background, Interactive, High }
 impl Priority {
     pub fn score(self) -> i64 { match self { Self::Background => 0, Self::Interactive => 1, Self::High => 2 } }
 }
+fn is_false(value: &bool) -> bool { !*value }
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Command {
@@ -462,7 +466,7 @@ pub struct Command {
     pub parameters: Value,
     pub lease_seconds: u64,
     pub cancel: bool,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub preempted: bool,
 }
 

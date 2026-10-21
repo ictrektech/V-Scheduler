@@ -28,7 +28,7 @@ def until(fn,message,seconds=45):
   time.sleep(.25)
  raise AssertionError(message)
 def sql(query):return docker('exec','-i',pg,'psql','-U','postgres','-d','test','-At','-v','ON_ERROR_STOP=1',input=query)
-fixture=file('fixture.mjs',"import {createServer} from 'node:http';\nlet binding=null,restart=false,threads=1;\nconst origin='http://image-studio-backend:5000';\ncreateServer(async(req,res)=>{let raw='';for await(const c of req)raw+=c;const b=raw?JSON.parse(raw):{};let value={};\nif(req.url==='/v1000/oauth2/userinfo')value={sub:'com.ictrek.v-scheduler',enable:1};\nelse if(req.url.startsWith('/v1000/app/detail?'))value={code:0,data:{state:'installed',configs_current:{VOS_APP_PROFILES:'amd-cuda'}}};\nelse if(req.url==='/api/v1/v-router/registration')value={scheduler:{protocol_version:1,app_id:'com.ictrek.image-studio',executor_base_url:origin,upstream_url:origin,binding_endpoint:'/api/v1/scheduler/binding',execution_settings:{provider:'fixture',threads},async_models:[{id:'fixture-image',task_type:'image.generate'}],...(restart?{preemption_modes:['restart']}:{})}};\nelse if(req.url==='/api/v1/scheduler/binding'){binding=b;value={configured:true};}\nelse if(req.url==='/mode'){restart=!!b.restart;threads=b.threads;value={ok:true};}\nelse if(req.url==='/stats')value={configured:!!binding,revision:binding?.binding_revision};\nres.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify(value));}).listen(5000);")
+fixture=file('fixture.mjs',"import {createServer} from 'node:http';\nlet binding=null,restart=false,threads=1;\nconst origin='http://image-studio-backend:5000';\ncreateServer(async(req,res)=>{let raw='';for await(const c of req)raw+=c;const b=raw?JSON.parse(raw):{};let value={};\nif(req.url==='/v1000/oauth2/userinfo')value={sub:'com.ictrek.v-scheduler',enable:1};\nelse if(req.url.startsWith('/v1000/app/detail?'))value={code:0,data:{state:'installed',configs_current:{VOS_APP_PROFILES:'amd-cuda'}}};\nelse if(req.url==='/api/v1/v-router/registration')value={scheduler:{protocol_version:1,app_id:'com.ictrek.image-studio',executor_base_url:origin,upstream_url:origin,binding_endpoint:'/api/v1/scheduler/binding',execution_settings:{provider:'fixture',threads},async_models:[{id:'fixture-image',task_type:'image.generate'}],...(restart?{preemption_modes:['restart']}:{})}};\nelse if(req.url==='/api/v1/scheduler/binding'){if(b.url!=='http://v-router:8080/scheduler/api/v1'){res.writeHead(422,{'content-type':'application/json'});res.end(JSON.stringify({error:'legacy executor binding URL mismatch'}));return;}binding=b;value={configured:true};}\nelse if(req.url==='/mode'){restart=!!b.restart;threads=b.threads;value={ok:true};}\nelse if(req.url==='/stats')value={configured:!!binding,revision:binding?.binding_revision};\nres.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify(value));}).listen(5000);")
 
 try:
  docker('network','create','--internal',network)
@@ -52,6 +52,13 @@ try:
  threading.Thread(target=heartbeat,daemon=True).start()
  until(lambda:request(peerurl+'/stats')[1]['configured'],'legacy binding')
  path=run/'config/app-bindings/image-studio.json';old=json.loads(path.read_text());oldid=old['binding']['models']['fixture-image'];assert old['executors'][0]['retry_mode']=='none'
+ submitted=request(api+'/api/v1/tasks',{'protocol_version':1,'app_task_id':'queued-legacy','executor':{'id':oldid,'contract_version':'1','task_type':'image.generate'},'parameters':{},'inputs':[]},old['binding']['token']);assert submitted[0]==202
+ request(peerurl+'/mode',{'restart':True,'threads':1});time.sleep(11)
+ assert json.loads(path.read_text())['binding']['models']['fixture-image']==oldid,'policy migration stranded a queued legacy task'
+ assert sql("SELECT state FROM vrs_executor_settings WHERE id='"+oldid+"'")=='enabled'
+ request(peerurl+'/mode',{'restart':False,'threads':1})
+ assert request(api+'/api/v1/tasks/'+submitted[1]['data']['task_id']+'/cancel',{},admin)[0]==200
+ print('PASS queued legacy tasks retain their original executor until completion or cancellation',flush=True)
  managed=request(api+'/api/v1/management',token=admin)[1]['data'];row=next(x for x in managed['executors']if x['id']==oldid)
  assert request(api+'/api/v1/executors/'+oldid,{'version':row['version'],'enabled':False,'definition':row['definition']},admin)[0]==200
  request(peerurl+'/mode',{'restart':False,'threads':2})

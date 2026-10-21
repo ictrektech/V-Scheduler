@@ -127,7 +127,7 @@ try:
  check(report(command,'cancelled',False)[0]==409 and held()==1,'missing native stop proof blocks release and restart')
  check(report(command,'cancelled')[1]['data']['status']=='queued' and held()==0,'native stop proof requeues async task and releases old attempt')
  c=claim()[0];check(c['task_id']==high['task_id'],'high priority starts only after old native exit');finish(c)
- c=claim()[0];check(c['task_id']==low['task_id'] and c['attempt_id']!=old['attempt_id'] and c['fence']>old['fence'] and not c['preempted'],'low priority restarts with new attempt fence');finish(c)
+ c=claim()[0];check(c['task_id']==low['task_id'] and c['attempt_id']!=old['attempt_id'] and c['fence']>old['fence'] and not c.get('preempted',False),'low priority restarts with new attempt fence');finish(c)
  low=task('cancel-wins-low',{'preemptible':True});claim();high=task('cancel-wins-high',{'priority':'high','allow_preemption':True});c=claim()[0];cancel(low)
  check(report(c,'cancelled')[1]['data']['status']=='cancelled','explicit user cancellation wins over preemption restart');finish(claim()[0]);check(not claim(),'cancelled task is not replayed')
  low=task('success-race-low',{'preemptible':True});claim();high=task('success-race-high',{'priority':'high','allow_preemption':True});c=claim()[0]
