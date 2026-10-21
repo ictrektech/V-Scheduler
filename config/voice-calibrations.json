@@ -38,13 +38,13 @@
         "voxcpm2-q8"
       ],
       "secondary_models": {
-        "sensevoice-int8": [
-          "speaker-campplus-zh-en"
-        ],
         "whisper-tiny": [
           "speaker-campplus-zh-en"
         ],
         "qwen3-asr-0.6b": [
+          "speaker-campplus-zh-en"
+        ],
+        "sensevoice-int8": [
           "speaker-campplus-zh-en"
         ]
       },
@@ -69,7 +69,77 @@
         "native_peak_memory_mib": 2419,
         "async_peak_memory_mib": 3768,
         "active_cancel_confirmed_stopped": true
+      },
+      "secondary_calibration": {
+        "evidence_id": "v-voice-thor-native-and-creative-20261015",
+        "peak_memory_mib": 2419
+      },
+      "superseded_sync_models": {
+        "0.0.25": [
+          "sensevoice-int8",
+          "speaker-campplus-zh-en",
+          "kokoro-multilang"
+        ]
       }
+    },
+    {
+      "provider": "cuda",
+      "cpu_models": [],
+      "num_threads": 4,
+      "max_concurrent_inference": 2,
+      "id": "thor-native-small-v2",
+      "architecture": "aarch64",
+      "hardware": [
+        {
+          "name": "NVIDIA Thor",
+          "memory_type": "unified"
+        }
+      ],
+      "resources": {
+        "cpu_millicores": 4500,
+        "memory_mib": 4096,
+        "gpu_slots": 1,
+        "gpu_memory_mib": 0
+      },
+      "max_input_bytes": 1048576,
+      "limits": {
+        "n": 1,
+        "batch_count": 1
+      },
+      "sync_models": [
+        "sensevoice-int8",
+        "speaker-campplus-zh-en",
+        "kokoro-multilang"
+      ],
+      "async_models": [],
+      "secondary_models": {
+        "sensevoice-int8": [
+          "speaker-campplus-zh-en"
+        ]
+      },
+      "calibration": {
+        "evidence_id": "voice-tc229-46bbfb08294441009daa7251dbdfd271",
+        "peak_memory_mib": 2705,
+        "cgroup_peak_mib": 1594,
+        "memory_method": "Maximum of sampled cgroup high-water and host available-memory decrease in the same unified pool; 4096 MiB total reservation includes CUDA memory. Isolated native container has a 4096 MiB memory/swap hard limit and a real 8192 MiB outer calibration permit.",
+        "observed_peak_cpu_millicores": 3838,
+        "native_and_container_exit_confirmed": true,
+        "cases": [
+          "two rounds of native CUDA Kokoro TTS at 512 characters",
+          "two rounds of native CUDA SenseVoice at 20 seconds",
+          "two rounds of SenseVoice plus CAM++ speaker embedding",
+          "all native models unloaded and calibration container exited"
+        ],
+        "input_scope": "Legacy Thor API input contract retained; measurements cover these cases, not every possible input size.",
+        "evidence_ids": [
+          "voice-tc229-46bbfb08294441009daa7251dbdfd271",
+          "voice-tc229-d3e508b9dcc043dbb67f3c07dd7b9feb"
+        ],
+        "repeat_cgroup_peak_mib": 1587
+      },
+      "application_versions": [
+        "0.0.25"
+      ]
     },
     {
       "provider": "cuda",

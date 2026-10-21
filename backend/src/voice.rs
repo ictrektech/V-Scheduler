@@ -279,6 +279,7 @@ fn build_for_node(
     let mut executors = Vec::new();
     let mut adapters = Vec::new();
     let mut gateway_ids = Vec::new();
+    let mut independently_measured_combinations = std::collections::BTreeSet::new();
     let mut music_settings = None;
     for approval in approvals["approvals"]
         .as_array()
@@ -367,6 +368,11 @@ fn build_for_node(
                 .iter()
                 .filter_map(Value::as_str)
                 .filter(|id| {
+                    if task_type == "model.infer" && approval["superseded_sync_models"]
+                        [contract["_application_version"].as_str().unwrap_or("")]
+                        .as_array().is_some_and(|models| models.iter().any(|model| model == *id)) {
+                        return false;
+                    }
                     declared
                         .iter()
                         .any(|row| row["id"] == *id && row["task_type"] == task_type
@@ -401,6 +407,13 @@ fn build_for_node(
             adapters.push(json!({"id":executor,"url":ORIGIN,"token":executor_token,"health_url":format!("{ORIGIN}/health")}));
             for model in approved {
                 ensure!(!models.contains_key(model), "duplicate model approval");
+                let combined = &approval["secondary_calibration"];
+                if !combined.is_null() {
+                    ensure!(combined["evidence_id"].as_str().is_some_and(|s| !s.is_empty())
+                        && combined["peak_memory_mib"].as_i64().is_some_and(|peak| peak > 0 && peak <= resources.memory_mib),
+                        "combined model calibration required");
+                    independently_measured_combinations.insert(model.to_owned());
+                }
                 let is_music = declared.iter().any(|row| row["id"] == model && row["kind"] == "music");
                 if bounded_inputs {
                     let limits = approval["model_limits"][model]
@@ -465,7 +478,8 @@ fn build_for_node(
         for other in secondary.as_array().context("invalid secondary models")? {
             let other = other.as_str().context("invalid secondary identity")?;
             ensure!(
-                models.get(model) == models.get(other),
+                models.contains_key(other) && (models.get(model) == models.get(other)
+                    || independently_measured_combinations.contains(model)),
                 "combined model requires one measured budget"
             );
         }
@@ -765,6 +779,29 @@ mod tests {
     }
 
     #[test]
+    fn split_model_budgets_preserve_only_measured_combined_calls() {
+        let (runtime, contract, mut approvals) = fixtures();
+        let mut speaker = approvals["approvals"][0].clone();
+        speaker["id"] = json!("small-speaker");
+        speaker["sync_models"] = json!(["speaker"]);
+        speaker["async_models"] = json!([]);
+        speaker["secondary_models"] = json!({});
+        speaker["resources"]["memory_mib"] = json!(1536);
+        approvals["approvals"][0]["sync_models"] = json!(["asr"]);
+        approvals["approvals"].as_array_mut().unwrap().push(speaker);
+        assert!(build(&runtime, &contract, &approvals, None).is_err());
+        approvals["approvals"][0]["secondary_calibration"] = json!({"evidence_id":"measured-asr-plus-speaker","peak_memory_mib":1800});
+        let state = build(&runtime, &contract, &approvals, None).unwrap();
+        assert_ne!(state["binding"]["models"]["asr"], state["binding"]["models"]["speaker"]);
+        assert_eq!(state["binding"]["secondary_models"]["asr"], json!(["speaker"]));
+        let cost = |model: &str| state["executors"].as_array().unwrap().iter().find(|e| e["id"] == state["binding"]["models"][model]).unwrap()["resources"]["memory_mib"].as_i64().unwrap();
+        assert_eq!(cost("asr"), 2048);
+        assert_eq!(cost("speaker"), 1536);
+        approvals["approvals"][0]["secondary_calibration"]["peak_memory_mib"] = json!(2049);
+        assert!(build(&runtime, &contract, &approvals, None).is_err());
+    }
+
+    #[test]
     fn packaging_only_voice_upgrade_preserves_identity_and_budget() {
         let (runtime, mut contract, approvals) = fixtures();
         contract["_application_version"] = json!("0.0.21");
@@ -884,7 +921,8 @@ mod tests {
         contract["_application_version"] = json!("0.0.21");
         contract["input_limits_version"] = json!(1);
         contract["mixed_input_limits_version"] = json!(1);
-        contract["execution_settings"] = json!({"music":approvals["approvals"][5]["music"]});
+        let music = approvals["approvals"].as_array().unwrap().iter().find(|a| a["id"] == "thor-native-musicgen-small-30s-v1").unwrap();
+        contract["execution_settings"] = json!({"music":music["music"]});
         let mut sync = Vec::new();
         let mut async_models = Vec::new();
         for approval in approvals["approvals"].as_array().unwrap().iter().filter(|a| a["hardware"] == voice["hardware"]) {
@@ -907,6 +945,15 @@ mod tests {
         assert!(legacy.contains(&json!("kokoro-multilang")));
         assert!(legacy.contains(&json!("kokoro-82m-q8")));
         assert!(!legacy.contains(&json!("musicgen-small")));
+        contract["_application_version"] = json!("0.0.25");
+        let split = build(&runtime, &contract, &approvals, None).unwrap();
+        let sensevoice = &split["binding"]["models"]["sensevoice-int8"];
+        let small = split["executors"].as_array().unwrap().iter().find(|e| &e["id"] == sensevoice).unwrap();
+        assert_eq!(small["resources"]["memory_mib"], 4096);
+        assert_eq!(small["resources"]["gpu_memory_mib"], 0);
+        assert_eq!(small["resources"]["gpu_slots"], 1);
+        assert_eq!(split["binding"]["secondary_models"]["whisper-tiny"], json!(["speaker-campplus-zh-en"]));
+        assert_ne!(split["binding"]["models"]["whisper-tiny"], *sensevoice);
         contract["_application_version"] = json!("0.0.20");
         let old = build(&runtime, &contract, &approvals, None).unwrap();
         assert_eq!(old["binding"]["models"].as_object().unwrap().len(), 7);

@@ -3,6 +3,27 @@ use axum::body::Bytes;
 use axum::{Json, routing::post};
 use futures_util::StreamExt;
 use std::collections::BTreeMap;
+#[tokio::test]
+async fn vos_gateway_administrator_requires_server_verified_enabled_role() {
+    for (status, value, expected) in [
+        (200, json!({"code":0,"data":{"id":"admin-id","role_code":"system_admin","enable":1,"delete":0}}), true),
+        (200, json!({"code":0,"data":{"id":"user-id","role_code":"user","enable":1,"delete":0}}), false),
+        (200, json!({"code":0,"data":{"id":"admin-id","role_code":"system_admin","enable":0,"delete":0}}), false),
+        (200, json!({"code":0,"data":{"id":"admin-id","role_code":"system_admin","enable":1,"delete":1}}), false),
+        (200, json!({"code":10001,"data":{"id":"admin-id","role_code":"system_admin","enable":1,"delete":0}}), false),
+        (401, json!({"code":10001}), false),
+    ] {
+        let server = Router::new().route("/v1000/user/check", axum::routing::get(move |headers: HeaderMap| async move {
+            assert_eq!(headers["authorization"], "Bearer fixture-token");
+            (StatusCode::from_u16(status).unwrap(), Json(value))
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let task = tokio::spawn(async move { axum::serve(listener, server).await.unwrap(); });
+        assert_eq!(auth::administrator(&reqwest::Client::new(), &format!("http://{address}/v1000/oauth2/userinfo"), "fixture-token").await, expected);
+        task.abort();
+    }
+}
 fn principal(name: &str) -> Identity {
     Identity {
         owner: name.into(),

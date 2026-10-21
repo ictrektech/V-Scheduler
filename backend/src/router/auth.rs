@@ -1,4 +1,13 @@
 use super::*;
+pub(super) async fn administrator(client: &reqwest::Client, userinfo: &str, token: &str) -> bool {
+    let Ok(base) = reqwest::Url::parse(userinfo) else { return false; };
+    let Ok(endpoint) = base.join("/v1000/user/check") else { return false; };
+    let Ok(response) = client.get(endpoint).bearer_auth(token)
+        .timeout(Duration::from_secs(5)).send().await else { return false; };
+    if !response.status().is_success() { return false; }
+    let Ok(value) = read_json(response, 1 << 20).await else { return false; };
+    crate::identity::administrator(&value)
+}
 fn userinfo() -> Option<String> {
     let explicit = env("VOS_OIDC_USERINFO_URL", "");
     if !explicit.is_empty() {
@@ -123,7 +132,7 @@ pub(super) async fn identity(g: &Gateway, h: &HeaderMap, management: bool) -> Ap
     let url = userinfo().ok_or_else(|| Failure::new(401, "VOS userinfo is not configured"))?;
     let response = g
         .client
-        .get(url)
+        .get(&url)
         .bearer_auth(token)
         .timeout(Duration::from_secs(10))
         .send()
@@ -148,6 +157,7 @@ pub(super) async fn identity(g: &Gateway, h: &HeaderMap, management: bool) -> Ap
         owner: if owner.is_empty() { username } else { owner }.into(),
         username: if username.is_empty() { owner } else { username }.into(),
         email: text(value, "email").into(),
+        admin: administrator(&g.client, &url, token).await,
         ..Default::default()
     };
     {

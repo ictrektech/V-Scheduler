@@ -31,6 +31,7 @@ defineProps<{t:(value:string)=>string}>()
   <p>{{t('节点管理中的「应用统一接入」可查看应用心跳、节点与批准预算，并请求停止已接入的执行。旧应用继续使用已验证的原自动绑定；不支持此停止协议的应用不会显示为已完成接管。')}}</p>
   <p>{{t('V-Voice（含配乐）、V-Sub、Desensitize 和 Image Studio 在可信绑定后自动登记。调用方 V-ChatCut、HybRAG 复用实际执行端，不重复申报预算。')}}</p>
   <p>{{t('应用私有目录保存已确认停止的回执，重启后继续重试；未知执行不推定停止。阻塞式原生调用须等待实际返回及卸载，异步任务在统一接入页面使用取消。')}}</p>
+  <p>{{t('GPU 槽位是调度并发计数，不是独立显存。统一内存预算只计一份：Thor 的 SenseVoice、Kokoro 和 CAM++ 使用实测的 4 GiB 共享内存预算；较大语音与音乐模型使用各自校准。192 的 CPU 语音记录为 1.75 GiB、GPU 并发计数 0，不因统一内存就自动改为 GPU 执行。')}}</p>
   <h3>{{t('推理等待队列')}}</h3>
   <p>{{t('本地推理设置 X-VScheduler-Queue-Wait-Seconds（1..300）、X-VScheduler-Priority（background/interactive/high）和唯一 X-VScheduler-Request-ID。开启内置驻留且身份已验证时，未设置等待默认等 30 秒；显式 0 保持立即准入。试聊默认等待 120 秒，可查看位置并取消。')}}</p>
   <p><code>GET /api/v1/inference-queue</code> · <code>DELETE /api/v1/inference-queue/{id}</code></p>
