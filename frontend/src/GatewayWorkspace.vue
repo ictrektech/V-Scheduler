@@ -6,7 +6,7 @@ import { mountGateway } from './gateway/runtime.js'
 import { getVOSBearerToken, clearCachedVOSBearerToken } from './vos-auth'
 import logo from '../../assets/icon.png'
 import {apiBases} from './http-client.js'
-const props=defineProps<{tab:string;locale:string;visible:boolean}>()
+const props=defineProps<{tab:string;locale:string;visible:boolean;administrator:boolean}>()
 const emit=defineEmits<{select:[tab:string]}>()
 const host=ref<HTMLElement>()
 let workspace:ReturnType<typeof mountGateway>|undefined
@@ -16,12 +16,13 @@ onMounted(async()=>{
  const legacyAbout=root.querySelector<HTMLButtonElement>('button[onclick="app.openAbout()"]');if(legacyAbout)legacyAbout.style.display='none'
  const footer=root.querySelector('.side-footer');if(footer)root.querySelector('.top-actions')?.prepend(footer)
  const apiBase=apiBases(location.pathname).gateway
- workspace=mountGateway(root,{apiBase,token:getVOSBearerToken,clearToken:clearCachedVOSBearerToken,locale:()=>props.locale,visible:()=>props.visible,select:(tab:string)=>emit('select',tab)})
+ workspace=mountGateway(root,{apiBase,token:getVOSBearerToken,clearToken:clearCachedVOSBearerToken,locale:()=>props.locale,visible:()=>props.visible,administrator:()=>props.administrator,select:(tab:string)=>emit('select',tab)})
  workspace.select(props.tab)
  await workspace.started
 })
 watch(()=>props.tab,value=>workspace?.select(value))
 watch(()=>props.locale,()=>workspace?.updateLocale())
+watch(()=>props.administrator,()=>workspace?.updatePrivileges())
 onUnmounted(()=>workspace?.dispose())
 </script>
 <template><div ref="host" class="gateway-workspace"></div></template>

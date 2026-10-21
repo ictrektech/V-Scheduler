@@ -135,7 +135,7 @@ onUnmounted(()=>{clearInterval(timer);language.dispose()})
    <NodeManagement v-if="page==='nodes'&&connected" :request="api" :nodes="nodes" :api-url="managementApiUrl" :t="t" :locale="locale" @refresh="refresh"/>
    <section v-if="page==='nodes'&&!connected" class="login"><h2>{{t('连接 VOS')}}</h2><button :disabled="busy" @click="connect">{{t('重试连接')}}</button></section>
    <IntegrationGuide v-if="page==='api'&&docMode==='guide'" :t="t"/>
-   <GatewayWorkspace v-show="gatewayVisible" :tab="gatewayTab" :locale="locale" :visible="gatewayVisible" @select="page=$event"/>
+   <GatewayWorkspace v-show="gatewayVisible" :tab="gatewayTab" :locale="locale" :visible="gatewayVisible" :administrator="connected&&!demo&&nodes.length>0" @select="page=$event"/>
    <template v-if="page==='resources'">
     <section v-if="!connected&&!demo&&error" class="login"><div class="login-mark"><Icon name="shield"/></div><h2>{{t('连接 VOS')}}</h2><p>{{t('使用当前 VOS 管理员身份连接，首次使用自动准备 PGV 数据库。')}}</p><button :disabled="busy" @click="connect">{{t('重试连接')}}</button></section>
 

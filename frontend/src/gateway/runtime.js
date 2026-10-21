@@ -230,8 +230,8 @@ const app = {
   renderUser(status) {
     const chip = $("userChip"), offline = $("userOffline");
     const user = status?.user;
-    $("pgForceRow").hidden = !status?.is_admin;
-    if (!status?.is_admin) $("pgForceAdmission").checked = false;
+    $("pgForceRow").hidden = options.administrator?.() !== true;
+    if (options.administrator?.() !== true) $("pgForceAdmission").checked = false;
     if (user) {
       chip.hidden = false; offline.hidden = true;
       $("userName").textContent = user;
@@ -1258,6 +1258,6 @@ const localeChanged = () => {
 };
 window.app = app;
 const started = app.start();
-return { started, select: tab => app.switchTab(tab), updateLocale: () => { i18n.apply(); localeChanged(); }, dispose: () => { app.pgStop(); clearInterval(app.state.timer); if(window.app===app)delete window.app; } };
+return { started, updatePrivileges: () => app.renderUser(app.state.status), select: tab => app.switchTab(tab), updateLocale: () => { i18n.apply(); localeChanged(); }, dispose: () => { app.pgStop(); clearInterval(app.state.timer); if(window.app===app)delete window.app; } };
 
 }
