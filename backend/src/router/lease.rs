@@ -340,7 +340,7 @@ pub(super) fn approval(
             "v-music" => "http://v-music-backend:7080/v1",
             _ => "http://desensitize-backend:5000/v1",
         };
-        if u.base_url != fixed || !["http://v-scheduler:8080/scheduler/api/v1", "http://v-router:8080/scheduler/api/v1", "http://v-scheduler-gateway:8080/scheduler/api/v1"].iter().any(|url| cfg["url"] == *url) {
+        if u.base_url != fixed || !["http://v-scheduler:38120/api/v1", "http://v-scheduler:8080/scheduler/api/v1", "http://v-router:8080/scheduler/api/v1", "http://v-scheduler-gateway:8080/scheduler/api/v1"].iter().any(|url| cfg["url"] == *url) {
             return Err(Failure::new(
                 503,
                 "application origin no longer matches binding",

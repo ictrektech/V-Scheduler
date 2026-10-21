@@ -3,7 +3,7 @@
 use super::*;
 use std::{os::unix::fs::PermissionsExt, path::Path, time::Duration};
 
-const CONTROLLER: &str = "http://v-router:8080/scheduler/api/v1";
+const CONTROLLER: &str = "http://v-scheduler:38120/api/v1";
 
 #[derive(Clone, Copy)]
 pub(super) struct Application {
@@ -152,6 +152,7 @@ fn build(
     let mut adapters = Vec::new();
     let mut gateway_ids = Vec::new();
     let mut delegated_ids = Vec::new();
+    let mut policy_predecessors = Vec::new();
     let actual_hardware = hardware(report);
     for approval in approvals["approvals"]
         .as_array()
@@ -188,7 +189,11 @@ fn build(
         } else {
             "sync_models"
         };
-        let fingerprint = json!([application.id, node, approval]);
+        let restart = application.id == "com.ictrek.image-studio" && contract["preemption_modes"].as_array().is_some_and(|v| v.iter().any(|x| x == "restart"));
+        // A changed execution policy gets a new calibrated identity. Never
+        // overwrite an existing executor or an administrator's disable/edit.
+        let legacy_digest = format!("{:x}", Sha256::digest(serde_json::to_vec(&json!([application.id,node,approval]))?));
+        let fingerprint = if restart { json!([application.id, node, approval, "restart-v1"]) } else { json!([application.id, node, approval]) };
         let digest = format!("{:x}", Sha256::digest(serde_json::to_vec(&fingerprint)?));
         let executor = format!("app-auto-{}-{}", application.slug, &digest[..24]);
         let declared_ready = contract[list].as_array().is_some_and(|rows| {
@@ -247,9 +252,16 @@ fn build(
             );
             model_parameters.insert(model.into(), approval["model_parameters"].clone());
         }
-        let restart = application.id == "com.ictrek.image-studio" && contract["preemption_modes"].as_array().is_some_and(|v| v.iter().any(|x| x == "restart"));
         executors.push(json!({"id":executor,"app_id":application.id,"node_id":node,"contract_version":"1","task_type":task_type,"resources":resources,"upstream_urls":[upstream(application)],"placements":[],"retry_mode":if restart {"idempotent"} else {"none"},"max_attempts":if restart {3} else {1}}));
         executors.push(json!({"id":gateway_executor,"app_id":owner,"node_id":node,"contract_version":"1","task_type":"model.infer","resources":resources,"upstream_urls":[upstream(application)],"placements":[],"retry_mode":"none","max_attempts":1}));
+        if restart {
+            let mut task = executors[executors.len()-2].clone();
+            task["id"] = json!(format!("app-auto-{}-{}",application.slug,&legacy_digest[..24]));
+            task["retry_mode"] = json!("none"); task["max_attempts"] = json!(1);
+            let mut gateway = executors.last().unwrap().clone();
+            gateway["id"] = json!(format!("app-gateway-{}-{}",application.slug,&legacy_digest[..24]));
+            policy_predecessors.extend([task,gateway]);
+        }
         gateway_ids.push(gateway_executor.clone());
         if application.asynchronous {
             delegated_ids.push(executor.clone());
@@ -260,6 +272,7 @@ fn build(
     let mut state = json!({"credential_epoch":epoch,"binding":{"protocol_version":1,"binding_revision":1,"app_id":application.id,"url":CONTROLLER,"token":token,"executor_token":executor_token,"upstream_url":upstream(application),"execution_settings":contract["execution_settings"],"models":models,"gateway_executors":gateway_executors,"model_limits":model_limits,"model_parameters":model_parameters},
         "principals":[{"token":token,"role":"submitter","app_id":application.id,"permit_executors":gateway_ids},{"token":gateway_token,"role":"submitter","app_id":owner,"delegated_executors":delegated_ids}],
         "executors":executors,"adapters":adapters,"gateway":{"url":CONTROLLER,"token":gateway_token,"require_model_policy":true,"models":policies}});
+    if !policy_predecessors.is_empty() { state["policy_predecessors"] = json!(policy_predecessors); }
     if contract["lifecycle_protocol_version"] == 1 {
         state["binding"]["lifecycle_protocol_version"] = json!(1);
     }
@@ -378,6 +391,17 @@ pub(super) async fn persist(
     let prefix = format!("app-auto-{}-", application.slug);
     let gateway_prefix = format!("app-gateway-{}-", application.slug);
     let actor = format!("v-scheduler.auto.{}", application.slug);
+    // Check the exact legacy identities derived from the same measured approval,
+    // even if a transient empty discovery has removed the previous file mapping.
+    for previous in state["policy_predecessors"].as_array().into_iter().flatten() {
+        let old_id = previous["id"].as_str().context("previous executor ID required")?;
+        if let Some(row) = sqlx::query("SELECT definition,state,version FROM vrs_executor_settings WHERE id=$1 FOR UPDATE")
+            .bind(old_id).fetch_optional(&mut *tx).await? {
+            let auto_retired: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM vrs_management_events WHERE actor=$1 AND action='executor.auto-retired' AND resource=$2)")
+                .bind(&actor).bind(format!("{}:{}",old_id,row.get::<i64,_>("version"))).fetch_one(&mut *tx).await?;
+            ensure!(row.get::<Value,_>("definition") == *previous && (row.get::<String,_>("state") == "enabled" || auto_retired), "application predecessor was disabled or changed");
+        }
+    }
     let retired = sqlx::query("UPDATE vrs_executor_settings SET state='disabled',version=version+1,updated_at=now() WHERE (starts_with(id,$1) OR starts_with(id,$2)) AND NOT(id=ANY($3)) AND state='enabled' RETURNING id,version")
         .bind(&prefix).bind(&gateway_prefix).bind(&ids).fetch_all(&mut *tx).await?;
     for row in retired {
@@ -624,6 +648,7 @@ fn safe_failure(error: &anyhow::Error) -> &'static str {
         "duplicate model calibration",
         "application binding waits for active or unknown execution",
         "application executor was disabled or changed",
+        "application predecessor was disabled or changed",
         "application service identity was revoked",
         "application binding pending acceptance",
         "application identity required",
@@ -752,6 +777,17 @@ mod tests {
             None,
         )
         .unwrap();
+        let mut restart_contract = contract.clone();
+        restart_contract["preemption_modes"] = json!(["restart"]);
+        let upgraded = build(app,"node",&capacity,&Resources::default(),"thor",&json!({}),&restart_contract,&approvals,Some(&state)).unwrap();
+        assert_ne!(upgraded["executors"][0]["id"], state["executors"][0]["id"], "policy upgrade must not collide with an immutable old executor");
+        assert_eq!(upgraded["executors"][0]["retry_mode"], "idempotent");
+        assert_eq!(upgraded["executors"][0]["max_attempts"], 3);
+        assert_eq!(upgraded["executors"][0]["resources"], state["executors"][0]["resources"]);
+        assert_eq!(upgraded["binding"]["token"], state["binding"]["token"]);
+        assert_eq!(upgraded["binding"]["binding_revision"], 2);
+        let repeated = build(app,"node",&capacity,&Resources::default(),"thor",&json!({}),&restart_contract,&approvals,Some(&upgraded)).unwrap();
+        assert_eq!(repeated, upgraded, "steady discovery must not churn bindings");
         assert_eq!(
             state["executors"][0]["upstream_urls"][0],
             "http://image-studio-backend:5000"
