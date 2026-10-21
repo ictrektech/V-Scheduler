@@ -394,3 +394,48 @@ HybRAG 接入改动经当前主分支合并结果的 Go race、完整前端构�
 AMD / ARM 核心镜像分别为 `amd_20261021` / `arm_20261021`，推送后均完成飞书对应平台列写入和回读；仓库清单摘要分别为 `f71ec47ff29270faa5190f8275e8ab1c397262fb863e5a159a15416e639a5724`、`e931308b254fe63e19824d369e59c04d659cc59a8e232874db5a3d99696d6f5a`。从两个正式镜像提取的实际发布二进制，分别再次通过 44 项统一生命周期检查，而非只验证 debug 构建。
 
 正式包仅包含一个 `app.tar.gz`；六个 profile 各选中四个容器、九组映射端口，新旧 host alias 均保留，核心镜像与对应架构记录一致，没有未渲染占位符。安装参数与 0.0.45 保持一致，模型共享目录选择及三个默认关闭的预热开关保留。本轮为发布二进制/隔离协议与界面验收，不将其描述为四台 Spark 原生控制或所有旧应用切换新协议的实机验收。
+
+## 0.0.47 与兼容执行端交付（2026-10-21）
+
+本轮将统一生命周期协议接入 V-Voice（含音乐执行）、V-Sub、Desensitize 和 Image Studio。执行端使用可信自动绑定中的 `lifecycle_protocol_version: 1` 登记已有批准执行器并定时上报，不增加 Agent 容器或要求用户手工安装服务。V-ChatCut 与 HybRAG 继续作为网关消费者，避免重复登记和双重预约。
+
+停止请求只记录意图，仍占用完整预算。执行端以独立执行身份、令牌和 nonce 确认原生进程退出及权重卸载后才释放；私有回执持久化、重启重投及已释放回执清理均包含在本轮协议中。没有通过降低预算、缩减安全预留或强制释放未知执行取得通过结果。
+
+### 发布与包验证
+
+| 应用 | 正式版本 | 发布流水线 |
+|---|---|---|
+| V-Scheduler | [0.0.47](https://github.com/ictrektech/V-Scheduler/releases/tag/v0.0.47) | [39525746881](https://github.com/ictrektech/V-Scheduler/actions/runs/39525746881) |
+| V-Voice | [0.0.23](https://github.com/ictrektech/V-yovoice/releases/tag/v0.0.23) | [39527615775](https://github.com/ictrektech/V-yovoice/actions/runs/39527615775) |
+| V-Sub | [0.0.9](https://github.com/ictrektech/V-Sub/releases/tag/v0.0.9) | [39527829204](https://github.com/ictrektech/V-Sub/actions/runs/39527829204) |
+| Desensitize | [0.0.50](https://github.com/ictrektech/desensitize/releases/tag/v0.0.50) | [39527852117](https://github.com/ictrektech/desensitize/actions/runs/39527852117) |
+| Image Studio | [0.0.66](https://github.com/ictrektech/image-studio/releases/tag/v0.0.66) | [39527831414](https://github.com/ictrektech/image-studio/actions/runs/39527831414) |
+
+五项 GitHub Release 与 VOS 应用商店发布均成功。Image Studio 前两次因 GitHub 计费在启动运行器前失败，恢复后重试同一版本，第三次成功，没有另升版本或手工替代打包。五个正式包均核验结构、模板渲染和 GitHub 资产 SHA-256；四个执行端包均依赖正式 V-Scheduler 0.0.47。
+
+四个执行端各六种 profile 的受影响镜像均推送并完成飞书对应平台列回读及仓库清单核验。仅应用层变更复用明确指定、已发布的同 profile 原生运行时，保留原生库和已校准参数；实际镜像内生命周期测试均通过。源代码回归包含 Voice Python 173 项、Desensitize 58 项、Image Studio 92 项及 140 个子测试、V-Sub 21 项专项测试、Voice 全部 Go race 检查、前端 23 项及生产构建。两个架构的正式 Scheduler 二进制各通过真实 PostgreSQL 支持的 48 项生命周期协议检查；这部分受控原生服务测试与以下实机业务测试分别记录。
+
+### 已安装业务实测
+
+三机均已安装上表五个正式版本。232 的 Image Studio 首次商店下载活动长期无进展，VOS 取消请求未使其结束；仅通过 VOS 终止本次下载 workflow 后重试同一版本，随后完整升级成功，没有重启宿主机或手工替换容器。三机通过 VOS 应用升级接口保留原 profile、安装参数和公共模型目录；V-Scheduler 仍为四个容器，正式 `v-scheduler` 与旧兼容别名、九组外部端点和关于中的四项 `name:tag` 均保留。模型/文件数量分别为 192：13/478、229：28/601、232：20/500。旧 V-Music 安装及数据保留，新音乐链路在 V-Voice 中验证。
+
+| 应用 profile | 192 | 229 | 232 |
+|---|---|---|---|
+| V-Scheduler | l4t | thor-spark | amd |
+| V-Voice | l4t | thor | amd |
+| V-Sub | l4t | thor | amd-cuda |
+| Desensitize | l4t | thor-spark | amd |
+| Image Studio | l4t | thor | amd-cuda |
+
+- 三机实际通过应用登记、节点/应用独立心跳推进、批准预算核验，Voice TTS/ASR、字幕直接/网关调用、OCR/NER、V-ChatCut 普通/SSE 输出和语音网关调用。停止测试观察到活动执行、停止意图仍保留预约、原生退出/卸载证明释放，以及停止后下一次真实调用成功。
+- V-Sub 三机通过真实原生 PID/启动身份的取消及调度停止、超预算提前拒绝、设置变更失配拒绝与恢复、worker 重启后 generation 恢复。只清理本轮合成上传和项目。
+- 229 的 V-Voice 音乐通过原生子进程停止、证明释放和随后实际音频生成；Image Studio 通过真实 sd-cli 进程取消、任务移出活动视图，以及随后再次生成有效 PNG。
+- 229 与 232 的 HybRAG QA、1024 维向量、重排和完整文档 RAG 均取得实际输出。232 重排首次冷调用超过消费者 60 秒超时，许可正常释放，重试成功；记录首次失败，不将重试解释为首次原因已修复。完整 RAG 各产生六份许可并全部释放，临时知识库和会话删除。
+- 192 的标准 HybRAG QA/向量预算在当前内存余量下被正确拒绝；原有轻量模型完成上传、解析、检索和回答校验。轻量模型首次抄写含数字校验码有误，换成单词事实后语义校验通过，不能把轻量链路等同标准模型全部通过。
+- 192 的 Image Studio L4T 和 232 的 AMD CUDA 没有对应的正式图像校准预算，未自动获得执行绑定，不能计作图像生成或停止通过；未借用 Thor 预算。192 另缺本轮 SD-Turbo 测试权重，请求在创建任务/原生进程前返回 409；232 在同一阶段返回缺少模型绑定的 503。应用升级成功与模型执行就绪分别记录。
+
+实际安装界面通过已有 Playwright/Chromium SDK 验证刷新、全局关于、正式/兼容地址、应用内接入指南，以及简中/英文/繁中、1440×1080 与 390×844。测试运行时挂载主机 CJK 字体，避免浏览器测试镜像缺字体造成方框；没有替换实际 API。直接打开内部页面会产生一个 `/favicon.ico` 404，单独记录为非阻断静态资源告警；没有其他页面运行或控制台错误。
+
+192、229、232 分别完成 302.21 / 303.07 / 307.26 秒、各 38 次稳定性采样，覆盖 17 / 18 / 17 个相关容器：健康、无重启/OOM，节点及应用心跳新鲜，结束时无活动或 suspect 许可。229 四个执行应用已登记；192、232 各三个已批准应用登记，图像未批准限制如上。三机四个执行端的已安装生命周期源码 SHA-256 均与本轮交付源码一致。
+
+原始配置、令牌、执行证明和详细日志仅保存在维护端私有目录 `~/dev/build/V-Scheduler/client-lifecycle-20261021/`，不提交源码。
