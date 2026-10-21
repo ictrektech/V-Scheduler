@@ -2971,6 +2971,383 @@
           }
         }
       }
+    },
+    "/integrations": {
+      "get": {
+        "operationId": "get_integrations",
+        "summary": "Application integration status",
+        "x-title": {
+          "zh-CN": "应用统一接入状态",
+          "en": "Application integration status",
+          "zh-TW": "應用統一接入狀態"
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-role": "submitter",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "description": "Role or app scope denied"
+          },
+          "404": {
+            "description": "Not found or not visible"
+          },
+          "409": {
+            "description": "State or idempotency conflict"
+          },
+          "422": {
+            "description": "Invalid request"
+          },
+          "429": {
+            "description": "Resource busy or queue quota"
+          },
+          "503": {
+            "description": "Temporarily unavailable"
+          }
+        },
+        "x-description": {
+          "zh-CN": "应用统一接入状态",
+          "en": "App-scoped node freshness, approved budgets and pending executions; administrators see all applications.",
+          "zh-TW": "應用統一接入狀態"
+        },
+        "description": "App-scoped node freshness, approved budgets and pending executions; administrators see all applications."
+      },
+      "post": {
+        "operationId": "post_integrations",
+        "summary": "Register application lifecycle",
+        "x-title": {
+          "zh-CN": "登记应用生命周期",
+          "en": "Register application lifecycle",
+          "zh-TW": "登記應用生命週期"
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-role": "submitter",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "description": "Role or app scope denied"
+          },
+          "404": {
+            "description": "Not found or not visible"
+          },
+          "409": {
+            "description": "State or idempotency conflict"
+          },
+          "422": {
+            "description": "Invalid request"
+          },
+          "429": {
+            "description": "Resource busy or queue quota"
+          },
+          "503": {
+            "description": "Temporarily unavailable"
+          }
+        },
+        "x-description": {
+          "zh-CN": "登记应用生命周期",
+          "en": "References approved executors only. Does not grant resources or call client-supplied URLs. Optimistic revision; identical registration is idempotent.",
+          "zh-TW": "登記應用生命週期"
+        },
+        "description": "References approved executors only. Does not grant resources or call client-supplied URLs. Optimistic revision; identical registration is idempotent.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IntegrationRegistration"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_integrations",
+        "summary": "Unregister idle application lifecycle",
+        "x-title": {
+          "zh-CN": "注销空闲应用生命周期",
+          "en": "Unregister idle application lifecycle",
+          "zh-TW": "登出閒置應用生命週期"
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-role": "submitter",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "description": "Role or app scope denied"
+          },
+          "404": {
+            "description": "Not found or not visible"
+          },
+          "409": {
+            "description": "State or idempotency conflict"
+          },
+          "422": {
+            "description": "Invalid request"
+          },
+          "429": {
+            "description": "Resource busy or queue quota"
+          },
+          "503": {
+            "description": "Temporarily unavailable"
+          }
+        },
+        "description": "Application service identity only; refuses while executions, tasks or unconfirmed stop commands remain. Does not revoke approved resource budgets."
+      }
+    },
+    "/integrations/heartbeat": {
+      "post": {
+        "operationId": "post_integrations_heartbeat",
+        "summary": "Application heartbeat and stop commands",
+        "x-title": {
+          "zh-CN": "应用心跳及停止命令",
+          "en": "Application heartbeat and stop commands",
+          "zh-TW": "應用心跳及停止命令"
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-role": "submitter",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "description": "Role or app scope denied"
+          },
+          "404": {
+            "description": "Not found or not visible"
+          },
+          "409": {
+            "description": "State or idempotency conflict"
+          },
+          "422": {
+            "description": "Invalid request"
+          },
+          "429": {
+            "description": "Resource busy or queue quota"
+          },
+          "503": {
+            "description": "Temporarily unavailable"
+          }
+        },
+        "x-description": {
+          "zh-CN": "应用心跳及停止命令",
+          "en": "Follow heartbeat_after_seconds. Pending stop commands are redelivered until matched native execution proof is confirmed. App heartbeats cannot forge node telemetry.",
+          "zh-TW": "應用心跳及停止命令"
+        },
+        "description": "Follow heartbeat_after_seconds. Pending stop commands are redelivered until matched native execution proof is confirmed. App heartbeats cannot forge node telemetry.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IntegrationHeartbeat"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/permits/{id}/stop": {
+      "post": {
+        "operationId": "post_permits_id_stop",
+        "summary": "Request model execution stop",
+        "x-title": {
+          "zh-CN": "请求停止模型执行",
+          "en": "Request model execution stop",
+          "zh-TW": "請求停止模型執行"
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-role": "submitter",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "description": "Role or app scope denied"
+          },
+          "404": {
+            "description": "Not found or not visible"
+          },
+          "409": {
+            "description": "State or idempotency conflict"
+          },
+          "422": {
+            "description": "Invalid request"
+          },
+          "429": {
+            "description": "Resource busy or queue quota"
+          },
+          "503": {
+            "description": "Temporarily unavailable"
+          }
+        },
+        "x-description": {
+          "zh-CN": "请求停止模型执行",
+          "en": "Permit owner or administrator requests cancel-and-unload. Does not release reservations. Requires a unique registered lifecycle receiver.",
+          "zh-TW": "請求停止模型執行"
+        },
+        "description": "Permit owner or administrator requests cancel-and-unload. Does not release reservations. Requires a unique registered lifecycle receiver.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/permits/{id}/stopped": {
+      "post": {
+        "operationId": "post_permits_id_stopped",
+        "summary": "Confirm native exit and unloading",
+        "x-title": {
+          "zh-CN": "确认原生停止与卸载",
+          "en": "Confirm native exit and unloading",
+          "zh-TW": "確認原生停止與卸載"
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-role": "submitter",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "description": "Role or app scope denied"
+          },
+          "404": {
+            "description": "Not found or not visible"
+          },
+          "409": {
+            "description": "State or idempotency conflict"
+          },
+          "422": {
+            "description": "Invalid request"
+          },
+          "429": {
+            "description": "Resource busy or queue quota"
+          },
+          "503": {
+            "description": "Temporarily unavailable"
+          }
+        },
+        "x-description": {
+          "zh-CN": "确认原生停止与卸载",
+          "en": "Registered execution backend submits original claimed execution credential and request nonce. Invalid proof does not release resources. Successful confirmation is idempotent.",
+          "zh-TW": "確認原生停止與卸載"
+        },
+        "description": "Registered execution backend submits original claimed execution credential and request nonce. Invalid proof does not release resources. Successful confirmation is idempotent.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IntegrationStopped"
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -3874,6 +4251,93 @@
           },
           "resources": {
             "$ref": "#/components/schemas/ResourceBudget"
+          }
+        }
+      },
+      "IntegrationRegistration": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "protocol_version",
+          "revision",
+          "executors",
+          "stop_protocol"
+        ],
+        "properties": {
+          "protocol_version": {
+            "const": 1
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "executors": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 64,
+            "uniqueItems": true,
+            "items": {
+              "type": "string"
+            }
+          },
+          "stop_protocol": {
+            "const": "permit-native-exit-v1"
+          }
+        }
+      },
+      "IntegrationHeartbeat": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "revision"
+        ],
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "IntegrationStopped": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "nonce",
+          "execution_id",
+          "execution_token",
+          "native_exit_barrier",
+          "model_unloaded",
+          "evidence"
+        ],
+        "properties": {
+          "nonce": {
+            "type": "string"
+          },
+          "execution_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "maxLength": 128,
+            "description": "Exact claimed native execution ID; null only when the permit was never claimed. Confirmation locks the permit before checking."
+          },
+          "execution_token": {
+            "type": "string",
+            "minLength": 32,
+            "maxLength": 128,
+            "writeOnly": true
+          },
+          "native_exit_barrier": {
+            "const": true
+          },
+          "model_unloaded": {
+            "const": true
+          },
+          "evidence": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
           }
         }
       }

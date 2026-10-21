@@ -1,4 +1,5 @@
 mod allocations;
+mod integrations;
 mod inference_queue;
 mod app_bindings;
 mod gateway_identity;
@@ -434,6 +435,10 @@ pub async fn serve(
                 )
             }),
         )
+        .route("/integrations", get(integrations::list).post(integrations::register).delete(integrations::unregister))
+        .route("/integrations/heartbeat", post(integrations::heartbeat))
+        .route("/permits/{id}/stop", post(integrations::request_stop))
+        .route("/permits/{id}/stopped", post(integrations::stopped))
         .route("/management", get(management::overview))
         .route("/node-sources/modelinfer/{id}", post(management::source_settings))
         .route("/node-sources/modelinfer/{id}/control", post(management::source_control))
@@ -496,7 +501,7 @@ pub async fn serve(
 }
 async fn discovery() -> Json<Value> {
     ok(
-        json!({"protocol_version":1,"implementation_version":"0.1.0","features":["tasks","idempotency","reservations","events","static-executors","dynamic-enrollment","node-management","modelinfer-discovery","vos-app-source-metrics","source-budget-planning","multi-node-permits","executor-approval","service-identities","agent-image-studio","permits","backend-permit-verification","permit-history","statistics","permit-release-times","interactive-inference-queue","managed-ollama-residency","model-service-linkage","task-timeline","delegated-permits","safety-headroom","retry","manual-delete","attempt-history"],"unsupported":["artifacts","ha","vos-remote-control"],"authentication":"scoped-bearer","max_body_bytes":262144,"openapi_url":"openapi.json"}),
+        json!({"protocol_version":1,"implementation_version":"0.1.0","features":["application-lifecycle-v1","cooperative-model-stop","tasks","idempotency","reservations","events","static-executors","dynamic-enrollment","node-management","modelinfer-discovery","vos-app-source-metrics","source-budget-planning","multi-node-permits","executor-approval","service-identities","agent-image-studio","permits","backend-permit-verification","permit-history","statistics","permit-release-times","interactive-inference-queue","managed-ollama-residency","model-service-linkage","task-timeline","delegated-permits","safety-headroom","retry","manual-delete","attempt-history"],"unsupported":["artifacts","ha","vos-remote-control"],"authentication":"scoped-bearer","max_body_bytes":262144,"openapi_url":"openapi.json"}),
     )
 }
 async fn executors(State(a): State<App>, h: HeaderMap) -> Api<Json<Value>> {
@@ -561,6 +566,7 @@ async fn submit(State(a): State<App>, h: HeaderMap, Json(body): Json<TaskSubmit>
         .await
         .map_err(unavailable)?;
     management::admit(&mut tx, e, &p).await?;
+    integrations::admit(&mut tx,e).await?;
     let insert=sqlx::query("INSERT INTO vrs_tasks(id,app,idem,hash,body,node) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(app,idem) DO NOTHING RETURNING *").bind(&id).bind(&p.app_id).bind(key).bind(&hash).bind(value).bind(&e.node_id).fetch_optional(&mut *tx).await.map_err(unavailable)?;
     let fresh = insert.is_some();
     if fresh {
@@ -894,7 +900,7 @@ async fn claim(
         else {
             continue;
         };
-        if management::admit(&mut tx, e, &p).await.is_err() {
+        if management::admit(&mut tx, e, &p).await.is_err() || integrations::admit(&mut tx,e).await.is_err() {
             continue;
         }
         if voice_admission(&a, &e.id).is_err() {
@@ -1146,6 +1152,7 @@ async fn permit_inspect(
     let mut tx = a.db.begin().await.map_err(unavailable)?;
     let nodes = allocations::lock_nodes(&mut tx, e).await?;
     management::admit(&mut tx, e, &p).await?;
+    integrations::admit(&mut tx,e).await?;
     voice_admission(&a, &e.id)?;
     let ready = nodes
         .iter()
@@ -1188,12 +1195,14 @@ async fn permit_acquire(
         // admission. Recheck under node locks after the native exit barrier.
         let mut preflight=a.db.begin().await.map_err(unavailable)?;
         management::admit(&mut preflight,e,&p).await?;
+        integrations::admit(&mut preflight,e).await?;
         preflight.commit().await.map_err(unavailable)?;
         crate::router::yield_idle_model().await;
     }
     let mut tx = a.db.begin().await.map_err(unavailable)?;
     let nodes = allocations::lock_nodes(&mut tx, e).await?;
     management::admit(&mut tx, e, &p).await?;
+    integrations::admit(&mut tx,e).await?;
     voice_admission(&a, &e.id)?;
     if let Some(old) =
         sqlx::query("SELECT *,lease_until>now() AS valid FROM vrs_permits WHERE app=$1 AND idem=$2")
@@ -1355,6 +1364,7 @@ async fn permit_verify(
         .ok_or(Error(StatusCode::NOT_FOUND,"NOT_FOUND"))?;
     management::principal_active(&mut tx, &p).await?;
     let mut metadata: Value = row.get("metadata");
+    integrations::stop_pending(&mut tx,&id).await?;
     if row.get::<String, _>("state") != "active" || !row.get::<bool, _>("valid") {
         return Err(Error(StatusCode::CONFLICT, "PERMIT_NOT_ACTIVE"));
     }
@@ -1367,6 +1377,7 @@ async fn permit_verify(
     }
     // 首次调用原子认领；相同许可不能启动第二个执行。后续核验只确认原执行仍有租约。
     if b.claim {
+        integrations::admit(&mut tx,executor).await?;
         if !metadata["execution_id"].is_null() {
             return Err(Error(StatusCode::CONFLICT, "PERMIT_ALREADY_CLAIMED"));
         }
@@ -1438,6 +1449,7 @@ async fn permit_reuse_resident(
     let mut tx = a.db.begin().await.map_err(unavailable)?;
     let nodes = allocations::lock_nodes(&mut tx, e).await?;
     management::admit(&mut tx, e, &p).await?;
+    integrations::admit(&mut tx,e).await?;
     for node in &nodes {
         allocations::ready(node, &e.id)?;
     }
@@ -1445,6 +1457,7 @@ async fn permit_reuse_resident(
         .bind(&id).bind(&p.app_id).bind(&e.id).fetch_optional(&mut *tx).await.map_err(unavailable)?
         .ok_or(Error(StatusCode::NOT_FOUND,"NOT_FOUND"))?;
     let mut metadata: Value = row.get("metadata");
+    integrations::stop_pending(&mut tx,&id).await?;
     if row.get::<String, _>("state") != "active"
         || !row.get::<bool, _>("valid")
         || row.get::<String, _>("node") != e.node_id
@@ -1531,7 +1544,7 @@ async fn permit_renew(
 ) -> Api<Json<Value>> {
     let p = auth(&a, &h).await?;
     require(&p, "submitter")?;
-    let count=sqlx::query("UPDATE vrs_permits p SET lease_until=now()+interval '30 seconds' WHERE id=$1 AND app=$2 AND state='active' AND lease_until>now() AND (parent_attempt IS NULL OR EXISTS(SELECT 1 FROM vrs_tasks t JOIN vrs_reservations r ON r.attempt=t.attempt WHERE t.attempt=p.parent_attempt AND t.status='running' AND r.state='active' AND r.lease_until>now()))").bind(id).bind(&p.app_id).execute(&a.db).await.map_err(unavailable)?.rows_affected();
+    let count=sqlx::query("UPDATE vrs_permits p SET lease_until=now()+interval '30 seconds' WHERE id=$1 AND app=$2 AND state='active' AND lease_until>now() AND NOT EXISTS(SELECT 1 FROM vrs_stop_requests s WHERE s.permit_id=p.id AND s.confirmed_at IS NULL) AND (parent_attempt IS NULL OR EXISTS(SELECT 1 FROM vrs_tasks t JOIN vrs_reservations r ON r.attempt=t.attempt WHERE t.attempt=p.parent_attempt AND t.status='running' AND r.state='active' AND r.lease_until>now()))").bind(id).bind(&p.app_id).execute(&a.db).await.map_err(unavailable)?.rows_affected();
     if count != 1 {
         return Err(Error(StatusCode::CONFLICT, "PERMIT_NOT_ACTIVE"));
     }
@@ -1554,15 +1567,20 @@ async fn permit_release(
     if b.evidence.is_empty() || b.evidence.len() > 512 {
         return Err(invalid());
     }
+    let mut tx=a.db.begin().await.map_err(unavailable)?;
+    let row=sqlx::query("SELECT state FROM vrs_permits WHERE id=$1 AND app=$2 FOR UPDATE").bind(&id).bind(&p.app_id).fetch_optional(&mut *tx).await.map_err(unavailable)?.ok_or(Error(StatusCode::NOT_FOUND,"NOT_FOUND"))?;
+    if b.stopped && row.get::<String,_>("state")!="released" {
+        integrations::stop_pending(&mut tx,&id).await?;
+    }
     let state = if b.stopped { "released" } else { "suspect" };
     let count = sqlx::query(
-        "UPDATE vrs_permits SET state=$3,evidence=$4,released_at=CASE WHEN $3='released' THEN COALESCE(released_at,now()) ELSE released_at END WHERE id=$1 AND app=$2 AND state<>'released'",
+        "UPDATE vrs_permits SET state=$3,evidence=$4,released_at=CASE WHEN $3='released' THEN COALESCE(released_at,now()) ELSE released_at END WHERE id=$1 AND app=$2 AND state<>'released' AND ($3<>'released' OR NOT EXISTS(SELECT 1 FROM vrs_stop_requests s WHERE s.permit_id=vrs_permits.id AND s.confirmed_at IS NULL))",
     )
     .bind(&id)
     .bind(&p.app_id)
     .bind(state)
     .bind(&b.evidence)
-    .execute(&a.db)
+    .execute(&mut *tx)
     .await
     .map_err(unavailable)?
     .rows_affected();
@@ -1571,13 +1589,14 @@ async fn permit_release(
             sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM vrs_permits WHERE id=$1 AND app=$2)")
                 .bind(&id)
                 .bind(&p.app_id)
-                .fetch_one(&a.db)
+                .fetch_one(&mut *tx)
                 .await
                 .map_err(unavailable)?;
         if !exists {
             return Err(Error(StatusCode::NOT_FOUND, "NOT_FOUND"));
         }
     }
+    tx.commit().await.map_err(unavailable)?;
     Ok(ok(json!({"permit_id":id,"state":state})))
 }
 async fn permit_confirm(
@@ -1738,6 +1757,7 @@ async fn delegation_verify(
     let node = sqlx::query("SELECT *,heartbeat>now()-interval '12 seconds' AS fresh FROM vrs_nodes WHERE id=$1 FOR UPDATE")
         .bind(&infer.node_id).fetch_one(&mut *tx).await.map_err(unavailable)?;
     management::admit(&mut tx, infer, &p).await?;
+    integrations::admit(&mut tx,infer).await?;
     let row = sqlx::query("SELECT t.body,t.node,t.attempt,r.resources FROM vrs_tasks t JOIN vrs_reservations r ON r.attempt=t.attempt WHERE t.id=$1 AND t.status='running' AND t.deleted_at IS NULL AND r.state='active' AND r.lease_until>now() FOR UPDATE OF t,r")
         .bind(&b.task_id).fetch_optional(&mut *tx).await.map_err(unavailable)?
         .ok_or(Error(StatusCode::FORBIDDEN, "DELEGATION_NOT_ALLOWED"))?;

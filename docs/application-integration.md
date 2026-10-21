@@ -5,6 +5,7 @@
 - [选择接入方式与调度策略](#integration-mode)
 - [地址、端口与身份](#addresses-and-identity)
 - [一个推理实例的完整接入流程：服务管理、模型路由与调度](#managed-inference)
+- [节点、应用、预算与停止的统一生命周期](#unified-lifecycle)
 - [vLLM 主动注册、public/private 与生命周期](#vllm-registration)
 - [启用本实例调度](#scheduled-vllm)
 - [仅路由外部独立资源](#external-vllm)
@@ -162,6 +163,60 @@ curl --fail-with-body "$MODEL_HUB/inference-services/vllm-node-a-1" \
 HybRAG 从「已注册的 V-Scheduler 模型」选择这两个调用名，embedding 维度选择 384；在这个低内存配置中关闭额外重排、查询改写和后台摘要，使用 512 上下文与 128 输出 token。已有知识库和默认模型不被替换，重新建库时才选择新 embedding 维度。HybRAG 需使用支持动态 Scheduler 模型身份交接的已发布版本（0.1.73 起），不将服务密钥填入模型表单。
 
 这些是针对该节点实测并批准的配置，不是所有机器通用的推荐预算。更换固定标签的权重、Ollama 镜像、并发数或运行参数前，应先停用该审批、确认在途计算停止，再重新测量和批准；不能让新权重沿用旧预算。应用开发者通过本应用既有管理 API 维护执行器、独立身份与受保护的逐模型绑定，终端用户继续通过 VOS 安装和界面使用。完整 RAG 验收须确认实际回答引用了新建测试文档，不能仅以文件就绪、目录可见或 HTTP 200 作为成功。
+
+<a id="unified-lifecycle"></a>
+## 节点、应用、预算与停止的统一生命周期
+
+最终用户只安装 VOS App。节点采集、应用身份交接、执行器发现、心跳和停止适配由应用自身管理；不要求用户 SSH 登录或手工部署 Agent。已有 V-Voice、V-Sub、Music、Image 等自动绑定继续使用已验证的原契约。以下是新应用可启用的 `application-lifecycle-v1`，不是旧应用已经全部切换的声明。
+
+### 1. 自动发现并核验预算
+
+本机内置组件约每 2 秒向 `/workers/{node_id}/heartbeat` 上报节点会话和资源采样；12 秒无节点心跳、资源采样过期或节点排空时拒绝新执行。应用自己的心跳不能提交节点遥测。批准容量、驻留基线、安全保留、已有预约和实际余量共同参与准入，不能从模型文件大小或自报空闲内存直接授予预算。
+
+应用安装后的可信管理流程按实际 profile、硬件、模型和运行设置匹配校准，自动交接独立服务身份及已批准 executor。已存在的管理 API 负责预算批准和修改：`POST /nodes/{id}`、`POST /executors/{id}` 使用当前 version，不能在仍有未停止执行时缩减或撤销。普通调用者不能自批资源；未匹配校准的组合保持未就绪。外部 ModelInfer 节点仍须通过所属 VOS App 的执行、停止和恢复验证，监控可见不代表可以执行。
+
+### 2. 应用登记与定时心跳
+
+以下路径都属于调度命名空间。容器直连根为 `http://v-scheduler:38120/api/v1`，经过统一网关为 `http://v-scheduler:8080/scheduler/api/v1`；宿主机默认分别为 `http://<vos-host>:38120/api/v1` 和 `http://<vos-host>:22888/scheduler/api/v1`。旧别名只供兼容，详见上方端口表。
+
+| 方法与相对路径 | 身份与行为 |
+|---|---|
+| `GET /integrations` | 应用仅看自己，管理员可看全部；包含 revision、应用心跳、执行器批准预算、节点容量/保留/新鲜度及未释放执行 |
+| `POST /integrations` | 应用独立服务身份引用已批准 executor；不接受自报预算、任意控制 URL 或其他应用 ID |
+| `DELETE /integrations` | 应用退出前注销生命周期；有未结束执行或停止请求则拒绝，幂等重试 |
+| `POST /integrations/heartbeat` | 应用发送当前 revision，响应给出下次间隔和待处理停止命令 |
+| `POST /permits/{id}/stop` | 许可拥有者或管理员请求停止，不立即释放资源 |
+| `POST /permits/{id}/stopped` | 注册的原生执行端提交匹配的停止回执，核验后释放该许可 |
+
+首次登记请求：
+
+```json
+{"protocol_version":1,"revision":0,"executors":["approved-executor-id"],"stop_protocol":"permit-native-exit-v1"}
+```
+
+响应含 `app_id`、`revision`、`heartbeat_after_seconds=5`、`stale_after_seconds=20` 和 `budget_granted=false`。应用将 revision 与原执行状态私有持久化；按返回间隔发送 `{"revision":1}`，不能把当前常量当成永远固定的协议。超过 20 秒无应用心跳暂停这些执行器的新准入；心跳恢复、批准定义仍匹配后自动恢复。不会因过期释放已有预约或自动重放执行。
+
+同内容、当前 revision 的重复登记不推进版本。版本冲突先 GET 自己的状态，再决定是否重登记；变更执行器集合时有活动任务、未释放许可或待停止请求会返回 409。一个执行器只由一个应用生命周期身份接收停止命令。身份轮换仍由原可信绑定流程负责，不向浏览器下发私有凭据。
+
+模型服务卡片和 `/api/v1/registrations` 路由注册仍使用同一实例 ID 与明确映射，按前节流程完成。应用生命周期心跳、路由租约心跳、节点采样各有职责，不能互相替代。生命周期登记不会隐式创建卡片、放开模型可见性或批准任意远端 URL。
+
+### 3. 调用、停止与资源释放
+
+计算继续使用既有 permit 验票或持久 task，确保同一次计算只预约一次。请求 `POST /permits/{id}/stop` 后，响应 `state=stop_requested`、`resources_released=false`；许可不再允许续租或再次验票。已开始的计算由所属应用停止，不由 Scheduler 杀任意宿主进程。
+
+应用在 heartbeat 响应的 `stop_requests` 中取得 `{permit_id, executor_id, node_id, model_id, execution_id, nonce, action:"cancel-and-unload"}`。未确认的命令重复投递且 nonce 不变；应用须以 permit + execution_id 幂等处理，核对自己的持久执行句柄，取消原生计算并卸载对应权重。不得终止同名的另一次新执行。`execution_id=null` 表示还未原子认领，应用取消本地待启动记录并确认没有执行后以 null 回执；停止命令之后的迟到认领会被拒绝。执行端自己的租约 watchdog 仍须独立工作。
+
+原生退出屏障和权重卸载均确认后，用执行端服务身份向 `/permits/{id}/stopped` 回报：
+
+```json
+{"nonce":"heartbeat-command-nonce","execution_id":"original-native-execution-id","execution_token":"original-private-execution-token","native_exit_barrier":true,"model_unloaded":true,"evidence":"native process exited; model weights unloaded"}
+```
+
+凭据仅来自该执行原有的许可交接，不能从列表接口获取。控制器核对已注册接收者、执行器授权、nonce、已认领 execution_id 和原 execution_token 哈希。缺项、错误回执或仅取消输出而未卸载权重都不释放预算。成功回执可幂等重试；停止命令与确认记录持久化，服务重启后仍可继续核验。心跳丢失、HTTP 成功、空运行列表或租约到期均不构成停止证明。
+
+异步应用沿用 `POST /tasks/{id}/cancel`，经原 executor 的 `inspect/cancel` 和 attempt/fence 停止报告完成核验；不能把 task 取消伪装为另一个同步 permit 的停止。内置 Ollama 继续使用已有原生停止证明与驻留管理，无需重新登记这套应用协议。
+
+`STOP_ADAPTER_NOT_REGISTERED` 表示该执行尚无唯一已注册的停止适配，不能显示为已停；`STOP_REQUESTED` 表示当前执行已要求退出；`STOP_PROOF_MISMATCH` 表示回执与执行不匹配；`APPLICATION_HEARTBEAT_STALE` 暂停新执行；`EXECUTOR_APPROVAL_CHANGED` 要求重新匹配批准并登记。界面「节点管理 → 应用统一接入」汇总这些节点、预算和应用状态，并提供已接入执行的停止入口。
 
 <a id="vllm-registration"></a>
 ## vLLM 主动注册与生命周期

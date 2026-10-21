@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {ref,onMounted,onUnmounted,computed} from 'vue'
 import Icon from './Icon.vue'
+import ApplicationIntegrations from './ApplicationIntegrations.vue'
 const props=defineProps<{request:(path:string,body?:unknown,method?:string)=>Promise<any>,nodes:any[],apiUrl:string,t:(value:string)=>string,locale:string}>()
 const emit=defineEmits<{refresh:[]}>()
 const data=ref<any>({nodes:[],executors:[],enrollments:[],service_identities:[],events:[]})
@@ -38,6 +39,7 @@ onMounted(()=>{void refresh();timer=setInterval(refresh,5000)})
 onUnmounted(()=>{clearInterval(timer);secret.value=null})
 </script>
 <template>
+ <ApplicationIntegrations :request="request" :t="t"/>
  <section class="node-management">
   <div class="management-intro panel"><div><h2>{{t('节点管理')}}</h2><p>{{t('节点由 VOS 应用发现和管理；已有部署继续由所属应用负责。')}}</p></div><a class="button quiet" href="/app/com.ictrek.modelinfer/" target="_blank" rel="noopener">{{t('打开 ModelInfer 管理')}}</a></div>
   <div v-if="error" class="error" role="alert">{{error}}</div>

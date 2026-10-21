@@ -104,3 +104,7 @@ HTTP 429 的 `WAIT_MEMORY_HEADROOM` 表示观测可用 RAM 小于本次预算、
 内置 Ollama 权重更新和删除会先核验驻留卸载及未释放预约；有排队、执行或下载任务时返回 409，请在任务结束后重试。自动资源绑定按当前原生模型大小核对；未完成绑定返回 `503 MODEL_BINDING_PENDING`，不会沿用旧权重的预算。旧 Model Hub 或直接操作原生管理端口的写入方，应先停止该模型并确认卸载，再变更共享权重；进程内互斥不覆盖外部写入方。
 
 开启内置 Ollama 驻留后，已验证身份未提供排队头的同步请求默认等待最多 30 秒；显式 `X-VScheduler-Queue-Wait-Seconds: 0` 保持立即准入。匿名及其他后端请求保持原行为，所有等待仍核验真实资源与停止屏障。
+
+## 应用统一生命周期协议
+
+调度命名空间新增 `GET/POST /integrations`、`POST /integrations/heartbeat`、`POST /permits/{id}/stop` 和 `POST /permits/{id}/stopped`。服务身份按 app 隔离，登记仅引用已批准的执行器；应用心跳不能上报或提高节点预算。停止请求保持预约，回执核验原执行身份及退出/卸载证据后才释放。既有自动绑定保持兼容。完整字段、时序与错误见[统一流程](application-integration.md#unified-lifecycle)及 OpenAPI。

@@ -43,3 +43,7 @@ Aliases in one row reach the same container/port. `host.docker.internal` is the 
 The gateway also proxies scheduling at port 22888 `/scheduler/api/v1/*` and model management at `/model-hub/api/v1/*`. The VOS UI uses `/app/com.ictrek.v-scheduler/`; the model-management API uses `/app/com.ictrek.v-scheduler/model-hub/api/v1/*`; the gateway API prefix is `/api/com.ictrek.v-scheduler`. Use the unified gateway `/v1/*` for cross-backend model names and scheduling. Retain the original Model Hub installer-selected public directory to adopt existing models in place.
 
 With idle retention enabled, verified callers to built-in Ollama wait up to 30 seconds by default for model handoff and concurrent work. Explicit X-VScheduler-Queue-Wait-Seconds: 0 preserves immediate admission. Anonymous callers and other backends keep the previous behavior.
+
+### Unified application integration
+
+Node management now combines application heartbeats, node health, approved budgets and stop requests. Applications register approved executors through the controller `/integrations` API and follow the returned heartbeat interval. Reservations are released only after the original execution identity confirms native exit and weight unloading. VOS App components report node telemetry automatically; users do not deploy Agents or use SSH. Existing automatic bindings remain compatible; applications without the new stop protocol are not presented as fully managed. See API Documentation → Application integration and the repository integration guide.
