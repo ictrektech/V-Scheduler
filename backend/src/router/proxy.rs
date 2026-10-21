@@ -69,6 +69,10 @@ fn clean_headers(headers: &HeaderMap) -> HeaderMap {
         "x-vrouter-upstream",
         "x-vscheduler-queue-wait-seconds",
         "x-vscheduler-priority",
+        "x-vscheduler-preemptible",
+        "x-vscheduler-allow-preemption",
+        "x-vscheduler-force-admission",
+        "x-vscheduler-admin-authorization",
         "x-vscheduler-request-id",
         "cookie",
         // Browser origin belongs to this gateway; upstream calls are server-to-server.
@@ -604,6 +608,8 @@ pub(super) async fn handle(g: Arc<Gateway>, id: Identity, request: Request) -> A
             exchange._model_guard=crate::modelhub::inference_guard(&native).await.map_err(|e|Failure::new(409,e.to_string()))?;
             value["keep_alive"]=json!(g.residency.seconds());
         }
+        let scheduling = queue::scheduling(&headers, &id)?;
+        if scheduling.preemptible || scheduling.allow_preemption || scheduling.force_admission { value["keep_alive"] = json!(0); }
         exchange.retained = u.source=="v-scheduler" && value["keep_alive"].as_u64().unwrap_or(0)>0;
         // Retained owned models must hand off their exclusive reservation to
         // concurrent existing clients as well. Only verified identities get

@@ -746,6 +746,168 @@
         ],
         "gpu_memory_method": "CPU inference uses system RAM only"
       }
+    },
+    {
+      "app_id": "com.ictrek.image-studio",
+      "architecture": "aarch64",
+      "profile": "l4t",
+      "hardware": [
+        {
+          "name": "Orin (nvgpu)",
+          "memory_type": "unified"
+        }
+      ],
+      "execution_settings": {
+        "profile": "l4t",
+        "runtime": "stable-diffusion.cpp",
+        "logical_cpu_count": 8,
+        "max_concurrency": 1,
+        "sd_cpp_extra_args_sha256": "d020f4ca7c181c781d4ef5f4343d0bb4410a8806ce547538fac1e6b92a123579"
+      },
+      "model_id": "sd-turbo",
+      "task_type": "image.generate",
+      "resources": {
+        "cpu_millicores": 4500,
+        "memory_mib": 3072,
+        "gpu_slots": 1,
+        "gpu_memory_mib": 0
+      },
+      "evidence": {
+        "id": "image-tc192-bounded-20261021",
+        "image_digest": "sha256:dfb533214850ade99a168a844df555726e0ffd6d2978130feff24f52484b48d7",
+        "peak_memory_mib": 2471,
+        "peak_gpu_memory_mib": null,
+        "memory_method": "maximum of cgroup measured peak and host available-memory decrease; unified memory counted once",
+        "observed_peak_cpu_millicores": 3906,
+        "confirmed_stopped": true
+      },
+      "max_input_bytes": 65536,
+      "model_limits": {
+        "width": 512,
+        "height": 512,
+        "steps": 4,
+        "batch_count": 1,
+        "video_frames": 0,
+        "prompt_characters": 4000,
+        "negative_prompt_characters": 4000,
+        "hires_width": 0,
+        "hires_height": 0,
+        "hires_steps": 0
+      },
+      "model_parameters": {
+        "weight_type": "q4_0",
+        "tensor_type_rules": "",
+        "cache_mode": "",
+        "cache_option": "",
+        "qwen_image_layers": 0,
+        "vae_tiling": true,
+        "vae_tile_size": "",
+        "vae_tile_overlap": 0.5,
+        "temporal_tiling": false,
+        "temporal_tile_frames": 4,
+        "temporal_tile_overlap": 1,
+        "max_vram": 2.0,
+        "stream_layers": false,
+        "auto_fit": false,
+        "clip_on_cpu": false,
+        "offload_to_cpu": false,
+        "vae_cpu_fallback": false,
+        "backend": "",
+        "params_backend": "",
+        "has_reference": false
+      },
+      "limits": {
+        "width": 512,
+        "height": 512,
+        "steps": 4,
+        "num_inference_steps": 4,
+        "n": 1,
+        "batch_count": 1,
+        "batch_size": 1,
+        "video_frames": 0,
+        "num_frames": 0
+      }
+    },
+    {
+      "app_id": "com.ictrek.image-studio",
+      "architecture": "x86_64",
+      "profile": "amd-cuda",
+      "hardware": [
+        {
+          "name": "NVIDIA RTX 5880 Ada Generation",
+          "memory_type": "dedicated"
+        }
+      ],
+      "execution_settings": {
+        "profile": "amd-cuda",
+        "runtime": "stable-diffusion.cpp",
+        "logical_cpu_count": 128,
+        "max_concurrency": 1,
+        "sd_cpp_extra_args_sha256": "d020f4ca7c181c781d4ef5f4343d0bb4410a8806ce547538fac1e6b92a123579"
+      },
+      "model_id": "sd-turbo",
+      "task_type": "image.generate",
+      "resources": {
+        "cpu_millicores": 4500,
+        "memory_mib": 8192,
+        "gpu_slots": 1,
+        "gpu_memory_mib": 6144
+      },
+      "evidence": {
+        "id": "image-local-bounded-20261021",
+        "image_digest": "sha256:fefb58c520f6af1fdf9ad7b9d15ecdfa9135631157755c65d2f45c462eb6340e",
+        "peak_memory_mib": 5789,
+        "peak_gpu_memory_mib": 3340,
+        "memory_method": "maximum of cgroup measured peak and host available-memory decrease; unified memory counted once",
+        "observed_peak_cpu_millicores": 3973,
+        "confirmed_stopped": true
+      },
+      "max_input_bytes": 65536,
+      "model_limits": {
+        "width": 512,
+        "height": 512,
+        "steps": 4,
+        "batch_count": 1,
+        "video_frames": 0,
+        "prompt_characters": 4000,
+        "negative_prompt_characters": 4000,
+        "hires_width": 0,
+        "hires_height": 0,
+        "hires_steps": 0
+      },
+      "model_parameters": {
+        "weight_type": "f16",
+        "tensor_type_rules": "",
+        "cache_mode": "",
+        "cache_option": "",
+        "qwen_image_layers": 0,
+        "vae_tiling": true,
+        "vae_tile_size": "",
+        "vae_tile_overlap": 0.5,
+        "temporal_tiling": false,
+        "temporal_tile_frames": 4,
+        "temporal_tile_overlap": 1,
+        "max_vram": 0.0,
+        "stream_layers": false,
+        "auto_fit": false,
+        "clip_on_cpu": false,
+        "offload_to_cpu": false,
+        "vae_cpu_fallback": false,
+        "backend": "",
+        "params_backend": "",
+        "has_reference": false
+      },
+      "limits": {
+        "width": 512,
+        "height": 512,
+        "steps": 4,
+        "num_inference_steps": 4,
+        "n": 1,
+        "batch_count": 1,
+        "batch_size": 1,
+        "video_frames": 0,
+        "num_frames": 0
+      }
     }
   ]
 }

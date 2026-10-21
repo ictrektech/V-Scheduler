@@ -41,6 +41,7 @@ pub(super) async fn room(
     memory: Option<i64>,
     queue_id: Option<&str>,
     app_id: &str,
+    options: &Scheduling,
 ) -> Api<()> {
     ready(node, executor)?;
     let report = admission_report(&node.get("report"), memory);
@@ -58,18 +59,19 @@ pub(super) async fn room(
         used.add(&serde_json::from_value(row.get("resources")).map_err(|_| invalid())?);
     }
     let queued: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM vrs_tasks t WHERE node=$1 AND status='queued' AND floor(extract(epoch FROM (now()-t.created_at))/30)>=COALESCE((SELECT priority+floor(extract(epoch FROM (now()-arrived_at))/30) FROM vrs_inference_waiters WHERE app=$2 AND id=$3 AND node=$1 AND executor=$4 AND valid_until>now()),0))",
+        "SELECT EXISTS(SELECT 1 FROM vrs_tasks t WHERE node=$1 AND status='queued' AND vrs_priority(t.body->'scheduling')+floor(extract(epoch FROM (now()-t.created_at))/30)>=COALESCE((SELECT priority+floor(extract(epoch FROM (now()-arrived_at))/30) FROM vrs_inference_waiters WHERE app=$2 AND id=$3 AND node=$1 AND executor=$4 AND valid_until>now()),$5))",
     )
     .bind(&id)
     .bind(app_id)
     .bind(queue_id)
     .bind(executor)
+    .bind(options.priority.score())
     .fetch_one(&mut **tx)
     .await
     .map_err(unavailable)?;
     let reserve: Resources =
         serde_json::from_value(node.get("safety_reserve")).map_err(|_| invalid())?;
-    if queued || !cost.fits(&used, &capacity) || !cost.fits_guarded(&used, &report, &reserve) {
+    if queued || !cost.fits(&used, &capacity) || !cost.fits_guarded_with_policy(&used, &report, &reserve, options.force_admission) {
         let pending_stop: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM vrs_permits WHERE node=$1 AND state='suspect') OR EXISTS(SELECT 1 FROM vrs_reservations WHERE node=$1 AND state='suspect')")
             .bind(&id).fetch_one(&mut **tx).await.map_err(unavailable)?;
         return Err(Error(
@@ -79,7 +81,7 @@ pub(super) async fn room(
             } else if !queued
                 && cost.fits(&used, &capacity)
                 && report["memory_available_mib"].as_i64().unwrap_or(0)
-                    < cost.host_memory_need(&used, &report, &reserve)
+                    < cost.host_memory_need_with_policy(&used, &report, &reserve, options.force_admission)
             {
                 "WAIT_MEMORY_HEADROOM"
             } else {

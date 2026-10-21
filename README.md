@@ -239,3 +239,23 @@ V-Voice 混合绑定同时包含旧语音审批和新音乐输入边界时，双
 ### 执行应用的自动生命周期
 
 支持该协议的 V-Voice（含配乐）、V-Sub、Desensitize、Image Studio 在 VOS 安装及可信绑定后自动登记批准执行器、维护应用心跳。无需用户部署 Agent，节点遥测继续由本应用采集。节点管理的「应用统一接入」同时显示节点新鲜度、预算、同步执行及异步任务；「停止并卸载」或「取消」只有在执行端确认原生退出和模型卸载后才释放预约。已确认回执保存在执行应用私有目录，重启后可重试；未知停止继续占用预约。调用方 V-ChatCut、HybRAG 不重复申报执行端资源。详见[统一流程](docs/application-integration.md#unified-lifecycle)。
+
+
+### 任务优先级与协作让出
+
+向本应用的推理接口发送请求时，可选传入以下请求头：
+`X-VScheduler-Priority: background|interactive|high`、
+`X-VScheduler-Preemptible: true|false`、
+`X-VScheduler-Allow-Preemption: true|false`、
+`X-VScheduler-Force-Admission: true|false`。
+默认后台优先级，三个开关均关闭。抢占需要当前任务同意让出且新任务允许抢占；
+原生执行退出、模型卸载确认前仍占用预算。同步调用停止后由调用方决定是否重新提交，
+不会自动重放。强制尝试须携带当前管理员的 Bearer 身份，由 V-Scheduler 核验，
+不突破批准预算、停止屏障或至少 1 GiB 内存余量；凭证不写入任务。
+完整流程见 [V-Scheduler 统一接入指南](https://github.com/ictrektech/V-Scheduler/blob/main/docs/application-integration.md)。
+
+异步 Image Studio 可声明 `scheduling.preemptible:true`，原生进程确认退出后
+使用新的 attempt/fence 从头重跑；同步请求仅停止，不自动重放。
+任务 API 使用 `scheduling` JSON 对象，统一推理入口使用上述请求头。
+统一内存节点可显式设置 `safety_reserve.memory_mib: 1024`；未配置的节点继续
+使用自动安全余量。强制尝试由管理员授权并留有审计。

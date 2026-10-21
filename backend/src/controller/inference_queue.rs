@@ -23,7 +23,7 @@ pub(super) async fn update(
             .id
             .bytes()
             .all(|c| c.is_ascii_alphanumeric() || b"_-".contains(&c))
-        || !(0..=1).contains(&b.priority)
+        || !(0..=2).contains(&b.priority)
     {
         return Err(invalid());
     }

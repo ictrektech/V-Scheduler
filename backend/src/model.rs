@@ -66,6 +66,9 @@ impl Resources {
     // in the latest sample yet. Count all commitments conservatively against
     // available memory; observed utilization is never a free capacity promise.
     pub fn host_memory_need(&self, used: &Self, observed: &Value, reserve: &Self) -> i64 {
+        self.host_memory_need_with_policy(used, observed, reserve, false)
+    }
+    pub fn host_memory_need_with_policy(&self, used: &Self, observed: &Value, reserve: &Self, force: bool) -> i64 {
         let mut committed = used.clone();
         committed.add(self);
         let unified = observed["gpus"]
@@ -73,15 +76,18 @@ impl Resources {
             .is_some_and(|gpus| gpus.iter().any(|gpu| gpu["memory_type"] == "unified"));
         committed
             .memory_mib
-            .saturating_add(reserve.safety_floor(observed).memory_mib)
+            .saturating_add(reserve.admission_floor(observed, force).memory_mib)
             .saturating_add(if unified { committed.gpu_memory_mib } else { 0 })
     }
 
     pub fn fits_guarded(&self, used: &Self, observed: &Value, reserve: &Self) -> bool {
+        self.fits_guarded_with_policy(used, observed, reserve, false)
+    }
+    pub fn fits_guarded_with_policy(&self, used: &Self, observed: &Value, reserve: &Self, force: bool) -> bool {
         if !self.valid() || !used.valid() || !reserve.valid() {
             return false;
         }
-        if self.cpu_millicores > 0
+        if !force && self.cpu_millicores > 0
             && observed["cpu_used_percent"]
                 .as_f64()
                 .is_some_and(|n| n >= 95.0)
@@ -90,7 +96,7 @@ impl Resources {
         }
         let mut committed = used.clone();
         committed.add(self);
-        let headroom = reserve.safety_floor(observed);
+        let headroom = reserve.admission_floor(observed, force);
         if let Some(cores) = observed["cpu_logical_count"].as_i64().filter(|n| *n > 0) {
             if committed
                 .cpu_millicores
@@ -103,7 +109,7 @@ impl Resources {
         let unified = observed["gpus"]
             .as_array()
             .is_some_and(|gpus| gpus.iter().any(|gpu| gpu["memory_type"] == "unified"));
-        let host_need = self.host_memory_need(used, observed, reserve);
+        let host_need = self.host_memory_need_with_policy(used, observed, reserve, force);
         if observed["memory_available_mib"].as_i64().unwrap_or(0) < host_need {
             return false;
         }
@@ -145,15 +151,48 @@ impl Resources {
                 } else {
                     1000
                 }),
-            memory_mib: self.memory_mib.max(2048).max(total / 10),
+            // An explicit unified-memory reserve is one host pool, not a
+            // second CUDA reserve. Unconfigured nodes retain the auto floor.
+            memory_mib: if self.memory_mib > 0 && observed["gpus"].as_array()
+                .is_some_and(|g| g.iter().any(|v| v["memory_type"] == "unified")) {
+                self.memory_mib.max(1024)
+            } else { self.memory_mib.max(2048).max(total / 10) },
             gpu_memory_mib: self.gpu_memory_mib.max(256).max(gpu_total / 20),
             ..self.clone()
         }
+    }
+    fn admission_floor(&self, observed: &Value, force: bool) -> Self {
+        if !force { return self.safety_floor(observed); }
+        // Operator override relaxes soft headroom, never the actual model
+        // budget, hardware capacity, liveness or native-stop barrier.
+        Self { cpu_millicores: 500, memory_mib: 1024, gpu_memory_mib: 256, gpu_slots: 0 }
     }
 }
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn explicit_unified_one_gib_reserve_and_force_keep_a_hard_floor() {
+        let mut report = serde_json::json!({"memory_total_mib":16384,"memory_available_mib":4096,"cpu_logical_count":8,"cpu_used_percent":10,"gpus":[{"memory_type":"unified","total_mib":16384}]});
+        let cost = Resources {memory_mib:3072, ..Default::default()};
+        let reserve = Resources {memory_mib:1024, ..Default::default()};
+        assert!(!cost.fits_guarded(&Resources::default(),&report,&Resources::default()));
+        assert!(cost.fits_guarded(&Resources::default(),&report,&reserve));
+        assert!(cost.fits_guarded_with_policy(&Resources::default(),&report,&Resources::default(),true));
+        report["memory_available_mib"]=serde_json::json!(4095);
+        assert!(!cost.fits_guarded_with_policy(&Resources::default(),&report,&Resources::default(),true));
+        report["gpus"][0]["memory_type"]=serde_json::json!("dedicated");
+        assert!(reserve.safety_floor(&report).memory_mib>=2048);
+    }
+    #[test]
+    fn scheduling_is_strict_and_default_preserves_legacy_envelope_hash() {
+        let body=serde_json::json!({"protocol_version":1,"app_task_id":"old","executor":{"id":"test","contract_version":"1","task_type":"test"},"parameters":{},"inputs":[],"idempotency_key":null});
+        let parsed:TaskSubmit=serde_json::from_value(body.clone()).unwrap();
+        assert_eq!(serde_json::to_value(parsed).unwrap(),body);
+        assert!(serde_json::from_value::<Scheduling>(serde_json::json!({"priority":"arbitrary"})).is_err());
+        assert!(serde_json::from_value::<Scheduling>(serde_json::json!({"force_admission":"true"})).is_err());
+        assert!(serde_json::from_value::<Scheduling>(serde_json::json!({"resource_budget":1})).is_err());
+    }
     #[test]
     fn admission_keeps_host_headroom_and_counts_unmaterialized_reservations() {
         let request = Resources {
@@ -387,6 +426,30 @@ pub struct TaskSubmit {
     pub inputs: Vec<Value>,
     #[serde(default)]
     pub idempotency_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Scheduling::is_default")]
+    pub scheduling: Scheduling,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct Scheduling {
+    #[serde(default)]
+    pub priority: Priority,
+    #[serde(default)]
+    pub preemptible: bool,
+    #[serde(default)]
+    pub allow_preemption: bool,
+    #[serde(default)]
+    pub force_admission: bool,
+}
+impl Scheduling {
+    pub fn is_default(&self) -> bool { self == &Self::default() }
+}
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Priority { #[default] Background, Interactive, High }
+impl Priority {
+    pub fn score(self) -> i64 { match self { Self::Background => 0, Self::Interactive => 1, Self::High => 2 } }
 }
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -399,6 +462,8 @@ pub struct Command {
     pub parameters: Value,
     pub lease_seconds: u64,
     pub cancel: bool,
+    #[serde(default)]
+    pub preempted: bool,
 }
 
 // Operator-approved persistent overlays; credentials remain in their own stores.

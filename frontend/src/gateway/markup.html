@@ -166,6 +166,11 @@
                 </div>
                 <div class="field">
                   <label class="check"><input type="checkbox" id="pgStream" checked /> 流式输出</label>
+                  <label>任务优先级</label><select id="pgPriority"><option value="background">后台</option><option value="interactive" selected>交互</option><option value="high">高优先级</option></select>
+                  <label class="check"><input type="checkbox" id="pgPreemptible" /> 允许本次请求被抢占</label>
+                  <label class="check"><input type="checkbox" id="pgAllowPreemption" /> 请求低优先级任务让出资源</label>
+                  <label class="check" id="pgForceRow" hidden><input type="checkbox" id="pgForceAdmission" /> 管理员强制尝试</label>
+                  <div class="hint">默认不抢占。同步请求中断后需由调用方重试；强制尝试仍保留模型预算及至少 1 GiB 系统内存。</div>
                 </div>
                 <div class="pg-note muted">
                   通过所选 <span class="mono">/v1/*</span> 接口发送真实请求，用于验证模型和协议路由。

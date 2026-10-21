@@ -147,11 +147,17 @@ pub(super) async fn call(
     body: Value,
     idempotent: bool,
 ) -> Api<Value> {
+    call_authorized(g, token, path, body, idempotent, None).await
+}
+async fn call_authorized(g: &Gateway, token: &str, path: &str, body: Value, idempotent: bool, operator: Option<&axum::http::HeaderValue>) -> Api<Value> {
     let mut req = axum::http::Request::builder()
         .method("POST")
         .uri(format!("/api/v1{path}"))
         .header("authorization", format!("Bearer {token}"))
         .header("content-type", "application/json");
+    if let Some(operator) = operator {
+        req = req.header("x-vscheduler-admin-authorization", operator);
+    }
     if idempotent {
         req = req.header("idempotency-key", uuid::Uuid::new_v4().to_string());
     }
@@ -599,6 +605,9 @@ pub(super) async fn acquire(
         }
         "/permits"
     };
+    let options = queue::scheduling(headers, id)?;
+    if path == "/permits" { body["scheduling"] = json!(options); }
+    let operator = if options.force_admission { headers.get("authorization") } else { None };
     let ticket = if path == "/permits" {
         queue::Ticket::enter(g.clone(), id, headers, model)?
     } else {
@@ -623,13 +632,15 @@ pub(super) async fn acquire(
                 }
             }
             ticket.heartbeat(&token, &executor).await?;
-            if let Some(mut lease) = residency::take(&g, approval, u, model).await? {
+            if !options.preemptible && !options.allow_preemption && !options.force_admission {
+              if let Some(mut lease) = residency::take(&g, approval, u, model).await? {
                 ticket.check()?;
                 lease.request_slot = request_slot.take();
                 return Ok(lease);
+              }
             }
             body["queue_id"] = json!(ticket.id);
-            match call(&g, &token, path, body.clone(), true).await {
+            match call_authorized(&g, &token, path, body.clone(), true, operator).await {
                 Err(error) if error.status == StatusCode::TOO_MANY_REQUESTS => {
                     ticket.reason(error.code.as_deref().unwrap_or("WAIT_RESOURCE"));
                     tokio::time::sleep(Duration::from_millis(200)).await;
@@ -652,11 +663,15 @@ pub(super) async fn acquire(
                     "inference queue has waiting requests; use bounded queue admission",
                 ));
             }
-            if let Some(lease) = residency::take(&g, approval, u, model).await? {
+            if !options.preemptible && !options.allow_preemption && !options.force_admission {
+              if let Some(lease) = residency::take(&g, approval, u, model).await? {
                 return Ok(lease);
+              }
             }
         }
-        admit(&g, &token, path, body, Duration::from_secs(8)).await?
+        if options != crate::model::Scheduling::default() {
+            call_authorized(&g, &token, path, body, true, operator).await?
+        } else { admit(&g, &token, path, body, Duration::from_secs(8)).await? }
     };
     let permit = text(&response, "permit_id").to_string();
     if permit.is_empty() {

@@ -1,5 +1,14 @@
 "use strict";
 export const VRouterMessages = {
+"任务优先级":{"en": "Task priority", "zh-TW": "任務優先級"},
+"后台":{"en": "Background", "zh-TW": "背景"},
+"交互":{"en": "Interactive", "zh-TW": "互動"},
+"高优先级":{"en": "High priority", "zh-TW": "高優先級"},
+"允许本次请求被抢占":{"en": "Allow this request to be preempted", "zh-TW": "允許本次請求被搶占"},
+"请求低优先级任务让出资源":{"en": "Request lower-priority work to yield resources", "zh-TW": "請求低優先級任務讓出資源"},
+"管理员强制尝试":{"en": "Administrator force attempt", "zh-TW": "管理員強制嘗試"},
+"默认不抢占。同步请求中断后需由调用方重试；强制尝试仍保留模型预算及至少 1 GiB 系统内存。":{"en": "Preemption is off by default. Interrupted synchronous requests require caller retry. Force attempts retain the model budget and at least 1 GiB of host memory.", "zh-TW": "預設不搶占。同步請求中斷後需由呼叫方重試；強制嘗試仍保留模型預算及至少 1 GiB 系統記憶體。"},
+
 "等待排队或服务响应":{"en": "Waiting for admission or service response", "zh-TW": "等待排隊或服務回應"},
 "等待计算资源":{"en": "Waiting for compute resources", "zh-TW": "等待計算資源"},
 

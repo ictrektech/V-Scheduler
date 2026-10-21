@@ -318,7 +318,7 @@ pub(super) async fn list(State(a): State<App>, h: HeaderMap) -> Api<Json<Value>>
         let executions:Vec<Value>=running.iter().map(|r|{let m:Value=r.get("metadata");json!({"permit_id":r.get::<String,_>("id"),"executor_id":r.get::<String,_>("executor"),"model_id":m["model_id"],"state":r.get::<String,_>("state"),"stop_requested":r.get::<Option<DateTime<Utc>>,_>("requested_at").is_some()})}).collect();
         let task_rows=sqlx::query("SELECT id,app,status,body FROM vrs_tasks WHERE status IN ('queued','assigned','running','cancelling','recovering') AND EXISTS(SELECT 1 FROM jsonb_array_elements($1::jsonb) x WHERE x->>'id'=body->'executor'->>'id') AND ($2 OR app=$3) ORDER BY created_at LIMIT 64")
             .bind(&manifest["executors"]).bind(p.role=="admin").bind(&p.app_id).fetch_all(&a.db).await.map_err(unavailable)?;
-        let tasks:Vec<Value>=task_rows.iter().map(|r|{let body:Value=r.get("body");json!({"task_id":r.get::<String,_>("id"),"status":r.get::<String,_>("status"),"executor_id":body["executor"]["id"]})}).collect();
+        let tasks:Vec<Value>=task_rows.iter().map(|r|{let body:Value=r.get("body");json!({"task_id":r.get::<String,_>("id"),"status":r.get::<String,_>("status"),"executor_id":body["executor"]["id"],"scheduling":body["scheduling"],"preemption":body["_scheduler_preemption"]})}).collect();
         items.push(json!({"app_id":row.get::<String,_>("app_id"),"revision":row.get::<i64,_>("revision"),"heartbeat":row.get::<DateTime<Utc>,_>("heartbeat"),"fresh":row.get::<bool,_>("fresh"),"executors":executors,"stop_protocol":manifest["stop_protocol"],"executions":executions,"tasks":tasks}));
     }
     Ok(ok(

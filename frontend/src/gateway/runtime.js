@@ -230,6 +230,8 @@ const app = {
   renderUser(status) {
     const chip = $("userChip"), offline = $("userOffline");
     const user = status?.user;
+    $("pgForceRow").hidden = !status?.is_admin;
+    if (!status?.is_admin) $("pgForceAdmission").checked = false;
     if (user) {
       chip.hidden = false; offline.hidden = true;
       $("userName").textContent = user;
@@ -1109,7 +1111,10 @@ const app = {
       headers["Content-Type"] = "application/json";
       headers["X-VRouter-Upstream"] = pinned;
       headers["X-VScheduler-Queue-Wait-Seconds"] = "120";
-      headers["X-VScheduler-Priority"] = "interactive";
+      headers["X-VScheduler-Priority"] = $("pgPriority").value;
+      headers["X-VScheduler-Preemptible"] = String($("pgPreemptible").checked);
+      headers["X-VScheduler-Allow-Preemption"] = String($("pgAllowPreemption").checked);
+      headers["X-VScheduler-Force-Admission"] = String($("pgForceAdmission").checked);
       headers["X-VScheduler-Request-ID"] = queueId;
       const body = this.playgroundRequestBody(endpoint.id, native, text, stream);
       const res = await fetch(API + "/v1" + endpoint.path, {
@@ -1240,7 +1245,7 @@ const iconTimer = () => '<svg viewBox="0 0 24 24" fill="none" stroke="currentCol
 
 const localeChanged = () => {
   // Rerender chrome, keeping the chat transcript and edited form values intact.
-  const ids = ["pgModel", "pgEndpoint", "pgUpstream"];
+  const ids = ["pgModel", "pgEndpoint", "pgUpstream", "pgPriority"];
   const selected = ids.map(id => $(id).value);
   const streaming = $("pgStream").checked;
   app.renderAll(true);

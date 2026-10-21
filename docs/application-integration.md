@@ -175,6 +175,38 @@ HybRAG 从「已注册的 V-Scheduler 模型」选择这两个调用名，embedd
 
 应用安装后的可信管理流程按实际 profile、硬件、模型和运行设置匹配校准，自动交接独立服务身份及已批准 executor。已存在的管理 API 负责预算批准和修改：`POST /nodes/{id}`、`POST /executors/{id}` 使用当前 version，不能在仍有未停止执行时缩减或撤销。普通调用者不能自批资源；未匹配校准的组合保持未就绪。外部 ModelInfer 节点仍须通过所属 VOS App 的执行、停止和恢复验证，监控可见不代表可以执行。
 
+### 优先级、协作抢占与管理员强制尝试
+
+`POST /tasks` 和 `POST /permits` 都接受可选的 `scheduling`；未传时保持旧请求语义，默认不允许抢占，也不允许被抢占。
+
+```json
+{
+  "scheduling": {
+    "priority": "high",
+    "preemptible": false,
+    "allow_preemption": true,
+    "force_admission": false
+  }
+}
+```
+
+| 参数 | 含义与边界 |
+|---|---|
+| `priority` | `background`、`interactive`、`high`，分别为基础等级 0、1、2；等待每 30 秒加一级，同分按到达顺序，防止后台任务长期饥饿。 |
+| `preemptible` | 当前执行允许被更高优先级请求停止。异步任务仅接受已批准 `retry_mode=idempotent` 且有剩余尝试次数的执行器；不支持重启的执行器在提交时明确拒绝。 |
+| `allow_preemption` | 请求低优先级且显式允许被抢占的执行让出资源。只发停止意图，不直接释放预约；旧执行和权重确认退出后才运行新执行。 |
+| `force_admission` | 默认关闭。管理员显式尝试较低的软余量，不改变模型预算、已占用资源、硬件容量、独立身份、节点新鲜度或停止证明；至少保留 1 GiB 主机内存及独立显存硬余量。仍可能返回资源不足。 |
+
+网关 `/v1/*` 对应使用 `X-VScheduler-Priority`、`X-VScheduler-Preemptible`、`X-VScheduler-Allow-Preemption`、`X-VScheduler-Force-Admission`，布尔头只接受 `true` / `false`。建议同时设置 `X-VScheduler-Queue-Wait-Seconds: 120` 和唯一 `X-VScheduler-Request-ID`，总超时覆盖排队、冷加载和推理。试聊中也可选择优先级、双向抢占意图及管理员强制尝试。
+
+强制尝试由控制器再次核验管理员身份：普通应用服务身份仍用于任务归属，额外以 `X-VScheduler-Admin-Authorization: Bearer <VOS 管理员 token>` 提交当前管理员身份；网关使用已核验的当前管理员登录身份交接。该身份只在当前请求传递，不写入任务、执行日志或重启回放；缺少/失效身份会拒绝强制请求。普通应用不能凭 `force_admission: true` 自行提升权限，成功的强制申请有独立审计记录。
+
+高优先级**排队任务**可以先于低优先级进入执行；**运行任务**只有双边显式同意才会协作停止。Image Studio 声明 `preemption_modes: ["restart"]` 后，旧 sd-cli 退出且预约释放，任务回到队列，使用新 attempt/fence 从头重跑，最多受已批准尝试次数限制。若旧执行已完成成功则保留成功，不重复生成；用户主动取消优先于重排。没有声明断点能力时不称作暂停续跑。V-Voice、V-Sub、Desensitize 的同步执行被抢占后不会重放原始请求，调用方收到中断/失败后自行决定是否重新提交。
+
+各 App 的调用方式：V-Voice、V-Sub、Desensitize 接受上述请求头并通过私有身份转交给控制器；Image Studio 的图像/视频生成 JSON 接受上述 `scheduling` 对象，参数随原生任务持久化，管理员身份不持久化。队列视图与任务详情显示优先级、是否允许停止重排及抢占原因。跨应用调用继续只预约实际执行端的一份预算，不能同时重新申请第二份外层许可。
+
+统一内存节点可以经管理员节点配置明确设置 `safety_reserve.memory_mib: 1024`；这只针对该节点的一份主机/CUDA 共享内存池。未配置时保留原自动安全余量，独立显存节点保持原策略。准入条件仍是「实际可用内存 ≥ 未兑现预约 + 本次实测预算 + 生效安全保留」，不是余量有 1 GiB 就运行任意模型。192 的 SD-Turbo 使用本机校准的 Q4 / `max_vram=2` 低内存参数，原共享权重不变；232 使用独立校准的 FP16 与显存预算，不套用另一台的结果。
+
 ### 2. 应用登记与定时心跳
 
 以下路径都属于调度命名空间。容器直连根为 `http://v-scheduler:38120/api/v1`，经过统一网关为 `http://v-scheduler:8080/scheduler/api/v1`；宿主机默认分别为 `http://<vos-host>:38120/api/v1` 和 `http://<vos-host>:22888/scheduler/api/v1`。旧别名只供兼容，详见上方端口表。

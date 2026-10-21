@@ -384,6 +384,12 @@ async fn image(
     }
     let (model, variant) = e.native.split_once('@').unwrap_or((&e.native, ""));
     let mut payload = json!({"model_key":model});
+    // Only the fixed first-party executor receives control-plane intent.
+    // Other upstreams never receive operator credentials or scheduling options.
+    if e.u.source == "image-studio" && e.u.base_url == "http://image-studio-backend:5000" {
+        let options = queue::scheduling(&headers, &e.id)?;
+        if !options.is_default() { payload["scheduling"] = json!(options); }
+    }
     if !variant.is_empty() {
         payload["model_variant"] = json!(variant);
     }

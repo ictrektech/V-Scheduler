@@ -31,9 +31,17 @@ defineProps<{t:(value:string)=>string}>()
   <p>{{t('V-Voice（含配乐）、V-Sub、Desensitize 和 Image Studio 在可信绑定后自动登记。调用方 V-ChatCut、HybRAG 复用实际执行端，不重复申报预算。')}}</p>
   <p>{{t('应用私有目录保存已确认停止的回执，重启后继续重试；未知执行不推定停止。阻塞式原生调用须等待实际返回及卸载，异步任务在统一接入页面使用取消。')}}</p>
   <h3>{{t('推理等待队列')}}</h3>
-  <p>{{t('本地推理设置 X-VScheduler-Queue-Wait-Seconds（1..300）、X-VScheduler-Priority（interactive/background）和唯一 X-VScheduler-Request-ID。开启内置驻留且身份已验证时，未设置等待默认等 30 秒；显式 0 保持立即准入。试聊默认等待 120 秒，可查看位置并取消。')}}</p>
+  <p>{{t('本地推理设置 X-VScheduler-Queue-Wait-Seconds（1..300）、X-VScheduler-Priority（background/interactive/high）和唯一 X-VScheduler-Request-ID。开启内置驻留且身份已验证时，未设置等待默认等 30 秒；显式 0 保持立即准入。试聊默认等待 120 秒，可查看位置并取消。')}}</p>
   <p><code>GET /api/v1/inference-queue</code> · <code>DELETE /api/v1/inference-queue/{id}</code></p>
-  <p>{{t('队列按用户和应用隔离；每等待 30 秒提升一级优先级，不抢占运行中的计算。等待不预约资源，重启不重放请求；总超时应覆盖排队、冷加载和推理。')}}</p>
+  <p>{{t('队列按用户和应用隔离；每等待 30 秒提升一级优先级，默认不抢占运行中的计算；协作抢占须双方显式同意。等待不预约资源，重启不重放请求；总超时应覆盖排队、冷加载和推理。')}}</p>
+  <h3>{{t('优先级与协作抢占')}}</h3>
+  <pre>{"scheduling":{"priority":"high","preemptible":false,"allow_preemption":true,"force_admission":false}}</pre>
+  <p>{{t('tasks 和 permits 接受 scheduling；默认不抢占。priority 为 background、interactive 或 high，等待每 30 秒提升一级。高优先级排队先执行；只有双方显式同意才请求低优先级运行任务让出资源。')}}</p>
+  <p><code>X-VScheduler-Priority</code> · <code>X-VScheduler-Preemptible</code> · <code>X-VScheduler-Allow-Preemption</code> · <code>X-VScheduler-Force-Admission</code></p>
+  <p>{{t('V-Voice、V-Sub、Desensitize 通过请求头传递这些参数；Image Studio 的生成 JSON 接受 scheduling。旧执行和权重未确认退出时继续占用预算，不能因抢占请求或超时强行释放。')}}</p>
+  <p>{{t('Image Studio 的可重启任务在确认停止后回队列，使用新 attempt/fence 从头重跑，受已批准尝试次数限制。没有断点能力时不称为暂停；同步调用不会自动重放，用户取消优先于抢占重排。')}}</p>
+  <p>{{t('force_admission 需要控制器再次核验管理员身份并审计；普通应用不能自行启用。通过 X-VScheduler-Admin-Authorization 临时交接当前管理员 token，不写入任务或重启回放。强制尝试仍保留实测预算、硬件容量、节点新鲜度、停止证明及至少 1 GiB 主机内存。')}}</p>
+  <p>{{t('统一内存节点可由管理员明确配置 safety_reserve.memory_mib 为 1024；未配置节点保留自动余量。准入仍须满足本次实测预算、已有预约及安全保留，不能仅因剩余 1 GiB 就运行任意模型。')}}</p>
   <h3>{{t('模型驻留与卸载')}}</h3>
   <p>{{t('在模型仓库的「模型接入状态」设置空闲保留秒数，默认 60，范围 0..600；0 表示每次卸载。驻留保留完整资源预约，同模型可复用；切换或到期先确认卸载再释放。')}}</p>
   <p><code>GET /api/v1/model-residency</code> · <code>PUT /api/v1/model-residency</code> · <code>{"idle_seconds":60}</code></p>

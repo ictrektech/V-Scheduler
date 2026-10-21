@@ -340,7 +340,8 @@
       "application_versions": [
         "0.0.21",
         "0.0.22",
-        "0.0.23"
+        "0.0.23",
+        "0.0.24"
       ]
     },
     {
@@ -359,7 +360,8 @@
       "application_versions": [
         "0.0.21",
         "0.0.22",
-        "0.0.23"
+        "0.0.23",
+        "0.0.24"
       ],
       "input_limits_version": 1,
       "music": {
@@ -448,7 +450,8 @@
       "application_versions": [
         "0.0.21",
         "0.0.22",
-        "0.0.23"
+        "0.0.23",
+        "0.0.24"
       ],
       "input_limits_version": 1,
       "music": {
@@ -537,7 +540,8 @@
       "application_versions": [
         "0.0.21",
         "0.0.22",
-        "0.0.23"
+        "0.0.23",
+        "0.0.24"
       ],
       "input_limits_version": 1,
       "music": {
@@ -626,7 +630,8 @@
       "application_versions": [
         "0.0.21",
         "0.0.22",
-        "0.0.23"
+        "0.0.23",
+        "0.0.24"
       ],
       "input_limits_version": 1,
       "music": {

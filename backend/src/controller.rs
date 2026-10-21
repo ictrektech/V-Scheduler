@@ -1,4 +1,5 @@
 mod allocations;
+mod scheduling;
 mod integrations;
 mod inference_queue;
 mod app_bindings;
@@ -228,7 +229,7 @@ fn task_value(r: &sqlx::postgres::PgRow) -> Value {
     let can_retry = status == "failed"
         && policy["retry_mode"] == "idempotent"
         && r.get::<i64, _>("fence") < policy["max_attempts"].as_i64().unwrap_or(1);
-    json!({"task_id":r.get::<String,_>("id"),"app_task_id":body["app_task_id"],"executor_id":body["executor"]["id"],"can_retry":can_retry,"attempt_count":r.get::<i64,_>("fence"),"app_id":r.get::<String,_>("app"),"status":status,"version":r.get::<i64,_>("version"),"attempt_id":r.get::<Option<String>,_>("attempt"),"node_id":r.get::<Option<String>,_>("node"),"fence":r.get::<i64,_>("fence"),"progress":r.get::<Value,_>("progress"),"result":r.get::<Value,_>("result"),"created_at":r.get::<DateTime<Utc>,_>("created_at"),"wait_reasons":if status=="queued" {json!(["WAIT_RESOURCE_OR_NODE"])} else if status=="retry_wait" {json!(["WAIT_RETRY_BACKOFF"])} else {json!([])}})
+    json!({"task_id":r.get::<String,_>("id"),"app_task_id":body["app_task_id"],"executor_id":body["executor"]["id"],"scheduling":body["scheduling"],"preemption":body["_scheduler_preemption"],"can_retry":can_retry,"attempt_count":r.get::<i64,_>("fence"),"app_id":r.get::<String,_>("app"),"status":status,"version":r.get::<i64,_>("version"),"attempt_id":r.get::<Option<String>,_>("attempt"),"node_id":r.get::<Option<String>,_>("node"),"fence":r.get::<i64,_>("fence"),"progress":r.get::<Value,_>("progress"),"result":r.get::<Value,_>("result"),"created_at":r.get::<DateTime<Utc>,_>("created_at"),"wait_reasons":if status=="queued" {json!(["WAIT_RESOURCE_OR_NODE"])} else if status=="retry_wait" {json!(["WAIT_RETRY_BACKOFF"])} else {json!([])}})
 }
 async fn task_values(a: &App, rows: &[sqlx::postgres::PgRow]) -> Api<Vec<Value>> {
     let mut values: Vec<Value> = rows.iter().map(task_value).collect();
@@ -501,7 +502,7 @@ pub async fn serve(
 }
 async fn discovery() -> Json<Value> {
     ok(
-        json!({"protocol_version":1,"implementation_version":"0.1.0","features":["application-lifecycle-v1","cooperative-model-stop","tasks","idempotency","reservations","events","static-executors","dynamic-enrollment","node-management","modelinfer-discovery","vos-app-source-metrics","source-budget-planning","multi-node-permits","executor-approval","service-identities","agent-image-studio","permits","backend-permit-verification","permit-history","statistics","permit-release-times","interactive-inference-queue","managed-ollama-residency","model-service-linkage","task-timeline","delegated-permits","safety-headroom","retry","manual-delete","attempt-history"],"unsupported":["artifacts","ha","vos-remote-control"],"authentication":"scoped-bearer","max_body_bytes":262144,"openapi_url":"openapi.json"}),
+        json!({"protocol_version":1,"implementation_version":"0.1.0","features":["priority-scheduling-v1","cooperative-preemption-v1","admin-force-admission-v1","application-lifecycle-v1","cooperative-model-stop","tasks","idempotency","reservations","events","static-executors","dynamic-enrollment","node-management","modelinfer-discovery","vos-app-source-metrics","source-budget-planning","multi-node-permits","executor-approval","service-identities","agent-image-studio","permits","backend-permit-verification","permit-history","statistics","permit-release-times","interactive-inference-queue","managed-ollama-residency","model-service-linkage","task-timeline","delegated-permits","safety-headroom","retry","manual-delete","attempt-history"],"unsupported":["artifacts","ha","vos-remote-control"],"authentication":"scoped-bearer","max_body_bytes":262144,"openapi_url":"openapi.json"}),
     )
 }
 async fn executors(State(a): State<App>, h: HeaderMap) -> Api<Json<Value>> {
@@ -546,6 +547,9 @@ async fn submit(State(a): State<App>, h: HeaderMap, Json(body): Json<TaskSubmit>
     if e.task_type == "model.infer" {
         return Err(invalid());
     }
+    if body.scheduling.preemptible && (e.retry_mode != "idempotent" || e.max_attempts < 2) {
+        return Err(Error(StatusCode::UNPROCESSABLE_ENTITY, "EXECUTOR_RESTART_NOT_SUPPORTED"));
+    }
     voice_admission(&a, &e.id)?;
     let mut value = json!(body);
     let hash = format!(
@@ -570,6 +574,10 @@ async fn submit(State(a): State<App>, h: HeaderMap, Json(body): Json<TaskSubmit>
     let insert=sqlx::query("INSERT INTO vrs_tasks(id,app,idem,hash,body,node) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(app,idem) DO NOTHING RETURNING *").bind(&id).bind(&p.app_id).bind(key).bind(&hash).bind(value).bind(&e.node_id).fetch_optional(&mut *tx).await.map_err(unavailable)?;
     let fresh = insert.is_some();
     if fresh {
+        let force_actor = scheduling::authorize(&a, &p, &h, &body.scheduling).await?;
+        if let Some(operator) = &force_actor {
+            management::audit(&mut tx, operator, "scheduling.force", &id).await?;
+        }
         let count:i64=sqlx::query_scalar("SELECT count(*) FROM vrs_tasks WHERE app=$1 AND status IN ('queued','assigned','running','cancelling','recovering')").bind(&p.app_id).fetch_one(&mut *tx).await.map_err(unavailable)?;
         if count > 1000 {
             return Err(Error(StatusCode::TOO_MANY_REQUESTS, "QUOTA_EXCEEDED"));
@@ -657,7 +665,7 @@ async fn cancel(State(a): State<App>, h: HeaderMap, Path(id): Path<String>) -> A
     require(&p, "submitter")?;
     get_task(&a, &p, &id).await?;
     let mut tx = a.db.begin().await.map_err(unavailable)?;
-    let r=sqlx::query("UPDATE vrs_tasks SET status=CASE WHEN status IN ('queued','retry_wait') THEN 'cancelled' ELSE 'cancelling' END,version=version+1,updated_at=now() WHERE id=$1 AND status IN ('queued','retry_wait','assigned','running','recovering') RETURNING *").bind(&id).fetch_optional(&mut *tx).await.map_err(unavailable)?;
+    let r=sqlx::query("UPDATE vrs_tasks SET body=body-'_scheduler_preemption',status=CASE WHEN status IN ('queued','retry_wait') THEN 'cancelled' ELSE 'cancelling' END,version=version+1,updated_at=now() WHERE id=$1 AND status IN ('queued','retry_wait','assigned','running','recovering','cancelling') RETURNING *").bind(&id).fetch_optional(&mut *tx).await.map_err(unavailable)?;
     if r.is_some() {
         event(&mut tx, &id).await?;
     }
@@ -820,6 +828,7 @@ fn command(r: &sqlx::postgres::PgRow) -> Command {
         parameters: body["parameters"].clone(),
         lease_seconds: 30,
         cancel: r.get::<String, _>("status") == "cancelling",
+        preempted: !body["_scheduler_preemption"].is_null(),
     }
 }
 async fn claim(
@@ -832,7 +841,7 @@ async fn claim(
     worker(&p, &id)?;
     expire(&a).await?;
     if a.config.local_agent.as_ref().and_then(|agent|agent["node_id"].as_str())==Some(id.as_str()) {
-        let queued:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM vrs_tasks t WHERE node=$1 AND status='queued' AND NOT EXISTS(SELECT 1 FROM vrs_inference_waiters w WHERE w.node=$1 AND w.valid_until>now() AND w.priority+floor(extract(epoch FROM (now()-w.arrived_at))/30)>floor(extract(epoch FROM (now()-t.created_at))/30)))")
+        let queued:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM vrs_tasks t WHERE node=$1 AND status='queued' AND NOT EXISTS(SELECT 1 FROM vrs_inference_waiters w WHERE w.node=$1 AND w.valid_until>now() AND w.priority+floor(extract(epoch FROM (now()-w.arrived_at))/30)>vrs_priority(t.body->'scheduling')+floor(extract(epoch FROM (now()-t.created_at))/30)))")
             .bind(&id).fetch_one(&a.db).await.map_err(unavailable)?;
         if queued {
             let current:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM vrs_nodes WHERE id=$1 AND session=$2)")
@@ -845,6 +854,15 @@ async fn claim(
     let node=sqlx::query("SELECT *,heartbeat>now()-interval '12 seconds' AS fresh FROM vrs_nodes WHERE id=$1 FOR UPDATE").bind(&id).fetch_one(&mut *tx).await.map_err(unavailable)?;
     if node.get::<Option<String>, _>("session").as_deref() != Some(&b.session_id) {
         return Err(Error(StatusCode::CONFLICT, "WORKER_SESSION_CONFLICT"));
+    }
+    let waiting=sqlx::query("SELECT id,body FROM vrs_tasks WHERE node=$1 AND status='queued' ORDER BY vrs_priority(body->'scheduling')+floor(extract(epoch FROM (now()-created_at))/30) DESC,created_at,id LIMIT 1")
+        .bind(&id).fetch_optional(&mut *tx).await.map_err(unavailable)?;
+    if let Some(waiting) = waiting.filter(|_| node.get::<bool,_>("management_enabled") && !node.get::<bool,_>("draining") && node.get::<Option<bool>,_>("fresh").unwrap_or(false) && report_fresh(&node.get::<Value,_>("report"))) {
+        let options = scheduling::task_options(&waiting.get("body"));
+        let requester: String = waiting.get("id");
+        if scheduling::preempt(&mut tx, &id, &requester, &options).await? {
+            management::audit(&mut tx, &p, "scheduling.preempt-request", &requester).await?;
+        }
     }
     let existing=sqlx::query("SELECT * FROM vrs_tasks WHERE node=$1 AND status IN ('assigned','running','cancelling','recovering') ORDER BY created_at").bind(&id).fetch_all(&mut *tx).await.map_err(unavailable)?;
     // MVP Agent has one execution lane; no hidden queue holding GPU reservations.
@@ -874,10 +892,10 @@ async fn claim(
     {
         used.add(&serde_json::from_value(r.get("resources")).map_err(|_| invalid())?);
     }
-    let queued=sqlx::query("SELECT * FROM vrs_tasks WHERE node=$1 AND status='queued' ORDER BY created_at,id LIMIT 32 FOR UPDATE SKIP LOCKED").bind(&id).fetch_all(&mut *tx).await.map_err(unavailable)?;
+    let queued=sqlx::query("SELECT * FROM vrs_tasks WHERE node=$1 AND status='queued' ORDER BY vrs_priority(body->'scheduling')+floor(extract(epoch FROM (now()-created_at))/30) DESC,created_at,id LIMIT 32 FOR UPDATE SKIP LOCKED").bind(&id).fetch_all(&mut *tx).await.map_err(unavailable)?;
     for r in queued {
         let created:DateTime<Utc>=r.get("created_at");
-        let task_priority=(Utc::now()-created).num_seconds().max(0)/30;
+        let task_priority=scheduling::task_options(&r.get("body")).priority.score()+(Utc::now()-created).num_seconds().max(0)/30;
         let ahead:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM vrs_inference_waiters WHERE node=$1 AND valid_until>now() AND priority+floor(extract(epoch FROM (now()-arrived_at))/30)>$2)")
             .bind(&id).bind(task_priority).fetch_one(&mut *tx).await.map_err(unavailable)?;
         if ahead {continue;}
@@ -915,7 +933,7 @@ async fn claim(
         let observed: Value = node.get("report");
         let reserve: Resources =
             serde_json::from_value(node.get("safety_reserve")).map_err(|_| invalid())?;
-        if !e.resources.fits_guarded(&used, &observed, &reserve) {
+        if !e.resources.fits_guarded_with_policy(&used, &observed, &reserve, scheduling::task_options(&body).force_admission) {
             continue;
         }
         let task: String = r.get("id");
@@ -930,7 +948,7 @@ async fn claim(
         .execute(&mut *tx)
         .await
         .map_err(unavailable)?;
-        let row=sqlx::query("UPDATE vrs_tasks SET status='assigned',attempt=$2,fence=fence+1,version=version+1,updated_at=now() WHERE id=$1 RETURNING *").bind(&task).bind(attempt).fetch_one(&mut *tx).await.map_err(unavailable)?;
+        let row=sqlx::query("UPDATE vrs_tasks SET body=body-'_scheduler_preemption',status='assigned',attempt=$2,fence=fence+1,version=version+1,updated_at=now() WHERE id=$1 RETURNING *").bind(&task).bind(attempt).fetch_one(&mut *tx).await.map_err(unavailable)?;
         sqlx::query("INSERT INTO vrs_attempts(id,task,fence,node) VALUES($1,$2,$3,$4)")
             .bind(row.get::<String, _>("attempt"))
             .bind(&task)
@@ -1061,7 +1079,15 @@ async fn report(
         && executor.is_some_and(|e| {
             e.retry_mode == "idempotent" && r.get::<i64, _>("fence") < e.max_attempts
         });
-    let status = if auto_retry {
+    let preempted_restart = terminal && b.status != "succeeded" && old == "cancelling"
+        && !body["_scheduler_preemption"].is_null()
+        && scheduling::task_options(&body).preemptible
+        && executor.is_some_and(|e| e.retry_mode == "idempotent" && r.get::<i64,_>("fence") < e.max_attempts);
+    let status = if preempted_restart {
+        "queued"
+    } else if terminal && b.status == "succeeded" && !body["_scheduler_preemption"].is_null() {
+        "succeeded"
+    } else if auto_retry {
         "retry_wait"
     } else if terminal && old == "cancelling" {
         "cancelled"
@@ -1074,7 +1100,7 @@ async fn report(
     } else {
         "running"
     };
-    sqlx::query("UPDATE vrs_tasks SET status=$2,progress=$3,result=$4,version=version+1,updated_at=now() WHERE id=$1").bind(&task).bind(status).bind(progress).bind(if status=="cancelled" {json!({"reason":"cancelled"})}else{b.result.clone()}).execute(&mut *tx).await.map_err(unavailable)?;
+    sqlx::query("UPDATE vrs_tasks SET status=$2,progress=$3,result=$4,version=version+1,updated_at=now() WHERE id=$1").bind(&task).bind(status).bind(progress).bind(if preempted_restart {json!({"reason":"preempted_restart","requester":body["_scheduler_preemption"]["requester"]})}else if status=="cancelled" {json!({"reason":"cancelled"})}else{b.result.clone()}).execute(&mut *tx).await.map_err(unavailable)?;
     sqlx::query("UPDATE vrs_attempts SET status=$2,result=$3,stopped_at=CASE WHEN $4 THEN now() ELSE stopped_at END WHERE id=$1").bind(&id).bind(&b.status).bind(&b.result).bind(terminal).execute(&mut *tx).await.map_err(unavailable)?;
     if auto_retry {
         sqlx::query("UPDATE vrs_tasks SET retry_at=now()+interval '3 seconds' * power(2,least(fence-1,4)) WHERE id=$1").bind(&task).execute(&mut *tx).await.map_err(unavailable)?;
@@ -1110,6 +1136,8 @@ struct PermitRequest {
     model_id: String,
     #[serde(default)]
     execution_token: String,
+    #[serde(default)]
+    scheduling: Scheduling,
 }
 fn approved_upstream(executor: &Executor, value: &str) -> bool {
     let canonical = |value: &str| -> Option<String> {
@@ -1171,6 +1199,7 @@ async fn permit_acquire(
 ) -> Api<Json<Value>> {
     let p = auth(&a, &h).await?;
     require(&p, "submitter")?;
+    let force_actor = scheduling::authorize(&a, &p, &h, &b.scheduling).await?;
     voice_admission(&a, &b.executor_id)?;
     if !b.execution_token.is_empty() && !(32..=128).contains(&b.execution_token.len()) {
         return Err(invalid());
@@ -1216,6 +1245,7 @@ async fn permit_acquire(
         if old.get::<String, _>("executor") != b.executor_id
             || metadata["upstream_url"] != b.upstream_url
             || metadata["model_id"] != b.model_id
+            || scheduling::task_options(&metadata) != b.scheduling
             || (!b.execution_token.is_empty()
                 && metadata["execution_token_hash"]
                     != format!("{:x}", Sha256::digest(b.execution_token.as_bytes())))
@@ -1246,7 +1276,14 @@ async fn permit_acquire(
         } else {
             None
         };
-        allocations::room(&mut tx, node, &part.resources, &e.id, local_memory, b.queue_id.as_deref(), &p.app_id).await?;
+        if let Err(error) = allocations::room(&mut tx, node, &part.resources, &e.id, local_memory, b.queue_id.as_deref(), &p.app_id, &b.scheduling).await {
+            if error.0 == StatusCode::TOO_MANY_REQUESTS && scheduling::preempt(&mut tx, &part.node_id, &format!("permit:{}", key), &b.scheduling).await? {
+                management::audit(&mut tx, &p, "scheduling.preempt-request", &part.node_id).await?;
+                tx.commit().await.map_err(unavailable)?;
+                return Err(Error(StatusCode::TOO_MANY_REQUESTS, "WAIT_STOP_CONFIRMATION"));
+            }
+            return Err(error);
+        }
     }
     let id = Uuid::new_v4().to_string();
     sqlx::query(
@@ -1258,10 +1295,13 @@ async fn permit_acquire(
     .bind(&e.id)
     .bind(&e.node_id)
     .bind(json!(e.resources))
-    .bind(json!({"model_id":b.model_id,"upstream_url":b.upstream_url,"placements":e.placements,"execution_token_hash":format!("{:x}",Sha256::digest(b.execution_token.as_bytes()))}))
+    .bind(json!({"model_id":b.model_id,"upstream_url":b.upstream_url,"placements":e.placements,"scheduling":b.scheduling,"execution_token_hash":format!("{:x}",Sha256::digest(b.execution_token.as_bytes()))}))
     .execute(&mut *tx)
     .await
     .map_err(unavailable)?;
+    if let Some(operator) = &force_actor {
+        management::audit(&mut tx, operator, "scheduling.force", &id).await?;
+    }
     for part in &e.placements {
         sqlx::query(
             "INSERT INTO vrs_permit_placements(permit_id,node_id,resources) VALUES($1,$2,$3)",
@@ -1316,7 +1356,7 @@ async fn permits(
         .bind(p.role=="admin").bind(&p.app_id).bind(q.state.as_deref()).bind(limit).bind(offset).fetch_all(&a.db).await.map_err(unavailable)?;
     let items:Vec<Value>=rows.iter().map(|r|{
         let metadata:Value=r.get("metadata");
-        json!({"permit_id":r.get::<String,_>("id"),"app_id":r.get::<String,_>("app"),"executor_id":r.get::<String,_>("executor"),"node_id":r.get::<String,_>("node"),"state":r.get::<String,_>("state"),"resources":r.get::<Value,_>("resources"),"delegated_resources":r.get::<Value,_>("delegated_resources"),"placements":metadata["placements"],"model_id":metadata["model_id"],"parent_task_id":metadata["parent_task_id"],"evidence":r.get::<Option<String>,_>("evidence"),"created_at":r.get::<DateTime<Utc>,_>("created_at"),"released_at":r.get::<Option<DateTime<Utc>>,_>("released_at"),"lease_until":r.get::<DateTime<Utc>,_>("lease_until")})
+        json!({"permit_id":r.get::<String,_>("id"),"app_id":r.get::<String,_>("app"),"executor_id":r.get::<String,_>("executor"),"node_id":r.get::<String,_>("node"),"state":r.get::<String,_>("state"),"resources":r.get::<Value,_>("resources"),"delegated_resources":r.get::<Value,_>("delegated_resources"),"placements":metadata["placements"],"model_id":metadata["model_id"],"parent_task_id":metadata["parent_task_id"],"scheduling":metadata["scheduling"],"preempted_by":metadata["preempted_by"],"evidence":r.get::<Option<String>,_>("evidence"),"created_at":r.get::<DateTime<Utc>,_>("created_at"),"released_at":r.get::<Option<DateTime<Utc>>,_>("released_at"),"lease_until":r.get::<DateTime<Utc>,_>("lease_until")})
     }).collect();
     Ok(ok(
         json!({"items":items,"next_cursor":if rows.len()==limit as usize{Some((offset+limit).to_string())}else{None}}),

@@ -244,6 +244,10 @@ pub(super) async fn complete(
             return;
         }
     }
+    if let Some(origin) = native_origin(&u) {
+        evict(&g, Resident { lease, upstream: u.id, model, origin, since: Instant::now() }).await;
+        return;
+    }
     lease.complete(evidence);
     lease.release_confirmed(evidence).await;
 }

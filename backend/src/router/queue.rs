@@ -2,6 +2,21 @@
 use super::*;
 use std::time::Instant;
 
+pub(super) fn scheduling(headers: &HeaderMap, id: &Identity) -> Api<crate::model::Scheduling> {
+    let mut options = crate::model::Scheduling::default();
+    if let Some(priority) = headers.get("x-vscheduler-priority") {
+        options.priority = serde_json::from_value(json!(priority.to_str().map_err(|_| Failure::new(422,"invalid priority"))?))
+            .map_err(|_| Failure::new(422,"priority must be background, interactive or high"))?;
+    }
+    for (name, field) in [("x-vscheduler-preemptible", &mut options.preemptible), ("x-vscheduler-allow-preemption", &mut options.allow_preemption), ("x-vscheduler-force-admission", &mut options.force_admission)] {
+        if let Some(value) = headers.get(name) {
+            *field = match value.to_str().unwrap_or("") { "true" => true, "false" => false, _ => return Err(Failure::new(422,"scheduling flags must be true or false")) };
+        }
+    }
+    if options.force_admission && !id.admin { return Err(Failure::new(403,"force admission requires a verified administrator")); }
+    Ok(options)
+}
+
 #[derive(Default)]
 pub(super) struct Queue {
     entries: Vec<Entry>,
@@ -45,7 +60,7 @@ impl Queue {
         let entries: Vec<_> = self.ordered().into_iter().enumerate()
             .filter(|(_, e)| id.admin || e.owner == owner(id))
             .map(|(position, e)| json!({"request_id":e.id,"app_id":e.app,"model_id":e.model,
-                "priority":if e.priority==1 {"interactive"} else {"background"},
+                "priority":if e.priority==2 {"high"} else if e.priority==1 {"interactive"} else {"background"},
                 "position":position+1,"wait_ms":e.created.elapsed().as_millis() as u64,"reason":e.reason}))
             .collect();
         json!({"items":entries,"durable":false,"max_wait_seconds":300,"aging_seconds":30})
@@ -129,10 +144,11 @@ impl Ticket {
         {
             "interactive" => 1,
             "background" => 0,
+            "high" => 2,
             _ => {
                 return Err(Failure::new(
                     422,
-                    "priority must be interactive or background",
+                    "priority must be background, interactive or high",
                 ));
             }
         };

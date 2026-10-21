@@ -1504,6 +1504,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -1738,6 +1783,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -1940,6 +2030,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -2007,6 +2142,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -2188,6 +2368,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -2263,6 +2488,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -2338,6 +2608,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -2472,6 +2787,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -2602,6 +2962,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -2748,6 +3153,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -3125,6 +3575,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -3327,6 +3822,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -3561,6 +4101,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -3795,6 +4380,36 @@
               "type": "string",
               "maxLength": 96
             }
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -4037,6 +4652,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -4104,6 +4764,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -4314,6 +5019,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -4548,6 +5298,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -4750,6 +5545,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -4984,6 +5824,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -5083,6 +5968,36 @@
               "type": "string",
               "maxLength": 96
             }
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -5293,6 +6208,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -5527,6 +6487,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -5729,6 +6734,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -5963,6 +7013,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -6165,6 +7260,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -6232,6 +7372,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -6326,6 +7511,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -6401,6 +7631,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -6662,6 +7937,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -6896,6 +8216,36 @@
               "type": "string",
               "maxLength": 96
             }
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -7138,6 +8488,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -7205,6 +8600,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -7304,6 +8744,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -7616,7 +9101,54 @@
         "tags": [
           "resource"
         ],
-        "x-gateway-auth": "manage"
+        "x-gateway-auth": "manage",
+        "parameters": [
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
+          }
+        ]
       }
     },
     "/v1/models/{resource_path}": {
@@ -7798,6 +9330,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -7865,6 +9442,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -8075,6 +9697,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -8309,6 +9976,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -8408,6 +10120,36 @@
               "type": "string",
               "maxLength": 96
             }
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -8650,6 +10392,36 @@
               "type": "string",
               "maxLength": 96
             }
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -8725,6 +10497,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -8967,6 +10784,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -9169,6 +11031,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -9403,6 +11310,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -9605,6 +11557,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -9839,6 +11836,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -10041,6 +12083,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -10275,6 +12362,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -10477,6 +12609,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -10711,6 +12888,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -10913,6 +13135,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -10980,6 +13247,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {
@@ -11222,6 +13534,51 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "X-VScheduler-Priority",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "background",
+                "interactive",
+                "high"
+              ],
+              "default": "background"
+            },
+            "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
+          },
+          {
+            "name": "X-VScheduler-Preemptible",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "同意协作停止；同步请求不会自动重放。"
+          },
+          {
+            "name": "X-VScheduler-Allow-Preemption",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "允许请求较低优先级且同意让出的任务停止；确认原生退出后才释放资源。"
+          },
+          {
+            "name": "X-VScheduler-Force-Admission",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            },
+            "description": "仅限核验后的管理员；放宽软门槛，仍保留硬预算、新鲜遥测、停止屏障及至少 1 GiB 内存余量。"
           }
         ],
         "requestBody": {

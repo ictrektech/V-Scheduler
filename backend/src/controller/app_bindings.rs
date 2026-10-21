@@ -247,7 +247,8 @@ fn build(
             );
             model_parameters.insert(model.into(), approval["model_parameters"].clone());
         }
-        executors.push(json!({"id":executor,"app_id":application.id,"node_id":node,"contract_version":"1","task_type":task_type,"resources":resources,"upstream_urls":[upstream(application)],"placements":[],"retry_mode":"none","max_attempts":1}));
+        let restart = application.id == "com.ictrek.image-studio" && contract["preemption_modes"].as_array().is_some_and(|v| v.iter().any(|x| x == "restart"));
+        executors.push(json!({"id":executor,"app_id":application.id,"node_id":node,"contract_version":"1","task_type":task_type,"resources":resources,"upstream_urls":[upstream(application)],"placements":[],"retry_mode":if restart {"idempotent"} else {"none"},"max_attempts":if restart {3} else {1}}));
         executors.push(json!({"id":gateway_executor,"app_id":owner,"node_id":node,"contract_version":"1","task_type":"model.infer","resources":resources,"upstream_urls":[upstream(application)],"placements":[],"retry_mode":"none","max_attempts":1}));
         gateway_ids.push(gateway_executor.clone());
         if application.asynchronous {

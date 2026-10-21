@@ -180,6 +180,15 @@
               "minLength": 1,
               "maxLength": 256
             }
+          },
+          {
+            "in": "header",
+            "name": "X-VScheduler-Admin-Authorization",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only for force_admission: Bearer VOS administrator token; never persist it in a task or replay it after restart."
           }
         ],
         "requestBody": {
@@ -919,6 +928,15 @@
               "minLength": 1,
               "maxLength": 256
             }
+          },
+          {
+            "in": "header",
+            "name": "X-VScheduler-Admin-Authorization",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only for force_admission: Bearer VOS administrator token; never persist it in a task or replay it after restart."
           }
         ],
         "requestBody": {
@@ -3407,6 +3425,9 @@
           },
           "idempotency_key": {
             "type": "string"
+          },
+          "scheduling": {
+            "$ref": "#/components/schemas/Scheduling"
           }
         },
         "required": [
@@ -3529,6 +3550,9 @@
             "minLength": 32,
             "maxLength": 128,
             "description": "Optional private random capability for backend verification; never return it to a browser or log it."
+          },
+          "scheduling": {
+            "$ref": "#/components/schemas/Scheduling"
           }
         },
         "required": [
@@ -4338,6 +4362,34 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 512
+          }
+        }
+      },
+      "Scheduling": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Opt-in cooperative scheduling. Async restart requires an approved idempotent executor; synchronous requests are never replayed. force_admission requires a separately verified administrator and retains hard resource budgets and a 1 GiB host floor.",
+        "properties": {
+          "priority": {
+            "type": "string",
+            "enum": [
+              "background",
+              "interactive",
+              "high"
+            ],
+            "default": "background"
+          },
+          "preemptible": {
+            "type": "boolean",
+            "default": false
+          },
+          "allow_preemption": {
+            "type": "boolean",
+            "default": false
+          },
+          "force_admission": {
+            "type": "boolean",
+            "default": false
           }
         }
       }
