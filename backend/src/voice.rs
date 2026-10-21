@@ -503,7 +503,7 @@ fn build_for_node(
         }
     }
     // 0.0.22 仅改变安装地址，复用经核验的 0.0.21 原生镜像。
-    let controller_url = if ["0.0.22", "0.0.23", "0.0.24", "0.0.25"].contains(&contract["_application_version"].as_str().unwrap_or("")) {
+    let controller_url = if ["0.0.22", "0.0.23", "0.0.24", "0.0.25", "0.0.26"].contains(&contract["_application_version"].as_str().unwrap_or("")) {
         "http://v-scheduler:8080/scheduler/api/v1"
     } else { URL };
     let mut state = json!({"credential_epoch":epoch,"binding":{"protocol_version":1,"binding_revision":1,"app_id":APP,"url":controller_url,"token":token,"executor_token":executor_token,"upstream_url":UPSTREAM,"models":models,"gateway_executors":gateway_executors,"secondary_models":secondary_models},
@@ -549,7 +549,7 @@ async fn recover_unclaimed_direct(
     state: &Value,
     version: &str,
 ) -> anyhow::Result<u64> {
-    if !["0.0.21", "0.0.22", "0.0.23", "0.0.24", "0.0.25"].contains(&version) {
+    if !["0.0.21", "0.0.22", "0.0.23", "0.0.24", "0.0.25", "0.0.26"].contains(&version) {
         return Ok(0);
     }
     let node = state["executors"]
@@ -975,6 +975,11 @@ mod tests {
         assert_eq!(small["resources"]["gpu_slots"], 1);
         assert_eq!(split["binding"]["secondary_models"]["whisper-tiny"], json!(["speaker-campplus-zh-en"]));
         assert_ne!(split["binding"]["models"]["whisper-tiny"], *sensevoice);
+        contract["_application_version"] = json!("0.0.26");
+        let compatible = build(&runtime, &contract, &approvals, None).unwrap();
+        assert_eq!(compatible["binding"]["models"], split["binding"]["models"]);
+        assert_eq!(compatible["binding"]["secondary_models"], split["binding"]["secondary_models"]);
+        assert_eq!(compatible["executors"], split["executors"]);
         contract["_application_version"] = json!("0.0.20");
         let old = build(&runtime, &contract, &approvals, None).unwrap();
         assert_eq!(old["binding"]["models"].as_object().unwrap().len(), 7);
