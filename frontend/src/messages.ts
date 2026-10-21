@@ -1,4 +1,7 @@
 export const messages:Record<string,[string,string]>={
+"V-Voice（含配乐）、V-Sub、Desensitize 和 Image Studio 在可信绑定后自动登记。调用方 V-ChatCut、HybRAG 复用实际执行端，不重复申报预算。":["V-Voice (including music), V-Sub, Desensitize and Image Studio register automatically after trusted binding. V-ChatCut and HybRAG reuse the actual execution backend without double-counting budgets.", "V-Voice（含配樂）、V-Sub、Desensitize 和 Image Studio 在可信綁定後自動登記。呼叫方 V-ChatCut、HybRAG 共用實際執行端，不重複申報預算。"],
+"应用私有目录保存已确认停止的回执，重启后继续重试；未知执行不推定停止。阻塞式原生调用须等待实际返回及卸载，异步任务在统一接入页面使用取消。":["Confirmed stop receipts persist in private application storage and retry after restart. Unknown executions remain reserved. Blocking native calls must actually return and unload; cancel asynchronous tasks from the unified integration page.", "應用私有目錄儲存已確認停止的回執，重啟後繼續重試；未知執行不推定停止。阻塞式原生呼叫須等待實際返回及卸載，非同步任務在統一接入頁面使用取消。"],
+
 "应用统一接入":["Unified application integration", "應用統一接入"],
 "节点遥测由 VOS App 内置组件自动上报；应用登记已批准的执行器并定时心跳，停止请求经原生退出及权重卸载核验后释放预约。":["VOS App built-in components report node telemetry automatically. Applications register approved executors and send heartbeats; reservations are released only after native exit and weight unloading are confirmed.", "節點遙測由 VOS App 內建元件自動上報；應用登記已批准的執行器並定時心跳，停止請求經原生退出及權重卸載核驗後釋放預約。"],
 "尚无应用启用统一生命周期协议；已有应用继续使用原自动绑定契约。":["No application has enabled the unified lifecycle protocol. Existing applications retain their automatic binding contracts.", "尚無應用啟用統一生命週期協定；既有應用繼續使用原自動綁定契約。"],

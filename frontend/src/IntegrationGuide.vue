@@ -28,6 +28,8 @@ defineProps<{t:(value:string)=>string}>()
   <p><code>POST /scheduler/api/v1/permits/{id}/stop</code> → <code>POST /scheduler/api/v1/integrations/heartbeat</code> → <code>POST /scheduler/api/v1/permits/{id}/stopped</code></p>
   <p>{{t('停止命令包含许可、执行器、模型、execution_id 和 nonce。应用先取消实际执行并卸载权重，再携带原执行凭据回报 native_exit_barrier、model_unloaded 与 evidence；错误或缺失回执不释放资源。异步任务继续使用 tasks/{id}/cancel 与原执行报告。')}}</p>
   <p>{{t('节点管理中的「应用统一接入」可查看应用心跳、节点与批准预算，并请求停止已接入的执行。旧应用继续使用已验证的原自动绑定；不支持此停止协议的应用不会显示为已完成接管。')}}</p>
+  <p>{{t('V-Voice（含配乐）、V-Sub、Desensitize 和 Image Studio 在可信绑定后自动登记。调用方 V-ChatCut、HybRAG 复用实际执行端，不重复申报预算。')}}</p>
+  <p>{{t('应用私有目录保存已确认停止的回执，重启后继续重试；未知执行不推定停止。阻塞式原生调用须等待实际返回及卸载，异步任务在统一接入页面使用取消。')}}</p>
   <h3>{{t('推理等待队列')}}</h3>
   <p>{{t('本地推理设置 X-VScheduler-Queue-Wait-Seconds（1..300）、X-VScheduler-Priority（interactive/background）和唯一 X-VScheduler-Request-ID。开启内置驻留且身份已验证时，未设置等待默认等 30 秒；显式 0 保持立即准入。试聊默认等待 120 秒，可查看位置并取消。')}}</p>
   <p><code>GET /api/v1/inference-queue</code> · <code>DELETE /api/v1/inference-queue/{id}</code></p>
