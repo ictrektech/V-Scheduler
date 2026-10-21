@@ -157,6 +157,58 @@ fn jetson_gpu_utilization() -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::{cpu_load, jetson_load_percent, parse_cpu_sample};
+    #[tokio::test]
+    async fn active_execution_refreshes_preemption_and_passes_stop_reason() {
+        use axum::{Json, Router, extract::State, http::Uri};
+        use serde_json::{Value, json};
+        use std::sync::{Arc, Mutex};
+        #[derive(Default)]
+        struct Peer { claims: usize, started: bool, cancelled: bool, reported: bool }
+        async fn handle(State(state): State<Arc<Mutex<Peer>>>, uri: Uri, Json(body): Json<Value>) -> Json<Value> {
+            let mut p = state.lock().unwrap();
+            let path = uri.path();
+            let data = if path.ends_with("/commands/claim") {
+                p.claims += 1;
+                let stop = p.started;
+                json!({"commands":[{"command_id":"task:1","task_id":"task","attempt_id":"attempt","fence":1,"executor_id":"fixture","parameters":{},"lease_seconds":30,"cancel":stop,"preempted":stop}]})
+            } else if path.ends_with("/start") {
+                p.started = true;
+                json!({"status":"running","stopped":false})
+            } else if path.ends_with("/cancel") {
+                assert_eq!(body["preempted"], true, "executor must distinguish yielding from user cancellation");
+                p.cancelled = true;
+                json!({"status":"failed","stopped":true})
+            } else if path.ends_with("/inspect") {
+                json!({"status":if p.cancelled {"failed"}else{"running"},"stopped":p.cancelled,"result":{}})
+            } else {
+                if path.ends_with("/report") && body["stopped"] == true { p.reported = true; }
+                json!({"lease_seconds":30})
+            };
+            Json(json!({"data":data}))
+        }
+        let state = Arc::new(Mutex::new(Peer::default()));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let app = Router::new().fallback(handle).with_state(state.clone());
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap(); });
+        let root = std::env::temp_dir().join(format!("priority-agent-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("config.json");
+        std::fs::write(&path, serde_json::to_vec(&json!({"controller":base,"node_id":"fixture","token":"synthetic-worker-credential-for-test-only","journal":root.join("journal.json"),"executors":[{"id":"fixture","url":base,"token":"synthetic"}]})).unwrap()).unwrap();
+        let agent = tokio::spawn(super::run(path));
+        let completed = tokio::time::timeout(std::time::Duration::from_secs(8), async {
+            loop {
+                if state.lock().unwrap().reported { break; }
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            }
+        }).await;
+        agent.abort(); server.abort();
+        let _ = agent.await; let _ = server.await;
+        std::fs::remove_dir_all(root).unwrap();
+        assert!(completed.is_ok(), "active work never received and reported a cooperative stop");
+        assert!(state.lock().unwrap().claims >= 2);
+    }
+
     #[test]
     fn per_core_usage_is_measured_individually_and_reset_is_unknown() {
         let before = parse_cpu_sample(
@@ -505,7 +557,7 @@ pub async fn run(path: PathBuf) -> anyhow::Result<()> {
             eprintln!("heartbeat unavailable: {e}");
         }
         // The executor watchdog is independent of this Agent process and network.
-        if journal.command.is_none() && !cfg.executors.is_empty() {
+        if !cfg.executors.is_empty() {
             if let Ok(v) = post(
                 &client,
                 &format!("{base}/workers/{}/commands/claim", cfg.node_id),
@@ -515,8 +567,13 @@ pub async fn run(path: PathBuf) -> anyhow::Result<()> {
             .await
             {
                 if let Some(value) = v["commands"].as_array().and_then(|c| c.first()) {
-                    journal.command = Some(serde_json::from_value(value.clone())?);
-                    save(&cfg.journal, &journal)?;
+                    let refreshed: Command = serde_json::from_value(value.clone())?;
+                    // Refresh cancellation/preemption intent while preserving the
+                    // active attempt until its native stop has been reported.
+                    if journal.command.as_ref().is_none_or(|current| current.attempt_id == refreshed.attempt_id && current.fence == refreshed.fence) {
+                        journal.command = Some(refreshed);
+                        save(&cfg.journal, &journal)?;
+                    }
                 }
             }
         }
@@ -533,8 +590,8 @@ pub async fn run(path: PathBuf) -> anyhow::Result<()> {
                 json!({"session_id":journal.session_id,"fence":cmd.fence}),
             )
             .await;
-            let action = if lease.is_ok() { "start" } else { "cancel" };
-            let body = json!({"attempt_id":cmd.attempt_id,"task_id":cmd.task_id,"fence":cmd.fence,"lease_seconds":cmd.lease_seconds,"parameters":cmd.parameters});
+            let action = if !cmd.cancel && lease.is_ok() { "start" } else { "cancel" };
+            let body = json!({"attempt_id":cmd.attempt_id,"task_id":cmd.task_id,"fence":cmd.fence,"lease_seconds":cmd.lease_seconds,"preempted":cmd.cancel && cmd.preempted,"parameters":cmd.parameters});
             let url = format!(
                 "{}/scheduler/executions/{}/{}",
                 adapter.url.trim_end_matches('/'),

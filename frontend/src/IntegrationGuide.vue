@@ -35,6 +35,7 @@ defineProps<{t:(value:string)=>string}>()
   <p><code>GET /api/v1/inference-queue</code> · <code>DELETE /api/v1/inference-queue/{id}</code></p>
   <p>{{t('队列按用户和应用隔离；每等待 30 秒提升一级优先级，默认不抢占运行中的计算；协作抢占须双方显式同意。等待不预约资源，重启不重放请求；总超时应覆盖排队、冷加载和推理。')}}</p>
   <h3>{{t('优先级与协作抢占')}}</h3>
+  <p>{{t('只有接收端心跳正常且支持原生停止证明的执行器才执行抢占；其他执行继续排队等待，不强杀，不跳过停止证明。')}}</p>
   <pre>{"scheduling":{"priority":"high","preemptible":false,"allow_preemption":true,"force_admission":false}}</pre>
   <p>{{t('tasks 和 permits 接受 scheduling；默认不抢占。priority 为 background、interactive 或 high，等待每 30 秒提升一级。高优先级排队先执行；只有双方显式同意才请求低优先级运行任务让出资源。')}}</p>
   <p><code>X-VScheduler-Priority</code> · <code>X-VScheduler-Preemptible</code> · <code>X-VScheduler-Allow-Preemption</code> · <code>X-VScheduler-Force-Admission</code></p>

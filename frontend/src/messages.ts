@@ -1,6 +1,7 @@
 export const messages:Record<string,[string,string]>={
 "正在让出资源，确认停止后重排":["Yielding resources; restart after confirmed stop", "正在讓出資源，確認停止後重排"],
 "优先级与协作抢占":["Priority and cooperative preemption", "優先級與協作搶占"],
+"只有接收端心跳正常且支持原生停止证明的执行器才执行抢占；其他执行继续排队等待，不强杀，不跳过停止证明。":["Preemption requires a live receiver and native stop proof. Other work remains queued; processes are never forcibly killed and stop proof is never bypassed.", "只有接收端心跳正常且支援原生停止證明的執行器才執行搶占；其他執行繼續排隊等待，不強殺，不跳過停止證明。"],
 "高优先级":["High priority", "高優先級"],
 "可停止后重排":["May stop and restart in queue", "可停止後重排"],
 "禁止抢占":["Preemption disabled", "禁止搶占"],
