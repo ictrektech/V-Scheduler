@@ -85,22 +85,25 @@ fn metrics(value: &Value) -> Value {
     json!({"measurements":result,"execution_enabled":false,"control_state":"pending_adapter_verification"})
 }
 
-async fn collect(db: &PgPool, headers: &HeaderMap) -> anyhow::Result<Value> {
-    let url = crate::identity::base().context("missing platform source")?;
-    let token = headers
-        .get("authorization")
-        .and_then(|h| h.to_str().ok())
-        .and_then(|h| h.strip_prefix("Bearer "))
-        .context("missing administrator")?;
-    let platform = VosEndpoint {
-        url,
-        token: token.into(),
-    };
-    let client = Client::builder()
+/// 应用上下文 access-token：定期发现没有管理员请求可借用凭据。
+fn context_token() -> Option<String> {
+    std::fs::read_to_string("/var/lib/vos-context/access-token")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+fn client() -> anyhow::Result<Client> {
+    Ok(Client::builder()
         .timeout(Duration::from_secs(3))
         .redirect(reqwest::redirect::Policy::none())
-        .build()?;
-    let apps = crate::vos::get(&client, &platform, "/v1000/app/list?limit=1000").await?;
+        .build()?)
+}
+/// 解析 ModelInfer 组件地址（应用已安装配置）；未安装返回 `None`。
+async fn component(
+    client: &Client,
+    platform: &VosEndpoint,
+) -> anyhow::Result<Option<VosEndpoint>> {
+    let apps = crate::vos::get(client, platform, "/v1000/app/list?limit=1000").await?;
     let list = apps["data"]
         .as_array()
         .context("missing application list")?;
@@ -112,12 +115,11 @@ async fn collect(db: &PgPool, headers: &HeaderMap) -> anyhow::Result<Value> {
         .iter()
         .any(|a| a["app_id"] == "com.ictrek.modelinfer" && a["state"] == "installed")
     {
-        crate::vos::store(db, "modelinfer:inventory", Ok(json!([]))).await;
-        return Ok(json!({"state":"not_installed","node_count":0}));
+        return Ok(None);
     }
     let detail = crate::vos::get(
-        &client,
-        &platform,
+        client,
+        platform,
         "/v1000/app/detail?app_id=com.ictrek.modelinfer",
     )
     .await?;
@@ -163,9 +165,26 @@ async fn collect(db: &PgPool, headers: &HeaderMap) -> anyhow::Result<Value> {
                 && !prefix.contains("..")),
         "invalid component prefix"
     );
-    let source = VosEndpoint {
+    Ok(Some(VosEndpoint {
         url: format!("{}{}", origin.as_str().trim_end_matches('/'), prefix),
         token: String::new(),
+    }))
+}
+async fn collect(db: &PgPool, headers: &HeaderMap) -> anyhow::Result<Value> {
+    let url = crate::identity::base().context("missing platform source")?;
+    let token = headers
+        .get("authorization")
+        .and_then(|h| h.to_str().ok())
+        .and_then(|h| h.strip_prefix("Bearer "))
+        .context("missing administrator")?;
+    let platform = VosEndpoint {
+        url,
+        token: token.into(),
+    };
+    let client = client()?;
+    let Some(source) = component(&client, &platform).await? else {
+        crate::vos::store(db, "modelinfer:inventory", Ok(json!([]))).await;
+        return Ok(json!({"state":"not_installed","node_count":0}));
     };
     let mut rows = Vec::new();
     let mut expected = None;
@@ -223,6 +242,108 @@ async fn collect(db: &PgPool, headers: &HeaderMap) -> anyhow::Result<Value> {
     }
     crate::vos::store(db, "modelinfer:inventory", Ok(snapshot)).await;
     Ok(json!({"state":"ready","node_count":rows.len()}))
+}
+/// 接入地址必须是可路由的纯 origin + path（拒绝凭据 / 查询串 / 穿越路径）。
+fn service_url(raw: &str) -> Option<String> {
+    let raw = raw.trim().trim_end_matches('/');
+    if raw.is_empty() || raw.len() > 512 || raw.contains("..") {
+        return None;
+    }
+    let url = reqwest::Url::parse(raw).ok()?;
+    (["http", "https"].contains(&url.scheme())
+        && url.host_str().is_some()
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.query().is_none()
+        && url.fragment().is_none())
+        .then(|| url.as_str().trim_end_matches('/').to_string())
+}
+/// 运行中的部署 = 已登记模型卡片的可路由实例（目录项，不创建执行器/预算）。
+async fn services(
+    client: &Client,
+    source: &VosEndpoint,
+) -> anyhow::Result<Vec<crate::router::ModelinferService>> {
+    let mut rows = Vec::new();
+    for page in 1..=10 {
+        let data = crate::vos::get(
+            client,
+            source,
+            &format!(
+                "/api/deployments?page_num={page}&page_size=100&state=all&sort=name"
+            ),
+        )
+        .await?;
+        let entries = data["data"]
+            .as_array()
+            .context("missing deployments")?;
+        rows.extend_from_slice(entries);
+        let total = data["total"]
+            .as_u64()
+            .context("missing deployment count")?;
+        ensure!(total <= 1000, "too many deployments");
+        let pages = data["pages"].as_u64().unwrap_or(1).max(1);
+        ensure!(pages <= 10, "too many pages");
+        if page >= pages {
+            break;
+        }
+    }
+    let mut result = Vec::new();
+    for row in rows
+        .iter()
+        .filter(|row| matches!(row["state"].as_str(), Some("running" | "degraded")))
+        .take(100)
+    {
+        let id = text(&row["id"], 96).context("missing deployment ID")?;
+        ensure!(identifier(id), "invalid deployment identity");
+        let access = crate::vos::get(
+            client,
+            source,
+            &format!("/api/deployments/{id}/access"),
+        )
+        .await?;
+        if access["available"] != true {
+            continue;
+        }
+        let Some(base_url) = service_url(access["base_url"].as_str().unwrap_or_default()) else {
+            continue;
+        };
+        let model = text(&access["model"], 128)
+            .filter(|model| !model.trim().is_empty())
+            .context("missing served model")?;
+        result.push(crate::router::ModelinferService {
+            deployment: id.to_string(),
+            name: text(&row["name"], 128).unwrap_or(id).to_string(),
+            base_url,
+            api_key: text(&access["api_key"], 512).unwrap_or_default().to_string(),
+            model: model.to_string(),
+        });
+    }
+    Ok(result)
+}
+/// 定期发现 ModelInfer 运行中的部署并发布为网关目录项（无租约、无执行预算）。
+pub async fn sync() {
+    let Some(token) = context_token() else {
+        return;
+    };
+    let Some(url) = crate::identity::base() else {
+        return;
+    };
+    let Ok(client) = client() else {
+        return;
+    };
+    let platform = VosEndpoint { url, token };
+    let component = match component(&client, &platform).await {
+        Ok(source) => source,
+        // 平台 / 组件暂时不可用：保留上一次目录，等待下一轮。
+        Err(_) => return,
+    };
+    let Some(source) = component else {
+        crate::router::sync_modelinfer(Vec::new());
+        return;
+    };
+    if let Ok(services) = services(&client, &source).await {
+        crate::router::sync_modelinfer(services);
+    }
 }
 pub async fn refresh(db: &PgPool, headers: &HeaderMap) {
     let fresh:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM vrs_observations WHERE id='modelinfer:status' AND observed_at>now()-interval '30 seconds')").fetch_one(db).await.unwrap_or(true);
@@ -288,6 +409,23 @@ pub async fn decorate(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn service_urls_reject_credentials_queries_and_traversal() {
+        assert_eq!(
+            service_url("http://10.0.0.8:8000/v1/").as_deref(),
+            Some("http://10.0.0.8:8000/v1")
+        );
+        for raw in [
+            "",
+            "10.0.0.8:8000/v1",
+            "http://user:pass@10.0.0.8:8000/v1",
+            "http://10.0.0.8:8000/v1?x=1",
+            "http://10.0.0.8:8000/../admin",
+            "ftp://10.0.0.8/v1",
+        ] {
+            assert_eq!(service_url(raw), None, "{raw}");
+        }
+    }
     #[test]
     fn source_metrics_redact_labels_and_reject_stale_samples() {
         let now = chrono::Utc::now().timestamp();

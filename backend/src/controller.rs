@@ -5,6 +5,7 @@ mod inference_queue;
 mod app_bindings;
 mod gateway_identity;
 mod management;
+mod modelinfer_discovery;
 mod ollama;
 mod vsub_bindings;
 use crate::model::*;
@@ -416,6 +417,7 @@ pub async fn serve(
     vsub_bindings::start(shared.clone(), path.clone());
     crate::voice::start(path, runtime, a.db.clone());
     ollama::start(shared.clone());
+    modelinfer_discovery::start();
     let ticker_state = shared.clone();
     tokio::spawn(async move {
         loop {

@@ -73,6 +73,76 @@ fn duplicate(g: &Gateway, u: &Upstream) -> bool {
             && old.base_url.trim_end_matches('/') == u.base_url.trim_end_matches('/')
     })
 }
+fn modelinfer_id(deployment: &str) -> String {
+    format!("modelinfer-{deployment}")
+}
+/// Reconcile the ModelInfer catalog. Entries are owned by the discovered app:
+/// no lease, no executor, no reservation — running deployments already hold
+/// their resources and must not be budgeted twice.
+pub(crate) fn sync_modelinfer(services: Vec<ModelinferService>) {
+    let Some(g) = MANAGED_GATEWAY.get().and_then(std::sync::Weak::upgrade) else {
+        return;
+    };
+    let mut r = g.registry.lock().unwrap();
+    let keep: std::collections::BTreeSet<String> = services
+        .iter()
+        .map(|s| modelinfer_id(&s.deployment))
+        .collect();
+    let stale: Vec<String> = r
+        .upstreams
+        .iter()
+        .filter(|(id, u)| u.source == "modelinfer" && !keep.contains(*id))
+        .map(|(id, _)| id.clone())
+        .collect();
+    for id in stale {
+        r.upstreams.remove(&id);
+        r.models.remove(&id);
+    }
+    for service in services {
+        let id = modelinfer_id(&service.deployment);
+        let upstream = Upstream {
+            id: id.clone(),
+            name: service.name,
+            kind: "local".into(),
+            role: "generate".into(),
+            base_url: service.base_url.clone(),
+            model_prefix: "modelinfer".into(),
+            api_key: service.api_key,
+            protocol: "chat_completions".into(),
+            visibility: "public".into(),
+            owner: "com.ictrek.modelinfer".into(),
+            healthy: true,
+            source: "modelinfer".into(),
+            ..Default::default()
+        };
+        // An explicit registration or administrator upstream for the same
+        // service keeps precedence; discovery only fills the gap.
+        let duplicate = r.upstreams.values().any(|old| {
+            old.id != id
+                && ["api", "registered"].contains(&old.source.as_str())
+                && old.base_url.trim_end_matches('/')
+                    == upstream.base_url.trim_end_matches('/')
+        });
+        if duplicate {
+            r.upstreams.remove(&id);
+            r.models.remove(&id);
+            continue;
+        }
+        let model = Model {
+            id: service.model,
+            kind: "chat".into(),
+            capabilities: vec!["chat".into(), "completion".into()],
+            endpoints: vec![
+                "chat_completions".into(),
+                "responses".into(),
+                "messages".into(),
+            ],
+            owned_by: "modelinfer".into(),
+            ..Default::default()
+        };
+        r.put(upstream, vec![model]);
+    }
+}
 pub(super) fn start(g: Arc<Gateway>) -> Vec<tokio::task::JoinHandle<()>> {
     let mut tasks = vec![];
     let raw = env("V_ROUTER_DISCOVERY_INTERVAL", "30s");

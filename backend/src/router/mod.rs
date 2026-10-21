@@ -37,6 +37,17 @@ use std::{
 };
 use tower::ServiceExt;
 
+/// ModelInfer 运行中部署的只读目录项（由控制器定期发现）。
+#[derive(Clone, Debug)]
+pub(crate) struct ModelinferService {
+    pub deployment: String,
+    pub name: String,
+    pub base_url: String,
+    pub api_key: String,
+    pub model: String,
+}
+pub(crate) use discovery::sync_modelinfer;
+
 #[derive(Clone, Default)]
 struct Identity {
     owner: String,
