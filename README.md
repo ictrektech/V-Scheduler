@@ -235,3 +235,7 @@ V-Voice 混合绑定同时包含旧语音审批和新音乐输入边界时，双
 ### 应用统一生命周期接入
 
 新应用可通过调度 API `POST /integrations` 登记已批准执行器，再按响应间隔调用 `/integrations/heartbeat`；`GET /integrations` 统一查询应用心跳、节点采样和批准预算。节点由 VOS App 内置组件采集，无需用户手工部署 Agent。申请停止使用 `/permits/{id}/stop`，原生执行端确认退出及卸载后通过 `/permits/{id}/stopped` 回执；不因失联或超时释放预约。已有应用自动绑定兼容保留，未实现此协议不宣称已支持统一停止。完整字段、身份、重试、预算审批和异步取消见[统一接入指南](docs/application-integration.md#unified-lifecycle)。
+
+### 执行应用的自动生命周期
+
+支持该协议的 V-Voice（含配乐）、V-Sub、Desensitize、Image Studio 在 VOS 安装及可信绑定后自动登记批准执行器、维护应用心跳。无需用户部署 Agent，节点遥测继续由本应用采集。节点管理的「应用统一接入」同时显示节点新鲜度、预算、同步执行及异步任务；「停止并卸载」或「取消」只有在执行端确认原生退出和模型卸载后才释放预约。已确认回执保存在执行应用私有目录，重启后可重试；未知停止继续占用预约。调用方 V-ChatCut、HybRAG 不重复申报执行端资源。详见[统一流程](docs/application-integration.md#unified-lifecycle)。

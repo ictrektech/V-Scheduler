@@ -154,9 +154,12 @@ pub(super) async fn heartbeat(
     let rows=sqlx::query("SELECT s.permit_id,s.nonce,p.executor,p.node,p.metadata FROM vrs_stop_requests s JOIN vrs_permits p ON p.id=s.permit_id WHERE s.app_id=$1 AND s.confirmed_at IS NULL AND p.state<>'released' ORDER BY s.requested_at LIMIT 64")
         .bind(&p.app_id).fetch_all(&mut *tx).await.map_err(unavailable)?;
     let commands:Vec<Value>=rows.iter().map(|r|{let m:Value=r.get("metadata");json!({"permit_id":r.get::<String,_>("permit_id"),"nonce":r.get::<String,_>("nonce"),"executor_id":r.get::<String,_>("executor"),"node_id":r.get::<String,_>("node"),"model_id":m["model_id"],"execution_id":m["execution_id"],"action":"cancel-and-unload"})}).collect();
+    let outstanding=sqlx::query("SELECT p.id,p.executor,p.state,p.metadata FROM vrs_permits p WHERE p.state<>'released' AND EXISTS(SELECT 1 FROM jsonb_array_elements($1::jsonb) x WHERE x->>'id'=p.executor) ORDER BY p.created_at LIMIT 257")
+        .bind(&current).fetch_all(&mut *tx).await.map_err(unavailable)?;
+    let executions:Vec<Value>=outstanding.iter().take(256).map(|r|{let m:Value=r.get("metadata");json!({"permit_id":r.get::<String,_>("id"),"executor_id":r.get::<String,_>("executor"),"state":r.get::<String,_>("state"),"execution_id":m["execution_id"]})}).collect();
     tx.commit().await.map_err(unavailable)?;
     Ok(ok(
-        json!({"revision":b.revision,"heartbeat_after_seconds":5,"stop_requests":commands}),
+        json!({"revision":b.revision,"heartbeat_after_seconds":5,"stop_requests":commands,"executions":executions,"complete_execution_snapshot":outstanding.len()<=256}),
     ))
 }
 // Only opted-in executors gain this liveness requirement. Legacy contracts stay valid.
@@ -313,7 +316,10 @@ pub(super) async fn list(State(a): State<App>, h: HeaderMap) -> Api<Json<Value>>
         let running=sqlx::query("SELECT p.id,p.executor,p.metadata,p.state,s.requested_at FROM vrs_permits p LEFT JOIN vrs_stop_requests s ON s.permit_id=p.id AND s.confirmed_at IS NULL WHERE p.state<>'released' AND ($1 OR p.app=$2) AND EXISTS(SELECT 1 FROM vrs_integrations i,jsonb_array_elements(i.manifest->'executors') x WHERE i.app_id=$3 AND x->>'id'=p.executor) ORDER BY p.created_at LIMIT 64")
             .bind(p.role=="admin").bind(&p.app_id).bind(&application).fetch_all(&a.db).await.map_err(unavailable)?;
         let executions:Vec<Value>=running.iter().map(|r|{let m:Value=r.get("metadata");json!({"permit_id":r.get::<String,_>("id"),"executor_id":r.get::<String,_>("executor"),"model_id":m["model_id"],"state":r.get::<String,_>("state"),"stop_requested":r.get::<Option<DateTime<Utc>>,_>("requested_at").is_some()})}).collect();
-        items.push(json!({"app_id":row.get::<String,_>("app_id"),"revision":row.get::<i64,_>("revision"),"heartbeat":row.get::<DateTime<Utc>,_>("heartbeat"),"fresh":row.get::<bool,_>("fresh"),"executors":executors,"stop_protocol":manifest["stop_protocol"],"executions":executions}));
+        let task_rows=sqlx::query("SELECT id,app,status,body FROM vrs_tasks WHERE status IN ('queued','assigned','running','cancelling','recovering') AND EXISTS(SELECT 1 FROM jsonb_array_elements($1::jsonb) x WHERE x->>'id'=body->'executor'->>'id') AND ($2 OR app=$3) ORDER BY created_at LIMIT 64")
+            .bind(&manifest["executors"]).bind(p.role=="admin").bind(&p.app_id).fetch_all(&a.db).await.map_err(unavailable)?;
+        let tasks:Vec<Value>=task_rows.iter().map(|r|{let body:Value=r.get("body");json!({"task_id":r.get::<String,_>("id"),"status":r.get::<String,_>("status"),"executor_id":body["executor"]["id"]})}).collect();
+        items.push(json!({"app_id":row.get::<String,_>("app_id"),"revision":row.get::<i64,_>("revision"),"heartbeat":row.get::<DateTime<Utc>,_>("heartbeat"),"fresh":row.get::<bool,_>("fresh"),"executors":executors,"stop_protocol":manifest["stop_protocol"],"executions":executions,"tasks":tasks}));
     }
     Ok(ok(
         json!({"items":items,"node_heartbeat_seconds":2,"node_stale_seconds":12,"application_heartbeat_seconds":5,"application_stale_seconds":20}),

@@ -3021,11 +3021,11 @@
           }
         },
         "x-description": {
-          "zh-CN": "应用统一接入状态",
-          "en": "App-scoped node freshness, approved budgets and pending executions; administrators see all applications.",
-          "zh-TW": "應用統一接入狀態"
+          "zh-CN": "应用统一接入状态 包含进行中的异步任务，通过 /tasks/{id}/cancel 取消。",
+          "en": "App-scoped node freshness, approved budgets and pending executions; administrators see all applications. Includes active asynchronous tasks; cancel using /tasks/{id}/cancel.",
+          "zh-TW": "應用統一接入狀態 包含进行中的异步任务，通过 /tasks/{id}/cancel 取消。"
         },
-        "description": "App-scoped node freshness, approved budgets and pending executions; administrators see all applications."
+        "description": "App-scoped node freshness, approved budgets and pending executions; administrators see all applications. Includes active asynchronous tasks; cancel using /tasks/{id}/cancel."
       },
       "post": {
         "operationId": "post_integrations",
@@ -3190,11 +3190,11 @@
           }
         },
         "x-description": {
-          "zh-CN": "应用心跳及停止命令",
-          "en": "Follow heartbeat_after_seconds. Pending stop commands are redelivered until matched native execution proof is confirmed. App heartbeats cannot forge node telemetry.",
-          "zh-TW": "應用心跳及停止命令"
+          "zh-CN": "应用心跳及停止命令 返回 executions 和 complete_execution_snapshot；最多 256 项，非完整快照不可用于清理回执，不返回执行令牌。",
+          "en": "Follow heartbeat_after_seconds. Pending stop commands are redelivered until matched native execution proof is confirmed. App heartbeats cannot forge node telemetry. Returns outstanding executions (permit_id, executor_id, execution_id, state) and complete_execution_snapshot. At most 256 entries; false completeness forbids journal pruning. No execution tokens are returned.",
+          "zh-TW": "應用心跳及停止命令 返回 executions 和 complete_execution_snapshot；最多 256 项，非完整快照不可用于清理回执，不返回执行令牌。"
         },
-        "description": "Follow heartbeat_after_seconds. Pending stop commands are redelivered until matched native execution proof is confirmed. App heartbeats cannot forge node telemetry.",
+        "description": "Follow heartbeat_after_seconds. Pending stop commands are redelivered until matched native execution proof is confirmed. App heartbeats cannot forge node telemetry. Returns outstanding executions (permit_id, executor_id, execution_id, state) and complete_execution_snapshot. At most 256 entries; false completeness forbids journal pruning. No execution tokens are returned.",
         "requestBody": {
           "required": true,
           "content": {

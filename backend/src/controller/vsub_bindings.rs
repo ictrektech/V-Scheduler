@@ -180,6 +180,9 @@ fn build(
         cfg["models"][&id] = json!({"mode":"permit","executor_id":gateway,"completion":"synchronous","upstream_url":upstream,"max_input_bytes":max_input,"limits":approval["limits"].as_object().cloned().unwrap_or_default()});
     }
     let mut state = json!({"credential_epoch":epoch,"binding":{"protocol_version":1,"binding_revision":1,"app_id":APP,"url":controller,"token":token,"models":models,"gateway_executors":gateway_executors,"namespaces":namespaces,"model_generations":generations,"upstreams":upstreams,"model_limits":limits,"model_execution_settings":settings},"principals":[{"token":token,"role":"submitter","app_id":APP,"permit_executors":gateway_ids},{"token":gateway_token,"role":"submitter","app_id":GATEWAY_APP}],"executors":executors,"adapters":[],"gateway":{"token":gateway_token},"gateway_snapshot":{"protocol_version":1,"app_id":APP,"namespaces":gateway_namespaces}});
+    if discovery["lifecycle_protocol_version"] == 1 {
+        state["binding"]["lifecycle_protocol_version"] = json!(1);
+    }
     if let Some(old) = old {
         let revision = old["binding"]["binding_revision"]
             .as_u64()
@@ -462,6 +465,19 @@ mod tests {
         assert_eq!(next["binding"]["url"], CONTROLLER);
         assert_eq!(next["binding"]["token"], first["binding"]["token"]);
         assert_eq!(next["binding"]["binding_revision"], 2);
+    }
+
+    #[test]
+    fn lifecycle_negotiation_preserves_worker_identity_and_budget() {
+        let (mut discovery, approvals) = fixture();
+        let before = build("node", &Resources { cpu_millicores: 8000, memory_mib: 8192, ..Default::default() }, &Resources::default(), &json!({}), "l4t", &discovery, &approvals, None).unwrap();
+        assert!(before["binding"]["lifecycle_protocol_version"].is_null());
+        discovery["lifecycle_protocol_version"] = json!(1);
+        let after = build("node", &Resources { cpu_millicores: 8000, memory_mib: 8192, ..Default::default() }, &Resources::default(), &json!({}), "l4t", &discovery, &approvals, Some(&before)).unwrap();
+        assert_eq!(after["binding"]["lifecycle_protocol_version"], 1);
+        assert_eq!(after["binding"]["binding_revision"], 2);
+        assert_eq!(after["binding"]["token"], before["binding"]["token"]);
+        assert_eq!(after["executors"], before["executors"]);
     }
 
     #[test]

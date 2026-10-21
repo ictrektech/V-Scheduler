@@ -259,6 +259,9 @@ fn build(
     let mut state = json!({"credential_epoch":epoch,"binding":{"protocol_version":1,"binding_revision":1,"app_id":application.id,"url":CONTROLLER,"token":token,"executor_token":executor_token,"upstream_url":upstream(application),"execution_settings":contract["execution_settings"],"models":models,"gateway_executors":gateway_executors,"model_limits":model_limits,"model_parameters":model_parameters},
         "principals":[{"token":token,"role":"submitter","app_id":application.id,"permit_executors":gateway_ids},{"token":gateway_token,"role":"submitter","app_id":owner,"delegated_executors":delegated_ids}],
         "executors":executors,"adapters":adapters,"gateway":{"url":CONTROLLER,"token":gateway_token,"require_model_policy":true,"models":policies}});
+    if contract["lifecycle_protocol_version"] == 1 {
+        state["binding"]["lifecycle_protocol_version"] = json!(1);
+    }
     if let Some(old) = old {
         let revision = old["binding"]["binding_revision"]
             .as_u64()

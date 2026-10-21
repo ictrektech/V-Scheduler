@@ -339,7 +339,8 @@
       },
       "application_versions": [
         "0.0.21",
-        "0.0.22"
+        "0.0.22",
+        "0.0.23"
       ]
     },
     {
@@ -357,7 +358,8 @@
       "max_concurrent_inference": 2,
       "application_versions": [
         "0.0.21",
-        "0.0.22"
+        "0.0.22",
+        "0.0.23"
       ],
       "input_limits_version": 1,
       "music": {
@@ -445,7 +447,8 @@
       "max_concurrent_inference": 2,
       "application_versions": [
         "0.0.21",
-        "0.0.22"
+        "0.0.22",
+        "0.0.23"
       ],
       "input_limits_version": 1,
       "music": {
@@ -533,7 +536,8 @@
       "max_concurrent_inference": 2,
       "application_versions": [
         "0.0.21",
-        "0.0.22"
+        "0.0.22",
+        "0.0.23"
       ],
       "input_limits_version": 1,
       "music": {
@@ -621,7 +625,8 @@
       "max_concurrent_inference": 2,
       "application_versions": [
         "0.0.21",
-        "0.0.22"
+        "0.0.22",
+        "0.0.23"
       ],
       "input_limits_version": 1,
       "music": {

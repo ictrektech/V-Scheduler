@@ -4,6 +4,7 @@ const props=defineProps<{request:(path:string,body?:unknown,method?:string)=>Pro
 const items=ref<any[]>([]),error=ref(''),busy=ref(false)
 let disposed=false,timer:ReturnType<typeof setInterval>|undefined
 async function refresh(){try{const value=await props.request('integrations');if(!disposed){items.value=value.items;error.value=''}}catch(e){if(!disposed)error.value=e instanceof Error?e.message:String(e)}}
+async function cancelTask(id:string){if(busy.value)return;busy.value=true;try{await props.request('tasks/'+encodeURIComponent(id)+'/cancel',{});await refresh()}catch(e){error.value=e instanceof Error?e.message:String(e)}finally{busy.value=false}}
 async function stop(id:string){if(busy.value)return;busy.value=true;try{await props.request('permits/'+encodeURIComponent(id)+'/stop',{});await refresh()}catch(e){error.value=e instanceof Error?e.message:String(e)}finally{busy.value=false}}
 onMounted(()=>{void refresh();timer=setInterval(()=>void refresh(),5000)})
 onUnmounted(()=>{disposed=true;if(timer)clearInterval(timer)})
@@ -19,6 +20,7 @@ onUnmounted(()=>{disposed=true;if(timer)clearInterval(timer)})
    <p>{{t('应用心跳')}}：{{item.heartbeat}}</p>
    <div class="table-scroll"><table><thead><tr><th>{{t('执行器')}}</th><th>{{t('节点')}}</th><th>{{t('批准预算')}}</th><th>{{t('状态')}}</th></tr></thead><tbody><tr v-for="e in item.executors" :key="e.definition.id"><td>{{e.definition.id}}</td><td>{{e.definition.node_id}}</td><td>{{e.definition.resources.cpu_millicores}} mCPU / {{e.definition.resources.memory_mib}} MiB / {{e.definition.resources.gpu_slots}} GPU</td><td>{{t(e.approval_current&&e.node?.fresh&&!e.node?.draining&&e.node?.management_enabled?'配置就绪':'暂不可执行')}}</td></tr></tbody></table></div>
    <div v-for="execution in item.executions" :key="execution.permit_id" class="section-head"><code>{{execution.model_id}} · {{execution.state}}</code><button class="quiet" :disabled="busy||execution.stop_requested" @click="stop(execution.permit_id)">{{t(execution.stop_requested?'等待原生停止核验':'停止并卸载')}}</button></div>
+   <div v-for="task in item.tasks||[]" :key="task.task_id" class="section-head"><code>{{task.executor_id}} · {{task.status}}</code><button class="quiet" :disabled="busy||task.status==='cancelling'" @click="cancelTask(task.task_id)">{{t(task.status==='cancelling'?'等待原生停止核验':'取消')}}</button></div>
   </article>
  </section>
 </template>

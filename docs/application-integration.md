@@ -218,6 +218,17 @@ HybRAG 从「已注册的 V-Scheduler 模型」选择这两个调用名，embedd
 
 `STOP_ADAPTER_NOT_REGISTERED` 表示该执行尚无唯一已注册的停止适配，不能显示为已停；`STOP_REQUESTED` 表示当前执行已要求退出；`STOP_PROOF_MISMATCH` 表示回执与执行不匹配；`APPLICATION_HEARTBEAT_STALE` 暂停新执行；`EXECUTOR_APPROVAL_CHANGED` 要求重新匹配批准并登记。界面「节点管理 → 应用统一接入」汇总这些节点、预算和应用状态，并提供已接入执行的停止入口。
 
+### 已适配的执行应用
+
+V-Voice（含配乐）、V-Sub、Desensitize 与 Image Studio 在 VOS 启动及可信绑定完成后自动登记、心跳，无需手工录入身份或部署 Agent。控制器仅在应用 discovery 声明 `lifecycle_protocol_version=1` 时交接该协议，旧版仍沿用原绑定。V-ChatCut、HybRAG 等调用方沿用统一网关或任务接口，由实际执行端登记，调用方不重复申报同一份算力预算。
+
+- V-Voice：停止当前请求；原生子进程退出或阻塞调用返回、缓存卸载后确认。
+- V-Sub：Root broker 将停止传给私有 worker，等待原生子进程退出后确认。
+- Desensitize：阻止后续计算，等待当前 ONNX 调用返回并卸载，不能强杀线程后直接释放。
+- Image Studio 和 V-Voice 异步创作：使用 `/tasks/{id}/cancel`，沿用 attempt/fence 与原生退出核验；统一接入页面也显示这些任务。
+
+应用心跳返回 `executions`（`permit_id`、`executor_id`、`execution_id`、`state`）及 `complete_execution_snapshot`。快照最多 256 项，截断时完整标记为 false；仅完整快照可用于清理本地已确认退出且已释放的回执。响应不包含执行令牌。停止证明保存在应用私有持久卷，绑定原 execution/token/nonce；重启后可重试已确认回执，不能推定未知执行已经停止。
+
 <a id="vllm-registration"></a>
 ## vLLM 主动注册与生命周期
 

@@ -459,7 +459,7 @@ fn build(
         }
     }
     // 0.0.22 仅改变安装地址，复用经核验的 0.0.21 原生镜像。
-    let controller_url = if contract["_application_version"] == "0.0.22" {
+    let controller_url = if ["0.0.22", "0.0.23"].contains(&contract["_application_version"].as_str().unwrap_or("")) {
         "http://v-scheduler:8080/scheduler/api/v1"
     } else { URL };
     let mut state = json!({"credential_epoch":epoch,"binding":{"protocol_version":1,"binding_revision":1,"app_id":APP,"url":controller_url,"token":token,"executor_token":executor_token,"upstream_url":UPSTREAM,"models":models,"gateway_executors":gateway_executors,"secondary_models":secondary_models},
@@ -480,6 +480,9 @@ fn build(
     }
     if let Some(music) = music_settings {
         state["binding"]["execution_settings"] = json!({"music":music});
+    }
+    if contract["lifecycle_protocol_version"] == 1 {
+        state["binding"]["lifecycle_protocol_version"] = json!(1);
     }
     if let Some(old) = old {
         let revision = old["binding"]["binding_revision"]
@@ -502,7 +505,7 @@ async fn recover_unclaimed_direct(
     state: &Value,
     version: &str,
 ) -> anyhow::Result<u64> {
-    if !["0.0.21", "0.0.22"].contains(&version) {
+    if !["0.0.21", "0.0.22", "0.0.23"].contains(&version) {
         return Ok(0);
     }
     let node = state["executors"]
@@ -748,6 +751,23 @@ mod tests {
         assert_eq!(after["binding"]["token"], before["binding"]["token"]);
         assert_eq!(after["executors"], before["executors"]);
         assert_eq!(after["adapters"], before["adapters"]);
+    }
+
+    #[test]
+    fn lifecycle_negotiation_preserves_identity_and_approved_resources() {
+        let (runtime, mut contract, approvals) = fixtures();
+        contract["_application_version"] = json!("0.0.22");
+        let before = build(&runtime, &contract, &approvals, None).unwrap();
+        assert!(before["binding"]["lifecycle_protocol_version"].is_null());
+        contract["_application_version"] = json!("0.0.23");
+        contract["lifecycle_protocol_version"] = json!(1);
+        let after = build(&runtime, &contract, &approvals, Some(&before)).unwrap();
+        assert_eq!(after["binding"]["lifecycle_protocol_version"], 1);
+        assert_eq!(after["binding"]["binding_revision"], 2);
+        assert_eq!(after["binding"]["token"], before["binding"]["token"]);
+        assert_eq!(after["executors"], before["executors"]);
+        let same = build(&runtime, &contract, &approvals, Some(&after)).unwrap();
+        assert_eq!(same["binding"]["binding_revision"], 2);
     }
 
     #[test]

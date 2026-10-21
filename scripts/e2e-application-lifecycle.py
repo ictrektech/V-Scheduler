@@ -120,6 +120,7 @@ try:
  check(call('/integrations',token=keys['worker'])[0]==403,'worker cannot impersonate application registration')
  check(call('/integrations/heartbeat',{'revision':1,'report':{'memory_available_mib':999999}})[0]==422,'application heartbeat cannot forge node telemetry')
  check(call('/integrations/heartbeat',{'revision':1})[0]==200,'periodic application heartbeat accepted')
+ check(call('/integrations/heartbeat',{'revision':1})[1]['data']['complete_execution_snapshot'] is True,'idle heartbeat explicitly carries a complete execution snapshot')
  sql("UPDATE vrs_integrations SET heartbeat=now()-interval '25 seconds'")
  execution=secrets.token_hex(32)
  body={'executor_id':'batch.infer','upstream_url':'http://fixture:9999/v1','model_id':'fixture','execution_token':execution}
@@ -134,6 +135,9 @@ try:
  check(call('/permits/'+permit+'/verify',verify)[0]==503,'stale application cannot claim an already allocated execution')
  call('/integrations/heartbeat',{'revision':1})
  check(call('/permits/'+permit+'/verify',verify)[0]==200,'native backend claims exact execution')
+ snapshot=call('/integrations/heartbeat',{'revision':1})[1]['data']
+ check(snapshot['complete_execution_snapshot'] and any(row['permit_id']==permit and row['execution_id']=='native-1' for row in snapshot['executions']),'heartbeat retains claimed execution until verified release')
+ check('execution_token' not in json.dumps(snapshot),'heartbeat snapshot never discloses execution proof')
  check(call('/permits/'+permit+'/stop',{},token=keys['worker'])[0]==403,'worker cannot request model stop as a user')
  check(call('/permits/'+permit+'/stop',{},token=keys['other'])[0]==404,'other application cannot stop this execution')
  code,reply=call('/permits/'+permit+'/stop',{})
@@ -158,6 +162,7 @@ try:
  check(call('/permits/'+permit+'/stopped',ack)[0]==200,'matched native exit and unloading receipt releases reservation')
  check(call('/permits/'+permit+'/stopped',ack)[0]==200,'acknowledgement retry is idempotent')
  check(call('/integrations/heartbeat',{'revision':1})[1]['data']['stop_requests']==[],'confirmed stop disappears from pending commands')
+ check(not any(row['permit_id']==permit for row in call('/integrations/heartbeat',{'revision':1})[1]['data']['executions']),'released native execution leaves heartbeat snapshot')
  stop.set();time.sleep(.6)
  sql("UPDATE vrs_nodes SET heartbeat=now()-interval '20 seconds'")
  check(acquire('stale-node')[0]==429,'stale node telemetry prevents new execution independently of app heartbeat')
