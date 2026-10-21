@@ -102,8 +102,26 @@ impl Runtime {
         Ok(())
     }
     fn install(&self, state: &Value) -> anyhow::Result<()> {
+        self.install_for_node(state, None)
+    }
+    fn install_for_node(&self, state: &Value, approved_node: Option<&Node>) -> anyhow::Result<()> {
         let mut overlays = self.overlays.write().expect("overlay lock");
-        let config = with_binding(self.base_with_management(&overlays.managed), state)?;
+        let current = self.snapshot();
+        let installed = state["executors"].as_array().is_some_and(|entries| entries.iter()
+            .all(|entry| current.executors.iter().any(|executor| entry["id"] == executor.id)));
+        let node_current = approved_node.is_none_or(|node| current.nodes.iter().any(|existing|
+            existing.id == node.id
+                && serde_json::to_value(&existing.capacities).ok() == serde_json::to_value(&node.capacities).ok()
+                && serde_json::to_value(&existing.resident_baseline).ok() == serde_json::to_value(&node.resident_baseline).ok()));
+        if installed && node_current && overlays.binding.as_ref() == Some(state) { return Ok(()); }
+        let mut config = self.base_with_management(&overlays.managed);
+        if let Some(node) = approved_node {
+            let existing = config.nodes.iter_mut().find(|entry| entry.id == node.id)
+                .context("unknown approved node")?;
+            existing.capacities = node.capacities.clone();
+            existing.resident_baseline = node.resident_baseline.clone();
+        }
+        let config = with_binding(config, state)?;
         overlays.binding = Some(state.clone());
         *self.current.write().expect("configuration lock") = Arc::new(config);
         Ok(())
@@ -689,10 +707,13 @@ async fn reconcile(path: &Path, runtime: &Runtime, db: &PgPool) -> anyhow::Resul
             .await?;
         let busy: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM vrs_permits WHERE app IN ('com.ictrek.v-voice','v-scheduler.voice-gateway') AND state<>'released') OR EXISTS(SELECT 1 FROM vrs_reservations r JOIN vrs_tasks t ON t.id=r.task WHERE t.app='com.ictrek.v-voice' AND r.state<>'released')").fetch_one(&mut *tx).await?;
         ensure!(!busy, "binding update waits for active execution");
+        runtime.install_for_node(&state, Some(&node))?;
         write_private(&state_path, &state)?;
-        runtime.install(&state)?;
         tx.commit().await?;
     }
+    // A prior failed install or a restart may leave the persisted revision
+    // newer than the in-memory overlay. Restore it using the same approved row.
+    runtime.install_for_node(&state, Some(&node))?;
     let agent_path = directory.join("local-agent.json");
     let adapter_guard = runtime.management_lock.lock().await;
     let mut agent = read_private(&agent_path)?;
@@ -972,6 +993,30 @@ mod tests {
         managed.nodes[0].capacities.cpu_millicores = 5000;
         runtime.set_management(managed).unwrap();
         assert!(build(&runtime, &contract, &approvals, None).is_ok());
+    }
+
+    #[test]
+    fn restored_binding_installs_against_the_current_approved_node() {
+        let (mut runtime, contract, mut approvals) = fixtures();
+        let mut startup = (*runtime.base).clone();
+        startup.nodes[0].capacities.cpu_millicores = 4000;
+        runtime.base = Arc::new(startup.clone());
+        *runtime.current.write().unwrap() = Arc::new(startup.clone());
+        approvals["approvals"][0]["resources"]["cpu_millicores"] = json!(4500);
+        let mut approved = startup.nodes[0].clone();
+        approved.capacities.cpu_millicores = 5000;
+        let state = build_for_node(&approved, &contract, &approvals, None).unwrap();
+        assert!(runtime.install(&state).is_err());
+        // Simulate the newer persisted revision left by an earlier failed install.
+        runtime.overlays.write().unwrap().binding = Some(state.clone());
+        runtime.install_for_node(&state, Some(&approved)).unwrap();
+        let installed = runtime.snapshot();
+        assert_eq!(installed.nodes[0].capacities.cpu_millicores, 5000);
+        assert!(!installed.executors.is_empty());
+        runtime.install_for_node(&state, Some(&approved)).unwrap();
+        assert!(Arc::ptr_eq(&installed, &runtime.snapshot()));
+        approved.capacities.cpu_millicores = 4000;
+        assert!(build_for_node(&approved, &contract, &approvals, None).is_err());
     }
 
     #[test]
