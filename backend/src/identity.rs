@@ -24,32 +24,14 @@ pub fn base() -> Option<String> {
         .map(|host| format!("http://{host}:8105"))
 }
 
-// 老版 VOS 的应用 context token 可通过 user/check 核验，但 userinfo 会查找不存在的用户记录。
-// 仅对 userinfo 明确返回 invalid_token 时尝试兼容路径；仍由同一 VOS 验证签名和身份。
 pub async fn application(client: &reqwest::Client, base: &str, token: &str, expected: &str) -> anyhow::Result<()> {
     use anyhow::ensure;
     let response = client.get(format!("{}/v1000/oauth2/userinfo", base.trim_end_matches('/')))
         .bearer_auth(token.trim()).send().await?;
-    let status = response.status();
-    let value: Value = response.json().await?;
-    if status.is_success() {
-        ensure!(value["sub"] == expected && value["enable"] == 1, "application identity mismatch");
-        return Ok(());
-    }
-    ensure!(status == reqwest::StatusCode::UNAUTHORIZED && value["error"] == "invalid_token", "application identity unavailable");
-    let response = client.get(format!("{}/v1000/user/check", base.trim_end_matches('/')))
-        .bearer_auth(token.trim()).send().await?;
     ensure!(response.status().is_success(), "application identity unavailable");
     let value: Value = response.json().await?;
-    ensure!(legacy_application(&value, expected), "application identity mismatch");
+    ensure!(value["sub"] == expected && value["enable"] == 1, "application identity mismatch");
     Ok(())
-}
-
-fn legacy_application(value: &Value, expected: &str) -> bool {
-    let user = &value["data"];
-    value["code"] == 0 && user["username"] == expected && user["role_code"] == "system_admin"
-        && user["enable"] == 1 && user["delete"] == 0
-        && user["id"].as_str().is_some_and(|id| !id.is_empty())
 }
 
 pub fn administrator(v: &Value) -> bool {
@@ -122,18 +104,6 @@ fn validate_user_check(value: &Value) -> Result<(), StatusCode> {
 mod tests {
     use super::*;
     use serde_json::json;
-    #[test]
-    fn legacy_application_requires_verified_exact_enabled_identity() {
-        let valid = json!({"code":0,"data":{"id":"app-context-id","username":"com.ictrek.v-scheduler","role_code":"system_admin","enable":1,"delete":0}});
-        assert!(legacy_application(&valid, "com.ictrek.v-scheduler"));
-        for (path, bad) in [("username", json!("admin")), ("username", json!("com.ictrek.other")), ("role_code", json!("user")), ("enable",json!(0)), ("delete",json!(1)), ("id",json!(""))] {
-            let mut value = valid.clone(); value["data"][path] = bad;
-            assert!(!legacy_application(&value, "com.ictrek.v-scheduler"));
-        }
-        let mut expired = valid.clone(); expired["code"] = json!(10001);
-        assert!(!legacy_application(&expired, "com.ictrek.v-scheduler"));
-    }
-
     #[test]
     fn bearer_syntax_matches_gateway() {
         for value in [
