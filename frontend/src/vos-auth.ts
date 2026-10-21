@@ -1,3 +1,4 @@
+import { sha256 } from '@noble/hashes/sha2.js'
 export interface VOSTokenSet {
   access_token: string
   token_type?: string
@@ -229,10 +230,9 @@ function randomBase64url(byteLength = 32): string {
   return base64url(bytes)
 }
 
-async function sha256Base64url(input: string): Promise<string> {
+export async function sha256Base64url(input: string): Promise<string> {
   const bytes = new TextEncoder().encode(input)
-  const digest = await crypto.subtle.digest('SHA-256', bytes)
-  return base64url(new Uint8Array(digest))
+  return base64url(sha256(bytes))
 }
 
 function base64url(bytes: Uint8Array): string {

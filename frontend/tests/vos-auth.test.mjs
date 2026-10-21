@@ -2,6 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import ts from 'typescript';
+import {createHash,webcrypto} from 'node:crypto';
 
 const source = await readFile(new URL('../src/vos-auth.ts', import.meta.url), 'utf8');
 let sequence=0;
@@ -15,7 +16,7 @@ async function fixture() {
     async authorize(params){authorizations++;return {code:'test-code',state:params.state}},
     async token(){return {access_token:'renewed-oauth-token',expires_in:3600}},
   }}}}};
-  const output=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022}}).outputText;
+  const output=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022}}).outputText.replace(/(['"])@noble\/hashes\/sha2\.js\1/g, JSON.stringify(import.meta.resolve('@noble/hashes/sha2.js')));
   const auth=await import(`data:text/javascript;base64,${Buffer.from(output).toString('base64')}#${sequence++}`);
   return {auth,values,authorizations:()=>authorizations};
 }
@@ -53,4 +54,15 @@ test('server-rejected injection is not reused after the former bypass cooldown',
  assert.equal(await auth.getVOSBearerToken(),'renewed-oauth-token');
  const now=Date.now;Date.now=()=>now()+61_000;
  try{assert.equal(await auth.getVOSBearerToken(),'renewed-oauth-token')}finally{Date.now=now}
+});
+
+test('PKCE remains S256 when the VOS HTTP origin has no Web Crypto subtle API', async()=>{
+ const saved=Object.getOwnPropertyDescriptor(globalThis,'crypto');
+ Object.defineProperty(globalThis,'crypto',{configurable:true,value:{getRandomValues:webcrypto.getRandomValues.bind(webcrypto)}});
+ try {
+  const {auth,authorizations}=await fixture();
+  assert.equal(await auth.sha256Base64url('RFC7636-verifier'),createHash('sha256').update('RFC7636-verifier').digest('base64url'));
+  assert.equal(await auth.getVOSBearerToken(),'renewed-oauth-token');
+  assert.equal(authorizations(),1);
+ } finally { if(saved)Object.defineProperty(globalThis,'crypto',saved);else delete globalThis.crypto; }
 });
