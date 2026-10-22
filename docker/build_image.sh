@@ -308,6 +308,14 @@ case "$sheet" in
  ARM_with_cuda) profile=arm; arch=arm64 ;;
  *) die 'select an explicit supported sheet; no architecture auto-detection' ;;
 esac
+# Use the SWR-published builder with pre-fetched Cargo.lock dependencies so
+# builds never reach crates.io from inside Docker. Rebuild it with
+# docker/build_rust_builder.sh after changing Cargo.lock.
+RUST_BUILDER_REPOSITORY="${RUST_BUILDER_REPOSITORY:-swr.cn-southwest-2.myhuaweicloud.com/ictrek/v-scheduler-rust-builder}"
+if [[ -z "${SCHEDULER_RUST_BUILD_IMAGE:-}" ]]; then
+  SCHEDULER_RUST_BUILD_IMAGE="${RUST_BUILDER_REPOSITORY}:1.97-${arch}"
+  SCHEDULER_CARGO_OFFLINE="${SCHEDULER_CARGO_OFFLINE:-1}"
+fi
 DATE="$(TZ=Asia/Shanghai date +%Y%m%d)"
 TAG="${profile}_${DATE}"
 IMAGE="${REPOSITORY}:${TAG}"
@@ -337,6 +345,7 @@ fi
 if [[ "${SCHEDULER_CARGO_OFFLINE:-0}" == 1 ]]; then
   build_args+=(--build-arg CARGO_OFFLINE=true)
 fi
+log "Rust builder: ${SCHEDULER_RUST_BUILD_IMAGE:-rust:1.97-bookworm} (offline=${SCHEDULER_CARGO_OFFLINE:-0})"
 docker buildx build "${build_args[@]}" --platform "linux/${arch}" --load --provenance=false --sbom=false -f "$BUILD_DIR/context/docker/Dockerfile" -t "$IMAGE" "$BUILD_DIR/context"
 # Verify runtime linkage and bundled UI before any registry publication.
 docker run --rm --network none "$IMAGE" --help > "$BUILD_DIR/runtime-help.txt"
