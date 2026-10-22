@@ -280,12 +280,12 @@ mod tests {
         let approval = approvals["approvals"].as_array().unwrap().iter()
             .find(|a| a["app_id"] == "com.ictrek.image-studio" && a["profile"] == "l4t" && a["model_id"] == "sd-turbo").unwrap();
         let cost: Resources = serde_json::from_value(approval["resources"].clone()).unwrap();
-        assert_eq!(cost.memory_mib, 3072);
+        assert_eq!(cost.memory_mib, 2304);
         assert_eq!(cost.gpu_memory_mib, 0);
         let reserve = Resources { memory_mib: 1024, ..Default::default() };
-        let mut report = serde_json::json!({"memory_total_mib":15655,"memory_available_mib":5120,"cpu_logical_count":8,"cpu_used_percent":20,"gpus":[{"memory_type":"unified","total_mib":null,"free_mib":null}]});
+        let mut report = serde_json::json!({"memory_total_mib":15655,"memory_available_mib":3584,"cpu_logical_count":8,"cpu_used_percent":20,"gpus":[{"memory_type":"unified","total_mib":null,"free_mib":null}]});
         assert!(cost.fits_guarded(&Resources::default(), &report, &reserve));
-        report["memory_available_mib"] = serde_json::json!(4095);
+        report["memory_available_mib"] = serde_json::json!(3327);
         assert!(!cost.fits_guarded(&Resources::default(), &report, &reserve));
         assert!(!cost.fits_guarded_with_policy(&Resources::default(), &report, &reserve, true));
     }
