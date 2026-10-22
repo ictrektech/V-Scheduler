@@ -549,7 +549,7 @@ async fn recover_unclaimed_direct(
     state: &Value,
     version: &str,
 ) -> anyhow::Result<u64> {
-    if !["0.0.21", "0.0.22", "0.0.23", "0.0.24", "0.0.25", "0.0.26"].contains(&version) {
+    if !["0.0.21", "0.0.22", "0.0.23", "0.0.24", "0.0.25", "0.0.26", "0.0.27"].contains(&version) {
         return Ok(0);
     }
     let node = state["executors"]
@@ -992,6 +992,10 @@ mod tests {
         contract.as_object_mut().unwrap().remove("execution_settings");
         let retired_state = build(&runtime, &contract, &approvals, Some(&compatible)).unwrap();
         assert_eq!(retired_state["binding"]["models"].as_object().unwrap().len(), 7);
+        let latest_sense = &retired_state["binding"]["models"]["sensevoice-int8"];
+        let latest_small = retired_state["executors"].as_array().unwrap().iter().find(|e| &e["id"] == latest_sense).unwrap();
+        assert_eq!(latest_small["resources"]["memory_mib"], 4096);
+        assert_eq!(latest_small["resources"]["gpu_memory_mib"], 0);
         for id in retired {
             assert!(retired_state["binding"]["models"].get(id).is_none());
             assert!(retired_state["gateway"]["models"].get(format!("app-v-voice/{id}")).is_none());

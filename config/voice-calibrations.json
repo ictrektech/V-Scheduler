@@ -68,7 +68,37 @@
         ],
         "native_peak_memory_mib": 2419,
         "async_peak_memory_mib": 3768,
-        "active_cancel_confirmed_stopped": true
+        "active_cancel_confirmed_stopped": true,
+        "voice_0_0_27_validation": {
+          "image_id": "sha256:f1bfbfe4c81cc0d6d1bb48e892a0f541eadd6b79ec38b9509ebb443d3f7c69cf",
+          "evidence_ids": [
+            "voice-tc229-7c1b164a44694373bd222408d31c627d",
+            "voice-tc229-74d8bd5e107546e49427f7688a096987",
+            "voice-tc229-2caee304e24546098c351d085005e14a",
+            "voice-tc229-e407a58d854d4d30ab473bd56d35d3a4"
+          ],
+          "native_cgroup_peak_mib": 3004,
+          "native_unified_host_available_drop_mib": 5377,
+          "gguf_cgroup_peak_mib": 2361,
+          "gguf_unified_host_available_drop_mib": 7854,
+          "cpu_ceiling_millicores": 4000,
+          "gguf_threads": 7,
+          "real_permit_claim_and_release": true,
+          "native_exit_confirmed": true,
+          "cuda_runtime_libraries_loaded": [
+            "libcuda.so.1.1",
+            "libcublas.so.13.0.0.19",
+            "libcudart.so.13.0.48",
+            "libnccl.so.2.27.7"
+          ],
+          "cases": [
+            "Native Kokoro 512 characters; SenseVoice, Whisper Tiny and Qwen3-ASR 20 seconds with CAM++ combinations, two rounds",
+            "VoxCPM2 Q8 real audio generation with a synthetic reference and cancellation during the next request",
+            "Kokoro Q8 real WAV generation"
+          ],
+          "approved_resources_unchanged": true,
+          "scope": "Thor CUDA, existing models and tested inputs only; no other profile approved by these measurements."
+        }
       },
       "secondary_calibration": {
         "evidence_id": "v-voice-thor-native-and-creative-20261015",
@@ -81,6 +111,11 @@
           "kokoro-multilang"
         ],
         "0.0.26": [
+          "sensevoice-int8",
+          "speaker-campplus-zh-en",
+          "kokoro-multilang"
+        ],
+        "0.0.27": [
           "sensevoice-int8",
           "speaker-campplus-zh-en",
           "kokoro-multilang"
@@ -140,11 +175,31 @@
           "voice-tc229-46bbfb08294441009daa7251dbdfd271",
           "voice-tc229-d3e508b9dcc043dbb67f3c07dd7b9feb"
         ],
-        "repeat_cgroup_peak_mib": 1587
+        "repeat_cgroup_peak_mib": 1587,
+        "voice_0_0_27_validation": {
+          "image_id": "sha256:f1bfbfe4c81cc0d6d1bb48e892a0f541eadd6b79ec38b9509ebb443d3f7c69cf",
+          "evidence_ids": [
+            "voice-tc229-5a2f0989d5bf4615b587e183a0764632",
+            "voice-tc229-c99d94956efb4bda961d7d851924ffc2",
+            "voice-tc229-886034baeeaf4f1187fb9842fcafc467"
+          ],
+          "cgroup_peak_mib": 1610,
+          "unified_host_available_drop_mib": 2580,
+          "cpu_ceiling_millicores": 4500,
+          "container_memory_ceiling_mib": 4096,
+          "real_permit_claim_and_release": true,
+          "native_exit_confirmed": true,
+          "cases": [
+            "Two independent runs, two rounds each: Kokoro 512 characters, SenseVoice 20 seconds, combined CAM++",
+            "Cancellation after ASR native runtime loaded; process exit confirmed before releasing permit"
+          ],
+          "budget_changed": false
+        }
       },
       "application_versions": [
         "0.0.25",
-        "0.0.26"
+        "0.0.26",
+        "0.0.27"
       ]
     },
     {

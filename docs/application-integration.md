@@ -421,7 +421,7 @@ A 若同时提供直接调用和 V-Router 调用的同步入口，必须让两�
 
 V-Voice 已提供同一 VOS 内的专用授权接收端。统一应用可自动交接独立服务身份、
 执行器及网关同步验票权限，省去用户手工分发令牌；仍只允许已校准且就绪的模型。
-流程、校准清单、持久 revision 与凭据轮换见 [V-Voice 主动接入](v-voice-auto-binding.md)。
+流程、校准清单、持久 revision 与凭据轮换见 [V-Voice 主动接入](v-voice-auto-binding.md)。 V-Voice 0.0.27 已退役四个 PyTorch 原生模型；控制器从新版声明中移除它们的绑定和网关策略，保留 ONNX、声纹与 audio.cpp GGUF 的独立审批，不能把目录保留视为全部模型已获准运行。
 
 V-Voice 已验证版本的 Python 直调在准入响应丢失后，可按[未认领许可恢复规则](v-voice-auto-binding.md#准入响应丢失时的未认领许可恢复)自动回收过期且从未认领的预约。此规则不适用于 Router 的其他推理路径，也不把租约到期当成已启动计算的停止证明。
 

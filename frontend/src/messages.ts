@@ -524,4 +524,5 @@ export const messages:Record<string,[string,string]>={
 "规划容量":["Planned capacity", "規劃容量"],
 "已有部署由 ModelInfer 管理；调度控制接口待验证。":["Existing deployments are managed by ModelInfer. Scheduling control awaits verification.", "現有部署由 ModelInfer 管理；調度控制介面待驗證。"],
 "内存":["Memory", "記憶體"],
+"V-Voice 0.0.27 保留 ONNX、声纹与 audio.cpp GGUF，移除四个 PyTorch 原生音乐模型；绑定以实际就绪模型和匹配审批为准。":["V-Voice 0.0.27 retains ONNX, speaker recognition and audio.cpp GGUF while retiring four PyTorch native music models. Bindings require ready models and matching approvals.", "V-Voice 0.0.27 保留 ONNX、聲紋與 audio.cpp GGUF，移除四個 PyTorch 原生音樂模型；繫結以實際就緒模型與匹配審批為準。"],
 }
