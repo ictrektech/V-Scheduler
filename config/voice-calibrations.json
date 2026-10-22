@@ -448,7 +448,7 @@
       "calibration": {
         "evidence_id": "voice-tc192-71684af2b0c7454586315b47bea6d82f",
         "image_id": "sha256:2738549f5984b29926e928f4c3ac6bbdc02e73066fa0d77953b8d3d9ab76c3a3",
-        "peak_memory_mib": 1498,
+        "peak_memory_mib": 1518,
         "memory_method": "Maximum of sampled cgroup memory (1498 MiB) and host available-memory drop (971 MiB). Three native CPU rounds completed under a 1536 MiB memory/swap hard limit and real outer permit; approve 1792 MiB to retain service/runtime margin. Final L4T image tested without source mounts.",
         "observed_peak_cpu_millicores": 4023,
         "native_and_container_exit_confirmed": true,
@@ -466,6 +466,32 @@
           "kokoro-multilang": "cpu",
           "sensevoice-int8": "cpu",
           "uninstalled_models_tested": false
+        },
+        "voice_0_0_27_validation": {
+          "image_id": "sha256:0505ff91a032b40e78ba4665c436683d670f6f63f385c1046a9e26f8f5239d49",
+          "evidence_ids": [
+            "voice-tc192-25a6ffcdc6e34b05bb462332ef2f7d99",
+            "voice-tc192-7b2b64d6f5524390b09f1a129e7700b3"
+          ],
+          "models": [
+            "kokoro-multilang",
+            "sensevoice-int8"
+          ],
+          "rounds_per_run": 3,
+          "cgroup_memory_ceiling_mib": 1536,
+          "cpu_ceiling_millicores": 4500,
+          "cgroup_peak_mib": 1518,
+          "stable_run_cgroup_peak_mib": 971,
+          "stable_run_whole_host_available_drop_mib": 1166,
+          "model_phase_host_available_drop_mib": 876,
+          "startup_overlap_whole_host_available_drop_mib": 1898,
+          "method": "CPU factories verified for every load; no observed process GPU allocation. Use CPU cgroup high-water and model-phase/stable-host measurements for per-request budget. First whole-host startup observation overlaps the ending image build/container startup and is retained separately, not attributed entirely to model execution. Both runs complete under the same 1536 MiB memory/swap hard cap.",
+          "all_native_factories_cpu": true,
+          "observed_process_gpu_peak_mib": 0,
+          "real_permit_claim_and_release": true,
+          "native_exit_confirmed": true,
+          "budget_changed": false,
+          "uninstalled_models_tested": false
         }
       },
       "application_versions": [
@@ -474,7 +500,8 @@
         "0.0.23",
         "0.0.24",
         "0.0.25",
-        "0.0.26"
+        "0.0.26",
+        "0.0.27"
       ]
     },
     {

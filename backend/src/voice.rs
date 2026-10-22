@@ -1011,6 +1011,35 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_arch = "aarch64")]
+    fn bundled_orin_cpu_voice_upgrade_preserves_measured_budget() {
+        let (runtime, mut contract, _) = fixtures();
+        let approvals: Value = serde_json::from_str(include_str!("../../config/voice-calibrations.json")).unwrap();
+        let approval = approvals["approvals"].as_array().unwrap().iter().find(|a| a["id"] == "orin-voice-cpu-reclaimed-bounded-v1").unwrap();
+        contract["provider"] = approval["provider"].clone();
+        contract["cpu_models"] = approval["cpu_models"].clone();
+        contract["_execution_hardware"] = approval["hardware"].clone();
+        contract["input_limits_version"] = json!(1);
+        contract["mixed_input_limits_version"] = json!(1);
+        contract["sync_models"] = json!([{"id":"sensevoice-int8","task_type":"model.infer","kind":"voice"},{"id":"kokoro-multilang","task_type":"model.infer","kind":"voice"}]);
+        contract["async_models"] = json!([]);
+        contract["_ready_sync"] = json!(["sensevoice-int8","kokoro-multilang"]);
+        contract["_ready_async"] = json!([]);
+        contract["_application_version"] = json!("0.0.26");
+        let before = build(&runtime, &contract, &approvals, None).unwrap();
+        contract["_application_version"] = json!("0.0.27");
+        let after = build(&runtime, &contract, &approvals, Some(&before)).unwrap();
+        assert_eq!(before, after);
+        assert_eq!(after["binding"]["models"].as_object().unwrap().len(), 2);
+        for executor in after["executors"].as_array().unwrap() {
+            assert_eq!(executor["resources"]["memory_mib"], 1792);
+            assert_eq!(executor["resources"]["cpu_millicores"], 4500);
+            assert_eq!(executor["resources"]["gpu_slots"], 0);
+            assert_eq!(executor["resources"]["gpu_memory_mib"], 0);
+        }
+    }
+
+    #[test]
     fn voice_approval_uses_saved_management_capacity() {
         let (runtime, contract, mut approvals) = fixtures();
         approvals["approvals"][0]["resources"]["cpu_millicores"] = json!(4500);

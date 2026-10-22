@@ -523,3 +523,5 @@ GitHub Release 与 VOS 应用商店发布均通过。V-Scheduler 最终流水线
 - Whisper Tiny、Qwen3-ASR 与原生语音/声纹组合两轮完成；cgroup 峰值 3004 MiB，宿主可用内存下降 5377 MiB。较大模型保留原审批预算，不借用小模型结果。
 - VoxCPM2 Q8 使用合成参考音频生成有效 WAV，并在下一次生成未完成时停止；Kokoro Q8 生成有效 WAV。实际映射加载 CUDA 13、cuBLAS、NCCL 和宿主驱动库，CUDA 后端初始化真实 NVIDIA Thor。GGUF cgroup 峰值 2361 MiB、宿主可用内存下降 7854 MiB，沿用现有预算。该项为隔离原生二进制验证，不替代正式安装后应用 API 的绑定/生命周期验收。
 - 原始记录在测试机 `~/dev/build/V-Scheduler/voice27-20261022/calibration/`，审批清单记录对应 evidence ID 与镜像 ID。地址回归保持 0.0.27 使用正式 `v-scheduler` 地址；退役回归验证四个 PyTorch 原生模型从新版绑定、网关策略及执行设置移除，身份保留、revision 前进。
+
+- 192 固定 L4T 镜像 `sha256:0505ff91a032b40e78ba4665c436683d670f6f63f385c1046a9e26f8f5239d49`，沿用 `kokoro-multilang,paraformer-zh,sensevoice-int8` CPU 覆盖，仅批准原来的 Kokoro/SenseVoice。两次独立运行各三轮，12 次原生工厂调用均确认 CPU；1.5 GiB 内存/swap 硬限制内完成，cgroup 最大 1518 MiB，模型阶段可用内存下降最大 876 MiB，稳定复测整机下降 1166 MiB，无观测到的进程 GPU 分配。首轮全机启动下降 1898 MiB 与构建收尾/容器创建重叠，单独保留原始记录，不全部归因于模型请求；每轮卸载回到约 80 MiB RSS。原 1792 MiB、CPU 4500m、GPU 0 审批不变。证据 `voice-tc192-25a6ffcdc6e34b05bb462332ef2f7d99`、`voice-tc192-7b2b64d6f5524390b09f1a129e7700b3`，真实许可认领、原生退出与释放均通过。

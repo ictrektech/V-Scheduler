@@ -19,7 +19,7 @@ V-Voice 0.0.27 保留 ONNX 语音、声纹及 audio.cpp GGUF，移除四个 PyTo
 `ace-step-1.5-turbo`、`stable-audio-3-small-music`、`stable-audio-3-medium`、`musicgen-small`。
 控制器按新版 discovery 中的声明与就绪模型重建完整绑定，不沿用已退役模型映射；
 确认无活动任务和许可后递增 revision，同步清除对应网关策略。正常更新无需手工删除共享权重。
-Thor 0.0.27 的原生小模型继续使用 4 GiB 统一内存预算，较大 ONNX 和 GGUF 模型保留原预算；审批依据固定最终镜像的真实调用与停止测量，不能推广到其他 profile。
+Thor 0.0.27 的原生小模型继续使用 4 GiB 统一内存预算，较大 ONNX 和 GGUF 模型保留原预算；审批依据固定最终镜像的真实调用与停止测量，不能推广到其他 profile。192 的既有 L4T CPU 覆盖路径也完成 0.0.27 实测，仍仅批准 Kokoro/SenseVoice，预算保持 1792 MiB、CPU 4500m、GPU 0；不因此批准 Paraformer 或其他模型。
 正式调度地址保持 `http://v-scheduler:8080/scheduler/api/v1`。
 
 ## 资源批准
