@@ -267,6 +267,19 @@ pub(super) fn approval(
 ) -> Api<Option<Approval>> {
     let required = env("V_ROUTER_SCHEDULER_REQUIRED", "") == "true";
     let declared = u.scheduler.clone().unwrap_or_default();
+    // Administrator-approved direct registrations bypass admission entirely,
+    // mirroring an external upstream (no permit, queue or budget).
+    if u.source == "registered" && declared["mode"] == "direct" {
+        if text(&declared, "upstream_url").trim_end_matches('/')
+            != u.base_url.trim_end_matches('/')
+        {
+            return Err(Failure::new(
+                503,
+                "direct registration binding no longer matches upstream",
+            ));
+        }
+        return Ok(None);
+    }
     if required
         && declared["mode"] == "cloud"
         && text(&declared, "upstream_url").trim_end_matches('/') != u.base_url.trim_end_matches('/')

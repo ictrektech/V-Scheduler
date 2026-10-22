@@ -119,6 +119,7 @@ fn weighted_routing_reserves_capacity_and_never_uses_an_unhealthy_replica() {
             weight: 3,
             max_inflight: 1,
             disabled: false,
+            direct: false,
         },
     );
     r.routing.insert(
@@ -127,6 +128,7 @@ fn weighted_routing_reserves_capacity_and_never_uses_an_unhealthy_replica() {
             weight: 1,
             max_inflight: 1,
             disabled: false,
+            direct: false,
         },
     );
     let id = principal("alice");
@@ -192,6 +194,108 @@ fn circuit_breaker_recovers_after_cooldown_instead_of_permanently_rejecting() {
     );
     r.result("a", true);
     assert_eq!(r.status(&r.upstreams["a"])["state"], "healthy");
+}
+#[test]
+fn direct_routing_bypasses_capacity_and_circuit_breaker_but_respects_pause() {
+    let mut r = Registry::default();
+    r.put(upstream("direct"), vec![model("echo")]);
+    r.put(upstream("scheduled"), vec![model("echo")]);
+    r.routing.insert(
+        "direct".into(),
+        registry::Routing {
+            weight: 1,
+            max_inflight: 1,
+            disabled: false,
+            direct: true,
+        },
+    );
+    r.routing.insert(
+        "scheduled".into(),
+        registry::Routing {
+            weight: 1,
+            max_inflight: 1,
+            disabled: false,
+            direct: false,
+        },
+    );
+    for _ in 0..3 {
+        r.result("direct", false);
+        r.result("scheduled", false);
+    }
+    assert_eq!(r.status(&r.upstreams["direct"])["state"], "healthy");
+    assert_eq!(r.status(&r.upstreams["scheduled"])["state"], "circuit_open");
+    r.inflight.insert("direct".into(), 9);
+    let id = principal("alice");
+    assert_eq!(
+        r.acquire("manual/echo", "/chat/completions", "", &id)
+            .unwrap()
+            .0
+            .id,
+        "direct"
+    );
+    r.routing.get_mut("direct").unwrap().disabled = true;
+    r.breaker.remove("scheduled");
+    assert_eq!(
+        r.acquire("manual/echo", "/chat/completions", "", &id)
+            .unwrap()
+            .0
+            .id,
+        "scheduled"
+    );
+    r.inflight.clear();
+    r.routing.get_mut("direct").unwrap().disabled = false;
+    assert_eq!(
+        r.acquire("manual/echo", "/chat/completions", "", &id)
+            .unwrap()
+            .0
+            .id,
+        "direct"
+    );
+}
+#[test]
+fn direct_flag_defaults_off_for_existing_routing_state() {
+    let routing: registry::Routing =
+        serde_json::from_value(json!({"weight":2,"max_inflight":4})).unwrap();
+    assert!(!routing.direct);
+    assert!(!routing.disabled);
+}
+#[test]
+fn selected_models_keep_probe_metadata_and_allow_empty_selection() {
+    let probed = vec![
+        Model {
+            id: "a".into(),
+            kind: "chat".into(),
+            capabilities: vec!["tools".into()],
+            endpoints: vec!["chat_completions".into()],
+            ..Default::default()
+        },
+        Model {
+            id: "b".into(),
+            kind: "unknown".into(),
+            ..Default::default()
+        },
+    ];
+    let picked = manage::select_models(&json!({"models": ["a"]}), probed.clone()).unwrap();
+    assert_eq!(picked.len(), 1);
+    assert_eq!(picked[0].id, "a");
+    assert_eq!(picked[0].capabilities, ["tools"]);
+    assert_eq!(
+        manage::select_models(&json!({}), probed.clone())
+            .unwrap()
+            .len(),
+        2
+    );
+    assert!(
+        manage::select_models(&json!({"models": []}), probed)
+            .unwrap()
+            .is_empty()
+    );
+    let declared = manage::select_models(
+        &json!({"models": [{"id":"c","kind":"embedding"}]}),
+        vec![],
+    )
+    .unwrap();
+    assert_eq!(declared[0].kind, "embedding");
 }
 #[test]
 fn old_state_roundtrips_credentials_routing_models_and_resource_ownership() {

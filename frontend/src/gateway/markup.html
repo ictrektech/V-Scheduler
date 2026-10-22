@@ -208,6 +208,7 @@
     <h3>上游调度</h3>
     <form onsubmit="return app.saveRouting(event)">
       <input type="hidden" id="routingId" />
+      <div class="field"><label class="check"><input id="routingDirect" type="checkbox" onchange="app.updateRoutingDirect()" /> 直接放行（不主动调度）</label><div class="hint">直接放行会跳过并发上限与熔断，并在有多个可用上游时优先选择；暂停仍然生效。外部云端 API 通常应直接放行。</div></div>
       <div class="field"><label for="routingWeight">分配权重</label><input id="routingWeight" type="number" min="1" max="1000" required /><div class="hint">默认 1；权重越大，自动分配的请求越多。</div></div>
       <div class="field"><label for="routingMax">最大进行中请求</label><input id="routingMax" type="number" min="0" max="100000" required /><div class="hint">0 表示不限；统计本网关请求，流式结束才释放，不是 GPU 实际槽位。</div></div>
       <div class="field"><label class="check"><input id="routingDisabled" type="checkbox" /> 暂停接收新推理请求</label></div>
@@ -222,6 +223,11 @@
     <form id="upstreamForm" autocomplete="off" onsubmit="return app.submitUpstream(event)">
       <input type="hidden" id="ufId" />
       <input type="hidden" id="ufKind" value="manual" />
+      <div class="field" id="ufPresetField">
+        <label for="ufPreset">厂商预配置</label>
+        <select id="ufPreset" onchange="app.applyUpstreamPreset()"></select>
+        <div class="hint">选择常用供应商会自动填写名称、Base URL 和协议；仍可手动修改。</div>
+      </div>
       <div class="field">
         <label for="ufName">名称</label>
         <input type="text" id="ufName" autocomplete="off" placeholder="例如 ICTrek AI / OpenAI / Anthropic" />
@@ -268,6 +274,15 @@
         <label class="check"><input type="checkbox" id="ufAllowProbeFailure" /> 模型列表探测失败也允许保存</label>
         <div class="hint">适合暂时没有 key、协议模型列表不标准，或想先保存后运行时看上游错误的云端 API。</div>
       </div>
+      <div class="field" id="ufModelsField" hidden>
+        <label>添加模型
+          <span class="spacer"></span>
+          <button type="button" class="btn" onclick="app.selectAllUpstreamModels(true)">全选</button>
+          <button type="button" class="btn" onclick="app.selectAllUpstreamModels(false)">清空</button>
+        </label>
+        <div class="hint" id="ufModelsHint"></div>
+        <div class="model-picker" id="ufModels"></div>
+      </div>
       <div class="probe-result" id="ufProbeResult" hidden></div>
       <div class="form-error" id="ufError"></div>
       <div class="form-actions">
@@ -284,11 +299,13 @@
     <h3>注册模型服务</h3>
     <form id="registrationForm" onsubmit="return app.submitRegistration(event)">
       <div class="field"><label for="regServiceId">服务 ID</label><input id="regServiceId" type="text" required placeholder="例如 vllm-node-1" /><div class="hint">稳定 ID 会生成上游 <span class="mono">registered-&lt;service_id&gt;</span>；同一服务续租/更新请保持不变。</div></div>
+      <div class="field"><label for="regPreset">厂商预配置</label><select id="regPreset" onchange="app.applyRegistrationProviderPreset()"></select><div class="hint">外部厂商通常建议在“添加上游”中添加；注册服务需要在租约过期前发送心跳。</div></div>
       <div class="field"><label for="regName">显示名称</label><input id="regName" type="text" placeholder="例如 VLLM Node 1" /></div>
       <div class="field"><label for="regVisibility">可见范围</label><select id="regVisibility"><option value="public">Public：所有 VOS 用户和匿名内网调用可见</option><option value="private">Private：仅当前注册用户和管理员可见</option></select></div>
       <div class="field"><label for="regProtocol">上游协议</label><select id="regProtocol" onchange="app.updateRegistrationProtocol()"><option value="openai">OpenAI 原生透传</option><option value="chat_completions">仅 Chat Completions（转换 Responses / Messages）</option><option value="anthropic">Anthropic 原生</option><option value="offline_asr">离线 ASR（/transcribe 适配）</option><option value="image_studio">Image Studio（生图/生视频适配）</option></select></div>
       <div class="field"><label for="regBaseURL">Base URL</label><input id="regBaseURL" type="text" required placeholder="http://host:8000/v1" /></div>
       <div class="field"><label for="regAPIKey">上游 API Key（可选）</label><input id="regAPIKey" type="password" autocomplete="off" placeholder="供应商或模型服务自己的 key" /></div>
+      <div class="field" id="regSchedulerField" hidden><label for="regScheduler">调度方式</label><select id="regScheduler"><option value="scheduled">由 V-Scheduler 调度（默认）</option><option value="direct">直接放行（不主动调度）</option></select><div class="hint">直接放行会让该服务跳过调度准入与模型预算，仅管理员可设置；默认按本机模型调度策略处理。</div></div>
       <div class="field"><label for="regMode">注册方式</label><select id="regMode" onchange="app.updateRegistrationMode()"><option value="api">模型 API：从 /models 拉取列表（默认按上游协议放开接口）</option><option value="single">单个模型：选择模型能力和接口</option></select></div>
       <div class="field" id="regModelPickField" hidden><label for="regModelPick">从探测列表选择模型</label><select id="regModelPick" onchange="app.pickRegistrationModel()"></select><div class="hint">先点“测试”获取模型列表；选择后会切换到单模型注册，可再选择能力预设。</div></div>
       <div id="regSingleFields" hidden>

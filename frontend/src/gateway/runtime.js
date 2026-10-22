@@ -35,6 +35,26 @@ const PG_ENDPOINTS = [
   { id: "videos", path: "/videos/generations", label: "Video Generations", stream: false },
 ];
 
+// Vendor defaults mirror the provider catalog used by ZCode. Base URLs point
+// at each vendor's OpenAI-compatible API where one exists; MiMo only exposes an
+// Anthropic-compatible endpoint.
+const PROVIDER_PRESETS = [
+  { id: "openrouter", name: "OpenRouter", base: "https://openrouter.ai/api/v1", protocol: "openai", model: "openai/gpt-5.6-sol" },
+  { id: "deepseek", name: "DeepSeek", base: "https://api.deepseek.com/v1", protocol: "openai", model: "deepseek-v4-pro" },
+  { id: "bailian", name: "Alibaba Cloud Bailian (China)", base: "https://dashscope.aliyuncs.com/compatible-mode/v1", protocol: "openai", model: "qwen3.8-max" },
+  { id: "bailian-intl", name: "Alibaba Cloud Bailian (Intl)", base: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", protocol: "openai", model: "qwen3.8-max" },
+  { id: "zai", name: "Z.ai / GLM", base: "https://api.z.ai/api/paas/v4", protocol: "openai", model: "glm-5.3" },
+  { id: "bigmodel", name: "BigModel / GLM", base: "https://open.bigmodel.cn/api/paas/v4", protocol: "openai", model: "glm-5.3" },
+  { id: "moonshot", name: "Moonshot Kimi", base: "https://api.moonshot.cn/v1", protocol: "openai", model: "kimi-k3" },
+  { id: "minimax", name: "MiniMax", base: "https://api.minimaxi.com/v1", protocol: "openai", model: "MiniMax-M3" },
+  { id: "mimo", name: "Xiaomi MiMo", base: "https://api.xiaomimimo.com/anthropic/v1", protocol: "anthropic", model: "mimo-v2.6-pro" },
+  { id: "openai", name: "OpenAI", base: "https://api.openai.com/v1", protocol: "openai", model: "gpt-5.6-sol" },
+  { id: "anthropic", name: "Anthropic", base: "https://api.anthropic.com/v1", protocol: "anthropic", model: "claude-sonnet-5" },
+  { id: "xai", name: "xAI", base: "https://api.x.ai/v1", protocol: "openai", model: "grok-4.6" },
+  { id: "opencode-zen", name: "OpenCode Zen", base: "https://opencode.ai/zen/v1", protocol: "openai", model: "glm-5.2" },
+  { id: "opencode-go", name: "OpenCode Go", base: "https://opencode.ai/zen/go/v1", protocol: "openai", model: "glm-5.3" },
+];
+
 const app = {
   element: id => root.getElementById(id),
   state: { status: null, models: [], upstreams: [], usage: null, usagePeriod: "day", usageQuery: "", usageSort: "total_tokens", tab: "overview", timer: null },
@@ -106,6 +126,8 @@ const app = {
 
   // ---------- lifecycle ----------
   async start() {
+    this.renderProviderPresets($("ufPreset"));
+    this.renderProviderPresets($("regPreset"));
     $("apiKeyInput").addEventListener("change", (e) => {
       localStorage.setItem("v-router-key", e.target.value.trim());
       this.refresh();
@@ -397,7 +419,7 @@ const app = {
               ? ` · ${u.visibility === "private" ? "Private" : "Shared"}${u.owner ? ` · owner ${esc(u.owner)}` : ""}`
               : (registered ? " · Public" : "");
             return [
-              `<span class="mono" title="${esc(u.base_url)}">${esc(u.name)}</span><div class="hint mono">ID: ${esc(u.id)} · ${esc(u.protocol || (u.source === "model-hub" ? "chat_completions" : "openai"))}${u.model_prefix ? ` · ${VRouterI18n.t("前缀")} ${esc(u.model_prefix)}` : ""}${scope}</div><div class="hint">${VRouterI18n.t("进行中")} ${u.inflight || 0} / ${u.routing?.max_inflight || VRouterI18n.t("不限")} · ${VRouterI18n.t("权重")} ${u.routing?.weight || 1}${u.routing?.disabled ? VRouterI18n.t(" · 已暂停") : ""}</div>`,
+              `<span class="mono" title="${esc(u.base_url)}">${esc(u.name)}</span><div class="hint mono">ID: ${esc(u.id)} · ${esc(u.protocol || (u.source === "model-hub" ? "chat_completions" : "openai"))}${u.model_prefix ? ` · ${VRouterI18n.t("前缀")} ${esc(u.model_prefix)}` : ""}${scope}</div><div class="hint">${u.routing?.direct ? `${VRouterI18n.t("进行中")} ${u.inflight || 0} · ${VRouterI18n.t("直接放行")}` : `${VRouterI18n.t("进行中")} ${u.inflight || 0} / ${u.routing?.max_inflight || VRouterI18n.t("不限")} · ${VRouterI18n.t("权重")} ${u.routing?.weight || 1}`}${u.routing?.disabled ? VRouterI18n.t(" · 已暂停") : ""}</div>`,
               `<span class="pill ${u.kind}">${kindLabel(u.kind)}</span>`,
               u.source === "api" ? (u.kind === "cloud" ? VRouterI18n.t("云端 API") : VRouterI18n.t("手动添加")) : u.source === "registered" ? VRouterI18n.t("后端注册") : u.source === "video-structure" ? VRouterI18n.t("视频结构化") : u.source === "v-scheduler" ? "V-Scheduler" : "Model Hub",
               u.models,
@@ -410,9 +432,9 @@ const app = {
                   `<button class="btn" onclick="app.refreshUpstream('${esc(u.id)}')">${VRouterI18n.t("刷新")}</button>` +
                   `<button class="btn danger" onclick="app.deleteUpstream('${esc(u.id)}', '${esc(u.name)}')">${VRouterI18n.t("删除")}</button></div>`
                 : registered && editable
-                  ? `<div class="actions"><button class="btn danger" onclick="app.unregisterService('${esc(u.id)}', '${esc(u.name)}')">${VRouterI18n.t("注销")}</button></div><span class="muted" style="font-size:12px">${VRouterI18n.t("后端租约注册")}</span>`
+                  ? `<div class="actions"><button class="btn danger" onclick="app.unregisterService('${esc(u.id)}', '${esc(u.name)}')">${VRouterI18n.t("注销")}</button></div><span class="muted" style="font-size:12px">${VRouterI18n.t("后端租约注册")}${u.scheduler?.mode === "direct" ? ` · ${VRouterI18n.t("直接放行")}` : ""}</span>`
                   : registered
-                    ? `<span class="muted" style="font-size:12px">${VRouterI18n.t("后端租约注册")}</span>`
+                    ? `<span class="muted" style="font-size:12px">${VRouterI18n.t("后端租约注册")}${u.scheduler?.mode === "direct" ? ` · ${VRouterI18n.t("直接放行")}` : ""}</span>`
                   : u.source === "video-structure"
                     ? `<span class="muted" style="font-size:12px">${VRouterI18n.t("自动发现")} · ${VRouterI18n.t("只读")}</span>`
                     : u.source === "v-scheduler"
@@ -561,13 +583,18 @@ const app = {
     if (!u) return;
     $("routingId").value = id; $("routingWeight").value = u.routing?.weight || 1;
     $("routingMax").value = u.routing?.max_inflight || 0; $("routingDisabled").checked = !!u.routing?.disabled;
-    $("routingError").textContent = ""; $("routingDialog").showModal();
+    $("routingDirect").checked = !!u.routing?.direct;
+    $("routingError").textContent = ""; this.updateRoutingDirect(); $("routingDialog").showModal();
+  },
+  updateRoutingDirect() {
+    const direct = $("routingDirect").checked;
+    $("routingWeight").disabled = direct; $("routingMax").disabled = direct;
   },
   async saveRouting(e) {
     e.preventDefault();
     try {
       await this.api("PUT", "/api/v1/upstreams/" + encodeURIComponent($("routingId").value) + "/routing", {
-        weight: Number($("routingWeight").value), max_inflight: Number($("routingMax").value), disabled: $("routingDisabled").checked
+        weight: Number($("routingWeight").value), max_inflight: Number($("routingMax").value), disabled: $("routingDisabled").checked, direct: $("routingDirect").checked
       });
       $("routingDialog").close(); await this.refresh(); this.toast(VRouterI18n.t("调度配置已保存"));
     } catch(err) { $("routingError").textContent = err.message; }
@@ -597,6 +624,9 @@ const app = {
     $("regMode").value = "api";
     $("regCapabilityPreset").value = "chat";
     $("regTTL").value = "90";
+    $("regPreset").value = "";
+    $("regScheduler").value = "scheduled";
+    $("regSchedulerField").hidden = !this.state.status?.is_admin;
     $("regError").textContent = "";
     this.renderRegistrationResult(null);
     this.setRegistrationModelChoices([]);
@@ -678,6 +708,9 @@ const app = {
       api_key: $("regAPIKey").value,
       ttl_seconds: Number($("regTTL").value || 90),
     };
+    if (this.state.status?.is_admin && $("regScheduler").value === "direct") {
+      p.scheduler = { mode: "direct" };
+    }
     if ($("regMode").value === "single") {
       p.model = $("regModel").value.trim();
       p.endpoints = this.listFromInput("regEndpoints");
@@ -755,16 +788,102 @@ const app = {
     }
   },
 
+  setUpstreamModels(models, { loaded = true, preserve = false } = {}) {
+    // Preserve an explicit deselection, but treat "everything was checked" as
+    // no preference so a later probe selects all newly discovered models.
+    const prior = preserve && this.modelChoices.length ? new Set(this.upstreamModelSelection()) : null;
+    const previous = prior && prior.size < this.modelChoices.length ? prior : null;
+    this.modelChoices = [];
+    const seen = new Set();
+    for (const raw of models || []) {
+      const model = typeof raw === "string" ? { id: raw } : raw;
+      if (!model || !model.id || seen.has(model.id)) continue;
+      seen.add(model.id);
+      this.modelChoices.push(model);
+    }
+    this.modelChoicesLoaded = loaded;
+    const selected = previous ? new Set([...previous].filter((id) => seen.has(id))) : seen;
+    $("ufModels").innerHTML = this.modelChoices.map((model) => {
+      const meta = [
+        model.kind && model.kind !== "unknown" ? model.kind : "",
+        (model.capabilities || []).join(", "),
+        (model.endpoints || []).join(", "),
+      ].filter(Boolean).join(" · ");
+      return `<label class="check model-choice"><input type="checkbox" value="${esc(model.id)}" ${selected.has(model.id) ? "checked" : ""} onchange="app.updateUpstreamModelsHint()" /><span class="mono">${esc(model.id)}</span>${meta ? `<span class="hint">${esc(meta)}</span>` : ""}</label>`;
+    }).join("");
+    $("ufModelsField").hidden = $("ufProtocol").value === "async_task" || !this.modelChoices.length;
+    this.updateUpstreamModelsHint();
+  },
+  upstreamModelSelection() {
+    return [...$("ufModels").querySelectorAll('input[type="checkbox"]:checked')].map((el) => el.value);
+  },
+  selectAllUpstreamModels(on) {
+    for (const el of $("ufModels").querySelectorAll('input[type="checkbox"]')) el.checked = on;
+    this.updateUpstreamModelsHint();
+  },
+  updateUpstreamModelsHint() {
+    const selected = this.upstreamModelSelection().length;
+    VRouterI18n.bind($("ufModelsHint"), "textContent", () => `${VRouterI18n.t("已选择")} ${selected} / ${this.modelChoices.length} ${VRouterI18n.t("个模型")}；${VRouterI18n.t("保存后只添加勾选的模型")}。`);
+  },
+
+  renderProviderPresets(select) {
+    if (!select) return;
+    select.innerHTML = `<option value="">${esc(VRouterI18n.t("自定义（手动填写）"))}</option>` +
+      PROVIDER_PRESETS.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("");
+  },
+  applyProviderPreset(preset, fields) {
+    if (!preset) return;
+    $(fields.name).value = preset.name;
+    $(fields.base).value = preset.base;
+    $(fields.protocol).value = preset.protocol;
+    $(fields.key).value = "";
+    $(fields.key).placeholder = fields.keyPlaceholder || "sk-...";
+    if (fields.model) {
+      $(fields.model).value = "";
+      $(fields.model).placeholder = `${VRouterI18n.t("例如")} ${preset.model}`;
+    }
+  },
+  applyUpstreamPreset() {
+    const preset = PROVIDER_PRESETS.find((p) => p.id === $("ufPreset").value);
+    if (!preset) return;
+    this.applyProviderPreset(preset, {
+      name: "ufName",
+      base: "ufBaseURL",
+      protocol: "ufProtocol",
+      key: "ufAPIKey",
+      model: "ufTestModel",
+    });
+    this.setUpstreamModels([], { loaded: false });
+    this.updateUpstreamProtocol();
+  },
+  applyRegistrationProviderPreset() {
+    const preset = PROVIDER_PRESETS.find((p) => p.id === $("regPreset").value);
+    if (!preset) return;
+    this.applyProviderPreset(preset, {
+      name: "regName",
+      base: "regBaseURL",
+      protocol: "regProtocol",
+      key: "regAPIKey",
+      keyPlaceholder: VRouterI18n.t("供应商或模型服务自己的 key"),
+    });
+    this.updateRegistrationProtocol();
+    $("regModelPickField").hidden = true;
+    $("regProbeResult").hidden = true;
+  },
+
   openUpstreamDialog(id, kind = "manual") {
     const dlg = $("upstreamDialog");
     $("ufError").textContent = "";
     this.renderProbeResult(null);
+    this.setUpstreamModels([], { loaded: false });
     if (id) {
       const u = this.state.upstreams.find((x) => x.id === id);
       if (!u) return;
       VRouterI18n.bind($("upstreamDialogTitle"), "textContent", () => u.kind === "cloud" ? VRouterI18n.t("编辑云端算力 API") : VRouterI18n.t("编辑上游"));
       $("ufId").value = u.id;
       $("ufKind").value = u.kind || "manual";
+      $("ufPresetField").hidden = true;
+      $("ufPreset").value = "";
       $("ufName").value = u.name;
       $("ufBaseURL").value = u.base_url;
       $("ufProtocol").value = u.protocol || "openai";
@@ -787,6 +906,7 @@ const app = {
       $("ufAsyncDefaultInput").value = c.default_input ? JSON.stringify(c.default_input, null, 2) : "";
       $("ufAsyncPollMS").value = c.poll_interval_ms || 1000;
       $("ufAsyncTimeout").value = c.timeout_seconds || 300;
+      this.setUpstreamModels((u.model_ids || []).map((model) => ({ id: model })));
       VRouterI18n.bind($("ufKeyHint"), "textContent", () => VRouterI18n.t("留空保持原密钥不变；密钥保存在本机，接口永不回显。"));
       VRouterI18n.bind($("ufBaseHint"), "innerHTML", () => u.kind === "cloud" ? this.cloudHintHTML(u.model_prefix) : VRouterI18n.t("可填 OpenAI 兼容 /v1、Anthropic API 地址；未写协议时默认 https，未写路径时默认 /v1。"));
     } else {
@@ -794,6 +914,8 @@ const app = {
       this.clearNewUpstreamFields();
       $("ufId").value = "";
       $("ufKind").value = kind;
+      $("ufPresetField").hidden = false;
+      $("ufPreset").value = "";
       $("ufProtocol").value = "openai";
       $("ufVisibility").value = "public";
       VRouterI18n.bind($("ufKeyHint"), "textContent", () => VRouterI18n.t("密钥保存在本机状态文件中，接口永不回显。"));
@@ -833,6 +955,7 @@ const app = {
     $("ufAsyncFields").hidden = !asyncTask;
     $("ufTestModel").closest(".field").hidden = asyncTask;
     $("ufAllowProbeFailure").closest(".field").hidden = asyncTask;
+    $("ufModelsField").hidden = asyncTask || !this.modelChoices.length;
     VRouterI18n.bind($("ufProbe"), "textContent", () => asyncTask ? VRouterI18n.t("检查配置") : VRouterI18n.t("测试"));
   },
 
@@ -849,6 +972,9 @@ const app = {
       test_model: $("ufTestModel").value.trim(),
       allow_probe_failure: $("ufAllowProbeFailure").checked,
     };
+    if (this.modelChoicesLoaded && payload.protocol !== "async_task") {
+      payload.models = this.upstreamModelSelection();
+    }
     if (payload.protocol === "async_task") {
       let defaultInput = {};
       const raw = $("ufAsyncDefaultInput").value.trim();
@@ -883,6 +1009,7 @@ const app = {
     this.renderProbeResult({ pending: true });
     try {
       const result = await this.api("POST", "/api/v1/upstreams/probe", this.upstreamPayload());
+      if (result.ok) this.setUpstreamModels(result.model_details || result.models || [], { preserve: true });
       this.renderProbeResult(result);
     } catch (err) {
       this.renderProbeResult({ ok: false, error: err.message });

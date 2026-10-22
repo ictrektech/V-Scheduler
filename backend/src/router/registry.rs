@@ -85,6 +85,7 @@ pub(super) struct Routing {
     pub weight: i64,
     pub max_inflight: usize,
     pub disabled: bool,
+    pub direct: bool,
 }
 impl Default for Routing {
     fn default() -> Self {
@@ -92,6 +93,7 @@ impl Default for Routing {
             weight: 1,
             max_inflight: 0,
             disabled: false,
+            direct: false,
         }
     }
 }
@@ -221,7 +223,7 @@ impl Registry {
         } else if let Some((n, until)) = self
             .breaker
             .get(&u.id)
-            .filter(|(_, until)| *until > Utc::now())
+            .filter(|(_, until)| !p.direct && *until > Utc::now())
         {
             return json!({"state":"circuit_open","failures":n,"circuit_open_until":until});
         } else if !u.healthy {
@@ -230,7 +232,8 @@ impl Registry {
             } else {
                 "discovery_failed"
             }
-        } else if p.max_inflight > 0
+        } else if !p.direct
+            && p.max_inflight > 0
             && self.inflight.get(&u.id).copied().unwrap_or(0) >= p.max_inflight
         {
             "full"
@@ -288,6 +291,7 @@ impl Registry {
             if !u.live()
                 || policy.disabled
                 || pinned.is_empty()
+                    && !policy.direct
                     && self
                         .breaker
                         .get(&u.id)
@@ -300,7 +304,8 @@ impl Registry {
                 continue;
             }
             compatible = true;
-            if policy.max_inflight > 0
+            if !policy.direct
+                && policy.max_inflight > 0
                 && self.inflight.get(&u.id).copied().unwrap_or(0) >= policy.max_inflight
             {
                 continue;
@@ -328,6 +333,22 @@ impl Registry {
                     "all matching upstreams are at their concurrency limit"
                 },
             ));
+        }
+        let direct: std::collections::BTreeSet<String> = choices
+            .iter()
+            .filter(|(u, _)| {
+                self.routing
+                    .get(&u.id)
+                    .is_some_and(|policy| policy.direct)
+            })
+            .map(|(u, _)| u.id.clone())
+            .collect();
+        if !direct.is_empty() {
+            choices.retain(|(u, _)| direct.contains(&u.id));
+            choices.sort_by(|(a, _), (b, _)| a.id.cmp(&b.id));
+            let chosen = choices.swap_remove(0);
+            *self.inflight.entry(chosen.0.id.clone()).or_default() += 1;
+            return Ok(chosen);
         }
         choices.sort_by(|(a, _), (b, _)| {
             let load_a = self.inflight.get(&a.id).copied().unwrap_or(0) as i64;

@@ -21,8 +21,9 @@
 
 1. 匹配模型名或带前缀的名称，排除不健康、租约过期及暂停的后端。
 2. 根据模型能力、声明协议和服务角色排除已知不兼容后端。Messages 仅选择 Anthropic 或 Chat Completions 转换后端；Anthropic 原生不自动提供 OpenAI 接口。Model Hub/Ollama 优先读取 native `/api/tags` 中每个模型的 `capabilities`，同时用 generate/embedding 服务角色限定实际入口；注册后端可声明 `capabilities` 或逐模型 `model_capabilities`。云端和手动上游从模型列表读取能力；能力缺失或不是 V-Router 已知能力词时视为未知，不提前拦截所有接口，由实际上游返回具体不支持原因。
-3. 排除已达到 `max_inflight` 的候选，选择 `进行中请求 / weight` 最小者。
-4. 负载相同时，在当前模型名与接口范围内按权重平滑轮换，再以实例 ID 确定初始平局顺序。同权重的空闲后端轮流接收请求；指定调用和其他模型范围的历史不影响轮换。
+3. 标记为“直接放行”的上游跳过并发上限和熔断，并在存在可用候选时优先选择；多个直接放行候选按实例 ID 确定顺序。
+4. 其余候选排除已达到 `max_inflight` 者，选择 `进行中请求 / weight` 最小者。
+5. 负载相同时，在当前模型名与接口范围内按权重平滑轮换，再以实例 ID 确定初始平局顺序。同权重的空闲后端轮流接收请求；指定调用和其他模型范围的历史不影响轮换。
 
 每次选择和占用递增在同一锁内完成。普通响应、错误、客户端取消及 SSE 结束后释放占用；SSE 期间不能提前释放。指定实例的推理请求也占用相同计数。计数只覆盖当前 V-Router 进程转发的推理请求，不是后端 GPU 槽位，不包含绕过网关的调用，也不在多个网关副本间共享。
 
@@ -58,7 +59,9 @@ reply = an.messages.create(model='registered/qwen3:0.6b', max_tokens=128,
 | `ai.ictrek.com` | `com.ictrek.ai/<model>` |
 | `api.example.com` | `com.example.api/<model>` |
 
-添加前可以测试模型列表；填写“联通测试模型”时会再发一次轻量对话请求。测试失败不会强制阻止保存，勾选“模型列表探测失败也允许保存”后可以先记录上游，让真实业务调用返回上游的具体错误。模型列表一旦刷新成功，云端模型会同时出现在 `/v1/models` 和 `/api/v1/models`。
+“厂商预配置”可选 OpenRouter、DeepSeek、阿里云百炼（国内/国际）、Z.ai、BigModel、Moonshot Kimi、MiniMax、Xiaomi MiMo、OpenAI、Anthropic、xAI 和 OpenCode Zen/Go，自动填入名称、Base URL 与协议，密钥仍需自行填写。注册模型服务对话框提供同一组预配置，但外部厂商通常应作为上游添加；注册服务需要在租约过期前发送心跳。
+
+添加前可以测试模型列表；测试成功后对话框会列出探测到的模型并默认全选，可以用“全选/清空”调整后只添加勾选的模型。保存请求的 `models` 字段接受模型 ID 字符串或对象数组（`{"id":"...","kind":"...","capabilities":[...],"endpoints":[...]}`）；省略该字段时保持旧行为，登记全部探测结果。编辑已保存的上游时会列出已有模型；重新“刷新”只保留已登记的模型，不会静默加入新模型。填写“联通测试模型”时会再发一次轻量对话请求。测试失败不会强制阻止保存，勾选“模型列表探测失败也允许保存”后可以先记录上游，让真实业务调用返回上游的具体错误。模型列表一旦刷新成功，云端模型会同时出现在 `/v1/models` 和 `/api/v1/models`。
 
 ## 配置权重和并发限制
 
@@ -69,12 +72,12 @@ PUT /api/v1/upstreams/registered-vllm-1/routing
 Authorization: Bearer <VOS token 或网关 Key>
 Content-Type: application/json
 
-{"weight":2,"max_inflight":4,"disabled":false}
+{"weight":2,"max_inflight":4,"disabled":false,"direct":false}
 ```
 
-默认权重 1，范围 1..1000；默认并发上限 0 表示不限；默认不暂停。PUT 替换完整策略，省略字段回到默认。策略保存在原有状态文件，升级旧文件自动采用默认值；Model Hub 刷新和同 ID 后端重新注册不清零策略或占用。`GET /api/v1/upstreams` 返回 `routing`、`inflight`、`model_ids`，已保存凭据不回显。只有 owner 和管理员能修改调度配置。
+默认权重 1，范围 1..1000；默认并发上限 0 表示不限；默认不暂停。`direct=true` 表示“直接放行”：跳过 `max_inflight` 和熔断，并在多个候选可用时优先直连该上游；`disabled`（暂停）和租约过期仍然生效。外部云端 API 通常应直接放行，本地推理后端则由调度控制并发。PUT 替换完整策略，省略字段回到默认。策略保存在原有状态文件，升级旧文件自动采用默认值；Model Hub 刷新和同 ID 后端重新注册不清零策略或占用。`GET /api/v1/upstreams` 返回 `routing`、`inflight`、`model_ids`，已保存凭据不回显。只有 owner 和管理员能修改调度配置。
 
-暂停和注销只阻止新模型推理请求，不中止已在执行的请求。指定实例不会绕过暂停或并发上限；有状态资源读写不纳入推理并发限制。
+暂停和注销只阻止新模型推理请求，不中止已在执行的请求。指定实例不会绕过暂停；直接放行的指定实例也不再受并发上限限制。有状态资源读写不纳入推理并发限制。
 
 ## 连接失败熔断与恢复
 
@@ -105,6 +108,8 @@ Content-Type: application/json
 | --- | --- |
 | `public`（默认） | 模型进入所有调用者的 `/v1/models` 和 `/api/v1/models`；内网匿名推理在未强制鉴权时也可调用。 |
 | `private` | 模型只对注册者同一 VOS 身份和管理员可见；其他用户、匿名调用和其他应用的 token 不会在模型列表看到，也不能路由到该上游。 |
+
+管理员可以在注册时附带 `scheduler` 策略决定该服务是否由 V-Scheduler 调度。默认不附带，服务按本机模型调度策略处理；`{"mode":"direct"}` 表示直接放行，跳过调度准入、排队和模型预算，等价于外部上游。其他模式（`cloud`、`permit`、`delegated`）用于受调度管理的本地后端。直接放行绑定会记录当时的 `base_url`，地址变化后必须重新注册；界面仅在管理员登录时显示“调度方式”。
 
 其他 VOS 应用不需要手动配置这些注册服务：应用以自己的 OIDC/Fastpath token 调用 `/api/com.ictrek.v-scheduler/v1/models` 即可看到该用户可用的 public 模型和自己的 private 模型；需要能力筛选时调用 `/api/com.ictrek.v-scheduler/api/v1/models`，读取 `kind`、`capabilities`、`endpoints`、`upstream_kind` 和 `model_prefix`。应用侧不要保存云端 Key、上游地址或模型清单。
 

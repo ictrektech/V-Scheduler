@@ -254,6 +254,56 @@ fn async_models(value: &Value) -> Vec<Model> {
         ..Default::default()
     }]
 }
+pub(super) fn select_models(payload: &Value, probed: Vec<Model>) -> Api<Vec<Model>> {
+    let Some(items) = payload.get("models").and_then(Value::as_array) else {
+        return Ok(probed);
+    };
+    let mut result: Vec<Model> = vec![];
+    for item in items {
+        let id = match item {
+            Value::String(id) => id.trim().to_string(),
+            Value::Object(_) => text(item, "id").trim().to_string(),
+            _ => return Err(Failure::new(400, "selected models must be ids or objects")),
+        };
+        if id.is_empty() {
+            return Err(Failure::new(400, "selected model id is required"));
+        }
+        if result.iter().any(|m| m.id == id) {
+            continue;
+        }
+        let mut model = probed
+            .iter()
+            .find(|m| m.id == id)
+            .cloned()
+            .unwrap_or_else(|| Model {
+                id: id.clone(),
+                ..Default::default()
+            });
+        if item.is_object() {
+            let kind = text(item, "kind");
+            if !kind.is_empty() {
+                model.kind = kind.to_string();
+            }
+            let owner = text(item, "owned_by");
+            if !owner.is_empty() {
+                model.owned_by = owner.to_string();
+            }
+            let capabilities = strings(&item["capabilities"]);
+            if !capabilities.is_empty() {
+                model.capabilities = capabilities;
+            }
+            let endpoints = strings(&item["endpoints"]);
+            if !endpoints.is_empty() {
+                model.endpoints = endpoints;
+            }
+        }
+        if model.kind.is_empty() {
+            model.kind = "unknown".into();
+        }
+        result.push(model);
+    }
+    Ok(result)
+}
 pub(super) async fn models(g: &Gateway, u: &Upstream) -> Api<Vec<Model>> {
     if u.protocol == "image_studio" {
         let base = u.base_url.trim_end_matches('/');
@@ -469,7 +519,8 @@ pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) ->
             models(g, &u).await
         };
         if probe {
-            let mut report = json!({"ok":fetched.is_ok(),"base_url":u.base_url,"model_prefix":u.prefix(),"protocol":u.protocol,"models":fetched.as_ref().map(|ms|ms.iter().map(|m|m.id.clone()).collect::<Vec<_>>()).unwrap_or_default(),"error":fetched.err().map(|e|e.message).unwrap_or_default()});
+            let details = fetched.as_ref().map(|ms| ms.iter().map(|m| json!({"id":m.id,"kind":m.kind,"capabilities":m.capabilities,"endpoints":m.endpoints,"owned_by":m.owned_by})).collect::<Vec<_>>()).unwrap_or_default();
+            let mut report = json!({"ok":fetched.is_ok(),"base_url":u.base_url,"model_prefix":u.prefix(),"protocol":u.protocol,"models":fetched.as_ref().map(|ms|ms.iter().map(|m|m.id.clone()).collect::<Vec<_>>()).unwrap_or_default(),"model_details":details,"error":fetched.err().map(|e|e.message).unwrap_or_default()});
             let test = text(&payload, "test_model");
             if !test.is_empty() {
                 match probe_model(g, &u, test).await {
@@ -499,6 +550,7 @@ pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) ->
             }
             Err(e) => return Err(e),
         };
+        let models = select_models(&payload, models)?;
         u.owner = id.owner.clone();
         u.source = "api".into();
         let mut r = g.registry.lock().unwrap();
@@ -584,7 +636,7 @@ pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) ->
         } else if !(method == "POST" && action == "refresh") {
             return Err(Failure::new(405, "method not allowed"));
         }
-        let models = if u.protocol == "async_task" {
+        let probed = if u.protocol == "async_task" {
             if action == "refresh" {
                 g.registry
                     .lock()
@@ -612,6 +664,17 @@ pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) ->
                 }
                 Err(error) => return Err(error),
             }
+        };
+        let models = if action == "refresh" && payload.get("models").is_none() {
+            let previous = g.registry.lock().unwrap().models.get(key).cloned().unwrap_or_default();
+            if previous.is_empty() {
+                probed
+            } else {
+                let ids: std::collections::BTreeSet<_> = previous.iter().map(|m| m.id.as_str()).collect();
+                probed.into_iter().filter(|m| ids.contains(m.id.as_str())).collect()
+            }
+        } else {
+            select_models(&payload, probed)?
         };
         u.healthy = true;
         if payload["allow_probe_failure"] != true {
@@ -705,7 +768,7 @@ async fn register(g: &Gateway, id: &Identity, p: Value) -> Api<Response> {
             ));
         }
         let mut policy = policy.clone();
-        if !["cloud", "permit", "delegated"].contains(&text(&policy, "mode")) {
+        if !["cloud", "permit", "delegated", "direct"].contains(&text(&policy, "mode")) {
             return Err(Failure::new(400, "invalid scheduler mode"));
         }
         if policy["mode"] == "permit"

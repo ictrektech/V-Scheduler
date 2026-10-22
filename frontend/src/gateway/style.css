@@ -253,6 +253,11 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .probe-result { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; background: var(--bg); font-size: 12px; margin-top: 8px; }
 .probe-result.ok { border-color: color-mix(in srgb, var(--ok-fg) 25%, var(--border)); }
 .probe-result.bad { border-color: color-mix(in srgb, var(--bad-fg) 25%, var(--border)); }
+.model-picker { max-height: 190px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg); padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
+.model-picker .model-choice { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 12px; color: var(--text); font-weight: 500; }
+.model-picker .model-choice .hint { margin: 0; }
+#ufModelsField > label { display: flex; align-items: center; gap: 6px; }
+#ufModelsField .spacer { flex: 1; }
 .form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 
 /* about */
