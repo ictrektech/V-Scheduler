@@ -52,6 +52,8 @@ reply = an.messages.create(model='registered/qwen3:0.6b', max_tokens=128,
 
 管理页“添加云端算力 API”默认填入 `https://ai.ictrek.com/v1`，注册和购买入口指向 `https://ai.ictrek.com`。该服务按 OpenAI 兼容方式提供 `/v1/models`，需要 Bearer API Key；未带 Key 会返回认证错误。其他云端服务也可以选择 `openai`、`chat_completions`、`anthropic`、`offline_asr` 或 `image_studio` 协议。
 
+编辑上游时密钥不回显，留空保存会保留原密钥。编辑框的测试请求向 `POST /api/v1/upstreams/probe` 附带 `upstream_id`；服务端核验管理权限后，仅在地址和协议与已保存记录一致时复用原密钥，探测响应不包含密钥。更换地址或协议后须显式输入密钥进行测试，避免将已保存的凭据发送到其他地址。
+
 云端模型前缀由 `base_url` 的 host 反转生成，避免不同云端同名模型冲突：
 
 | Base URL host | 模型前缀示例 |

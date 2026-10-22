@@ -1504,6 +1504,69 @@ fn direct_upstream_bypasses_admission_for_all_models() {
 }
 
 #[tokio::test]
+async fn editing_upstream_probe_reuses_saved_key_without_exposing_it() {
+    let root = temp();
+    let server = Router::new().route("/v1/models", axum::routing::get(|headers: HeaderMap| async move {
+        if headers.get("authorization").and_then(|v| v.to_str().ok()) != Some("Bearer fixture-saved-key") {
+            return StatusCode::UNAUTHORIZED.into_response();
+        }
+        Json(json!({"data":[{"id":"echo"}]})).into_response()
+    }));
+    let listener = tokio::net::TcpListener::bind("127.0.0.2:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let task = tokio::spawn(async move { axum::serve(listener, server).await.unwrap(); });
+    let g = gateway(&root, Router::new());
+    let base = format!("http://{address}/v1");
+    let mut u = upstream("saved");
+    u.owner = "alice".into(); u.base_url = base.clone(); u.api_key = "fixture-saved-key".into();
+    g.registry.lock().unwrap().put(u, vec![model("echo")]);
+    let payload = json!({"upstream_id":"saved","name":"Edited","base_url":base,"api_key":"","protocol":"chat_completions"});
+    let req = |path: &str, method: &str, value: Value| axum::http::Request::builder()
+        .method(method).uri(path).header("content-type","application/json")
+        .body(Body::from(value.to_string())).unwrap();
+    let result = manage::handle(&g, &principal("alice"), req("/api/v1/upstreams/probe","POST",payload.clone())).await.unwrap();
+    let body = axum::body::to_bytes(result.into_body(), 65536).await.unwrap();
+    let report: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(report["ok"], true, "editing probe must use the saved key");
+    assert!(!String::from_utf8_lossy(&body).contains("fixture-saved-key"));
+    let forbidden = manage::handle(&g, &principal("bob"), req("/api/v1/upstreams/probe","POST",payload.clone())).await.err().unwrap();
+    assert_eq!(forbidden.status, StatusCode::FORBIDDEN);
+    let mut changed = payload.clone(); changed["base_url"] = json!("http://other.invalid/v1");
+    assert_eq!(manage::handle(&g, &principal("alice"), req("/api/v1/upstreams/probe","POST",changed)).await.err().unwrap().status, StatusCode::BAD_REQUEST);
+    let saved = manage::handle(&g, &principal("alice"), req("/api/v1/upstreams/saved","PUT",payload)).await.unwrap();
+    let view: Value = serde_json::from_slice(&axum::body::to_bytes(saved.into_body(),65536).await.unwrap()).unwrap();
+    assert_eq!(view["api_key"], ""); assert_eq!(view["has_key"], true);
+    assert_eq!(Registry::open(&root.join("state.json")).unwrap().upstreams["saved"].api_key, "fixture-saved-key");
+    task.abort(); std::fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
+async fn per_model_direct_routing_accepts_slashes_in_upstream_and_native_ids() {
+    let root = temp();
+    let g = gateway(&root, Router::new());
+    {
+        let mut registry = g.registry.lock().unwrap();
+        registry.put(upstream("v-scheduler/ollama-qa"), vec![model("qwen3.5:2b"), model("vendor/model:latest")]);
+        registry.put(upstream("v-scheduler"), vec![model("unrelated")]);
+    }
+    let mut admin = principal("root");
+    admin.admin = true;
+    for native in ["qwen3.5:2b", "vendor/model:latest"] {
+        let model_id = format!("v-scheduler/ollama-qa/{native}");
+        for direct in [true, false] {
+            let request = axum::http::Request::builder()
+                .method("PUT").uri("/api/v1/model-routing")
+                .header("content-type", "application/json")
+                .body(Body::from(json!({"model_id":model_id,"direct":direct}).to_string())).unwrap();
+            let response = manage::handle(&g, &admin, request).await;
+            assert!(response.is_ok(), "qualified model ID must resolve: {model_id}");
+            assert_eq!(g.registry.lock().unwrap().model_routing.contains_key(&model_id), direct);
+        }
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
 async fn per_model_direct_routing_bypasses_only_that_model() {
     let root = temp();
     let config = json!({

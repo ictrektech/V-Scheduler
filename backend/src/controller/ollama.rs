@@ -265,6 +265,47 @@ fn stopped_receipt(value: &Value, model: &str, nonce: &str) -> bool {
         && value["native_exit_barrier"] == true
 }
 
+// Only credit memory freshly observed in this app's fixed native backend.
+// The permit keeps its full reservation; any unmaterialized part and every
+// other commitment still need free memory in addition to the safety floor.
+pub(super) async fn resident_report(upstream: &str, model: &str, cost: &Resources, report: &Value) -> Value {
+    let Some(role) = ["qa", "embedding", "rerank"].into_iter()
+        .find(|role| upstream == origin(role)) else { return report.clone() };
+    let result = async {
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(2))
+            .redirect(reqwest::redirect::Policy::none()).build()?;
+        let response = client.get(format!("http://v-scheduler-ollama-{role}:11434/api/ps")).send().await?;
+        super::app_bindings::bounded_json(response).await
+    }.await;
+    pressure_report(report, cost, model, &result.unwrap_or(Value::Null))
+}
+
+fn pressure_report(report: &Value, cost: &Resources, model: &str, loaded: &Value) -> Value {
+    let mut adjusted = report.clone();
+    let Some(entry) = loaded["models"].as_array().and_then(|rows| rows.iter()
+        .find(|row| row["name"] == model || row["model"] == model)) else { return adjusted };
+    let (Some(size), Some(vram)) = (entry["size"].as_u64(), entry["size_vram"].as_u64()) else { return adjusted };
+    if vram > size { return adjusted; }
+    let unified = report["gpus"].as_array()
+        .is_some_and(|rows| rows.iter().any(|gpu| gpu["memory_type"] == "unified"));
+    let mib = |bytes: u64| (bytes / 1048576).min(i64::MAX as u64) as i64;
+    let host_credit = if unified {
+        mib(size).min(cost.memory_mib.saturating_add(cost.gpu_memory_mib))
+    } else {
+        mib(size - vram).min(cost.memory_mib)
+    }.max(0);
+    if let Some(available) = report["memory_available_mib"].as_i64().filter(|n| *n >= 0) {
+        adjusted["memory_available_mib"] = json!(available.saturating_add(host_credit));
+    }
+    if !unified && report["gpus"][0]["memory_type"] == "dedicated" {
+        if let Some(free) = report["gpus"][0]["free_mib"].as_i64().filter(|n| *n >= 0) {
+            adjusted["gpus"][0]["free_mib"] = json!(free.saturating_add(mib(vram).min(cost.gpu_memory_mib).max(0)));
+        }
+    }
+    adjusted
+}
+
 // Only this app's fixed native backends can supply this recovery proof.
 // An expired lease, empty /api/ps or elapsed timeout alone never releases work.
 async fn recover_stopped(a: &App, client: &reqwest::Client, role: &str) -> anyhow::Result<()> {
@@ -332,6 +373,47 @@ async fn recover_stopped(a: &App, client: &reqwest::Client, role: &str) -> anyho
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn resident_memory_credit_keeps_incremental_budget_and_safety_floor() {
+        let cost = Resources {memory_mib:6144, cpu_millicores:1000, ..Default::default()};
+        let report = json!({"memory_total_mib":16384,"memory_available_mib":5589,"cpu_logical_count":8,"cpu_used_percent":10,"gpus":[]});
+        let loaded = json!({"models":[{"name":"qwen3.5:2b","size":3136290816_u64,"size_vram":0}]});
+        let adjusted = pressure_report(&report, &cost, "qwen3.5:2b", &loaded);
+        assert!(!Resources::default().fits_guarded(&cost, &report, &Resources::default()));
+        assert!(Resources::default().fits_guarded(&cost, &adjusted, &Resources::default()));
+        // Only the observed 2991 MiB, not the entire 6144 MiB reservation,
+        // is credited. Runtime growth still needs free RAM alongside 2 GiB.
+        let mut low = report.clone();
+        low["memory_available_mib"] = json!(6144 - 2991 + 2048 - 1);
+        assert!(!Resources::default().fits_guarded(&cost, &pressure_report(&low, &cost, "qwen3.5:2b", &loaded), &Resources::default()));
+        let mut other = cost.clone(); other.memory_mib += 1024;
+        assert!(!Resources::default().fits_guarded(&other, &adjusted, &Resources::default()));
+        for evidence in [Value::Null, json!({"models":[]}), json!({"models":[{"name":"other","size":3136290816_u64,"size_vram":0}]}), json!({"models":[{"name":"qwen3.5:2b","size":1,"size_vram":2}]})] {
+            assert_eq!(pressure_report(&report, &cost, "qwen3.5:2b", &evidence), report);
+        }
+        let huge = json!({"models":[{"name":"qwen3.5:2b","size":u64::MAX,"size_vram":0}]});
+        low["memory_available_mib"] = json!(2047);
+        assert!(!Resources::default().fits_guarded(&cost, &pressure_report(&low, &cost, "qwen3.5:2b", &huge), &Resources::default()));
+    }
+
+    #[test]
+    fn resident_gpu_credit_uses_the_correct_memory_pool() {
+        let cost = Resources {memory_mib:1024, gpu_slots:1, gpu_memory_mib:4096, ..Default::default()};
+        let loaded = json!({"models":[{"model":"chat","size":5368709120_u64,"size_vram":4294967296_u64}]});
+        let mut report = json!({"memory_total_mib":16384,"memory_available_mib":2048,"gpus":[{"memory_type":"dedicated","total_mib":8192,"free_mib":409}]});
+        let adjusted = pressure_report(&report, &cost, "chat", &loaded);
+        assert!(Resources::default().fits_guarded(&cost, &adjusted, &Resources::default()));
+        report["gpus"][0]["free_mib"] = json!(408);
+        assert!(!Resources::default().fits_guarded(&cost, &pressure_report(&report, &cost, "chat", &loaded), &Resources::default()));
+        report["gpus"][0]["memory_type"] = json!("unified");
+        report["gpus"][0]["free_mib"] = Value::Null;
+        let adjusted = pressure_report(&report, &cost, "chat", &loaded);
+        assert_eq!(adjusted["memory_available_mib"], 7168);
+        assert!(Resources::default().fits_guarded(&cost, &adjusted, &Resources::default()));
+        report["memory_available_mib"] = json!(2047);
+        assert!(!Resources::default().fits_guarded(&cost, &pressure_report(&report, &cost, "chat", &loaded), &Resources::default()));
+    }
+
     #[test]
     fn recovery_requires_matching_native_exit_receipt() {
         let good = json!({"protocol_version":1,"model":"qwen3.5:2b","nonce":"challenge","stopped":true,"native_exit_barrier":true});

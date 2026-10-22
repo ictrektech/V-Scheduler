@@ -34,7 +34,7 @@ def check(ok,label):assert ok,label;checks.append(label);print('PASS:',label,flu
 def sql(text):return docker('exec','-i',pg,'psql','-U','postgres','-d','test','-At','-v','ON_ERROR_STOP=1',input=text)
 fixture=private('fixture.mjs',r'''
 import {createServer} from 'node:http';
-let active=0,peak=0,calls=0,unloads=0,valid=true,loaded=new Set(),history=[],mutations=[];
+let active=0,peak=0,calls=0,loads=0,unloads=0,valid=true,loaded=new Set(),history=[],mutations=[];
 const models=[{name:'chat:latest',size:1048576},{name:'other:latest',size:1048576}];
 const handler=async(req,res)=>{res.setHeader('Content-Type','application/json');let text='';for await(const c of req)text+=c;const body=text?JSON.parse(text):{};
 const reply=(value,status=200)=>{res.statusCode=status;res.end(JSON.stringify(value));};
@@ -53,8 +53,8 @@ if(req.url==='/api/delete'){
 if(req.url==='/api/show')return reply({capabilities:['completion']});
 if(req.url==='/v1/models')return reply({data:models.map(m=>({id:m.name}))});
 if(req.url==='/api/version')return reply({version:'fixture'});
-if(req.url==='/api/ps')return reply({models:[...loaded].map(name=>({name}))});
-if(req.url==='/stats')return reply({active,peak,calls,unloads,loaded:[...loaded],history,mutations});
+if(req.url==='/api/ps')return reply({models:[...loaded].map(name=>({name,size:1073741824,size_vram:0}))});
+if(req.url==='/stats')return reply({active,peak,calls,loads,unloads,loaded:[...loaded],history,mutations});
 if(req.url==='/proof-mode'){valid=body.valid;return reply({});}
 if(req.url==='/api/scheduler/confirm-stopped'){
  if(active)return reply({error:'active'},409);
@@ -65,7 +65,7 @@ if(req.url==='/v1000/user/check')return reply({code:0,data:{id:'fixture-user',ro
 if(req.url==='/v1000/oauth2/userinfo')return reply({sub:req.headers.authorization?.endsWith('bob')?'bob':'alice',preferred_username:'fixture'});
 if(req.url==='/v1/chat/completions'){
  if(!req.headers['x-vscheduler-permit-id'])return reply({error:'no permit'},500);
- active++;peak=Math.max(peak,active);calls++;loaded.add(body.model);history.push({model:body.model,permit:req.headers['x-vscheduler-permit-id'],keep_alive:body.keep_alive});
+ active++;peak=Math.max(peak,active);calls++;if(!loaded.has(body.model))loads++;loaded.add(body.model);history.push({model:body.model,permit:req.headers['x-vscheduler-permit-id'],keep_alive:body.keep_alive});
  if(body.messages?.[0]?.content==='hold')await new Promise(r=>setTimeout(r,3000));
  active--;if(body.keep_alive===0)loaded.delete(body.model);
  if(body.stream){res.setHeader('Content-Type','text/event-stream');return res.end('data: {"choices":[{"delta":{"content":"hello"}}]}\n\ndata: [DONE]\n\n');}
@@ -89,10 +89,11 @@ try:
  app=launch('app','--network-alias','v-scheduler','--env-file',str(private('app.env','\n'.join(f'{k}={v}' for k,v in env.items())+'\n')),'-v',f'{config.parent}:/config','-v',f'{data}:/gateway-data','-v',f'{models}:/models','-v',f'{binary}:/binary:ro','--entrypoint','/binary',os.environ.get('SCHEDULER_TEST_SDK','v-scheduler-p0-test-sdk:20261019'),'controller','--config','/config/controller.json','--listen','0.0.0.0:38120')
  ctl=address(app,38120);gate=address(app,8080);peerurl=address(peer,11434)
  until(lambda:request(ctl+'/health')[0]==200,'controller not ready')
+ available_memory=12288
  def heartbeat():
   while not stop.is_set():
    now=datetime.datetime.now(datetime.timezone.utc).isoformat()
-   try:request(ctl+'/api/v1/workers/local/heartbeat',{'session_id':'feature-test','report':{'observed_at':now,'cpu_logical_count':4,'cpu_used_percent':0,'memory_total_mib':16384,'memory_available_mib':12288,'gpus':[]}},keys['worker'])
+   try:request(ctl+'/api/v1/workers/local/heartbeat',{'session_id':'feature-test','report':{'observed_at':now,'cpu_logical_count':4,'cpu_used_percent':0,'memory_total_mib':16384,'memory_available_mib':available_memory,'gpus':[]}},keys['worker'])
    except (OSError,TimeoutError):pass
    stop.wait(.5)
  threading.Thread(target=heartbeat,daemon=True).start()
@@ -109,6 +110,27 @@ try:
  check(sql("SELECT count(*) FROM vrs_permits WHERE state='active';")=='1','warm memory retains its resource reservation')
  check(chat(stream=True)[0]==200 and api('/api/v1/model-residency')[1]['resident']['permit_id']==first_id,'same model SSE reuses reserved warm model')
  check(sql("SELECT metadata->>'resident_reuses' FROM vrs_permits WHERE state='active';")=='1','controller records reuse with rotated execution proof')
+ # Model memory is already reflected in MemAvailable. Preserve the 2048 MiB
+ # safety floor while leaving less than the full model budget plus that floor.
+ available_memory=2560
+ until(lambda:sql("SELECT report->>'memory_available_mib' FROM vrs_nodes WHERE id='local';")=='2560','warm memory sample not reported')
+ before=request(peerurl+'/stats')[1]
+ for index in range(27):
+  response=chat(stream=index%2==0)
+  assert response[0]==200,('warm reuse rejected',index,response[0])
+  assert api('/api/v1/model-residency')[1]['resident']['permit_id']==first_id,'warm reuse replaced its reservation'
+ after=request(peerurl+'/stats')[1]
+ check(after['calls']==before['calls']+27 and after['loads']==before['loads'] and after['unloads']==before['unloads'] and after['loaded']==['chat:latest'],'27 low-headroom HTTP/SSE calls reuse one reservation without unloading or reloading')
+ available_memory=2047
+ until(lambda:sql("SELECT report->>'memory_available_mib' FROM vrs_nodes WHERE id='local';")=='2047','unsafe memory sample not reported')
+ rejected=request(gate+'/v1/chat/completions',{'model':'v-scheduler/ollama-qa/chat:latest','messages':[{'role':'user','content':'hello'}]},keys['gateway'],headers={'X-VScheduler-Queue-Wait-Seconds':'0'})
+ check(rejected[0]==429 and request(peerurl+'/stats')[1]['calls']==after['calls'],'warm reuse below the safety floor refuses inference before native compute')
+ available_memory=12288
+ until(lambda:sql("SELECT report->>'memory_available_mib' FROM vrs_nodes WHERE id='local';")=='12288','normal memory sample not restored')
+ if os.environ.get('SCHEDULER_TEST_RESIDENCY_ONLY')=='1':
+  private('result.json',{'passed':checks,'fixture_native':True,'installed_data_touched':False})
+  print(json.dumps({'passed':len(checks),'evidence':str(run/'result.json')}),flush=True)
+  raise SystemExit(0)
  with concurrent.futures.ThreadPoolExecutor() as pool:
   held=pool.submit(chat,text='hold')
   until(lambda:request(peerurl+'/stats')[1]['active']==1,'implicit queue hold not active')

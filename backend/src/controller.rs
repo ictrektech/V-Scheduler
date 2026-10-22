@@ -1524,7 +1524,8 @@ async fn permit_reuse_resident(
         return Err(Error(StatusCode::CONFLICT, "PERMIT_BINDING_MISMATCH"));
     }
     // Residency retains the same reservation, but never exempts the next
-    // inference from a fresh capacity/pressure check. Count it once, not twice.
+    // inference from a fresh capacity/pressure check. Its observed footprint is
+    // already absent from free RAM/VRAM; only the remaining budget needs room.
     for node in &nodes {
         let node_id: String = node.get("id");
         let capacity: Resources =
@@ -1554,6 +1555,7 @@ async fn permit_reuse_resident(
         }
         let reserve: Resources =
             serde_json::from_value(node.get("safety_reserve")).map_err(|_| invalid())?;
+        report = ollama::resident_report(&b.upstream_url, &b.model_id, &e.resources, &report).await;
         if !Resources::default().fits(&used, &capacity)
             || !Resources::default().fits_guarded(&used, &report, &reserve)
             || report["cpu_used_percent"]

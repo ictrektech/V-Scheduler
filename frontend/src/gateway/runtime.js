@@ -1297,7 +1297,9 @@ const app = {
     $("ufError").textContent = "";
     this.renderProbeResult({ pending: true });
     try {
-      const result = await this.api("POST", "/api/v1/upstreams/probe", this.upstreamPayload());
+      const payload = this.upstreamPayload();
+      if ($("ufId").value) payload.upstream_id = $("ufId").value;
+      const result = await this.api("POST", "/api/v1/upstreams/probe", payload);
       if (result.ok) this.setUpstreamModels(result.model_details || result.models || [], { preserve: true });
       this.renderProbeResult(result);
     } catch (err) {

@@ -406,7 +406,7 @@ fn model_routing(g: &Arc<Gateway>, id: &Identity, payload: Value) -> Api<Respons
         ));
     }
     let model_id = text(&payload, "model_id").trim().to_string();
-    let (upstream_id, native) = model_id
+    model_id
         .split_once('/')
         .filter(|(upstream, model)| !upstream.is_empty() && !model.is_empty())
         .ok_or_else(|| Failure::new(400, "model_id must be upstream_id/model"))?;
@@ -414,13 +414,13 @@ fn model_routing(g: &Arc<Gateway>, id: &Identity, payload: Value) -> Api<Respons
         .as_bool()
         .ok_or_else(|| Failure::new(400, "direct must be a boolean"))?;
     let mut r = g.registry.lock().unwrap();
-    let known = r
-        .upstreams
-        .get(upstream_id)
-        .is_some_and(|u| u.visible(id))
-        && r.models
-            .get(upstream_id)
-            .is_some_and(|rows| rows.iter().any(|m| m.id == native));
+    // Both upstream IDs and native model names may contain slashes. Resolve
+    // the complete qualified ID against discovery instead of splitting it.
+    let known = r.upstreams.iter().any(|(upstream_id, u)| {
+        u.visible(id) && r.models.get(upstream_id).is_some_and(|rows| {
+            rows.iter().any(|m| model_id == format!("{upstream_id}/{}", m.id))
+        })
+    });
     if !known {
         return Err(Failure::new(404, "model not found"));
     }
@@ -639,6 +639,15 @@ pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) ->
     {
         let probe = path.ends_with("/probe");
         let mut u = normalize(&payload)?;
+        if probe && !text(&payload, "upstream_id").is_empty() {
+            let saved = writable(&g.registry.lock().unwrap(), text(&payload, "upstream_id"), id)?;
+            if u.api_key.is_empty() && !saved.api_key.is_empty() {
+                if u.base_url != saved.base_url || u.protocol != saved.protocol {
+                    return Err(Failure::new(400, "upstream address or protocol changed; enter an API key to test"));
+                }
+                u.api_key = saved.api_key;
+            }
+        }
         if u.name.is_empty() && !probe {
             return Err(Failure::new(400, "name is required"));
         }
