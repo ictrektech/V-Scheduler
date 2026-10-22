@@ -183,18 +183,21 @@ const app = {
 
   async refresh() {
     try {
-      const admin = options.administrator?.() === true;
-      const budgets = admin
-        ? this.api("GET", "/scheduler/api/v1/model-budgets").then((r) => r?.data?.items || []).catch(() => [])
-        : Promise.resolve([]);
-      const [status, models, upstreams, usage, modelBudgets] = await Promise.all([
+      const [status, models, upstreams, usage] = await Promise.all([
         this.api("GET", "/api/v1/status"),
         this.api("GET", "/api/v1/models"),
         this.api("GET", "/api/v1/upstreams"),
         this.api("GET", "/api/v1/usage?period=" + encodeURIComponent(this.state.usagePeriod)),
-        budgets,
       ]);
-      this.state = { ...this.state, status, models: models.models, upstreams: upstreams.upstreams, usage, budgets: modelBudgets };
+      const admin = status.is_admin === true;
+      this.state = {
+        ...this.state,
+        status,
+        models: models.models,
+        upstreams: upstreams.upstreams,
+        usage,
+        budgets: admin ? this.state.budgets : [],
+      };
       this.showError("");
       const catalog = status.catalog_readiness;
       const notice = $("catalogNotice");
@@ -208,6 +211,7 @@ const app = {
       notice.hidden = !notice.textContent;
       this.renderAll();
       if (this.state.tab === "apidoc") this.renderApiDoc();
+      if (admin) this.loadBudgets();
     } catch (err) {
       if (err.status === 401) {
         this.renderUser(null);
@@ -216,6 +220,20 @@ const app = {
       }
       this.showError(() => VRouterI18n.t("加载失败：") + esc(VRouterI18n.t(err.sourceMessage || err.message)));
     }
+  },
+
+  // Budgets live behind the controller and can be much slower than the gateway
+  // itself; load them after the first paint instead of blocking the page.
+  async loadBudgets() {
+    const seq = this.budgetSeq = (this.budgetSeq || 0) + 1;
+    let items = [];
+    try {
+      const r = await this.api("GET", "/scheduler/api/v1/model-budgets");
+      items = r?.data?.items || [];
+    } catch {}
+    if (seq !== this.budgetSeq) return;
+    this.state.budgets = items;
+    this.renderModels();
   },
 
   switchTab(tab) {
@@ -397,7 +415,7 @@ const app = {
 
   renderModels() {
     const models = this.state.models;
-    const admin = options.administrator?.() === true;
+    const admin = this.state.status?.is_admin === true;
     VRouterI18n.bind($("modelsTable"), "innerHTML", () => models.length
       ? table(
           [VRouterI18n.t("模型 ID"), VRouterI18n.t("类型"), VRouterI18n.t("来源"), VRouterI18n.t("上游"), VRouterI18n.t("资源预算"), VRouterI18n.t("操作")],
@@ -795,7 +813,7 @@ const app = {
     $("routingMax").value = u.routing?.max_inflight || 0; $("routingDisabled").checked = !!u.routing?.disabled;
     $("routingDirect").checked = !!u.routing?.direct;
     const managed = u.source !== "api";
-    $("routingDirect").disabled = managed && options.administrator?.() !== true;
+    $("routingDirect").disabled = managed && this.state.status?.is_admin !== true;
     VRouterI18n.bind($("routingDirectHint"), "textContent", () => managed
       ? VRouterI18n.t("该上游由 V-Scheduler 或应用托管；直接放行会让其下所有模型跳过模型预算与调度准入，仅管理员可设置。")
       : VRouterI18n.t("直接放行会跳过并发上限、熔断、模型预算与调度准入，并在有多个可用上游时优先选择；暂停仍然生效。外部云端 API 通常应直接放行。"));
