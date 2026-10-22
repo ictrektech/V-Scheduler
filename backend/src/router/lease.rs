@@ -269,13 +269,15 @@ pub(super) fn approval(
     let declared = u.scheduler.clone().unwrap_or_default();
     // Direct routing is an upstream-wide decision: every model served by that
     // upstream skips admission and model budgets, not only gateway concurrency.
-    if g.registry
-        .lock()
-        .unwrap()
-        .routing
-        .get(&u.id)
-        .is_some_and(|policy| policy.direct)
-    {
+    // An administrator can also release a single model for diagnostics.
+    let model_key = format!("{}/{model}", u.id);
+    if {
+        let r = g.registry.lock().unwrap();
+        r.routing.get(&u.id).is_some_and(|policy| policy.direct)
+            || r.model_routing
+                .get(&model_key)
+                .is_some_and(|policy| policy.direct)
+    } {
         return Ok(None);
     }
     // Administrator-approved direct registrations bypass admission entirely,

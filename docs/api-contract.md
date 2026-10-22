@@ -105,9 +105,9 @@ HTTP 429 的 `WAIT_MEMORY_HEADROOM` 表示观测可用 RAM 小于本次预算、
 
 开启内置 Ollama 驻留后，已验证身份未提供排队头的同步请求默认等待最多 30 秒；显式 `X-VScheduler-Queue-Wait-Seconds: 0` 保持立即准入。匿名及其他后端请求保持原行为，所有等待仍核验真实资源与停止屏障。
 
-## 内置模型预算校准
+## 模型预算校准与单模型放行
 
-管理员可在“模型”页查看每个内置 Ollama 模型当前使用的预算，并选择人工校准或直接放行；对应 `GET /api/v1/model-budgets`、`POST /api/v1/model-budgets/calibrate` 和 `POST /api/v1/model-budgets/restore`，三项均要求管理员身份。
+管理员可在“模型”页查看每个内置 Ollama 模型和每个应用模型当前使用的预算，并选择人工校准、直接放行或恢复默认；预算接口为 `GET /api/v1/model-budgets`、`POST /api/v1/model-budgets/calibrate` 和 `POST /api/v1/model-budgets/restore`，单模型放行为 `PUT /api/v1/model-routing`，四项均要求管理员身份。
 
 `/model-budgets` 为每个已纳管的 `v-scheduler/ollama-<role>/<model>` 返回一条记录：`mode` 为 `automatic`（按模型大小估算）、`calibrated`（人工预算）或 `direct`（不申请调度许可），并包含当前 `resources`（direct 为 null）、当前节点自动估算的 `default_resources`、`limits` 与 `default_limits`、节点 `capacity` 及执行器状态。界面展示不作为准入依据，实际准入仍读取已保存的执行器配置和绑定。
 
@@ -116,6 +116,10 @@ HTTP 429 的 `WAIT_MEMORY_HEADROOM` 表示观测可用 RAM 小于本次预算、
 `mode=direct` 表示不做资源限制、不主动调度直接放行：请求中不得同时给出 `resources` 或 `limits`。绑定会移除执行器与运行上限，网关核对上游地址后直接转发，不申请许可、不排队、不做资源准入；该模型的请求不再占用调度预算。管理员可随时重新校准或恢复默认预算。
 
 `/model-budgets/restore` 仅需 `model_id`，重新按当前原生模型大小和节点预算计算自动估算并启用自动执行器，同时移除人工运行上限。自动模式本身会直接返回未校准结果。
+
+应用托管的模型（Image Studio、V-Voice、ML Server、私有 V-Sub 等）使用同一组接口校准：额外传入 `upstream_url`（网关转发该上游时使用的 base URL），`model_id` 使用原生模型名。校准结果写入 `model-budgets.local.json`，按上游 URL 与原生模型名隔离；申请许可时临时以该资源替换执行器的准入占用，不改动应用自己的执行器或配置，也不支持运行上限。该路径的 `mode` 只能是 `calibrated`（或省略），`mode=direct` 返回 `422 MODEL_BUDGET_DIRECT_VIA_GATEWAY`；恢复时同样传入 `upstream_url`。`/model-budgets` 会在内置 Ollama 记录后追加这些覆盖记录，并带上 `upstream_url` 与 `native_model`。
+
+单模型直接放行由网关管理，不走控制器：`PUT /api/v1/model-routing` 接受 `{"model_id":"<upstream_id>/<原生模型名>","direct":true|false}`，仅管理员可调用。`direct=true` 写入网关状态文件，`model_view` 返回 `direct: true`；该模型的请求在读取任何调度策略前直接转发，不申请许可、不排队、不计预算。`direct=false` 删除记录并恢复上游策略；上游整体直接放行仍然优先。
 
 非法型号、字段或超界预算返回 `422 INVALID_MODEL_BUDGET`；已存在的非内置绑定返回 `409 MODEL_BINDING_UNMANAGED`；未发现绑定返回 `404 MODEL_BINDING_NOT_FOUND`；节点采样或预算存储不可用返回 `503 RESOURCE_SAMPLE_NOT_READY` 或 `503 MODEL_BUDGET_STORAGE_UNAVAILABLE`。校准、直接放行和恢复分别写入 `model.budget.calibrated`、`model.budget.direct`、`model.budget.restored` 审计记录。
 

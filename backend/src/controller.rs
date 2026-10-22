@@ -1215,12 +1215,19 @@ async fn permit_acquire(
         .and_then(|s| s.to_str().ok())
         .filter(|s| !s.is_empty() && s.len() <= 256)
         .ok_or(invalid())?;
-    let e = a
+    let mut executor = a
         .config
         .executors
         .iter()
         .find(|e| e.id == b.executor_id && e.app_id == p.app_id && e.task_type == "model.infer")
+        .cloned()
         .ok_or(Error(StatusCode::FORBIDDEN, "EXECUTOR_NOT_ALLOWED"))?;
+    // Administrator calibration for an application-owned model changes only the
+    // resources reserved for this model's permits, never the executor binding.
+    if let Some(resources) = model_budget::admission_resources(&b.upstream_url, &b.model_id) {
+        executor.resources = resources;
+    }
+    let e = &executor;
     if !approved_upstream(e, &b.upstream_url) || b.model_id.len() > 512 {
         return Err(Error(StatusCode::FORBIDDEN, "UPSTREAM_NOT_APPROVED"));
     }

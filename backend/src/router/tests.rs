@@ -1504,6 +1504,107 @@ fn direct_upstream_bypasses_admission_for_all_models() {
 }
 
 #[tokio::test]
+async fn per_model_direct_routing_bypasses_only_that_model() {
+    let root = temp();
+    let config = json!({
+        "url": "http://v-scheduler:38120/api/v1",
+        "token": "k".repeat(32),
+        "models": {
+            "vendor/echo": {"mode":"permit","executor_id":"manual-vendor","upstream_url":"http://fixture/v1"},
+            "vendor/embed": {"mode":"permit","executor_id":"manual-vendor","upstream_url":"http://fixture/v1"}
+        }
+    });
+    std::fs::write(root.join("scheduler.local.json"), config.to_string()).unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(
+            root.join("scheduler.local.json"),
+            std::fs::Permissions::from_mode(0o600),
+        )
+        .unwrap();
+    }
+    let g = gateway(&root, Router::new());
+    let u = {
+        let mut registry = g.registry.lock().unwrap();
+        registry.put(upstream("vendor"), vec![model("echo"), model("embed")]);
+        registry.upstreams["vendor"].clone()
+    };
+    assert!(lease::approval(&g, &u, "echo", "POST", "/chat/completions", false)
+        .unwrap()
+        .is_some());
+    let put = |model_id: &str, direct: bool| {
+        axum::http::Request::builder()
+            .method("PUT")
+            .uri("/api/v1/model-routing")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                json!({"model_id": model_id, "direct": direct}).to_string(),
+            ))
+            .unwrap()
+    };
+    let denied = manage::handle(&g, &principal("alice"), put("vendor/echo", true))
+        .await
+        .err()
+        .unwrap();
+    assert_eq!(denied.status, StatusCode::FORBIDDEN);
+    let mut root_user = principal("root");
+    root_user.admin = true;
+    assert_eq!(
+        manage::handle(&g, &root_user, put("vendor/missing", true))
+            .await
+            .err()
+            .unwrap()
+            .status,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        manage::handle(&g, &root_user, put("vendor/echo", true))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::OK
+    );
+    assert!(lease::approval(&g, &u, "echo", "POST", "/chat/completions", false)
+        .unwrap()
+        .is_none());
+    assert!(lease::approval(&g, &u, "embed", "POST", "/chat/completions", false)
+        .unwrap()
+        .is_some());
+    let disk: Value =
+        serde_json::from_slice(&std::fs::read(root.join("state.json")).unwrap()).unwrap();
+    assert_eq!(disk["model_routing"]["vendor/echo"]["direct"], true);
+    let models = manage::handle(
+        &g,
+        &root_user,
+        axum::http::Request::builder()
+            .uri("/api/v1/models")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await
+    .unwrap();
+    let bytes = axum::body::to_bytes(models.into_body(), 1 << 20)
+        .await
+        .unwrap();
+    let value: Value = serde_json::from_slice(&bytes).unwrap();
+    let echo = value["models"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["qualified"] == "manual/echo")
+        .unwrap();
+    assert_eq!(echo["direct"], true);
+    assert_eq!(echo["upstream_url"], "http://fixture/v1");
+    manage::handle(&g, &root_user, put("vendor/echo", false))
+        .await
+        .unwrap();
+    assert!(lease::approval(&g, &u, "echo", "POST", "/chat/completions", false)
+        .unwrap()
+        .is_some());
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
 async fn managed_upstream_direct_routing_requires_an_administrator() {
     let root = temp();
     let g = gateway(&root, Router::new());

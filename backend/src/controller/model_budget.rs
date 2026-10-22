@@ -86,6 +86,53 @@ fn calibration_limits(limits: Option<Value>) -> Api<Value> {
     Ok(Value::Object(approved))
 }
 
+// Per-model overrides for models whose executor is owned by another
+// application: the executor stays untouched and admission reserves the
+// calibrated resources for requests of this model only.
+fn overrides_path() -> PathBuf {
+    directory().join("model-budgets.local.json")
+}
+
+fn read_overrides() -> Value {
+    let mut value: Value = std::fs::read(overrides_path())
+        .ok()
+        .filter(|raw| raw.len() <= 262144)
+        .and_then(|raw| serde_json::from_slice(&raw).ok())
+        .unwrap_or_else(|| json!({"version":1,"upstreams":{}}));
+    if !value["upstreams"].is_object() {
+        value["upstreams"] = json!({});
+    }
+    value["version"] = json!(1);
+    value
+}
+
+fn write_overrides(value: &Value) -> anyhow::Result<()> {
+    save(&overrides_path(), value)
+}
+
+fn override_resources(value: &Value, upstream_url: &str, model_id: &str) -> Option<Resources> {
+    serde_json::from_value(
+        value["upstreams"][upstream_url.trim_end_matches('/')]["models"][model_id]["resources"]
+            .clone(),
+    )
+    .ok()
+}
+
+pub(super) fn admission_resources(upstream_url: &str, model_id: &str) -> Option<Resources> {
+    override_resources(&read_overrides(), upstream_url, model_id)
+}
+
+fn upstream_url(value: &str) -> Option<String> {
+    let url = reqwest::Url::parse(value).ok()?;
+    (["http", "https"].contains(&url.scheme())
+        && url.host_str().is_some_and(|host| !host.is_empty())
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.query().is_none()
+        && url.fragment().is_none())
+    .then(|| value.trim_end_matches('/').to_string())
+}
+
 fn bindings(root: &std::path::Path) -> Vec<(String, PathBuf, Value)> {
     let mut found = Vec::new();
     let Ok(entries) = std::fs::read_dir(root.join("ollama-bindings")) else {
@@ -214,6 +261,34 @@ pub(super) async fn list(State(a): State<App>, h: HeaderMap) -> Api<Json<Value>>
             "capacity": capacity,
         }));
     }
+    let overrides = read_overrides();
+    for (url, group) in overrides["upstreams"]
+        .as_object()
+        .into_iter()
+        .flatten()
+    {
+        for (model, entry) in group["models"].as_object().into_iter().flatten() {
+            items.push(json!({
+                "model_id": model,
+                "upstream_url": url,
+                "native_model": model,
+                "repository_model_id": Value::Null,
+                "role": Value::Null,
+                "node_id": Value::Null,
+                "executor_id": Value::Null,
+                "mode": "calibrated",
+                "calibrated": true,
+                "enabled": true,
+                "version": 0,
+                "updated_at": Value::Null,
+                "resources": entry["resources"].clone(),
+                "default_resources": Value::Null,
+                "limits": Value::Null,
+                "default_limits": Value::Null,
+                "capacity": Value::Null,
+            }));
+        }
+    }
     Ok(ok(json!({"items": items})))
 }
 
@@ -224,6 +299,7 @@ pub(super) struct BudgetEdit {
     mode: Option<String>,
     resources: Option<Resources>,
     limits: Option<Value>,
+    upstream_url: Option<String>,
 }
 
 fn valid(resources: &Resources) -> bool {
@@ -252,6 +328,77 @@ fn direct_mode(b: &BudgetEdit) -> Api<bool> {
     }
 }
 
+// Application-owned executors cannot be replaced without the owning app, so
+// calibration stores a per-model resource override that admission applies to
+// permits of this model only.
+async fn calibrate_model(a: &App, p: &Principal, b: &BudgetEdit) -> Api<Json<Value>> {
+    if b.mode.as_deref() == Some("direct") {
+        return Err(Error(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "MODEL_BUDGET_DIRECT_VIA_GATEWAY",
+        ));
+    }
+    if !matches!(b.mode.as_deref(), None | Some("calibrated")) || b.limits.is_some() {
+        return Err(invalid_budget());
+    }
+    let url = upstream_url(b.upstream_url.as_deref().unwrap_or(""))
+        .ok_or_else(invalid_budget)?;
+    let model = b.model_id.trim().to_string();
+    if model.is_empty() || model.len() > 512 || model.chars().any(char::is_control) {
+        return Err(invalid_budget());
+    }
+    let resources = b.resources.clone().ok_or_else(invalid_budget)?;
+    if !valid(&resources) {
+        return Err(invalid_budget());
+    }
+    let local_node = a
+        .voice_config
+        .snapshot()
+        .local_agent
+        .as_ref()
+        .and_then(|local| local["node_id"].as_str().map(str::to_owned));
+    if let Some(node) = local_node {
+        if let Ok(row) = sqlx::query(
+            "SELECT capacities,resident_baseline,management_enabled FROM vrs_nodes WHERE id=$1",
+        )
+        .bind(&node)
+        .fetch_one(&a.db)
+        .await
+        {
+            let capacity: Resources =
+                serde_json::from_value(row.get("capacities")).map_err(|_| invalid_budget())?;
+            let baseline: Resources =
+                serde_json::from_value(row.get("resident_baseline")).map_err(|_| invalid_budget())?;
+            if !row.get::<bool, _>("management_enabled") || !resources.fits(&baseline, &capacity) {
+                return Err(invalid_budget());
+            }
+        }
+    }
+    let _guard = a.voice_config.management_lock.lock().await;
+    let mut value = read_overrides();
+    let upstreams = value["upstreams"]
+        .as_object_mut()
+        .ok_or_else(storage_error)?;
+    let group = upstreams
+        .entry(url.clone())
+        .or_insert_with(|| json!({"models":{}}));
+    if !group["models"].is_object() {
+        group["models"] = json!({});
+    }
+    group["models"][&model] = json!({"resources": &resources});
+    let mut tx = a.db.begin().await.map_err(unavailable)?;
+    management::audit(&mut tx, p, "model.budget.calibrated", &model).await?;
+    tx.commit().await.map_err(unavailable)?;
+    write_overrides(&value).map_err(|_| storage_error())?;
+    Ok(ok(json!({
+        "model_id": model,
+        "upstream_url": url,
+        "mode": "calibrated",
+        "calibrated": true,
+        "resources": resources,
+    })))
+}
+
 pub(super) async fn calibrate(
     State(a): State<App>,
     h: HeaderMap,
@@ -259,6 +406,9 @@ pub(super) async fn calibrate(
 ) -> Api<Json<Value>> {
     let p = auth(&a, &h).await?;
     require(&p, "admin")?;
+    if b.upstream_url.is_some() {
+        return calibrate_model(&a, &p, &b).await;
+    }
     let direct = direct_mode(&b)?;
     let Some((role, _)) = native(&b.model_id) else {
         return Err(invalid_budget());
@@ -424,6 +574,7 @@ pub(super) async fn calibrate(
 #[serde(deny_unknown_fields)]
 pub(super) struct BudgetRestore {
     model_id: String,
+    upstream_url: Option<String>,
 }
 
 pub(super) async fn restore(
@@ -433,6 +584,27 @@ pub(super) async fn restore(
 ) -> Api<Json<Value>> {
     let p = auth(&a, &h).await?;
     require(&p, "admin")?;
+    if b.upstream_url.is_some() {
+        let url = upstream_url(b.upstream_url.as_deref().unwrap_or(""))
+            .ok_or_else(invalid_budget)?;
+        let model = b.model_id.trim().to_string();
+        if model.is_empty() || model.len() > 512 {
+            return Err(invalid_budget());
+        }
+        let _guard = a.voice_config.management_lock.lock().await;
+        let mut value = read_overrides();
+        let removed = value["upstreams"][&url]["models"]
+            .as_object_mut()
+            .and_then(|models| models.remove(&model));
+        if removed.is_none() {
+            return Ok(ok(json!({"model_id": model, "calibrated": false})));
+        }
+        let mut tx = a.db.begin().await.map_err(unavailable)?;
+        management::audit(&mut tx, &p, "model.budget.restored", &model).await?;
+        tx.commit().await.map_err(unavailable)?;
+        write_overrides(&value).map_err(|_| storage_error())?;
+        return Ok(ok(json!({"model_id": model, "calibrated": false})));
+    }
     let role = native(&b.model_id)
         .map(|(role, _)| role)
         .ok_or_else(invalid_budget)?;
@@ -579,6 +751,7 @@ mod tests {
             mode: Some("direct".into()),
             resources: None,
             limits: None,
+            upstream_url: None,
         };
         assert!(direct_mode(&direct).is_ok_and(|direct| direct));
         assert!(direct_mode(&BudgetEdit {
@@ -595,6 +768,7 @@ mod tests {
             mode: Some("direct".into()),
             resources: None,
             limits: Some(limits_default()),
+            upstream_url: None,
         })
         .is_err());
         assert!(direct_mode(&BudgetEdit {
@@ -602,6 +776,7 @@ mod tests {
             mode: Some("calibrated".into()),
             resources: None,
             limits: None,
+            upstream_url: None,
         })
         .is_err());
         assert!(direct_mode(&BudgetEdit {
@@ -609,6 +784,7 @@ mod tests {
             mode: Some("unbounded".into()),
             resources: None,
             limits: None,
+            upstream_url: None,
         })
         .is_err());
         assert!(!direct_mode(&BudgetEdit {
@@ -620,8 +796,33 @@ mod tests {
                 ..Resources::default()
             }),
             limits: None,
+            upstream_url: None,
         })
         .is_ok_and(|direct| direct));
+    }
+    #[test]
+    fn application_model_overrides_are_scoped_by_upstream_and_native_model() {
+        let value = json!({"version":1,"upstreams":{
+            "http://image-studio-backend:5000":{"models":{"sd-turbo":{"resources":{
+                "cpu_millicores":2000,"memory_mib":4096,"gpu_slots":1,"gpu_memory_mib":8192
+            }}}}
+        }});
+        let resources =
+            override_resources(&value, "http://image-studio-backend:5000", "sd-turbo").unwrap();
+        assert_eq!(resources.cpu_millicores, 2000);
+        assert_eq!(resources.gpu_memory_mib, 8192);
+        assert_eq!(
+            override_resources(&value, "http://image-studio-backend:5000/", "sd-turbo")
+                .unwrap()
+                .gpu_slots,
+            1
+        );
+        assert!(
+            override_resources(&value, "http://ml-server:3003", "sd-turbo").is_none()
+        );
+        assert!(
+            override_resources(&value, "http://image-studio-backend:5000", "other").is_none()
+        );
     }
     #[test]
     fn calibrated_limits_are_complete_and_bounded() {

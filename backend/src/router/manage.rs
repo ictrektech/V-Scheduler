@@ -87,7 +87,12 @@ fn model_view(r: &Registry, m: &Model, id: &Identity) -> Value {
         .routing
         .get(&m.upstream_id)
         .is_some_and(|policy| policy.direct));
+    v["direct"] = json!(r
+        .model_routing
+        .get(&format!("{}/{}", m.upstream_id, m.id))
+        .is_some_and(|policy| policy.direct));
     v["model_prefix"] = json!(u.prefix());
+    v["upstream_url"] = json!(u.base_url);
     v
 }
 fn model_views(r: &Registry, id: &Identity) -> Vec<Value> {
@@ -390,6 +395,45 @@ fn update_model(g: &Arc<Gateway>, id: &Identity, payload: Value) -> Api<Response
         .map_err(|_| Failure::new(500, "cannot persist model metadata"))?;
     Ok(Json(json!({"model": model_view(&r, &model, id)})).into_response())
 }
+
+// Per-model release is a scheduling bypass, so it is administrator-only like
+// the managed-upstream variant and applies to every model source.
+fn model_routing(g: &Arc<Gateway>, id: &Identity, payload: Value) -> Api<Response> {
+    if !id.admin {
+        return Err(Failure::new(
+            403,
+            "per-model direct routing requires an administrator",
+        ));
+    }
+    let model_id = text(&payload, "model_id").trim().to_string();
+    let (upstream_id, native) = model_id
+        .split_once('/')
+        .filter(|(upstream, model)| !upstream.is_empty() && !model.is_empty())
+        .ok_or_else(|| Failure::new(400, "model_id must be upstream_id/model"))?;
+    let direct = payload["direct"]
+        .as_bool()
+        .ok_or_else(|| Failure::new(400, "direct must be a boolean"))?;
+    let mut r = g.registry.lock().unwrap();
+    let known = r
+        .upstreams
+        .get(upstream_id)
+        .is_some_and(|u| u.visible(id))
+        && r.models
+            .get(upstream_id)
+            .is_some_and(|rows| rows.iter().any(|m| m.id == native));
+    if !known {
+        return Err(Failure::new(404, "model not found"));
+    }
+    if direct {
+        r.model_routing
+            .insert(model_id.clone(), registry::ModelRouting { direct: true });
+    } else {
+        r.model_routing.remove(&model_id);
+    }
+    r.persist(&g.state_path)
+        .map_err(|_| Failure::new(500, "cannot persist model routing"))?;
+    Ok(Json(json!({"model_id":model_id,"direct":direct})).into_response())
+}
 pub(super) async fn models(g: &Gateway, u: &Upstream) -> Api<Vec<Model>> {
     if u.protocol == "image_studio" {
         let base = u.base_url.trim_end_matches('/');
@@ -583,6 +627,9 @@ pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) ->
     }
     if path == "/api/v1/models" && method == "PATCH" {
         return update_model(g, id, payload);
+    }
+    if path == "/api/v1/model-routing" && method == "PUT" {
+        return model_routing(g, id, payload);
     }
     if path == "/api/v1/registrations" && method == "POST" {
         return register(g, id, payload).await;

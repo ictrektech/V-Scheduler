@@ -87,6 +87,11 @@ pub(super) struct Routing {
     pub disabled: bool,
     pub direct: bool,
 }
+#[derive(Clone, Default, Deserialize, Serialize)]
+#[serde(default)]
+pub(super) struct ModelRouting {
+    pub direct: bool,
+}
 impl Default for Routing {
     fn default() -> Self {
         Self {
@@ -108,6 +113,8 @@ pub(super) struct Disk {
     #[serde(deserialize_with = "null_default")]
     pub routing: BTreeMap<String, Routing>,
     #[serde(deserialize_with = "null_default")]
+    pub model_routing: BTreeMap<String, ModelRouting>,
+    #[serde(deserialize_with = "null_default")]
     pub resources: Vec<Value>,
 }
 #[derive(Default)]
@@ -115,6 +122,7 @@ pub(super) struct Registry {
     pub upstreams: BTreeMap<String, Upstream>,
     pub models: BTreeMap<String, Vec<Model>>,
     pub routing: BTreeMap<String, Routing>,
+    pub model_routing: BTreeMap<String, ModelRouting>,
     pub inflight: BTreeMap<String, usize>,
     pub fair: BTreeMap<String, BTreeMap<String, i64>>,
     pub breaker: BTreeMap<String, (u32, DateTime<Utc>)>,
@@ -131,6 +139,7 @@ impl Registry {
         let mut result = Self {
             models: disk.models,
             routing: disk.routing,
+            model_routing: disk.model_routing,
             resources: disk.resources,
             ..Self::default()
         };
@@ -168,6 +177,7 @@ impl Registry {
                 .collect(),
             upstreams,
             routing: self.routing.clone(),
+            model_routing: self.model_routing.clone(),
             resources: self.resources.clone(),
         };
         let parent = path.parent().unwrap_or(std::path::Path::new("."));

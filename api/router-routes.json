@@ -82,6 +82,15 @@
   },
   {
     "auth": "manage",
+    "desc": "为单个模型配置直接放行或恢复调度。model_id 使用 upstream_id/native_model（原生模型名，不带上游前缀时也可用模型列表中的 upstream_id 与该行 native 组合）。direct=true 时该模型的请求跳过调度准入，direct=false 时删除该模型的放行记录并恢复上游策略。仅管理员可调用；模型不可见或不存在时返回 404。",
+    "example": "curl -X PUT http://<vos-host>:22888/api/v1/model-routing \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"model_id\":\"ml-server/PP-OCRv5_server\",\"direct\":true}'",
+    "group": "manage",
+    "method": "PUT",
+    "path": "/api/v1/model-routing",
+    "summary": "单模型直接放行"
+  },
+  {
+    "auth": "manage",
     "desc": "从 JSONL 历史按模型、上游和用户汇总请求及上游报告的输入/输出 Token；period 支持 day（默认）、week、month、all。上游不报告 usage 时请求仍正常完成。",
     "example": "",
     "group": "manage",
