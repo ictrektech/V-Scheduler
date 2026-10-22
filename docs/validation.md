@@ -529,3 +529,5 @@ GitHub Release 与 VOS 应用商店发布均通过。V-Scheduler 最终流水线
 ## V-Voice 0.0.28 最小版本兼容（2026-10-22）
 
 AMD Rust 127 项、ARM Rust 129 项通过，各 1 项既有忽略。版本升级回归比较 0.0.27 与 0.0.28 的完整绑定、执行器、凭据、revision 与网关策略保持相同，涵盖 Thor 原生小模型与退役限制、Orin CPU 1792 MiB 原预算。审批清单去掉新增版本键后与前版完全一致，无新增模型、硬件或预算审批；沿用已有强身份与 execution claim 核验。此次不涉及前端或 V-Voice 代码。
+
+0.0.70 已发布 GitHub 安装包 `v_scheduler_0.0.70_pull.tar`，Actions 39795883740 的 App Store 发布步骤成功；229 通过 VOS 正式升级完成，保留 `thor-spark` profile 与公共目录。实际运行 ARM manifest 为 `sha256:80f01901f669bce17e86d38bcf6bef28c4ded509f6a5376e326ae07b44f9c448`，确认内置 0.0.28 审批记录。升级前后现有 Voice 0.0.27 的 7 个模型映射、执行器资源、身份摘要与 revision 30 完全相同，4 个退役映射及网关策略仍为空；心跳新鲜，活动/suspect 许可、集成任务、未完成作业和工作台活动均为 0。这是 Scheduler 配套就绪验证，Voice 0.0.28 正式升级后的业务验收由其发布任务继续完成。
