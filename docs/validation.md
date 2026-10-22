@@ -525,3 +525,7 @@ GitHub Release 与 VOS 应用商店发布均通过。V-Scheduler 最终流水线
 - 原始记录在测试机 `~/dev/build/V-Scheduler/voice27-20261022/calibration/`，审批清单记录对应 evidence ID 与镜像 ID。地址回归保持 0.0.27 使用正式 `v-scheduler` 地址；退役回归验证四个 PyTorch 原生模型从新版绑定、网关策略及执行设置移除，身份保留、revision 前进。
 
 - 192 固定 L4T 镜像 `sha256:0505ff91a032b40e78ba4665c436683d670f6f63f385c1046a9e26f8f5239d49`，沿用 `kokoro-multilang,paraformer-zh,sensevoice-int8` CPU 覆盖，仅批准原来的 Kokoro/SenseVoice。两次独立运行各三轮，12 次原生工厂调用均确认 CPU；1.5 GiB 内存/swap 硬限制内完成，cgroup 最大 1518 MiB，模型阶段可用内存下降最大 876 MiB，稳定复测整机下降 1166 MiB，无观测到的进程 GPU 分配。首轮全机启动下降 1898 MiB 与构建收尾/容器创建重叠，单独保留原始记录，不全部归因于模型请求；每轮卸载回到约 80 MiB RSS。原 1792 MiB、CPU 4500m、GPU 0 审批不变。证据 `voice-tc192-25a6ffcdc6e34b05bb462332ef2f7d99`、`voice-tc192-7b2b64d6f5524390b09f1a129e7700b3`，真实许可认领、原生退出与释放均通过。
+
+## V-Voice 0.0.28 最小版本兼容（2026-10-22）
+
+AMD Rust 127 项、ARM Rust 129 项通过，各 1 项既有忽略。版本升级回归比较 0.0.27 与 0.0.28 的完整绑定、执行器、凭据、revision 与网关策略保持相同，涵盖 Thor 原生小模型与退役限制、Orin CPU 1792 MiB 原预算。审批清单去掉新增版本键后与前版完全一致，无新增模型、硬件或预算审批；沿用已有强身份与 execution claim 核验。此次不涉及前端或 V-Voice 代码。
