@@ -105,6 +105,20 @@ HTTP 429 的 `WAIT_MEMORY_HEADROOM` 表示观测可用 RAM 小于本次预算、
 
 开启内置 Ollama 驻留后，已验证身份未提供排队头的同步请求默认等待最多 30 秒；显式 `X-VScheduler-Queue-Wait-Seconds: 0` 保持立即准入。匿名及其他后端请求保持原行为，所有等待仍核验真实资源与停止屏障。
 
+## 内置模型预算校准
+
+管理员可在“模型”页查看每个内置 Ollama 模型当前使用的预算，并选择人工校准或直接放行；对应 `GET /api/v1/model-budgets`、`POST /api/v1/model-budgets/calibrate` 和 `POST /api/v1/model-budgets/restore`，三项均要求管理员身份。
+
+`/model-budgets` 为每个已纳管的 `v-scheduler/ollama-<role>/<model>` 返回一条记录：`mode` 为 `automatic`（按模型大小估算）、`calibrated`（人工预算）或 `direct`（不申请调度许可），并包含当前 `resources`（direct 为 null）、当前节点自动估算的 `default_resources`、`limits` 与 `default_limits`、节点 `capacity` 及执行器状态。界面展示不作为准入依据，实际准入仍读取已保存的执行器配置和绑定。
+
+`/model-budgets/calibrate` 接受 `model_id`、可选 `mode`、`resources` 和 `limits`。省略 `mode` 等同 `calibrated`：`resources` 必须给出正的 CPU 毫核和内存 MiB；显存大于 0 时必须同时给出 GPU 槽位，并且整体扣除常驻基线后不能超过当前节点容量。`limits` 必须恰好包含 `max_tokens`、`options.num_ctx`、`options.num_thread`、`options.num_gpu`、`options.num_batch`、`options.num_predict` 六项；省略时使用批准默认值（4096、8192、4、999、512、4096）。保存后按指纹创建或复用校准执行器，并停用上一份校准执行器；超界请求仍在申请许可前拒绝。
+
+`mode=direct` 表示不做资源限制、不主动调度直接放行：请求中不得同时给出 `resources` 或 `limits`。绑定会移除执行器与运行上限，网关核对上游地址后直接转发，不申请许可、不排队、不做资源准入；该模型的请求不再占用调度预算。管理员可随时重新校准或恢复默认预算。
+
+`/model-budgets/restore` 仅需 `model_id`，重新按当前原生模型大小和节点预算计算自动估算并启用自动执行器，同时移除人工运行上限。自动模式本身会直接返回未校准结果。
+
+非法型号、字段或超界预算返回 `422 INVALID_MODEL_BUDGET`；已存在的非内置绑定返回 `409 MODEL_BINDING_UNMANAGED`；未发现绑定返回 `404 MODEL_BINDING_NOT_FOUND`；节点采样或预算存储不可用返回 `503 RESOURCE_SAMPLE_NOT_READY` 或 `503 MODEL_BUDGET_STORAGE_UNAVAILABLE`。校准、直接放行和恢复分别写入 `model.budget.calibrated`、`model.budget.direct`、`model.budget.restored` 审计记录。
+
 ## 应用统一生命周期协议
 
 调度命名空间新增 `GET/POST /integrations`、`POST /integrations/heartbeat`、`POST /permits/{id}/stop` 和 `POST /permits/{id}/stopped`。服务身份按 app 隔离，登记仅引用已批准的执行器；应用心跳不能上报或提高节点预算。停止请求保持预约，回执核验原执行身份及退出/卸载证据后才释放。既有自动绑定保持兼容。完整字段、时序与错误见[统一流程](application-integration.md#unified-lifecycle)及 OpenAPI。

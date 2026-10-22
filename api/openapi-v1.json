@@ -2046,6 +2046,197 @@
         }
       }
     },
+    "/model-budgets": {
+      "get": {
+        "operationId": "get_model_budgets",
+        "summary": "List built-in model budgets",
+        "x-title": {
+          "zh-CN": "内置模型预算",
+          "en": "List built-in model budgets",
+          "zh-TW": "內建模型預算"
+        },
+        "description": "Administrator-only list for managed v-scheduler/ollama-<role>/<model> bindings. Each item reports mode (automatic, calibrated or direct), the effective and default resources, approved and default runtime limits, node capacity and executor state. Direct items have null executor_id and resources.",
+        "x-description": {
+          "zh-CN": "仅管理员。每个 v-scheduler/ollama-<role>/<model> 绑定返回 automatic、calibrated 或 direct 模式，以及当前/默认预算、运行上限、节点容量和执行器状态；direct 条目的 executor_id 与 resources 为 null。",
+          "en": "Administrator-only list for managed v-scheduler/ollama-<role>/<model> bindings. Each item reports mode (automatic, calibrated or direct), the effective and default resources, approved and default runtime limits, node capacity and executor state. Direct items have null executor_id and resources.",
+          "zh-TW": "僅管理員。每個 v-scheduler/ollama-<role>/<model> 綁定回傳 automatic、calibrated 或 direct 模式，以及目前/預設預算、執行上限、節點容量與執行器狀態；direct 項目的 executor_id 與 resources 為 null。"
+        },
+        "x-role": "admin",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "description": "Role or app scope denied"
+          },
+          "503": {
+            "description": "Budget storage unavailable"
+          }
+        }
+      }
+    },
+    "/model-budgets/calibrate": {
+      "post": {
+        "operationId": "post_model_budgets_calibrate",
+        "summary": "Calibrate or directly pass a built-in model budget",
+        "x-title": {
+          "zh-CN": "校准内置模型预算",
+          "en": "Calibrate a built-in model budget",
+          "zh-TW": "校準內建模型預算"
+        },
+        "description": "Administrator-only. mode=calibrated (default) replaces the automatic estimate with approved resources and optional runtime limits; limits must contain exactly the six documented keys and default to max_tokens 4096, num_ctx 8192, num_thread 4, num_gpu 999, num_batch 512 and num_predict 4096. mode=direct forbids resources and limits, removes the executor and limits from the binding, and forwards verified calls without a permit, queue or resource admission.",
+        "x-description": {
+          "zh-CN": "仅管理员。calibrated（默认）用批准的资源和可选运行上限替代自动估算；limits 必须恰好包含六个键，省略时使用 4096/8192/4/999/512/4096 默认值。direct 不得携带 resources 或 limits，会移除绑定中的执行器和运行上限，请求不再申请许可、排队或做资源准入。",
+          "en": "Administrator-only. mode=calibrated (default) replaces the automatic estimate with approved resources and optional runtime limits; limits must contain exactly the six documented keys and default to max_tokens 4096, num_ctx 8192, num_thread 4, num_gpu 999, num_batch 512 and num_predict 4096. mode=direct forbids resources and limits, removes the executor and limits from the binding, and forwards verified calls without a permit, queue or resource admission.",
+          "zh-TW": "僅管理員。calibrated（預設）以核准的資源與可選執行上限取代自動估算；limits 必須恰好包含六個鍵，省略時使用 4096/8192/4/999/512/4096 預設值。direct 不得攜帶 resources 或 limits，會移除綁定中的執行器與執行上限，請求不再申請許可、排隊或進行資源准入。"
+        },
+        "x-role": "admin",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelBudgetCalibration"
+              }
+            }
+          }
+        },
+        "x-example": {
+          "model_id": "v-scheduler/ollama-qa/qwen2.5:0.5b",
+          "mode": "calibrated",
+          "resources": {
+            "cpu_millicores": 700,
+            "memory_mib": 2048,
+            "gpu_slots": 0,
+            "gpu_memory_mib": 0
+          },
+          "limits": {
+            "max_tokens": 4096,
+            "options.num_ctx": 8192,
+            "options.num_thread": 4,
+            "options.num_gpu": 999,
+            "options.num_batch": 512,
+            "options.num_predict": 4096
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "description": "Role or app scope denied"
+          },
+          "404": {
+            "description": "Model binding or executor not found"
+          },
+          "409": {
+            "description": "Binding is not managed by this app or no longer matches its upstream"
+          },
+          "422": {
+            "description": "INVALID_MODEL_BUDGET: invalid fields, incomplete limits or resources exceeding approved capacity"
+          },
+          "503": {
+            "description": "RESOURCE_SAMPLE_NOT_READY or MODEL_BUDGET_STORAGE_UNAVAILABLE"
+          }
+        }
+      }
+    },
+    "/model-budgets/restore": {
+      "post": {
+        "operationId": "post_model_budgets_restore",
+        "summary": "Restore the automatic built-in model budget",
+        "x-title": {
+          "zh-CN": "恢复内置模型默认预算",
+          "en": "Restore a built-in model budget",
+          "zh-TW": "還原內建模型預設預算"
+        },
+        "description": "Administrator-only. Recalculates the automatic estimate from the current native model size and node budget, enables the automatic executor and removes any calibrated runtime limits. Automatic bindings return calibrated=false without changes.",
+        "x-description": {
+          "zh-CN": "仅管理员。按当前原生模型大小和节点预算重新计算自动估算，启用自动执行器并移除人工运行上限；原本即为自动模式时直接返回 calibrated=false。",
+          "en": "Administrator-only. Recalculates the automatic estimate from the current native model size and node budget, enables the automatic executor and removes any calibrated runtime limits. Automatic bindings return calibrated=false without changes.",
+          "zh-TW": "僅管理員。依目前原生模型大小與節點預算重新計算自動估算，啟用自動執行器並移除人工執行上限；原本即為自動模式時直接回傳 calibrated=false。"
+        },
+        "x-role": "admin",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelBudgetRestore"
+              }
+            }
+          }
+        },
+        "x-example": {
+          "model_id": "v-scheduler/ollama-qa/qwen2.5:0.5b"
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "description": "Role or app scope denied"
+          },
+          "404": {
+            "description": "Model binding or executor not found"
+          },
+          "409": {
+            "description": "Binding is not managed by this app or no longer matches its upstream"
+          },
+          "422": {
+            "description": "INVALID_MODEL_BUDGET: unknown model identifier"
+          },
+          "503": {
+            "description": "RESOURCE_SAMPLE_NOT_READY or MODEL_BUDGET_STORAGE_UNAVAILABLE"
+          }
+        }
+      }
+    },
     "/enrollments": {
       "post": {
         "operationId": "post_enrollments",
@@ -3960,6 +4151,100 @@
             "format": "date-time"
           }
         }
+      },
+      "ModelBudgetCalibration": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "model_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 560,
+            "description": "Built-in model identifier v-scheduler/ollama-<role>/<model>."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "calibrated",
+              "direct"
+            ],
+            "default": "calibrated"
+          },
+          "resources": {
+            "$ref": "#/components/schemas/ResourceBudget"
+          },
+          "limits": {
+            "$ref": "#/components/schemas/ModelBudgetLimits"
+          }
+        },
+        "required": [
+          "model_id"
+        ]
+      },
+      "ModelBudgetLimits": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "Complete approved runtime limits for a calibrated built-in Ollama model. If omitted, all six defaults are applied.",
+        "properties": {
+          "max_tokens": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 262144,
+            "default": 4096
+          },
+          "options.num_ctx": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1048576,
+            "default": 8192
+          },
+          "options.num_thread": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1024,
+            "default": 4
+          },
+          "options.num_gpu": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9999,
+            "default": 999
+          },
+          "options.num_batch": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65536,
+            "default": 512
+          },
+          "options.num_predict": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 262144,
+            "default": 4096
+          }
+        },
+        "required": [
+          "max_tokens",
+          "options.num_ctx",
+          "options.num_thread",
+          "options.num_gpu",
+          "options.num_batch",
+          "options.num_predict"
+        ]
+      },
+      "ModelBudgetRestore": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "model_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 560
+          }
+        },
+        "required": [
+          "model_id"
+        ]
       },
       "ManagementNodeEdit": {
         "type": "object",

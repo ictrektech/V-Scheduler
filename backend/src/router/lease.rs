@@ -297,10 +297,12 @@ pub(super) fn approval(
     let config = if u.source == "v-scheduler" {
         let hash = format!("{:x}", Sha256::digest(key.as_bytes()));
         let cfg = bounded_config(g, &root.join("ollama-bindings").join(hash + ".json"))?;
+        let policy = &cfg["models"][&key];
+        let direct = policy["mode"] == "direct";
         if cfg["url"] != "http://v-scheduler:38120/api/v1"
             || cfg["require_model_policy"] != true
             || cfg["models"].as_object().is_none_or(|m| m.len() != 1)
-            || !text(&cfg["models"][&key], "executor_id").starts_with("builtin-ollama-")
+            || (!direct && !text(policy, "executor_id").starts_with("builtin-ollama-"))
         {
             return Err(Failure::new(
                 503,
@@ -383,6 +385,19 @@ pub(super) fn approval(
             || text(&policy, "upstream_url").trim_end_matches('/')
                 == u.base_url.trim_end_matches('/'))
     {
+        return Ok(None);
+    }
+    // An administrator override for this built-in model: forward without a
+    // scheduler permit, mirroring an external upstream (no admission or budget).
+    if u.source == "v-scheduler" && policy["mode"] == "direct" {
+        if text(&policy, "upstream_url").trim_end_matches('/')
+            != u.base_url.trim_end_matches('/')
+        {
+            return Err(Failure::new(
+                503,
+                "direct model binding no longer matches upstream",
+            ));
+        }
         return Ok(None);
     }
     if !["permit", "delegated"].contains(&text(&policy, "mode"))

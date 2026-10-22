@@ -5,6 +5,7 @@ mod inference_queue;
 mod app_bindings;
 mod gateway_identity;
 mod management;
+mod model_budget;
 mod modelinfer_discovery;
 mod ollama;
 mod vsub_bindings;
@@ -445,6 +446,9 @@ pub async fn serve(
         .route("/management", get(management::overview))
         .route("/node-sources/modelinfer/{id}", post(management::source_settings))
         .route("/node-sources/modelinfer/{id}/control", post(management::source_control))
+        .route("/model-budgets", get(model_budget::list))
+        .route("/model-budgets/calibrate", post(model_budget::calibrate))
+        .route("/model-budgets/restore", post(model_budget::restore))
         .route("/enrollments", post(management::enrollment))
         .route("/enrollments/{id}/revoke", post(management::revoke_enrollment))
         .route("/workers/register", post(management::register))

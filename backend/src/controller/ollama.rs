@@ -4,15 +4,25 @@ use super::*;
 use anyhow::Context;
 use std::{io::Write, os::unix::fs::OpenOptionsExt, path::Path, time::Duration};
 
-const OWNER: &str = "com.ictrek.v-scheduler.ollama";
+pub(super) const OWNER: &str = "com.ictrek.v-scheduler.ollama";
 
-fn binding_path(directory: &Path, model: &str) -> PathBuf {
+pub(super) fn binding_path(directory: &Path, model: &str) -> PathBuf {
     directory
         .join("ollama-bindings")
         .join(format!("{:x}.json", Sha256::digest(model.as_bytes())))
 }
 
-fn save(path: &Path, value: &Value) -> anyhow::Result<()> {
+pub(super) fn directory() -> PathBuf {
+    PathBuf::from(
+        std::env::var("SCHEDULER_GATEWAY_DATA").unwrap_or_else(|_| "/gateway-data".into()),
+    )
+}
+
+pub(super) fn origin(role: &str) -> String {
+    format!("http://v-scheduler-ollama-{role}:11535/v1")
+}
+
+pub(super) fn save(path: &Path, value: &Value) -> anyhow::Result<()> {
     let directory = path.parent().context("binding directory missing")?;
     std::fs::create_dir_all(directory)?;
     let temporary = directory.join(format!(".{}.pending", Uuid::new_v4()));
@@ -47,6 +57,83 @@ fn resources(bytes: i64, capacity: &Resources, unified: bool) -> Resources {
     }
 }
 
+pub(super) struct NodeBudget {
+    pub capacity: Resources,
+    pub baseline: Resources,
+    pub reserve: Resources,
+    pub report: Value,
+}
+
+pub(super) async fn node_budget(a: &App, node: &str) -> anyhow::Result<NodeBudget> {
+    let row = sqlx::query(
+        "SELECT capacities,resident_baseline,safety_reserve,report,management_enabled FROM vrs_nodes WHERE id=$1",
+    )
+    .bind(node)
+    .fetch_one(&a.db)
+    .await?;
+    ensure!(
+        row.get::<bool, _>("management_enabled"),
+        "local node disabled"
+    );
+    Ok(NodeBudget {
+        capacity: serde_json::from_value(row.get("capacities"))?,
+        baseline: serde_json::from_value(row.get("resident_baseline"))?,
+        reserve: serde_json::from_value(row.get("safety_reserve"))?,
+        report: row.get("report"),
+    })
+}
+
+// The automatic estimate is the restore target, so calibration and the
+// periodic registration share one calculation.
+pub(super) fn default_cost(
+    capacity: &Resources,
+    baseline: &Resources,
+    reserve: &Resources,
+    report: &Value,
+    bytes: i64,
+) -> anyhow::Result<Resources> {
+    let gpu = report["gpus"].as_array().and_then(|gpus| gpus.first());
+    ensure!(
+        report_fresh(report) && report["observed_at"].is_string(),
+        "resource sample not ready"
+    );
+    // Do not publish a CPU-only estimate while initial GPU discovery is pending.
+    ensure!(
+        capacity.gpu_slots == 0 || gpu.is_some(),
+        "GPU sample not ready"
+    );
+    let unified = gpu.is_some_and(|gpu| gpu["memory_type"] == "unified");
+    let mut cost = resources(bytes, capacity, unified);
+    cost.cpu_millicores = cost.cpu_millicores.saturating_sub(baseline.cpu_millicores);
+    ensure!(
+        cost.cpu_millicores > 0 && cost.fits(baseline, capacity),
+        "model exceeds local node budget"
+    );
+    let physical_cpu = report["cpu_logical_count"]
+        .as_i64()
+        .context("CPU sample unavailable")?
+        .saturating_mul(1000);
+    cost.cpu_millicores = cost.cpu_millicores.min(
+        physical_cpu
+            .saturating_sub(reserve.safety_floor(report).cpu_millicores)
+            .saturating_sub(baseline.cpu_millicores),
+    );
+    ensure!(cost.cpu_millicores > 0, "local compute budget unavailable");
+    Ok(cost)
+}
+
+pub(super) fn automatic_id(
+    model: &str,
+    node: &str,
+    cost: &Resources,
+    origin: &str,
+    bytes: i64,
+) -> anyhow::Result<String> {
+    let fingerprint = json!([model, node, cost, origin, "automatic-v2", bytes]);
+    let digest = format!("{:x}", Sha256::digest(serde_json::to_vec(&fingerprint)?));
+    Ok(format!("builtin-ollama-auto-{}", &digest[..24]))
+}
+
 async fn register(
     a: &App,
     directory: &Path,
@@ -65,53 +152,18 @@ async fn register(
         .as_ref()
         .and_then(|local| local["node_id"].as_str())
         .context("local node not ready")?;
-    let row = sqlx::query(
-        "SELECT capacities,resident_baseline,safety_reserve,report,management_enabled FROM vrs_nodes WHERE id=$1",
-    )
-    .bind(node)
-    .fetch_one(&a.db)
-    .await?;
-    ensure!(
-        row.get::<bool, _>("management_enabled"),
-        "local node disabled"
-    );
-    let capacity: Resources = serde_json::from_value(row.get("capacities"))?;
-    let baseline: Resources = serde_json::from_value(row.get("resident_baseline"))?;
-    let report: Value = row.get("report");
-    let gpu = report["gpus"].as_array().and_then(|gpus| gpus.first());
-    ensure!(
-        report_fresh(&report) && report["observed_at"].is_string(),
-        "resource sample not ready"
-    );
-    // Do not publish a CPU-only estimate while initial GPU discovery is pending.
-    ensure!(
-        capacity.gpu_slots == 0 || gpu.is_some(),
-        "GPU sample not ready"
-    );
-    let unified = gpu.is_some_and(|gpu| gpu["memory_type"] == "unified");
-    let mut cost = resources(bytes, &capacity, unified);
-    cost.cpu_millicores = cost.cpu_millicores.saturating_sub(baseline.cpu_millicores);
-    ensure!(
-        cost.cpu_millicores > 0 && cost.fits(&baseline, &capacity),
-        "model exceeds local node budget"
-    );
-    let reserve: Resources = serde_json::from_value(row.get("safety_reserve"))?;
-    let physical_cpu = report["cpu_logical_count"]
-        .as_i64()
-        .context("CPU sample unavailable")?
-        .saturating_mul(1000);
-    cost.cpu_millicores = cost.cpu_millicores.min(
-        physical_cpu
-            .saturating_sub(reserve.safety_floor(&report).cpu_millicores)
-            .saturating_sub(baseline.cpu_millicores),
-    );
-    ensure!(cost.cpu_millicores > 0, "local compute budget unavailable");
+    let budget = node_budget(a, node).await?;
+    let cost = default_cost(
+        &budget.capacity,
+        &budget.baseline,
+        &budget.reserve,
+        &budget.report,
+        bytes,
+    )?;
     let model = format!("v-scheduler/ollama-{role}/{name}");
     let path = binding_path(directory, &model);
-    let origin = format!("http://v-scheduler-ollama-{role}:11535/v1");
-    let fingerprint = json!([model, node, cost, origin, "automatic-v2", bytes]);
-    let digest = format!("{:x}", Sha256::digest(serde_json::to_vec(&fingerprint)?));
-    let executor_id = format!("builtin-ollama-auto-{}", &digest[..24]);
+    let origin = origin(role);
+    let executor_id = automatic_id(&model, node, &cost, &origin, bytes)?;
     if path.exists() {
         use std::os::unix::fs::PermissionsExt;
         let metadata = std::fs::symlink_metadata(&path)?;
@@ -164,9 +216,7 @@ pub(super) fn start(shared: SharedApp) {
         return;
     }
     tokio::spawn(async move {
-        let directory = PathBuf::from(
-            std::env::var("SCHEDULER_GATEWAY_DATA").unwrap_or_else(|_| "/gateway-data".into()),
-        );
+        let directory = directory();
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(8))
             .redirect(reqwest::redirect::Policy::none())
