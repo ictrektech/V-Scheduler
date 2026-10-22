@@ -145,7 +145,7 @@ fn collect_application_models(
         return;
     };
     for (key, policy) in models {
-        let model = key.rsplit_once('/').map(|(_, model)| model).unwrap_or(key);
+        let model = key.split_once('/').map(|(_, model)| model).unwrap_or(key);
         let Some(executor) = policy["executor_id"].as_str().and_then(|id| {
             executors
                 .iter()
@@ -941,6 +941,11 @@ mod tests {
             .unwrap();
         assert_eq!(tts.cpu_millicores, 1000);
         assert_eq!(found.len(), 2);
+        let mut namespaced = std::collections::BTreeMap::new();
+        collect_application_models(&executors, &json!({"models":{
+            "image-studio/org/model@q4":{"executor_id":"model-a"}
+        }}), &mut namespaced);
+        assert!(namespaced.contains_key(&("http://image-studio-backend:5000".into(), "org/model@q4".into())));
     }
     #[test]
     fn application_model_overrides_are_scoped_by_upstream_and_native_model() {
