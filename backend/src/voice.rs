@@ -985,6 +985,20 @@ mod tests {
         assert_eq!(compatible["binding"]["models"], split["binding"]["models"]);
         assert_eq!(compatible["binding"]["secondary_models"], split["binding"]["secondary_models"]);
         assert_eq!(compatible["executors"], split["executors"]);
+        let retired = ["ace-step-1.5-turbo", "stable-audio-3-small-music", "stable-audio-3-medium", "musicgen-small"];
+        contract["_application_version"] = json!("0.0.27");
+        contract["sync_models"].as_array_mut().unwrap().retain(|row| !retired.contains(&row["id"].as_str().unwrap_or("")));
+        contract["_ready_sync"].as_array_mut().unwrap().retain(|id| !retired.contains(&id.as_str().unwrap_or("")));
+        contract.as_object_mut().unwrap().remove("execution_settings");
+        let retired_state = build(&runtime, &contract, &approvals, Some(&compatible)).unwrap();
+        assert_eq!(retired_state["binding"]["models"].as_object().unwrap().len(), 7);
+        for id in retired {
+            assert!(retired_state["binding"]["models"].get(id).is_none());
+            assert!(retired_state["gateway"]["models"].get(format!("app-v-voice/{id}")).is_none());
+        }
+        assert!(retired_state["binding"].get("execution_settings").is_none());
+        assert_eq!(retired_state["binding"]["token"], compatible["binding"]["token"]);
+        assert!(retired_state["binding"]["binding_revision"].as_u64().unwrap() > compatible["binding"]["binding_revision"].as_u64().unwrap());
         contract["_application_version"] = json!("0.0.20");
         let old = build(&runtime, &contract, &approvals, None).unwrap();
         assert_eq!(old["binding"]["models"].as_object().unwrap().len(), 7);
