@@ -75,23 +75,26 @@ fn upstream_views(r: &Registry, id: &Identity) -> Vec<Value> {
     rows.extend(business_views(r).0);
     rows
 }
+fn model_view(r: &Registry, m: &Model, id: &Identity) -> Value {
+    let mut v = json!(m);
+    let u = &r.upstreams[&m.upstream_id];
+    v["short"] = json!(false);
+    v["upstream_name"] = json!(u.name);
+    v["upstream_kind"] = json!(u.kind);
+    v["upstream_source"] = json!(u.source);
+    v["upstream_manageable"] = json!(u.manageable(id));
+    v["upstream_direct"] = json!(r
+        .routing
+        .get(&m.upstream_id)
+        .is_some_and(|policy| policy.direct));
+    v["model_prefix"] = json!(u.prefix());
+    v
+}
 fn model_views(r: &Registry, id: &Identity) -> Vec<Value> {
     let mut rows = r
         .list_models(id)
         .iter()
-        .map(|m| {
-            let mut v = json!(m);
-            let u = &r.upstreams[&m.upstream_id];
-            v["short"] = json!(false);
-            v["upstream_name"] = json!(u.name);
-            v["upstream_kind"] = json!(u.kind);
-            v["upstream_source"] = json!(u.source);
-            v["model_prefix"] = json!(u.prefix());
-            if u.source == "api" && m.kind == "chat" {
-                v["kind"] = json!("unknown");
-            }
-            v
-        })
+        .map(|m| model_view(r, m, id))
         .collect::<Vec<_>>();
     rows.extend(business_views(r).1);
     rows
@@ -297,12 +300,95 @@ pub(super) fn select_models(payload: &Value, probed: Vec<Model>) -> Api<Vec<Mode
                 model.endpoints = endpoints;
             }
         }
-        if model.kind.is_empty() {
-            model.kind = "unknown".into();
-        }
         result.push(model);
     }
     Ok(result)
+}
+fn update_model(g: &Arc<Gateway>, id: &Identity, payload: Value) -> Api<Response> {
+    for key in ["model", "upstream_id", "kind", "owned_by"] {
+        if payload
+            .get(key)
+            .is_some_and(|v| !v.is_null() && !v.is_string())
+        {
+            return Err(Failure::new(400, format!("{key} must be text")));
+        }
+    }
+    for key in ["capabilities", "endpoints"] {
+        if payload
+            .get(key)
+            .is_some_and(|v| !v.is_null() && !v.is_array())
+        {
+            return Err(Failure::new(400, format!("{key} must be a list")));
+        }
+    }
+    let qualified = text(&payload, "model").trim().to_string();
+    if qualified.is_empty() {
+        return Err(Failure::new(400, "model is required"));
+    }
+    let explicit = text(&payload, "kind").trim().to_string();
+    if !explicit.is_empty() && !["chat", "embedding", "unknown"].contains(&explicit.as_str()) {
+        return Err(Failure::new(
+            400,
+            "kind must be chat, embedding or unknown",
+        ));
+    }
+    let requested = text(&payload, "upstream_id").trim().to_string();
+    let mut r = g.registry.lock().unwrap();
+    let (upstream_id, mut model) = r
+        .models
+        .iter()
+        .filter(|(key, _)| requested.is_empty() || **key == requested)
+        .find_map(|(key, rows)| {
+            rows.iter()
+                .find(|m| m.qualified == qualified)
+                .map(|m| (key.clone(), m.clone()))
+        })
+        .ok_or_else(|| Failure::new(404, "model not found"))?;
+    let u = r
+        .upstreams
+        .get(&upstream_id)
+        .ok_or_else(|| Failure::new(404, "model not found"))?;
+    if !u.visible(id) {
+        return Err(Failure::new(404, "model not found"));
+    }
+    if u.source != "api" {
+        return Err(Failure::new(
+            409,
+            "only API-created upstream models can be changed here",
+        ));
+    }
+    if !u.manageable(id) {
+        return Err(Failure::new(
+            403,
+            "upstream is managed by its owner or an administrator",
+        ));
+    }
+    if payload.get("owned_by").is_some_and(|v| !v.is_null()) {
+        model.owned_by = text(&payload, "owned_by").trim().into();
+    }
+    if payload.get("capabilities").is_some_and(|v| !v.is_null()) {
+        model.capabilities = strings(&payload["capabilities"]);
+    }
+    if payload.get("endpoints").is_some_and(|v| !v.is_null()) {
+        model.endpoints = strings(&payload["endpoints"]);
+    }
+    if explicit.is_empty()
+        && (payload.get("capabilities").is_some() || payload.get("endpoints").is_some())
+    {
+        model.kind.clear();
+    }
+    registry::normalize_model(&mut model);
+    if !explicit.is_empty() {
+        model.kind = explicit;
+    }
+    if let Some(rows) = r.models.get_mut(&upstream_id) {
+        if let Some(slot) = rows.iter_mut().find(|m| m.qualified == qualified) {
+            *slot = model.clone();
+        }
+    }
+    r.persist(&g.state_path)
+        .map_err(|_| Failure::new(500, "cannot persist model metadata"))?;
+    Ok(Json(json!({"model": model_view(&r, &model, id)})).into_response())
 }
 pub(super) async fn models(g: &Gateway, u: &Upstream) -> Api<Vec<Model>> {
     if u.protocol == "image_studio" {
@@ -495,6 +581,9 @@ pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) ->
         g.residency.configure(g,seconds)?;
         return Ok(Json(g.residency.snapshot().await).into_response());
     }
+    if path == "/api/v1/models" && method == "PATCH" {
+        return update_model(g, id, payload);
+    }
     if path == "/api/v1/registrations" && method == "POST" {
         return register(g, id, payload).await;
     }
@@ -585,6 +674,22 @@ pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) ->
                 .map_err(|_| Failure::new(400, "invalid routing policy"))?;
             if !(0..=1000).contains(&policy.weight) || policy.max_inflight > 100000 {
                 return Err(Failure::new(400, "invalid routing limits"));
+            }
+            // Direct routing also bypasses admission and model budgets for every
+            // model on managed upstreams, so only administrators may enable it
+            // there. API-created external upstreams remain owner-configurable.
+            let already_direct = g
+                .registry
+                .lock()
+                .unwrap()
+                .routing
+                .get(key)
+                .is_some_and(|policy| policy.direct);
+            if policy.direct && !already_direct && u.source != "api" && !id.admin {
+                return Err(Failure::new(
+                    403,
+                    "direct routing for this upstream requires an administrator",
+                ));
             }
             policy.weight = policy.weight.max(1);
             let mut r = g.registry.lock().unwrap();

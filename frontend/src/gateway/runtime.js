@@ -183,13 +183,18 @@ const app = {
 
   async refresh() {
     try {
-      const [status, models, upstreams, usage] = await Promise.all([
+      const admin = options.administrator?.() === true;
+      const budgets = admin
+        ? this.api("GET", "/scheduler/api/v1/model-budgets").then((r) => r?.data?.items || []).catch(() => [])
+        : Promise.resolve([]);
+      const [status, models, upstreams, usage, modelBudgets] = await Promise.all([
         this.api("GET", "/api/v1/status"),
         this.api("GET", "/api/v1/models"),
         this.api("GET", "/api/v1/upstreams"),
         this.api("GET", "/api/v1/usage?period=" + encodeURIComponent(this.state.usagePeriod)),
+        budgets,
       ]);
-      this.state = { ...this.state, status, models: models.models, upstreams: upstreams.upstreams, usage };
+      this.state = { ...this.state, status, models: models.models, upstreams: upstreams.upstreams, usage, budgets: modelBudgets };
       this.showError("");
       const catalog = status.catalog_readiness;
       const notice = $("catalogNotice");
@@ -392,18 +397,184 @@ const app = {
 
   renderModels() {
     const models = this.state.models;
+    const admin = options.administrator?.() === true;
     VRouterI18n.bind($("modelsTable"), "innerHTML", () => models.length
       ? table(
-          [VRouterI18n.t("模型 ID"), VRouterI18n.t("类型"), VRouterI18n.t("来源"), VRouterI18n.t("上游"), ""],
-          models.map((m) => [
-            `<span class="mono">${esc(m.short ? m.id : m.qualified)}</span>${m.short ? ` <span class="pill kind">${VRouterI18n.t("短名")}</span>` : ""}`,
-            ({embedding:"Embedding",chat:VRouterI18n.t("对话"),unknown:VRouterI18n.t("由上游决定"),service:VRouterI18n.t("服务接口")})[m.kind] || esc(m.kind),
-            `<span class="pill ${m.upstream_kind}">${kindLabel(m.upstream_kind)}</span>`,
-            esc(m.upstream_name),
-            !m.short && m.kind !== "service" ? `<button class="btn" onclick="app.tryModel('${esc(m.qualified)}')">${VRouterI18n.t("测试")}</button>` : "",
-          ]),
+          [VRouterI18n.t("模型 ID"), VRouterI18n.t("类型"), VRouterI18n.t("来源"), VRouterI18n.t("上游"), VRouterI18n.t("资源预算"), VRouterI18n.t("操作")],
+          models.map((m) => {
+            const budget = this.budgetFor(m);
+            const actions = [];
+            if (!m.short && m.kind !== "service") {
+              actions.push(`<button class="btn" onclick="app.tryModel('${esc(m.qualified)}')">${VRouterI18n.t("测试")}</button>`);
+            }
+            if (m.upstream_source === "api" && m.upstream_manageable !== false) {
+              actions.push(`<button class="btn" onclick="app.openModelDialog('${esc(m.qualified)}', '${esc(m.upstream_id)}')">${VRouterI18n.t("编辑元数据")}</button>`);
+            }
+            if (admin && budget && !m.upstream_direct) {
+              actions.push(`<button class="btn" onclick="app.openBudgetDialog('${esc(m.qualified)}')">${VRouterI18n.t("校准预算")}</button>`);
+              if (budget.mode !== "automatic") {
+                actions.push(`<button class="btn" onclick="app.restoreBudget('${esc(m.qualified)}')">${VRouterI18n.t("恢复默认")}</button>`);
+              }
+            }
+            return [
+              `<span class="mono">${esc(m.short ? m.id : m.qualified)}</span>${m.short ? ` <span class="pill kind">${VRouterI18n.t("短名")}</span>` : ""}`,
+              ({embedding:"Embedding",chat:VRouterI18n.t("对话"),unknown:VRouterI18n.t("由上游决定"),service:VRouterI18n.t("服务接口")})[m.kind] || esc(m.kind),
+              `<span class="pill ${m.upstream_kind}">${kindLabel(m.upstream_kind)}</span>`,
+              esc(m.upstream_name),
+              this.budgetCell(m, budget),
+              actions.length ? `<div class="actions">${actions.join("")}</div>` : "",
+            ];
+          }),
         )
       : `<div class="empty">${this.state.status?.catalog_readiness?.ready === false ? VRouterI18n.t("模型目录尚未就绪。") : VRouterI18n.t("暂无模型") + "。" + VRouterI18n.t("请在模型仓库下载模型，或在上游页添加后端。")}</div>`);
+  },
+
+  budgetFor(model) {
+    if (model.upstream_direct) return null;
+    return (this.state.budgets || []).find((budget) => budget.model_id === model.qualified) || null;
+  },
+
+  budgetCell(model, budget) {
+    if (model.upstream_direct) return `<span class="pill warn">${VRouterI18n.t("直接放行（上游）")}</span>`;
+    if (!budget) return `<span class="muted">—</span>`;
+    if (budget.mode === "direct") return `<span class="pill warn">${VRouterI18n.t("直接放行")}</span>`;
+    if (budget.mode === "automatic") return `<span class="muted">${VRouterI18n.t("自动（默认）")}</span>`;
+    const r = budget.resources || {};
+    const parts = [
+      `${Number(r.cpu_millicores || 0)} mCPU`,
+      `${Number(r.memory_mib || 0)} MiB`,
+      r.gpu_slots ? `${r.gpu_slots} GPU` : "",
+      r.gpu_memory_mib ? `${r.gpu_memory_mib} MiB ${VRouterI18n.t("显存")}` : "",
+    ].filter(Boolean);
+    return `<span class="pill kind">${VRouterI18n.t("手动")}</span><div class="hint mono">${esc(parts.join(" · "))}</div>`;
+  },
+
+  openBudgetDialog(qualified) {
+    const budget = (this.state.budgets || []).find((item) => item.model_id === qualified);
+    if (!budget) return;
+    const resources = budget.resources || budget.default_resources || {};
+    const limits = budget.limits || budget.default_limits || {};
+    $("budgetModel").value = qualified;
+    $("budgetModelName").textContent = qualified;
+    $("budgetMode").value = budget.mode === "direct" ? "direct" : "calibrated";
+    $("budgetCpu").value = Number(resources.cpu_millicores || 0) || "";
+    $("budgetMemory").value = Number(resources.memory_mib || 0) || "";
+    $("budgetGpuSlots").value = Number(resources.gpu_slots || 0);
+    $("budgetGpuMemory").value = Number(resources.gpu_memory_mib || 0);
+    $("budgetMaxTokens").value = Number(limits.max_tokens || 0) || "";
+    $("budgetNumCtx").value = Number(limits["options.num_ctx"] || 0) || "";
+    $("budgetNumPredict").value = Number(limits["options.num_predict"] || 0) || "";
+    $("budgetNumThread").value = Number(limits["options.num_thread"] || 0) || "";
+    $("budgetNumBatch").value = Number(limits["options.num_batch"] || 0) || "";
+    $("budgetNumGpu").value = Number(limits["options.num_gpu"] || 0);
+    $("budgetConfirm").checked = false;
+    $("budgetError").textContent = "";
+    this.updateBudgetMode();
+    $("budgetDialog").showModal();
+  },
+
+  updateBudgetMode() {
+    const direct = $("budgetMode").value === "direct";
+    $("budgetResources").hidden = direct;
+    $("budgetLimits").hidden = direct;
+    $("budgetDirectNote").hidden = !direct;
+  },
+
+  async saveBudget(event) {
+    event.preventDefault();
+    const model = $("budgetModel").value;
+    const mode = $("budgetMode").value;
+    $("budgetError").textContent = "";
+    if (!$("budgetConfirm").checked) {
+      $("budgetError").textContent = VRouterI18n.t("请先确认已了解该修改的影响");
+      return false;
+    }
+    try {
+      let body;
+      if (mode === "direct") {
+        body = { model_id: model, mode: "direct" };
+      } else {
+        const resources = {
+          cpu_millicores: Number($("budgetCpu").value),
+          memory_mib: Number($("budgetMemory").value),
+          gpu_slots: Number($("budgetGpuSlots").value || 0),
+          gpu_memory_mib: Number($("budgetGpuMemory").value || 0),
+        };
+        if (!(resources.cpu_millicores > 0) || !(resources.memory_mib > 0)) {
+          throw new Error(VRouterI18n.t("CPU 和内存预算必须大于 0"));
+        }
+        if (resources.gpu_memory_mib > 0 && !(resources.gpu_slots > 0)) {
+          throw new Error(VRouterI18n.t("设置显存预算时必须设置 GPU 槽位"));
+        }
+        const limits = {
+          max_tokens: Number($("budgetMaxTokens").value),
+          "options.num_ctx": Number($("budgetNumCtx").value),
+          "options.num_predict": Number($("budgetNumPredict").value),
+          "options.num_thread": Number($("budgetNumThread").value),
+          "options.num_batch": Number($("budgetNumBatch").value),
+          "options.num_gpu": Number($("budgetNumGpu").value || 0),
+        };
+        for (const [key, value] of Object.entries(limits)) {
+          if (!Number.isInteger(value) || value < 0 || (key !== "options.num_gpu" && value === 0)) {
+            throw new Error(VRouterI18n.t("运行上限必须是正数"));
+          }
+        }
+        body = { model_id: model, mode: "calibrated", resources, limits };
+      }
+      await this.api("POST", "/scheduler/api/v1/model-budgets/calibrate", body);
+      $("budgetDialog").close();
+      this.toast(mode === "direct" ? VRouterI18n.t("该模型已直接放行，不再参与调度准入") : VRouterI18n.t("模型预算已校准"));
+      await this.refresh();
+    } catch (err) {
+      $("budgetError").textContent = err.message;
+    }
+    return false;
+  },
+
+  async restoreBudget(qualified) {
+    if (!confirm(`${VRouterI18n.t("恢复默认预算")} ${qualified}?`)) return;
+    try {
+      await this.api("POST", "/scheduler/api/v1/model-budgets/restore", { model_id: qualified });
+      this.toast(VRouterI18n.t("已恢复默认预算"));
+      await this.refresh();
+    } catch (err) {
+      this.toast(VRouterI18n.t("恢复失败：") + err.message);
+    }
+  },
+
+  openModelDialog(qualified, upstreamId) {
+    const model = this.state.models.find((item) => item.qualified === qualified && (!upstreamId || item.upstream_id === upstreamId));
+    if (!model) return;
+    $("modelEditName").textContent = model.qualified;
+    $("modelEditQualified").value = model.qualified;
+    $("modelEditUpstream").value = model.upstream_id || "";
+    $("modelEditKind").value = ["chat", "embedding", "unknown"].includes(model.kind) ? model.kind : "";
+    $("modelEditCapabilities").value = (model.capabilities || []).join(", ");
+    $("modelEditEndpoints").value = (model.endpoints || []).join(", ");
+    $("modelEditError").textContent = "";
+    $("modelDialog").showModal();
+  },
+
+  async saveModelMetadata(event) {
+    event.preventDefault();
+    $("modelEditError").textContent = "";
+    try {
+      const payload = {
+        model: $("modelEditQualified").value,
+        upstream_id: $("modelEditUpstream").value,
+        capabilities: splitList($("modelEditCapabilities").value),
+        endpoints: splitList($("modelEditEndpoints").value),
+      };
+      const kind = $("modelEditKind").value;
+      if (kind) payload.kind = kind;
+      await this.api("PATCH", "/api/v1/models", payload);
+      $("modelDialog").close();
+      this.toast(VRouterI18n.t("模型元数据已保存"));
+      await this.refresh();
+    } catch (err) {
+      $("modelEditError").textContent = err.message;
+    }
+    return false;
   },
 
   renderUpstreams() {
@@ -584,6 +755,11 @@ const app = {
     $("routingId").value = id; $("routingWeight").value = u.routing?.weight || 1;
     $("routingMax").value = u.routing?.max_inflight || 0; $("routingDisabled").checked = !!u.routing?.disabled;
     $("routingDirect").checked = !!u.routing?.direct;
+    const managed = u.source !== "api";
+    $("routingDirect").disabled = managed && options.administrator?.() !== true;
+    VRouterI18n.bind($("routingDirectHint"), "textContent", () => managed
+      ? VRouterI18n.t("该上游由 V-Scheduler 或应用托管；直接放行会让其下所有模型跳过模型预算与调度准入，仅管理员可设置。")
+      : VRouterI18n.t("直接放行会跳过并发上限、熔断、模型预算与调度准入，并在有多个可用上游时优先选择；暂停仍然生效。外部云端 API 通常应直接放行。"));
     $("routingError").textContent = ""; this.updateRoutingDirect(); $("routingDialog").showModal();
   },
   updateRoutingDirect() {
@@ -696,7 +872,7 @@ const app = {
     this.updateRegistrationMode();
   },
   listFromInput(id) {
-    return $(id).value.split(/[\n,， ]+/).map(s => s.trim()).filter(Boolean);
+    return splitList($(id).value);
   },
   registrationPayload() {
     const p = {
@@ -789,33 +965,62 @@ const app = {
   },
 
   setUpstreamModels(models, { loaded = true, preserve = false } = {}) {
-    // Preserve an explicit deselection, but treat "everything was checked" as
-    // no preference so a later probe selects all newly discovered models.
-    const prior = preserve && this.modelChoices.length ? new Set(this.upstreamModelSelection()) : null;
-    const previous = prior && prior.size < this.modelChoices.length ? prior : null;
+    // Keep selected rows and any metadata the user already edited across probes.
+    const previous = preserve ? this.readModelRows() : new Map();
+    const selectedBefore = preserve ? new Set(this.upstreamModelSelection()) : null;
+    const allSelected = selectedBefore && this.modelChoices.length && selectedBefore.size === this.modelChoices.length;
     this.modelChoices = [];
     const seen = new Set();
     for (const raw of models || []) {
       const model = typeof raw === "string" ? { id: raw } : raw;
       if (!model || !model.id || seen.has(model.id)) continue;
       seen.add(model.id);
-      this.modelChoices.push(model);
+      const prior = previous.get(model.id);
+      const kind = model.kind === "unknown" ? "" : model.kind || "";
+      this.modelChoices.push({
+        id: model.id,
+        kind: prior ? prior.kind : kind,
+        capabilities: prior ? prior.capabilities : (model.capabilities || []),
+        endpoints: prior ? prior.endpoints : (model.endpoints || []),
+      });
     }
     this.modelChoicesLoaded = loaded;
-    const selected = previous ? new Set([...previous].filter((id) => seen.has(id))) : seen;
-    $("ufModels").innerHTML = this.modelChoices.map((model) => {
-      const meta = [
-        model.kind && model.kind !== "unknown" ? model.kind : "",
-        (model.capabilities || []).join(", "),
-        (model.endpoints || []).join(", "),
-      ].filter(Boolean).join(" · ");
-      return `<label class="check model-choice"><input type="checkbox" value="${esc(model.id)}" ${selected.has(model.id) ? "checked" : ""} onchange="app.updateUpstreamModelsHint()" /><span class="mono">${esc(model.id)}</span>${meta ? `<span class="hint">${esc(meta)}</span>` : ""}</label>`;
-    }).join("");
+    const selected = selectedBefore && !allSelected ? new Set([...selectedBefore].filter((id) => seen.has(id))) : seen;
+    $("ufModels").innerHTML = this.modelChoices.map((model) => `<div class="model-choice" data-model="${esc(model.id)}">
+      <label class="check"><input type="checkbox" value="${esc(model.id)}" ${selected.has(model.id) ? "checked" : ""} onchange="app.updateUpstreamModelsHint()" /><span class="mono">${esc(model.id)}</span></label>
+      <div class="model-meta">
+        <select class="uf-model-kind" title="${esc(VRouterI18n.t("模型类型"))}">${modelKindOptions(model.kind)}</select>
+        <input class="uf-model-caps" type="text" value="${esc((model.capabilities || []).join(", "))}" placeholder="${esc(VRouterI18n.t("能力（可选，逗号分隔）"))}" title="${esc(VRouterI18n.t("模型能力"))}" />
+        <input class="uf-model-endpoints" type="text" value="${esc((model.endpoints || []).join(", "))}" placeholder="${esc(VRouterI18n.t("接口（可选，逗号分隔）"))}" title="${esc(VRouterI18n.t("支持接口"))}" />
+      </div>
+    </div>`).join("");
     $("ufModelsField").hidden = $("ufProtocol").value === "async_task" || !this.modelChoices.length;
     this.updateUpstreamModelsHint();
   },
+  readModelRows() {
+    const rows = new Map();
+    for (const row of $("ufModels").querySelectorAll(".model-choice")) {
+      rows.set(row.dataset.model, {
+        kind: row.querySelector(".uf-model-kind")?.value || "",
+        capabilities: splitList(row.querySelector(".uf-model-caps")?.value || ""),
+        endpoints: splitList(row.querySelector(".uf-model-endpoints")?.value || ""),
+      });
+    }
+    return rows;
+  },
   upstreamModelSelection() {
     return [...$("ufModels").querySelectorAll('input[type="checkbox"]:checked')].map((el) => el.value);
+  },
+  upstreamModelPayload() {
+    const rows = this.readModelRows();
+    return this.upstreamModelSelection().map((id) => {
+      const row = rows.get(id) || {};
+      const item = { id };
+      if (row.kind) item.kind = row.kind;
+      if (row.capabilities?.length) item.capabilities = row.capabilities;
+      if (row.endpoints?.length) item.endpoints = row.endpoints;
+      return item;
+    });
   },
   selectAllUpstreamModels(on) {
     for (const el of $("ufModels").querySelectorAll('input[type="checkbox"]')) el.checked = on;
@@ -823,7 +1028,7 @@ const app = {
   },
   updateUpstreamModelsHint() {
     const selected = this.upstreamModelSelection().length;
-    VRouterI18n.bind($("ufModelsHint"), "textContent", () => `${VRouterI18n.t("已选择")} ${selected} / ${this.modelChoices.length} ${VRouterI18n.t("个模型")}；${VRouterI18n.t("保存后只添加勾选的模型")}。`);
+    VRouterI18n.bind($("ufModelsHint"), "textContent", () => `${VRouterI18n.t("已选择")} ${selected} / ${this.modelChoices.length} ${VRouterI18n.t("个模型")}；${VRouterI18n.t("类型、能力和接口留空时按探测或默认值处理")}。`);
   },
 
   renderProviderPresets(select) {
@@ -906,7 +1111,10 @@ const app = {
       $("ufAsyncDefaultInput").value = c.default_input ? JSON.stringify(c.default_input, null, 2) : "";
       $("ufAsyncPollMS").value = c.poll_interval_ms || 1000;
       $("ufAsyncTimeout").value = c.timeout_seconds || 300;
-      this.setUpstreamModels((u.model_ids || []).map((model) => ({ id: model })));
+      const owned = this.state.models
+        .filter((model) => model.upstream_id === u.id)
+        .map((model) => ({ id: model.id, kind: model.kind, capabilities: model.capabilities, endpoints: model.endpoints }));
+      this.setUpstreamModels(owned.length ? owned : (u.model_ids || []).map((model) => ({ id: model })));
       VRouterI18n.bind($("ufKeyHint"), "textContent", () => VRouterI18n.t("留空保持原密钥不变；密钥保存在本机，接口永不回显。"));
       VRouterI18n.bind($("ufBaseHint"), "innerHTML", () => u.kind === "cloud" ? this.cloudHintHTML(u.model_prefix) : VRouterI18n.t("可填 OpenAI 兼容 /v1、Anthropic API 地址；未写协议时默认 https，未写路径时默认 /v1。"));
     } else {
@@ -973,7 +1181,7 @@ const app = {
       allow_probe_failure: $("ufAllowProbeFailure").checked,
     };
     if (this.modelChoicesLoaded && payload.protocol !== "async_task") {
-      payload.models = this.upstreamModelSelection();
+      payload.models = this.upstreamModelPayload();
     }
     if (payload.protocol === "async_task") {
       let defaultInput = {};
@@ -1358,6 +1566,17 @@ function stat(icon, num, label) {
 }
 function kindLabel(kind) {
   return { registered: VRouterI18n.t("注册后端"), local: VRouterI18n.t("本地"), manual: VRouterI18n.t("手动"), cloud: VRouterI18n.t("云端") }[kind] || kind;
+}
+function splitList(value) {
+  return String(value ?? "").split(/[\n,， ]+/).map((s) => s.trim()).filter(Boolean);
+}
+function modelKindOptions(kind) {
+  return [
+    ["", VRouterI18n.t("自动（按接口/能力推断）")],
+    ["chat", VRouterI18n.t("对话")],
+    ["embedding", "Embedding"],
+    ["unknown", VRouterI18n.t("由上游决定")],
+  ].map(([value, label]) => `<option value="${value}" ${kind === value ? "selected" : ""}>${esc(label)}</option>`).join("");
 }
 /** table(headers, rows, rightAlignCols) — rows contain pre-escaped HTML. */
 function table(headers, rows, rightAlign = []) {

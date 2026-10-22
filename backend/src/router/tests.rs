@@ -1420,3 +1420,124 @@ async fn queued_admission_prioritizes_interaction_and_cancels_without_execution(
     assert_eq!(late.code.as_deref(), Some("QUEUE_CANCELLED"));
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[tokio::test]
+async fn api_model_metadata_is_editable_by_owner_and_persisted() {
+    let root = temp();
+    let g = gateway(&root, Router::new());
+    {
+        let mut registry = g.registry.lock().unwrap();
+        let mut u = upstream("vendor");
+        u.owner = "alice".into();
+        registry.put(u, vec![model("echo")]);
+    }
+    let patch = |body: Value| {
+        axum::http::Request::builder()
+            .method("PATCH")
+            .uri("/api/v1/models")
+            .header("content-type", "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap()
+    };
+    let response = manage::handle(
+        &g,
+        &principal("alice"),
+        patch(json!({
+            "model": "manual/echo",
+            "upstream_id": "vendor",
+            "kind": "embedding",
+            "capabilities": ["embedding"],
+            "endpoints": ["embeddings"]
+        })),
+    )
+    .await
+    .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(response.into_body(), 1 << 20)
+        .await
+        .unwrap();
+    let value: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(value["model"]["kind"], "embedding");
+    assert_eq!(value["model"]["endpoints"], json!(["embeddings"]));
+    assert_eq!(value["model"]["capabilities"], json!(["embedding"]));
+    let disk: Value =
+        serde_json::from_slice(&std::fs::read(root.join("state.json")).unwrap()).unwrap();
+    assert_eq!(disk["models"]["vendor"][0]["kind"], "embedding");
+
+    let denied = manage::handle(
+        &g,
+        &principal("bob"),
+        patch(json!({"model": "manual/echo", "upstream_id": "vendor", "kind": "chat"})),
+    )
+    .await
+    .err()
+    .unwrap();
+    assert_eq!(denied.status, StatusCode::FORBIDDEN);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn direct_upstream_bypasses_admission_for_all_models() {
+    let root = temp();
+    let g = gateway(&root, Router::new());
+    let u = {
+        let mut registry = g.registry.lock().unwrap();
+        let u = upstream("vendor");
+        registry.put(u.clone(), vec![model("echo"), model("embed")]);
+        registry.routing.insert(
+            "vendor".into(),
+            registry::Routing {
+                direct: true,
+                weight: 1,
+                max_inflight: 0,
+                disabled: false,
+            },
+        );
+        u
+    };
+    for model in ["echo", "embed"] {
+        assert!(lease::approval(&g, &u, model, "POST", "/chat/completions", false)
+            .unwrap()
+            .is_none());
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
+async fn managed_upstream_direct_routing_requires_an_administrator() {
+    let root = temp();
+    let g = gateway(&root, Router::new());
+    {
+        let mut registry = g.registry.lock().unwrap();
+        let mut u = upstream("vendor");
+        u.source = "v-scheduler".into();
+        registry.put(u, vec![model("echo")]);
+    }
+    let put = |direct: bool| {
+        axum::http::Request::builder()
+            .method("PUT")
+            .uri("/api/v1/upstreams/vendor/routing")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                json!({"weight":1,"max_inflight":0,"disabled":false,"direct":direct}).to_string(),
+            ))
+            .unwrap()
+    };
+    let denied = manage::handle(&g, &principal("alice"), put(true))
+        .await
+        .err()
+        .unwrap();
+    assert_eq!(denied.status, StatusCode::FORBIDDEN);
+
+    let mut root_user = principal("root");
+    root_user.admin = true;
+    let response = manage::handle(&g, &root_user, put(true)).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // Once an administrator enabled it, owners may still save other fields.
+    let response = manage::handle(&g, &principal("alice"), put(true))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    std::fs::remove_dir_all(root).unwrap();
+}

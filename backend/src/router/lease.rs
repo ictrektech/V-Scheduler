@@ -267,6 +267,17 @@ pub(super) fn approval(
 ) -> Api<Option<Approval>> {
     let required = env("V_ROUTER_SCHEDULER_REQUIRED", "") == "true";
     let declared = u.scheduler.clone().unwrap_or_default();
+    // Direct routing is an upstream-wide decision: every model served by that
+    // upstream skips admission and model budgets, not only gateway concurrency.
+    if g.registry
+        .lock()
+        .unwrap()
+        .routing
+        .get(&u.id)
+        .is_some_and(|policy| policy.direct)
+    {
+        return Ok(None);
+    }
     // Administrator-approved direct registrations bypass admission entirely,
     // mirroring an external upstream (no permit, queue or budget).
     if u.source == "registered" && declared["mode"] == "direct" {

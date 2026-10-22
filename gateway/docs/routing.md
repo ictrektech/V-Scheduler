@@ -21,7 +21,7 @@
 
 1. 匹配模型名或带前缀的名称，排除不健康、租约过期及暂停的后端。
 2. 根据模型能力、声明协议和服务角色排除已知不兼容后端。Messages 仅选择 Anthropic 或 Chat Completions 转换后端；Anthropic 原生不自动提供 OpenAI 接口。Model Hub/Ollama 优先读取 native `/api/tags` 中每个模型的 `capabilities`，同时用 generate/embedding 服务角色限定实际入口；注册后端可声明 `capabilities` 或逐模型 `model_capabilities`。云端和手动上游从模型列表读取能力；能力缺失或不是 V-Router 已知能力词时视为未知，不提前拦截所有接口，由实际上游返回具体不支持原因。
-3. 标记为“直接放行”的上游跳过并发上限和熔断，并在存在可用候选时优先选择；多个直接放行候选按实例 ID 确定顺序。
+3. 标记为“直接放行”的上游跳过并发上限、熔断、模型预算与调度准入，并在存在可用候选时优先选择；该上游下的所有模型都继承这一状态。多个直接放行候选按实例 ID 确定顺序。
 4. 其余候选排除已达到 `max_inflight` 者，选择 `进行中请求 / weight` 最小者。
 5. 负载相同时，在当前模型名与接口范围内按权重平滑轮换，再以实例 ID 确定初始平局顺序。同权重的空闲后端轮流接收请求；指定调用和其他模型范围的历史不影响轮换。
 
@@ -63,6 +63,17 @@ reply = an.messages.create(model='registered/qwen3:0.6b', max_tokens=128,
 
 添加前可以测试模型列表；测试成功后对话框会列出探测到的模型并默认全选，可以用“全选/清空”调整后只添加勾选的模型。保存请求的 `models` 字段接受模型 ID 字符串或对象数组（`{"id":"...","kind":"...","capabilities":[...],"endpoints":[...]}`）；省略该字段时保持旧行为，登记全部探测结果。编辑已保存的上游时会列出已有模型；重新“刷新”只保留已登记的模型，不会静默加入新模型。填写“联通测试模型”时会再发一次轻量对话请求。测试失败不会强制阻止保存，勾选“模型列表探测失败也允许保存”后可以先记录上游，让真实业务调用返回上游的具体错误。模型列表一旦刷新成功，云端模型会同时出现在 `/v1/models` 和 `/api/v1/models`。
 
+保存后可在“模型”页继续修改单个模型的元数据（仅外部 API 上游，owner 或管理员）：
+
+```http
+PATCH /api/v1/models
+Content-Type: application/json
+
+{"model":"openrouter/openai/gpt-5.6-sol","upstream_id":"openrouter","kind":"chat","capabilities":["completion","tools"],"endpoints":["/chat/completions"]}
+```
+
+`kind` 可省略或留空，由能力和接口推断；`capabilities`、`endpoints` 也按探测值处理。直接放行的上游下的模型会显示“直接放行（上游）”，不再单独提供预算校准。
+
 ## 配置权重和并发限制
 
 上游页的“调度”支持全部来源，等价 API：
@@ -75,7 +86,7 @@ Content-Type: application/json
 {"weight":2,"max_inflight":4,"disabled":false,"direct":false}
 ```
 
-默认权重 1，范围 1..1000；默认并发上限 0 表示不限；默认不暂停。`direct=true` 表示“直接放行”：跳过 `max_inflight` 和熔断，并在多个候选可用时优先直连该上游；`disabled`（暂停）和租约过期仍然生效。外部云端 API 通常应直接放行，本地推理后端则由调度控制并发。PUT 替换完整策略，省略字段回到默认。策略保存在原有状态文件，升级旧文件自动采用默认值；Model Hub 刷新和同 ID 后端重新注册不清零策略或占用。`GET /api/v1/upstreams` 返回 `routing`、`inflight`、`model_ids`，已保存凭据不回显。只有 owner 和管理员能修改调度配置。
+默认权重 1，范围 1..1000；默认并发上限 0 表示不限；默认不暂停。`direct=true` 表示“直接放行”：跳过 `max_inflight`、熔断、模型预算和调度准入，并在多个候选可用时优先直连该上游；该上游下的所有模型都会自动进入直接放行状态，不需要逐模型设置，`disabled`（暂停）和租约过期仍然生效。外部云端 API 通常应直接放行，本地推理后端则由调度控制并发；由 V-Scheduler 或应用托管（`source` 非 `api`）的上游只能由管理员开启直接放行，外部 API 上游由 owner 或管理员配置。PUT 替换完整策略，省略字段回到默认。策略保存在原有状态文件，升级旧文件自动采用默认值；Model Hub 刷新和同 ID 后端重新注册不清零策略或占用。`GET /api/v1/upstreams` 返回 `routing`、`inflight`、`model_ids`，已保存凭据不回显。只有 owner 和管理员能修改调度配置。
 
 暂停和注销只阻止新模型推理请求，不中止已在执行的请求。指定实例不会绕过暂停；直接放行的指定实例也不再受并发上限限制。有状态资源读写不纳入推理并发限制。
 

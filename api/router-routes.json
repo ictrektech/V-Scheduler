@@ -73,6 +73,15 @@
   },
   {
     "auth": "manage",
+    "desc": "修改 API 创建上游中单个模型的元数据。model 使用模型列表中的 qualified 名称，可同时传 upstream_id 以避免不同上游同名模型的歧义。kind 支持 chat、embedding、unknown，留空表示按 capabilities/endpoints 自动推断；capabilities 与 endpoints 为字符串数组，传空数组表示清除后按接口推断。仅该上游的 owner 和管理员可调用；发现、注册或内置上游的模型只读并返回 409。",
+    "example": "curl -X PATCH http://<vos-host>:22888/api/v1/models \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"model\":\"manual/qwen3:8b\",\"upstream_id\":\"qwen\",\"kind\":\"chat\",\"capabilities\":[\"chat\",\"tools\"],\"endpoints\":[\"chat_completions\",\"responses\"]}'",
+    "group": "manage",
+    "method": "PATCH",
+    "path": "/api/v1/models",
+    "summary": "修改模型元数据"
+  },
+  {
+    "auth": "manage",
     "desc": "从 JSONL 历史按模型、上游和用户汇总请求及上游报告的输入/输出 Token；period 支持 day（默认）、week、month、all。上游不报告 usage 时请求仍正常完成。",
     "example": "",
     "group": "manage",

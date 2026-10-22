@@ -552,11 +552,14 @@ pub(super) fn normalize_model(model: &mut Model) {
         .capabilities
         .iter()
         .any(|c| ["embedding", "embeddings"].contains(&c.as_str()));
-    if chat && !embed {
-        model.kind = "chat".into();
-    } else if embed && !chat {
-        model.kind = "embedding".into();
-    } else if model.kind.is_empty() {
-        model.kind = "unknown".into();
+    if model.kind.is_empty() {
+        model.kind = if chat && !embed {
+            "chat"
+        } else if embed && !chat {
+            "embedding"
+        } else {
+            "unknown"
+        }
+        .into();
     }
 }

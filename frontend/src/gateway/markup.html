@@ -208,7 +208,7 @@
     <h3>上游调度</h3>
     <form onsubmit="return app.saveRouting(event)">
       <input type="hidden" id="routingId" />
-      <div class="field"><label class="check"><input id="routingDirect" type="checkbox" onchange="app.updateRoutingDirect()" /> 直接放行（不主动调度）</label><div class="hint">直接放行会跳过并发上限与熔断，并在有多个可用上游时优先选择；暂停仍然生效。外部云端 API 通常应直接放行。</div></div>
+      <div class="field"><label class="check"><input id="routingDirect" type="checkbox" onchange="app.updateRoutingDirect()" /> 直接放行（不主动调度）</label><div class="hint" id="routingDirectHint">直接放行会跳过并发上限、熔断、模型预算与调度准入，并在有多个可用上游时优先选择；暂停仍然生效。外部云端 API 通常应直接放行。</div></div>
       <div class="field"><label for="routingWeight">分配权重</label><input id="routingWeight" type="number" min="1" max="1000" required /><div class="hint">默认 1；权重越大，自动分配的请求越多。</div></div>
       <div class="field"><label for="routingMax">最大进行中请求</label><input id="routingMax" type="number" min="0" max="100000" required /><div class="hint">0 表示不限；统计本网关请求，流式结束才释放，不是 GPU 实际槽位。</div></div>
       <div class="field"><label class="check"><input id="routingDisabled" type="checkbox" /> 暂停接收新推理请求</label></div>
@@ -293,6 +293,69 @@
     </form>
   </dialog>
 
+
+  <!-- 模型资源预算对话框 -->
+  <dialog id="budgetDialog">
+    <h3>模型资源预算</h3>
+    <form onsubmit="return app.saveBudget(event)">
+      <input type="hidden" id="budgetModel" />
+      <div class="field"><div class="hint mono" id="budgetModelName"></div></div>
+      <div class="field">
+        <label for="budgetMode">预算模式</label>
+        <select id="budgetMode" onchange="app.updateBudgetMode()"><option value="calibrated">手动预算</option><option value="direct">不做限制（直接放行）</option></select>
+        <div class="hint">手动预算会覆盖调度器按模型体积和资源采样自动估算的数值。设置过低可能导致模型启动失败或与其他任务争抢资源；设置过高会长期占用 GPU 和内存，降低并发能力。请按实测结果调整，出现异常时恢复默认预算。</div>
+      </div>
+      <div class="field" id="budgetDirectNote" hidden><div class="hint">直接放行会跳过模型预算、调度准入和队列，仅在确认不会与其他任务争用资源时使用。上游设为直接放行时，其下所有模型会自动处于该状态。</div></div>
+      <div id="budgetResources">
+        <div class="field-grid">
+          <div class="field"><label for="budgetCpu">CPU 毫核</label><input id="budgetCpu" type="number" min="1" /></div>
+          <div class="field"><label for="budgetMemory">内存 MiB</label><input id="budgetMemory" type="number" min="1" /></div>
+          <div class="field"><label for="budgetGpuSlots">GPU 槽位</label><input id="budgetGpuSlots" type="number" min="0" value="0" /></div>
+          <div class="field"><label for="budgetGpuMemory">显存 MiB</label><input id="budgetGpuMemory" type="number" min="0" value="0" /></div>
+        </div>
+      </div>
+      <div id="budgetLimits">
+        <div class="field-grid">
+          <div class="field"><label for="budgetMaxTokens">最大输出 token</label><input id="budgetMaxTokens" type="number" min="1" /></div>
+          <div class="field"><label for="budgetNumCtx">上下文长度</label><input id="budgetNumCtx" type="number" min="1" /></div>
+          <div class="field"><label for="budgetNumPredict">单次预测 token</label><input id="budgetNumPredict" type="number" min="1" /></div>
+          <div class="field"><label for="budgetNumThread">线程数</label><input id="budgetNumThread" type="number" min="1" /></div>
+          <div class="field"><label for="budgetNumBatch">批大小</label><input id="budgetNumBatch" type="number" min="1" /></div>
+          <div class="field"><label for="budgetNumGpu">GPU 层数上限</label><input id="budgetNumGpu" type="number" min="0" /></div>
+        </div>
+      </div>
+      <div class="field"><label class="check"><input id="budgetConfirm" type="checkbox" /> 我已了解上述影响，确认修改该模型预算</label></div>
+      <div class="form-error" id="budgetError"></div>
+      <div class="form-actions"><button type="button" class="btn" onclick="app.element('budgetDialog').close()">取消</button><button type="submit" class="btn primary">保存</button></div>
+    </form>
+  </dialog>
+
+  <!-- 模型元数据对话框 -->
+  <dialog id="modelDialog">
+    <h3>模型元数据</h3>
+    <form onsubmit="return app.saveModelMetadata(event)">
+      <input type="hidden" id="modelEditQualified" />
+      <input type="hidden" id="modelEditUpstream" />
+      <div class="field"><div class="hint mono" id="modelEditName"></div></div>
+      <div class="field">
+        <label for="modelEditKind">模型类型</label>
+        <select id="modelEditKind"><option value="">自动（按接口/能力推断）</option><option value="chat">对话</option><option value="embedding">Embedding</option><option value="unknown">由上游决定</option></select>
+        <div class="hint">类型会影响模型列表展示和按端点的能力判断；留空时按接口和能力自动推断。</div>
+      </div>
+      <div class="field">
+        <label for="modelEditCapabilities">模型能力</label>
+        <input id="modelEditCapabilities" type="text" placeholder="chat, completion, tools" />
+        <div class="hint">逗号分隔。留空表示不声明能力和按接口推断。</div>
+      </div>
+      <div class="field">
+        <label for="modelEditEndpoints">支持接口</label>
+        <input id="modelEditEndpoints" type="text" placeholder="chat_completions, responses, embeddings" />
+        <div class="hint">逗号分隔。留空表示按上游协议默认放开；修改后立即影响网关的端点路由。</div>
+      </div>
+      <div class="form-error" id="modelEditError"></div>
+      <div class="form-actions"><button type="button" class="btn" onclick="app.element('modelDialog').close()">取消</button><button type="submit" class="btn primary">保存</button></div>
+    </form>
+  </dialog>
 
   <!-- 注册模型服务对话框 -->
   <dialog id="registrationDialog">
