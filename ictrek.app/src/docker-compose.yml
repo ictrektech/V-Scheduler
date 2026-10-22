@@ -97,7 +97,7 @@ x-controller: &controller
   volumes:
     - ${MODEL_HUB_SHARED_MODELS_PATH:-/data/vos_workspace/model_hub}:/data
     - ${VOS_APP_STORAGE_PATH}/config:/config
-    - ${V_ROUTER_DATA_PATH:-${VOS_APP_STORAGE_PATH}/gateway}:/gateway-data
+    - ${VOS_APP_STORAGE_PATH}/gateway:/gateway-data
     - ${VOS_APP_CONTEXT_PATH}:/var/lib/vos-context:ro
   networks:
     vos_default:

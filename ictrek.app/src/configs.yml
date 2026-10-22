@@ -1,13 +1,4 @@
 configs:
-  - name: V_ROUTER_DATA_PATH
-    title: {zh-CN: "已有 V-Router 数据目录（可选）", en: "Existing V-Router data directory (optional)", zh-TW: "既有 V-Router 資料目錄（可選）"}
-    description:
-      zh-CN: "升级合并时填写旧 V-Router 的 /data 对应宿主目录。卸载旧应用须保留数据。留空使用本应用的 gateway 目录。"
-      en: "For consolidation, use the host directory previously mounted at V-Router /data. Retain data when uninstalling the old app. Leave blank for this app's gateway directory."
-      zh-TW: "合併升級時填寫舊 V-Router /data 對應的宿主目錄。解除安裝舊應用須保留資料。留空使用本應用 gateway 目錄。"
-    type: string
-    default: ""
-    required: false
   - name: V_ROUTER_HOST_PORT
     type: integer
     title:
