@@ -117,7 +117,7 @@ HTTP 429 的 `WAIT_MEMORY_HEADROOM` 表示观测可用 RAM 小于本次预算、
 
 `/model-budgets/restore` 仅需 `model_id`，重新按当前原生模型大小和节点预算计算自动估算并启用自动执行器，同时移除人工运行上限。自动模式本身会直接返回未校准结果。
 
-应用托管的模型（Image Studio、V-Voice、ML Server、私有 V-Sub 等）使用同一组接口校准：额外传入 `upstream_url`（网关转发该上游时使用的 base URL），`model_id` 使用原生模型名。校准结果写入 `model-budgets.local.json`，按上游 URL 与原生模型名隔离；申请许可时临时以该资源替换执行器的准入占用，不改动应用自己的执行器或配置，也不支持运行上限。该路径的 `mode` 只能是 `calibrated`（或省略），`mode=direct` 返回 `422 MODEL_BUDGET_DIRECT_VIA_GATEWAY`；恢复时同样传入 `upstream_url`。`/model-budgets` 会在内置 Ollama 记录后追加这些覆盖记录，并带上 `upstream_url` 与 `native_model`。
+应用托管的模型（Image Studio、V-Voice、ML Server、私有 V-Sub 等）使用同一组接口校准：额外传入 `upstream_url`（网关转发该上游时使用的 base URL），`model_id` 使用原生模型名。校准结果写入 `model-budgets.local.json`，按上游 URL 与原生模型名隔离；申请许可时临时以该资源替换执行器的准入占用，不改动应用自己的执行器或配置，也不支持运行上限。该路径的 `mode` 只能是 `calibrated`（或省略），`mode=direct` 返回 `422 MODEL_BUDGET_DIRECT_VIA_GATEWAY`；恢复时同样传入 `upstream_url`。`/model-budgets` 会在内置 Ollama 记录后追加应用模型记录：未校准的模型同样返回 `default_resources`（取自其执行器注册的资源），校准过的模型返回覆盖后的 `resources`，都带上 `upstream_url` 与 `native_model`。界面会显示该自动默认预算并据此预填校准对话框，可在对话框内直接恢复默认预算。
 
 单模型直接放行由网关管理，不走控制器：`PUT /api/v1/model-routing` 接受 `{"model_id":"<upstream_id>/<原生模型名>","direct":true|false}`，仅管理员可调用。`direct=true` 写入网关状态文件，`model_view` 返回 `direct: true`；该模型的请求在读取任何调度策略前直接转发，不申请许可、不排队、不计预算。`direct=false` 删除记录并恢复上游策略；上游整体直接放行仍然优先。
 

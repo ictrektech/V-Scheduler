@@ -299,7 +299,7 @@
     <h3>模型资源预算</h3>
     <form onsubmit="return app.saveBudget(event)">
       <input type="hidden" id="budgetModel" />
-      <div class="field"><div class="hint mono" id="budgetModelName"></div></div>
+      <div class="field"><div class="hint mono" id="budgetModelName"></div><div class="hint" id="budgetDefault"></div></div>
       <div class="field">
         <label for="budgetMode">预算模式</label>
         <select id="budgetMode" onchange="app.updateBudgetMode()"><option value="calibrated">手动预算</option><option value="direct">不做限制（直接放行）</option></select>
@@ -326,7 +326,7 @@
       </div>
       <div class="field"><label class="check"><input id="budgetConfirm" type="checkbox" /> 我已了解上述影响，确认修改该模型预算</label></div>
       <div class="form-error" id="budgetError"></div>
-      <div class="form-actions"><button type="button" class="btn" onclick="app.element('budgetDialog').close()">取消</button><button type="submit" class="btn primary">保存</button></div>
+      <div class="form-actions"><button type="button" class="btn" id="budgetRestore" hidden onclick="app.restoreBudgetFromDialog()">恢复默认预算</button><button type="button" class="btn" onclick="app.element('budgetDialog').close()">取消</button><button type="submit" class="btn primary">保存</button></div>
     </form>
   </dialog>
 

@@ -133,6 +133,77 @@ fn upstream_url(value: &str) -> Option<String> {
     .then(|| value.trim_end_matches('/').to_string())
 }
 
+// Application-owned models have no Ollama binding file. Their automatic
+// budget is the resource approval their executor was registered with, which
+// the gateway snapshots reference by executor id.
+fn collect_application_models(
+    executors: &[Executor],
+    cfg: &Value,
+    found: &mut std::collections::BTreeMap<(String, String), Resources>,
+) {
+    let Some(models) = cfg["models"].as_object() else {
+        return;
+    };
+    for (key, policy) in models {
+        let model = key.rsplit_once('/').map(|(_, model)| model).unwrap_or(key);
+        let Some(executor) = policy["executor_id"].as_str().and_then(|id| {
+            executors
+                .iter()
+                .find(|e| e.id == id && e.task_type == "model.infer")
+        }) else {
+            continue;
+        };
+        let url = policy["upstream_url"]
+            .as_str()
+            .or_else(|| executor.upstream_urls.first().map(String::as_str))
+            .and_then(upstream_url);
+        let Some(url) = url else { continue };
+        let model = model.trim();
+        if model.is_empty() || model.len() > 512 || model.chars().any(char::is_control) {
+            continue;
+        }
+        found.insert((url, model.to_string()), executor.resources.clone());
+    }
+}
+
+fn application_defaults(a: &App) -> Vec<(String, String, Resources)> {
+    use std::collections::BTreeMap;
+    fn read(a: &App, path: &std::path::Path, found: &mut BTreeMap<(String, String), Resources>) {
+        let Ok(raw) = std::fs::read(path) else {
+            return;
+        };
+        if raw.len() > 262144 {
+            return;
+        }
+        if let Ok(cfg) = serde_json::from_slice::<Value>(&raw) {
+            collect_application_models(&a.config.executors, &cfg, found);
+        }
+    }
+    let root = directory();
+    let mut found = BTreeMap::new();
+    if let Ok(entries) = std::fs::read_dir(root.join("app-bindings")) {
+        for entry in entries.flatten() {
+            read(a, &entry.path(), &mut found);
+        }
+    }
+    for file in ["voice-scheduler.local.json", "scheduler.local.json"] {
+        read(a, &root.join(file), &mut found);
+    }
+    if let Ok(raw) = std::fs::read(root.join("vsub-scheduler.local.json")) {
+        if raw.len() <= 262144 {
+            if let Ok(cfg) = serde_json::from_slice::<Value>(&raw) {
+                for namespace in cfg["namespaces"].as_object().into_iter().flatten() {
+                    collect_application_models(&a.config.executors, namespace.1, &mut found);
+                }
+            }
+        }
+    }
+    found
+        .into_iter()
+        .map(|((url, model), resources)| (url, model, resources))
+        .collect()
+}
+
 fn bindings(root: &std::path::Path) -> Vec<(String, PathBuf, Value)> {
     let mut found = Vec::new();
     let Ok(entries) = std::fs::read_dir(root.join("ollama-bindings")) else {
@@ -262,12 +333,40 @@ pub(super) async fn list(State(a): State<App>, h: HeaderMap) -> Api<Json<Value>>
         }));
     }
     let overrides = read_overrides();
+    let mut seen = std::collections::BTreeSet::new();
+    for (url, model, default) in application_defaults(&a) {
+        let resources = override_resources(&overrides, &url, &model);
+        let calibrated = resources.is_some();
+        seen.insert((url.clone(), model.clone()));
+        items.push(json!({
+            "model_id": model,
+            "upstream_url": url,
+            "native_model": model,
+            "repository_model_id": Value::Null,
+            "role": Value::Null,
+            "node_id": Value::Null,
+            "executor_id": Value::Null,
+            "mode": if calibrated { "calibrated" } else { "automatic" },
+            "calibrated": calibrated,
+            "enabled": true,
+            "version": 0,
+            "updated_at": Value::Null,
+            "resources": resources,
+            "default_resources": default,
+            "limits": Value::Null,
+            "default_limits": Value::Null,
+            "capacity": Value::Null,
+        }));
+    }
     for (url, group) in overrides["upstreams"]
         .as_object()
         .into_iter()
         .flatten()
     {
         for (model, entry) in group["models"].as_object().into_iter().flatten() {
+            if seen.contains(&(url.clone(), model.clone())) {
+                continue;
+            }
             items.push(json!({
                 "model_id": model,
                 "upstream_url": url,
@@ -799,6 +898,49 @@ mod tests {
             upstream_url: None,
         })
         .is_ok_and(|direct| direct));
+    }
+    #[test]
+    fn application_models_report_the_resources_of_their_own_executor() {
+        fn executor(id: &str, upstream: &str, cpu: i64) -> Executor {
+            Executor {
+                id: id.into(),
+                contract_version: "1".into(),
+                task_type: "model.infer".into(),
+                node_id: "node".into(),
+                app_id: "app".into(),
+                resources: Resources {
+                    cpu_millicores: cpu,
+                    memory_mib: 512,
+                    gpu_slots: 0,
+                    gpu_memory_mib: 0,
+                },
+                upstream_urls: vec![upstream.into()],
+                placements: vec![],
+                retry_mode: "none".into(),
+                max_attempts: 1,
+            }
+        }
+        let executors = vec![
+            executor("model-a", "http://image-studio-backend:5000/", 2000),
+            executor("model-b", "http://v-voice:8000", 1000),
+        ];
+        let binding = json!({"models":{
+            "image-studio/sd-turbo":{"executor_id":"model-a","upstream_url":"http://image-studio-backend:5000"},
+            "v-voice/tts":{"executor_id":"model-b"},
+            "other/unknown":{"executor_id":"missing"},
+            "other/no-upstream":{"executor_id":"model-c"}
+        }});
+        let mut found = std::collections::BTreeMap::new();
+        collect_application_models(&executors, &binding, &mut found);
+        let sd = found
+            .get(&("http://image-studio-backend:5000".into(), "sd-turbo".into()))
+            .unwrap();
+        assert_eq!(sd.cpu_millicores, 2000);
+        let tts = found
+            .get(&("http://v-voice:8000".into(), "tts".into()))
+            .unwrap();
+        assert_eq!(tts.cpu_millicores, 1000);
+        assert_eq!(found.len(), 2);
     }
     #[test]
     fn application_model_overrides_are_scoped_by_upstream_and_native_model() {

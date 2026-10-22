@@ -482,6 +482,16 @@ const app = {
     return `<span class="pill kind">${VRouterI18n.t("手动")}</span><div class="hint mono">${esc(parts.join(" · "))}</div>`;
   },
 
+  budgetSummary(resources) {
+    const r = resources || {};
+    return [
+      `${Number(r.cpu_millicores || 0)} mCPU`,
+      `${Number(r.memory_mib || 0)} MiB`,
+      Number(r.gpu_slots || 0) ? `${Number(r.gpu_slots)} GPU` : "",
+      Number(r.gpu_memory_mib || 0) ? `${Number(r.gpu_memory_mib)} MiB ${VRouterI18n.t("显存")}` : "",
+    ].filter(Boolean).join(" · ");
+  },
+
   openBudgetDialog(qualified, upstreamId) {
     const model = this.state.models.find((item) => item.qualified === qualified && (!upstreamId || item.upstream_id === upstreamId));
     if (!model) return;
@@ -490,6 +500,12 @@ const app = {
     const resources = budget?.resources || budget?.default_resources || {};
     const limits = budget?.limits || budget?.default_limits || {};
     this.budgetGeneric = generic ? { upstream_url: model.upstream_url } : null;
+    this.budgetTarget = { qualified, upstreamId };
+    const automatic = budget?.default_resources || budget?.resources || null;
+    $("budgetDefault").textContent = automatic
+      ? `${VRouterI18n.t("自动默认预算")}：${this.budgetSummary(automatic)}${budget?.capacity ? ` · ${VRouterI18n.t("节点容量")} ${this.budgetSummary(budget.capacity)}` : ""}`
+      : VRouterI18n.t("该模型没有自动默认预算（由上游直接转发），请按实测结果填写。");
+    $("budgetRestore").hidden = !budget || budget.mode === "automatic";
     $("budgetModel").value = generic ? model.id : qualified;
     $("budgetModelName").textContent = model.qualified;
     $("budgetMode").querySelector('option[value="direct"]').disabled = generic;
@@ -585,8 +601,8 @@ const app = {
 
   async restoreBudget(qualified, upstreamId) {
     const model = this.state.models.find((item) => item.qualified === qualified && (!upstreamId || item.upstream_id === upstreamId));
-    if (!model) return;
-    if (!confirm(`${VRouterI18n.t("恢复默认预算")} ${qualified}?`)) return;
+    if (!model) return false;
+    if (!confirm(`${VRouterI18n.t("恢复默认预算")} ${qualified}?`)) return false;
     const generic = model.upstream_source !== "v-scheduler";
     try {
       await this.api("POST", "/scheduler/api/v1/model-budgets/restore", generic
@@ -594,9 +610,17 @@ const app = {
         : { model_id: qualified });
       this.toast(VRouterI18n.t("已恢复默认预算"));
       await this.refresh();
+      return true;
     } catch (err) {
       this.toast(VRouterI18n.t("恢复失败：") + err.message);
+      return false;
     }
+  },
+
+  async restoreBudgetFromDialog() {
+    if (!this.budgetTarget) return;
+    const restored = await this.restoreBudget(this.budgetTarget.qualified, this.budgetTarget.upstreamId);
+    if (restored) $("budgetDialog").close();
   },
 
   openModelDialog(qualified, upstreamId) {
