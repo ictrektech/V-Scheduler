@@ -503,7 +503,7 @@ fn build_for_node(
         }
     }
     // 0.0.22 仅改变安装地址，复用经核验的 0.0.21 原生镜像。
-    let controller_url = if ["0.0.22", "0.0.23", "0.0.24", "0.0.25", "0.0.26", "0.0.27"].contains(&contract["_application_version"].as_str().unwrap_or("")) {
+    let controller_url = if ["0.0.22", "0.0.23", "0.0.24", "0.0.25", "0.0.26", "0.0.27", "0.0.28"].contains(&contract["_application_version"].as_str().unwrap_or("")) {
         "http://v-scheduler:8080/scheduler/api/v1"
     } else { URL };
     let mut state = json!({"credential_epoch":epoch,"binding":{"protocol_version":1,"binding_revision":1,"app_id":APP,"url":controller_url,"token":token,"executor_token":executor_token,"upstream_url":UPSTREAM,"models":models,"gateway_executors":gateway_executors,"secondary_models":secondary_models},
@@ -549,7 +549,7 @@ async fn recover_unclaimed_direct(
     state: &Value,
     version: &str,
 ) -> anyhow::Result<u64> {
-    if !["0.0.21", "0.0.22", "0.0.23", "0.0.24", "0.0.25", "0.0.26", "0.0.27"].contains(&version) {
+    if !["0.0.21", "0.0.22", "0.0.23", "0.0.24", "0.0.25", "0.0.26", "0.0.27", "0.0.28"].contains(&version) {
         return Ok(0);
     }
     let node = state["executors"]
@@ -839,6 +839,8 @@ mod tests {
         assert_eq!(latest["binding"]["url"], "http://v-scheduler:8080/scheduler/api/v1");
         assert_eq!(latest["binding"]["binding_revision"], after["binding"]["binding_revision"]);
         assert_eq!(latest["executors"], after["executors"]);
+        contract["_application_version"] = json!("0.0.28");
+        assert_eq!(build(&runtime, &contract, &approvals, Some(&latest)).unwrap(), latest);
     }
 
     #[test]
@@ -1003,6 +1005,8 @@ mod tests {
         assert!(retired_state["binding"].get("execution_settings").is_none());
         assert_eq!(retired_state["binding"]["token"], compatible["binding"]["token"]);
         assert!(retired_state["binding"]["binding_revision"].as_u64().unwrap() > compatible["binding"]["binding_revision"].as_u64().unwrap());
+        contract["_application_version"] = json!("0.0.28");
+        assert_eq!(build(&runtime, &contract, &approvals, Some(&retired_state)).unwrap(), retired_state);
         contract["_application_version"] = json!("0.0.20");
         let old = build(&runtime, &contract, &approvals, None).unwrap();
         assert_eq!(old["binding"]["models"].as_object().unwrap().len(), 7);
@@ -1030,6 +1034,8 @@ mod tests {
         contract["_application_version"] = json!("0.0.27");
         let after = build(&runtime, &contract, &approvals, Some(&before)).unwrap();
         assert_eq!(before, after);
+        contract["_application_version"] = json!("0.0.28");
+        assert_eq!(build(&runtime, &contract, &approvals, Some(&after)).unwrap(), after);
         assert_eq!(after["binding"]["models"].as_object().unwrap().len(), 2);
         for executor in after["executors"].as_array().unwrap() {
             assert_eq!(executor["resources"]["memory_mib"], 1792);
