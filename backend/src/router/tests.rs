@@ -1199,6 +1199,9 @@ fn calibrated_ollama_defaults_are_enforced_before_native_execution() {
     lease::validate(&approval, &u, &mut request, 100).unwrap();
     assert_eq!(request["options"], json!({"num_ctx":512,"num_thread":4,"num_gpu":0,"num_batch":128,"num_predict":128}));
     assert_eq!(request["max_tokens"],128);
+    let mut bounded = json!({"messages":[{"role":"user","content":"hello"}],"max_tokens":8});
+    lease::validate(&approval, &u, &mut bounded, 100).unwrap();
+    assert_eq!(bounded["options"]["num_predict"], 8, "the requested output must not expand to the calibrated maximum");
     for (key, value) in [("num_ctx",513),("num_thread",5),("num_gpu",1),("num_batch",129),("num_predict",129)] {
         let mut oversized = request.clone();
         oversized["options"][key]=json!(value);

@@ -10,6 +10,8 @@
 
 [Music / Desensitize / Image Studio 可信绑定](docs/application-auto-binding.md) 按实测运行设置、模型参数和输入限额接入调度；清单包含 Thor MusicGen-small / SD-Turbo、AMD MusicGen-small，以及 AMD / Thor / L4T Desensitize NER/OCR 的独立实测预算。各模型仅在完整运行设置与输入范围匹配时接入，具体真实业务验收见文档。
 
+校准的 Ollama 请求在未显式提供 `options.num_predict` 时，沿用本次 `max_tokens`，不会扩成模型批准上限。
+
 模型预算列表读取应用的网关快照，显示各模型执行器的默认预算；模型 ID 中的组织路径和量化后缀保持完整。Image Studio 的 L4T SD-Turbo 使用实测的 Q4 / 1.5 GiB VRAM / 128×128 VAE 分块 / CPU 文本编码器配置，按 2304 MiB 统一内存预算准入，保留节点的安全预留；其他平台使用各自的校准参数，实际内存不足时继续排队。
 
 [V-Sub 私有 worker 可信绑定](docs/v-sub-auto-binding.md) 使用完整 namespace、worker generation 和已实测原生模型模板；L4T 与 Thor 的最终 Root worker 已通过真实字幕、直调/网关、业务取消和 generation 重启验证。

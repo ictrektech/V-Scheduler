@@ -482,7 +482,11 @@ pub(super) fn validate(
                     value["max_tokens"] = p["limits"]["max_tokens"].clone();
                 }
                 if value["options"]["num_predict"].is_null() {
-                    value["options"]["num_predict"] = p["limits"]["max_tokens"].clone();
+                    value["options"]["num_predict"] = if !value["max_output_tokens"].is_null() {
+                        value["max_output_tokens"].clone()
+                    } else {
+                        value["max_tokens"].clone()
+                    };
                 }
             }
         }
