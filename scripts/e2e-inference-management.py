@@ -323,10 +323,12 @@ try:
  api('/api/v1/model-residency',{'idle_seconds':2},'PUT')
  until(lambda:sql("SELECT count(*) FROM vrs_permits WHERE state<>'released';")=='0','idle reservation not released before restart')
  docker('restart',app)
+ until(lambda:request(ctl+'/health')[0]==200,'controller not restored after restart')
  until(lambda:api('/api/v1/model-residency')[0]==200,'restart not ready')
  check(api('/api/v1/model-residency')[1]['idle_seconds']==2,'residency policy persists through process restart')
  until(lambda:len(api('/v1/models')[1].get('data',[]))==2,'catalog not restored')
  warm=api('/model-hub/api/v1/inference-services/v-scheduler-ollama-qa/models/start',{'model':'chat:latest'})
+ private('warmup-response.json',warm)
  check(warm[0]==200 and warm[1]['managed'] and warm[1]['confirmed'],'model service Start uses the same queue and reserved warmup path')
  cooled=api('/model-hub/api/v1/inference-services/v-scheduler-ollama-qa/models/stop',{'model':'chat:latest'})
  check(cooled[0]==200 and cooled[1]['confirmed'] and sql("SELECT count(*) FROM vrs_permits WHERE state<>'released';")=='0','model service Stop confirms unloading and releases the resident reservation')
@@ -354,7 +356,9 @@ finally:
  stop.set()
  for name in reversed(owned):
   try:
-   if name.endswith('-app'):private('app.log',docker('logs',name))
+   if name.endswith(('-app','-pg')):
+    logs=subprocess.run(['docker','logs',name],text=True,capture_output=True)
+    private('app.log' if name.endswith('-app') else 'postgres.log',logs.stdout+logs.stderr)
    docker('rm','-f',name)
   except subprocess.CalledProcessError:pass
  try:docker('network','rm',network)
