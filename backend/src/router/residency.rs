@@ -1,12 +1,12 @@
-//! A warm model keeps its original resource reservation. Never infer free
-//! memory from a completed HTTP response or an expired keep_alive timer.
+//! Idle models retain verified native memory reservations; every computation
+//! reacquires its complete budget. Timeouts never prove that memory was freed.
 use super::*;
 use std::sync::atomic::AtomicU64;
 use std::time::Instant;
 
 pub(super) struct Residency {
     seconds: AtomicU64,
-    cached: tokio::sync::Mutex<Option<Resident>>,
+    cached: tokio::sync::Mutex<Vec<Resident>>,
 }
 struct Resident {
     lease: lease::Lease,
@@ -39,16 +39,17 @@ impl Residency {
         }
     }
     pub async fn abandon(&self) {
-        self.cached.lock().await.take();
+        self.cached.lock().await.clear();
     }
     pub fn seconds(&self) -> u64 {
         self.seconds.load(Ordering::Acquire)
     }
     pub async fn snapshot(&self) -> Value {
         let cache = self.cached.lock().await;
-        json!({"idle_seconds":self.seconds(),"budget_policy":"retain-full-reservation",
-            "resident":cache.as_ref().map(|r|json!({"model_id":r.model,"upstream_id":r.upstream,
-                "permit_id":r.lease.id,"idle_seconds":r.since.elapsed().as_secs(),"state":"resident"}))})
+        let entry = |r: &Resident| json!({"model_id":r.model,"upstream_id":r.upstream,
+            "permit_id":r.lease.id,"idle_seconds":r.since.elapsed().as_secs(),"state":"resident"});
+        json!({"idle_seconds":self.seconds(),"budget_policy":"retain-observed-memory",
+            "resident":cache.last().map(entry),"residents":cache.iter().map(entry).collect::<Vec<_>>()})
     }
     pub fn configure(&self, g: &Gateway, seconds: u64) -> Api<()> {
         if seconds > 600 {
@@ -122,11 +123,8 @@ async fn evict(g: &Gateway, mut resident: Resident) -> bool {
 pub(super) async fn stop_idle(g: &Arc<Gateway>, role: &str, model: &str) -> Value {
     let mut cache = g.residency.cached.lock().await;
     let upstream = format!("v-scheduler/ollama-{role}");
-    let confirmed = if cache
-        .as_ref()
-        .is_some_and(|r| r.model == model && r.upstream == upstream)
-    {
-        evict(g, cache.take().unwrap()).await
+    let confirmed = if let Some(index) = cache.iter().position(|r| r.model == model && r.upstream == upstream) {
+        evict(g, cache.remove(index)).await
     } else {
         let nonce = uuid::Uuid::new_v4().simple().to_string();
         match g
@@ -155,27 +153,32 @@ pub(super) async fn stop_idle(g: &Arc<Gateway>, role: &str, model: &str) -> Valu
 }
 pub(super) async fn unload_for_change(g: &Arc<Gateway>, model: &str) -> bool {
     let mut cache = g.residency.cached.lock().await;
-    if cache.as_ref().is_some_and(|r| super::weights::native_name(&r.model) == model) {
-        return evict(g, cache.take().unwrap()).await;
+    let mut confirmed = true;
+    let mut index = 0;
+    while index < cache.len() {
+        if super::weights::native_name(&cache[index].model) == model {
+            confirmed &= evict(g, cache.remove(index)).await;
+        } else { index += 1; }
     }
-    true
+    confirmed
 }
 pub(super) async fn yield_idle(g: &Arc<Gateway>) {
     let mut cache = g.residency.cached.lock().await;
-    if let Some(resident) = cache.take() {
-        evict(g, resident).await;
-    }
+    // Oldest idle model first; an active request never lives in this cache.
+    if !cache.is_empty() { evict(g, cache.remove(0)).await; }
 }
+
 pub(super) async fn take(
     g: &Arc<Gateway>,
     approval: &lease::Approval,
     u: &Upstream,
     model: &str,
+    options: &crate::model::Scheduling,
+    operator: Option<&axum::http::HeaderValue>,
 ) -> Api<Option<lease::Lease>> {
     let mut cache = g.residency.cached.lock().await;
-    let Some(mut resident) = cache.take() else {
-        return Ok(None);
-    };
+    let Some(index) = cache.iter().position(|r| r.upstream == u.id && r.model == model) else { return Ok(None); };
+    let mut resident = cache.remove(index);
     if native_origin(u).is_some()
         && resident.upstream == u.id
         && resident.model == model
@@ -191,21 +194,26 @@ pub(super) async fn take(
             uuid::Uuid::new_v4().simple(),
             uuid::Uuid::new_v4().simple()
         );
-        if lease::call(
+        let reuse = lease::call_authorized(
             g,
             &resident.lease.token,
             &format!("/permits/{}/reuse-resident", resident.lease.id),
             json!({"executor_id":resident.lease.executor,"upstream_url":u.base_url,"model_id":model,
-                "execution_token":resident.lease.proof,"next_execution_token":proof}),
-            false,
+                "execution_token":resident.lease.proof,"next_execution_token":proof,"scheduling":options}),
+            false, operator,
         )
-        .await
-        .is_ok()
-        {
+        .await;
+        if reuse.is_ok() {
             resident.lease.proof = proof;
             // Until begin(), a dropped request must still account for warm memory.
             resident.lease.stopped.store(false, Ordering::Release);
             return Ok(Some(resident.lease));
+        }
+        if let Err(error) = reuse {
+            if error.code.as_deref() == Some("WAIT_COMPUTE_RESOURCE") {
+                cache.push(resident);
+                return Err(error);
+            }
         }
     }
     evict(g, resident).await;
@@ -223,24 +231,24 @@ pub(super) async fn complete(
     if retained {
         if let Some(origin) = native_origin(&u) {
             lease.stopped.store(false, Ordering::Release);
-            let resident = Resident {
-                lease,
-                upstream: u.id,
-                model,
-                origin,
-                since: Instant::now(),
-            };
+            // Release request-slot ownership after native compute completes,
+            // while the memory permit remains live and renewed.
+            lease.request_slot.take();
+            let proof = format!("{}{}", uuid::Uuid::new_v4().simple(), uuid::Uuid::new_v4().simple());
+            let parked = (200..300).contains(&status) && g.residency.seconds() > 0
+                && !*lease.failed.borrow()
+                && lease::call(&g, &lease.token, &format!("/permits/{}/park-resident", lease.id),
+                    json!({"executor_id":lease.executor,"upstream_url":u.base_url,"model_id":model,
+                        "execution_token":lease.proof,"next_execution_token":proof}), false).await.is_ok();
+            if parked { lease.proof = proof; }
+            let resident = Resident { lease, upstream: u.id, model, origin, since: Instant::now() };
             let mut cache = g.residency.cached.lock().await;
-            if (200..300).contains(&status)
-                && g.residency.seconds() > 0
-                && !*resident.lease.failed.borrow()
-            {
-                if let Some(old) = cache.replace(resident) {
-                    evict(&g, old).await;
+            if parked {
+                if let Some(index) = cache.iter().position(|r| r.upstream == resident.upstream && r.model == resident.model) {
+                    evict(&g, cache.remove(index)).await;
                 }
-            } else {
-                evict(&g, resident).await;
-            }
+                cache.push(resident);
+            } else { evict(&g, resident).await; }
             return;
         }
     }
@@ -256,13 +264,11 @@ pub(super) fn start(g: Arc<Gateway>) -> tokio::task::JoinHandle<()> {
         loop {
             tokio::time::sleep(Duration::from_secs(1)).await;
             let mut cache = g.residency.cached.lock().await;
-            let evict_now = cache.as_ref().is_some_and(|r| {
-                r.since.elapsed().as_secs() >= g.residency.seconds() || *r.lease.failed.borrow()
-            });
-            if evict_now {
-                if let Some(resident) = cache.take() {
-                    evict(&g, resident).await;
-                }
+            let mut index = 0;
+            while index < cache.len() {
+                if cache[index].since.elapsed().as_secs() >= g.residency.seconds() || *cache[index].lease.failed.borrow() {
+                    evict(&g, cache.remove(index)).await;
+                } else { index += 1; }
             }
         }
     })

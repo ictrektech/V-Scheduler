@@ -508,7 +508,7 @@ pub(crate) async fn builtin_model_action(
     );
     let _ = axum::body::to_bytes(response.into_body(), 1 << 20).await?;
     let state = g.residency.snapshot().await;
-    let confirmed = state["resident"]["model_id"] == model;
+    let confirmed = state["residents"].as_array().is_some_and(|rows| rows.iter().any(|r| r["model_id"] == model && r["upstream_id"] == format!("v-scheduler/ollama-{role}")));
     Ok(
         json!({"service_id":format!("v-scheduler-ollama-{role}"),"model":model,"accepted":true,"confirmed":confirmed,"started":confirmed,"target_state":"running","managed":true}),
     )

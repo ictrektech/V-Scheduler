@@ -3557,6 +3557,37 @@
           }
         }
       }
+    },
+    "/permits/{id}/park-resident": {
+      "post": {
+        "summary": "Park an owned Ollama model after native compute is confirmed idle",
+        "x-internal": true,
+        "description": "Internal owned-Ollama protocol only. Revalidate identity, executor, node, model and execution proof; require native active_slots=0 and fresh bounded residency evidence. Rotate proof and retain materialized memory while returning idle CPU/GPU slots. Promotion through reuse-resident restores the complete approved budget atomically; third-party applications cannot use this endpoint.",
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Structured scheduler rejection"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "operationId": "post_permits_id_park_resident",
+        "x-title": {
+          "zh-CN": "内置 Ollama 空闲驻留转换",
+          "en": "Park owned Ollama residency",
+          "zh-TW": "內建 Ollama 閒置駐留轉換"
+        }
+      }
     }
   },
   "components": {

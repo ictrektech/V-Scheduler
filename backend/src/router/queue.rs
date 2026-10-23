@@ -3,7 +3,7 @@ use super::*;
 use std::time::Instant;
 
 pub(super) fn scheduling(headers: &HeaderMap, id: &Identity) -> Api<crate::model::Scheduling> {
-    let mut options = crate::model::Scheduling::default();
+    let mut options = crate::model::Scheduling { priority: crate::model::Priority::Interactive, ..Default::default() };
     if let Some(priority) = headers.get("x-vscheduler-priority") {
         options.priority = serde_json::from_value(json!(priority.to_str().map_err(|_| Failure::new(422,"invalid priority"))?))
             .map_err(|_| Failure::new(422,"priority must be background, interactive or high"))?;

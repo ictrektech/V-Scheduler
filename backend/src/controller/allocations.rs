@@ -45,6 +45,7 @@ pub(super) async fn room(
 ) -> Api<()> {
     ready(node, executor)?;
     let report = admission_report(&node.get("report"), memory);
+    let report = ollama::idle_report(tx, &node.get::<String, _>("id"), &report, None).await?;
     let id: String = node.get("id");
     let capacity: Resources =
         serde_json::from_value(node.get("capacities")).map_err(|_| invalid())?;
@@ -71,6 +72,11 @@ pub(super) async fn room(
     .map_err(unavailable)?;
     let reserve: Resources =
         serde_json::from_value(node.get("safety_reserve")).map_err(|_| invalid())?;
+    if app_id == ollama::OWNER
+        && (cost.cpu_millicores.saturating_add(used.cpu_millicores) > capacity.cpu_millicores
+            || cost.gpu_slots.saturating_add(used.gpu_slots) > capacity.gpu_slots) {
+        return Err(Error(StatusCode::TOO_MANY_REQUESTS, "WAIT_COMPUTE_RESOURCE"));
+    }
     if queued || !cost.fits(&used, &capacity) || !cost.fits_guarded_with_policy(&used, &report, &reserve, options.force_admission) {
         let pending_stop: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM vrs_permits WHERE node=$1 AND state='suspect') OR EXISTS(SELECT 1 FROM vrs_reservations WHERE node=$1 AND state='suspect')")
             .bind(&id).fetch_one(&mut **tx).await.map_err(unavailable)?;
@@ -93,7 +99,7 @@ pub(super) async fn room(
 }
 
 // Refresh only local host RAM; never make stale CPU/GPU telemetry look fresh.
-fn admission_report(snapshot: &Value, memory: Option<i64>) -> Value {
+pub(super) fn admission_report(snapshot: &Value, memory: Option<i64>) -> Value {
     let mut report = snapshot.clone();
     if let Some(memory) = memory.filter(|n| *n >= 0) {
         report["memory_available_mib"] = json!(memory);

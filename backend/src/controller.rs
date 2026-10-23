@@ -472,6 +472,7 @@ pub async fn serve(
         .route("/inference-waiters", post(inference_queue::update))
         .route("/permits/{id}/renew", post(permit_renew))
         .route("/permits/{id}/reuse-resident", post(permit_reuse_resident))
+        .route("/permits/{id}/park-resident", post(permit_park_resident))
         .route("/permits/inspect", post(permit_inspect))
         .route("/permits/{id}/verify", post(permit_verify))
         .route("/permits/{id}/release", post(permit_release))
@@ -1239,7 +1240,7 @@ async fn permit_acquire(
         management::admit(&mut preflight,e,&p).await?;
         integrations::admit(&mut preflight,e).await?;
         preflight.commit().await.map_err(unavailable)?;
-        crate::router::yield_idle_model().await;
+        if p.app_id != ollama::OWNER { crate::router::yield_idle_model().await; }
     }
     let mut tx = a.db.begin().await.map_err(unavailable)?;
     let nodes = allocations::lock_nodes(&mut tx, e).await?;
@@ -1272,12 +1273,19 @@ async fn permit_acquire(
             json!({"permit_id":old.get::<String,_>("id"),"lease_seconds":30,"node_id":e.node_id}),
         ));
     }
+    if p.app_id == ollama::OWNER && !b.model_id.is_empty() {
+        let outstanding = sqlx::query("SELECT state,lease_until>now() AS valid FROM vrs_permits WHERE app=$1 AND node=$2 AND state<>'released' AND metadata->>'upstream_url'=$3 AND metadata->>'model_id'=$4 LIMIT 1")
+            .bind(&p.app_id).bind(&e.node_id).bind(&b.upstream_url).bind(&b.model_id).fetch_optional(&mut *tx).await.map_err(unavailable)?;
+        if let Some(existing) = outstanding {
+            return Err(Error(StatusCode::TOO_MANY_REQUESTS, if existing.get::<String, _>("state") == "active" && existing.get::<bool, _>("valid") { "WAIT_COMPUTE_RESOURCE" } else { "WAIT_STOP_CONFIRMATION" }));
+        }
+    }
     for part in e.allocations() {
         let node = nodes
             .iter()
             .find(|node| node.get::<String, _>("id") == part.node_id)
             .ok_or(invalid())?;
-        let local_memory = if std::env::var("SCHEDULER_EMBEDDED_AGENT").as_deref() != Ok("false")
+        let mut local_memory = if std::env::var("SCHEDULER_EMBEDDED_AGENT").as_deref() != Ok("false")
             && std::env::var_os("VOS_APP_VERSION").is_some()
             && a.config
                 .local_agent
@@ -1289,6 +1297,11 @@ async fn permit_acquire(
         } else {
             None
         };
+        if p.app_id == ollama::OWNER && e.placements.is_empty() {
+            let report = allocations::admission_report(&node.get("report"), local_memory);
+            let report = ollama::resident_report(&b.upstream_url, &b.model_id, &part.resources, &report).await;
+            local_memory = report["memory_available_mib"].as_i64();
+        }
         if let Err(error) = allocations::room(&mut tx, node, &part.resources, &e.id, local_memory, b.queue_id.as_deref(), &p.app_id, &b.scheduling).await {
             if error.0 == StatusCode::TOO_MANY_REQUESTS && scheduling::preempt(&mut tx, &part.node_id, &format!("permit:{}", key), &b.scheduling).await? {
                 management::audit(&mut tx, &p, "scheduling.preempt-request", &part.node_id).await?;
@@ -1421,6 +1434,9 @@ async fn permit_verify(
     if row.get::<String, _>("state") != "active" || !row.get::<bool, _>("valid") {
         return Err(Error(StatusCode::CONFLICT, "PERMIT_NOT_ACTIVE"));
     }
+    if metadata["resident_parked"] == true {
+        return Err(Error(StatusCode::CONFLICT, "PERMIT_RESIDENT_IDLE"));
+    }
     if metadata["upstream_url"] != b.upstream_url
         || metadata["model_id"] != b.model_id
         || metadata["execution_token_hash"]
@@ -1464,15 +1480,24 @@ struct ResidentReuse {
     model_id: String,
     execution_token: String,
     next_execution_token: String,
+    #[serde(default)]
+    scheduling: Scheduling,
 }
+async fn permit_park_resident(
+    State(a): State<App>, h: HeaderMap, Path(id): Path<String>, Json(b): Json<ResidentReuse>,
+) -> Api<Json<Value>> { permit_resident_transition(a, h, id, b, true).await }
 async fn permit_reuse_resident(
     State(a): State<App>,
     h: HeaderMap,
     Path(id): Path<String>,
     Json(b): Json<ResidentReuse>,
 ) -> Api<Json<Value>> {
+    permit_resident_transition(a, h, id, b, false).await
+}
+async fn permit_resident_transition(a: App, h: HeaderMap, id: String, b: ResidentReuse, park: bool) -> Api<Json<Value>> {
     let p = auth(&a, &h).await?;
     require(&p, "submitter")?;
+    let force_actor = if park { None } else { scheduling::authorize(&a, &p, &h, &b.scheduling).await? };
     if p.app_id != "com.ictrek.v-scheduler.ollama"
         || !(32..=128).contains(&b.next_execution_token.len())
         || b.execution_token == b.next_execution_token
@@ -1510,11 +1535,22 @@ async fn permit_reuse_resident(
         .bind(&id).bind(&p.app_id).bind(&e.id).fetch_optional(&mut *tx).await.map_err(unavailable)?
         .ok_or(Error(StatusCode::NOT_FOUND,"NOT_FOUND"))?;
     let mut metadata: Value = row.get("metadata");
+    let was_parked = metadata["resident_parked"] == true;
+    let current: Resources = if was_parked {
+        if metadata["resident_active_resources"] != json!(e.resources) {
+            return Err(Error(StatusCode::CONFLICT, "PERMIT_BINDING_MISMATCH"));
+        }
+        serde_json::from_value(metadata["resident_memory"].clone()).map_err(|_| invalid())?
+    } else { e.resources.clone() };
+    let parked = if park {
+        ollama::parked_resources(&b.upstream_url, &b.model_id, &e.resources, &nodes[0].get("report")).await
+            .ok_or(Error(StatusCode::CONFLICT, "NATIVE_RESIDENCY_NOT_CONFIRMED"))?
+    } else { current.clone() };
     integrations::stop_pending(&mut tx,&id).await?;
     if row.get::<String, _>("state") != "active"
         || !row.get::<bool, _>("valid")
         || row.get::<String, _>("node") != e.node_id
-        || row.get::<Value, _>("resources") != json!(e.resources)
+        || row.get::<Value, _>("resources") != json!(current)
         || metadata["upstream_url"] != b.upstream_url
         || metadata["model_id"] != b.model_id
         || !metadata["execution_id"].is_null()
@@ -1523,6 +1559,12 @@ async fn permit_reuse_resident(
     {
         return Err(Error(StatusCode::CONFLICT, "PERMIT_BINDING_MISMATCH"));
     }
+    if park && !ollama::native_idle(&b.upstream_url).await {
+        return Err(Error(StatusCode::CONFLICT, "NATIVE_COMPUTE_NOT_IDLE"));
+    }
+    // Idle models retain freshly verified materialized memory. Every promotion
+    // restores and rechecks the full execution budget before compute starts.
+    if !park {
     // Residency retains the same reservation, but never exempts the next
     // inference from a fresh capacity/pressure check. Its observed footprint is
     // already absent from free RAM/VRAM; only the remaining budget needs room.
@@ -1540,6 +1582,10 @@ async fn permit_reuse_resident(
         {
             used.add(&serde_json::from_value(row.get("resources")).map_err(|_| invalid())?);
         }
+        used.cpu_millicores += e.resources.cpu_millicores - current.cpu_millicores;
+        used.gpu_slots += e.resources.gpu_slots - current.gpu_slots;
+        used.memory_mib += e.resources.memory_mib - current.memory_mib;
+        used.gpu_memory_mib += e.resources.gpu_memory_mib - current.gpu_memory_mib;
         let mut report: Value = node.get("report");
         if std::env::var_os("VOS_APP_VERSION").is_some()
             && std::env::var("SCHEDULER_EMBEDDED_AGENT").as_deref() != Ok("false")
@@ -1555,9 +1601,14 @@ async fn permit_reuse_resident(
         }
         let reserve: Resources =
             serde_json::from_value(node.get("safety_reserve")).map_err(|_| invalid())?;
+        report = ollama::idle_report(&mut tx, &node_id, &report, Some(&id)).await?;
         report = ollama::resident_report(&b.upstream_url, &b.model_id, &e.resources, &report).await;
+        if used.cpu_millicores > capacity.cpu_millicores || used.gpu_slots > capacity.gpu_slots
+            || report["cpu_used_percent"].as_f64().is_some_and(|n| n >= 95.0) {
+            return Err(Error(StatusCode::TOO_MANY_REQUESTS, "WAIT_COMPUTE_RESOURCE"));
+        }
         if !Resources::default().fits(&used, &capacity)
-            || !Resources::default().fits_guarded(&used, &report, &reserve)
+            || !Resources::default().fits_guarded_with_policy(&used, &report, &reserve, b.scheduling.force_admission)
             || report["cpu_used_percent"]
                 .as_f64()
                 .is_some_and(|n| n >= 95.0)
@@ -1567,25 +1618,38 @@ async fn permit_reuse_resident(
     }
     // Warm reuse must not starve previously queued native background tasks.
     let queued: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM vrs_tasks WHERE node=$1 AND status='queued')",
+        "SELECT EXISTS(SELECT 1 FROM vrs_tasks WHERE node=$1 AND status='queued' AND vrs_priority(body->'scheduling')+floor(extract(epoch FROM (now()-created_at))/30)>=$2::bigint)",
     )
     .bind(&e.node_id)
+    .bind(b.scheduling.priority.score())
     .fetch_one(&mut *tx)
     .await
     .map_err(unavailable)?;
     if queued {
         return Err(Error(StatusCode::TOO_MANY_REQUESTS, "WAIT_RESOURCE"));
     }
+    }
+    if !park {
+        metadata["scheduling"] = json!(b.scheduling);
+        metadata["request_started_at"] = json!(Utc::now());
+        if let Some(operator) = &force_actor { management::audit(&mut tx, operator, "scheduling.force", &id).await?; }
+    }
+    metadata["resident_parked"] = json!(park);
+    if park {
+        metadata["resident_memory"] = json!(parked);
+        metadata["resident_active_resources"] = json!(e.resources);
+    }
     metadata["execution_token_hash"] = json!(format!(
         "{:x}",
         Sha256::digest(b.next_execution_token.as_bytes())
     ));
-    metadata["resident_reuses"] = json!(metadata["resident_reuses"].as_u64().unwrap_or(0) + 1);
+    if !park { metadata["resident_reuses"] = json!(metadata["resident_reuses"].as_u64().unwrap_or(0) + 1); }
     sqlx::query(
-        "UPDATE vrs_permits SET metadata=$2,lease_until=now()+interval '30 seconds' WHERE id=$1",
+        "UPDATE vrs_permits SET metadata=$2,lease_until=now()+interval '30 seconds',resources=$3 WHERE id=$1",
     )
     .bind(&id)
     .bind(metadata)
+    .bind(json!(if park { &parked } else { &e.resources }))
     .execute(&mut *tx)
     .await
     .map_err(unavailable)?;

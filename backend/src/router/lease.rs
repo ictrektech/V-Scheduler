@@ -149,7 +149,7 @@ pub(super) async fn call(
 ) -> Api<Value> {
     call_authorized(g, token, path, body, idempotent, None).await
 }
-async fn call_authorized(g: &Gateway, token: &str, path: &str, body: Value, idempotent: bool, operator: Option<&axum::http::HeaderValue>) -> Api<Value> {
+pub(super) async fn call_authorized(g: &Gateway, token: &str, path: &str, body: Value, idempotent: bool, operator: Option<&axum::http::HeaderValue>) -> Api<Value> {
     let mut req = axum::http::Request::builder()
         .method("POST")
         .uri(format!("/api/v1{path}"))
@@ -673,16 +673,26 @@ pub(super) async fn acquire(
                 }
             }
             ticket.heartbeat(&token, &executor).await?;
-            if !options.preemptible && !options.allow_preemption && !options.force_admission {
-              if let Some(mut lease) = residency::take(&g, approval, u, model).await? {
-                ticket.check()?;
-                lease.request_slot = request_slot.take();
-                return Ok(lease);
+            {
+              match residency::take(&g, approval, u, model, &options, operator).await {
+                Ok(Some(mut lease)) => {
+                    ticket.check()?;
+                    lease.request_slot = request_slot.take();
+                    return Ok(lease);
+                }
+                Err(error) if error.code.as_deref() == Some("WAIT_COMPUTE_RESOURCE") => {
+                    ticket.reason("WAIT_COMPUTE_RESOURCE");
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    continue;
+                }
+                Err(error) => return Err(error),
+                Ok(None) => (),
               }
             }
             body["queue_id"] = json!(ticket.id);
             match call_authorized(&g, &token, path, body.clone(), true, operator).await {
                 Err(error) if error.status == StatusCode::TOO_MANY_REQUESTS => {
+                    if residency::native_origin(u).is_some() && error.code.as_deref() != Some("WAIT_COMPUTE_RESOURCE") { residency::yield_idle(&g).await; }
                     ticket.reason(error.code.as_deref().unwrap_or("WAIT_RESOURCE"));
                     tokio::time::sleep(Duration::from_millis(200)).await;
                 }
@@ -704,13 +714,13 @@ pub(super) async fn acquire(
                     "inference queue has waiting requests; use bounded queue admission",
                 ));
             }
-            if !options.preemptible && !options.allow_preemption && !options.force_admission {
-              if let Some(lease) = residency::take(&g, approval, u, model).await? {
+            {
+              if let Some(lease) = residency::take(&g, approval, u, model, &options, operator).await? {
                 return Ok(lease);
               }
             }
         }
-        if options != crate::model::Scheduling::default() {
+        if options.force_admission {
             call_authorized(&g, &token, path, body, true, operator).await?
         } else { admit(&g, &token, path, body, Duration::from_secs(8)).await? }
     };

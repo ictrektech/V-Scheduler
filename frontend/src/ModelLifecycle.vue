@@ -25,9 +25,9 @@ onUnmounted(()=>{disposed=true;clearInterval(timer)})
   <p v-if="item.blockers?.includes('NO_LINKED_GATEWAY_SERVICE')">{{t('在推理服务中关联仓库模型，并将该服务注册到统一网关。下载完成不会自动部署外部推理后端。')}}</p>
   <div v-for="deployment in item.deployments" :key="deployment.service_id+'/'+deployment.native_model"><strong>{{deployment.service_id}}</strong><p><code>{{deployment.gateway_model}}</code></p><p>{{t(deployment.configured_callable?'接入就绪':'接入未就绪')}} · {{deployment.scheduler_state}} · {{deployment.route_state}}</p><p v-for="reason in deployment.blockers" :key="reason">{{t(reasons[reason]||reason)}}</p></div>
  </article><p v-if="!items.length&&!busy">{{t('暂无本地模型')}}</p></section>
- <section class="panel lifecycle"><h2>{{t('模型驻留与卸载')}}</h2><p>{{t('同模型连续调用复用已加载权重；切换模型或空闲到期后确认卸载。驻留期间保留完整资源预约。')}}</p>
+ <section class="panel lifecycle"><h2>{{t('模型驻留与卸载')}}</h2><p>{{t('QA、Embedding、Rerank 可同时驻留。空闲时保留已确认的模型内存，调用前重新申请完整计算预算；资源不足时按空闲先后卸载，到期仍确认卸载。')}}</p>
   <form @submit.prevent="save"><label>{{t('空闲保留秒数（0 为每次卸载）')}} <input v-model.number="seconds" type="number" min="0" max="600" required @input="editing=true"></label><button :disabled="busy">{{t('保存')}}</button></form>
-  <p v-if="policy?.resident">{{t('驻留模型')}}: {{policy.resident.model_id}} · {{policy.resident.idle_seconds}}s</p><p v-else>{{t('当前没有空闲驻留模型')}}</p>
+  <p v-for="resident in (policy?.residents || (policy?.resident ? [policy.resident] : []))" :key="resident.permit_id">{{t('驻留模型')}}: {{resident.upstream_id}} / {{resident.model_id}} · {{resident.idle_seconds}}s</p><p v-if="!policy?.resident && !policy?.residents?.length">{{t('当前没有空闲驻留模型')}}</p>
  </section>
 </template>
 <style scoped>.lifecycle{padding:22px;margin-bottom:18px}.lifecycle article{padding:15px 0;border-bottom:1px solid #e2e8f0}.lifecycle p{font-size:13px;color:#64748b;line-height:1.7}.lifecycle code{overflow-wrap:anywhere}.lifecycle form{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.lifecycle input{width:90px;padding:8px;border:1px solid #d6e0eb;border-radius:8px}</style>

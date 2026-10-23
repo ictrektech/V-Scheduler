@@ -343,7 +343,7 @@ async fn recover_stopped(a: &App, client: &reqwest::Client, role: &str) -> anyho
             continue;
         }
         let active: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM vrs_permits WHERE node=$1 AND state='active')",
+            "SELECT EXISTS(SELECT 1 FROM vrs_permits WHERE node=$1 AND state='active' AND COALESCE(metadata->>'resident_parked','false')<>'true')",
         )
         .bind(node)
         .fetch_one(&mut *tx)
@@ -449,5 +449,71 @@ mod tests {
             3072
         );
         assert!(!resources(8192 * 1048576, &capacity, true).fits(&Resources::default(), &capacity));
+    }
+}
+
+// Fixed owned native gateways expose the number of in-flight compute slots.
+// A completed client request alone is not proof that CPU/GPU compute is idle.
+pub(super) async fn native_idle(upstream: &str) -> bool {
+    let Some(role) = ["qa", "embedding", "rerank"].into_iter().find(|r| upstream == origin(r)) else { return false; };
+    let result = async {
+        let client = reqwest::Client::builder().timeout(Duration::from_secs(2)).redirect(reqwest::redirect::Policy::none()).build()?;
+        let response = client.get(format!("http://v-scheduler-ollama-{role}:11535/metrics")).send().await?;
+        super::app_bindings::bounded_json(response).await
+    }.await;
+    result.is_ok_and(|v| v["active_slots"].as_u64() == Some(0))
+}
+
+// Materialized memory is absent from host free RAM already. Credit only fresh
+// native evidence, bounded by each parked permit's still-retained memory budget.
+pub(super) async fn idle_report(tx: &mut Transaction<'_, Postgres>, node: &str, report: &Value, exclude: Option<&str>) -> Api<Value> {
+    let rows = sqlx::query("SELECT id,resources,metadata FROM vrs_permits WHERE node=$1 AND app=$2 AND state='active' AND metadata->>'resident_parked'='true'")
+        .bind(node).bind(OWNER).fetch_all(&mut **tx).await.map_err(unavailable)?;
+    let mut adjusted = report.clone();
+    for row in rows {
+        if exclude.is_some_and(|id| id == row.get::<String, _>("id")) { continue; }
+        let m: Value = row.get("metadata");
+        let resources: Resources = serde_json::from_value(row.get("resources")).map_err(|_| invalid())?;
+        adjusted = resident_report(m["upstream_url"].as_str().unwrap_or(""), m["model_id"].as_str().unwrap_or(""), &resources, &adjusted).await;
+    }
+    Ok(adjusted)
+}
+
+// The idle memory reservation is not zero: keep the observed native footprint,
+// rounded up, in its actual memory pool. Runtime workspace is reacquired before
+// the next computation; host pressure and safety reserves remain authoritative.
+pub(super) async fn parked_resources(upstream: &str, model: &str, cost: &Resources, report: &Value) -> Option<Resources> {
+    let role = ["qa", "embedding", "rerank"].into_iter().find(|r| upstream == origin(r))?;
+    let client = reqwest::Client::builder().timeout(Duration::from_secs(2)).redirect(reqwest::redirect::Policy::none()).build().ok()?;
+    let response = client.get(format!("http://v-scheduler-ollama-{role}:11434/api/ps")).send().await.ok()?;
+    let loaded = super::app_bindings::bounded_json(response).await.ok()?;
+    idle_cost(cost, report, model, &loaded)
+}
+fn idle_cost(cost: &Resources, report: &Value, model: &str, loaded: &Value) -> Option<Resources> {
+    let row = loaded["models"].as_array()?.iter().find(|r| r["name"] == model || r["model"] == model)?;
+    let size = row["size"].as_u64()?; let vram = row["size_vram"].as_u64()?;
+    if size == 0 || vram > size { return None; }
+    let mib = |n: u64| i64::try_from(n.checked_add(1048575)? / 1048576).ok();
+    let unified = report["gpus"].as_array().is_some_and(|g| g.iter().any(|v| v["memory_type"] == "unified"));
+    let idle = Resources {cpu_millicores:0, gpu_slots:0, memory_mib:mib(if unified {size} else {size-vram})?, gpu_memory_mib:if unified {0} else {mib(vram)?}};
+    idle.fits(&Resources::default(), cost).then_some(idle)
+}
+
+#[cfg(test)]
+mod idle_tests {
+    use super::*;
+    #[test]
+    fn idle_memory_is_rounded_bounded_and_uses_one_unified_pool() {
+        let cost=Resources{cpu_millicores:4000,memory_mib:4096,gpu_slots:1,gpu_memory_mib:0};
+        let report=json!({"gpus":[{"memory_type":"unified"}]});
+        let loaded=json!({"models":[{"name":"test","size":1073741825_u64,"size_vram":1073741825_u64}]});
+        let idle=idle_cost(&cost,&report,"test",&loaded).unwrap();
+        assert_eq!(idle.memory_mib,1025);assert_eq!(idle.cpu_millicores,0);assert_eq!(idle.gpu_slots,0);assert_eq!(idle.gpu_memory_mib,0);
+        assert!(idle_cost(&cost,&report,"missing",&loaded).is_none());
+        assert!(idle_cost(&cost,&report,"test",&json!({"models":[{"name":"test","size":u64::MAX,"size_vram":0}]})).is_none());
+        assert!(idle_cost(&cost,&report,"test",&json!({"models":[{"name":"test","size":1,"size_vram":2}]})).is_none());
+        let dedicated=Resources{gpu_memory_mib:4096,..cost.clone()};
+        let split=idle_cost(&dedicated,&json!({"gpus":[{"memory_type":"dedicated"}]}),"test",&loaded).unwrap();
+        assert_eq!(split.memory_mib,0);assert_eq!(split.gpu_memory_mib,1025);
     }
 }

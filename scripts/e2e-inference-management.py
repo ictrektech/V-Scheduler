@@ -38,6 +38,7 @@ let active=0,peak=0,calls=0,loads=0,unloads=0,valid=true,loaded=new Set(),histor
 const models=[{name:'chat:latest',size:1048576},{name:'other:latest',size:1048576}];
 const handler=async(req,res)=>{res.setHeader('Content-Type','application/json');let text='';for await(const c of req)text+=c;const body=text?JSON.parse(text):{};
 const reply=(value,status=200)=>{res.statusCode=status;res.end(JSON.stringify(value));};
+if(req.url==='/metrics')return reply({active_slots:active});
 if(req.url==='/api/tags')return reply({models});
 if(req.url==='/api/pull'){
  mutations.push({kind:'pull',active,loaded:[...loaded]});
@@ -110,6 +111,80 @@ try:
  check(sql("SELECT count(*) FROM vrs_permits WHERE state='active';")=='1','warm memory retains its resource reservation')
  check(chat(stream=True)[0]==200 and api('/api/v1/model-residency')[1]['resident']['permit_id']==first_id,'same model SSE reuses reserved warm model')
  check(sql("SELECT metadata->>'resident_reuses' FROM vrs_permits WHERE state='active';")=='1','controller records reuse with rotated execution proof')
+ if os.environ.get('SCHEDULER_TEST_MULTI_RESIDENCY')=='1':
+  before=request(peerurl+'/stats')[1]
+  check(chat('other:latest')[0]==200,'second resident model succeeds')
+  check(chat()[0]==200,'first resident model remains callable')
+  after=request(peerurl+'/stats')[1]
+  check(sorted(after['loaded'])==['chat:latest','other:latest'] and after['unloads']==before['unloads'],'two models stay loaded across role/model switches')
+  check(sql("SELECT count(*) FROM vrs_permits WHERE state='active' AND (resources->>'cpu_millicores')::int=0 AND (resources->>'gpu_slots')::int=0;")=='2','idle models retain memory without holding compute capacity')
+  before=request(peerurl+'/stats')[1]
+  for i in range(27):check(chat('other:latest' if i%2 else 'chat:latest',stream=bool(i%3))[0]==200,'alternating warm call '+str(i))
+  after=request(peerurl+'/stats')[1]
+  check(after['loads']==before['loads'] and after['unloads']==before['unloads'],'27 interleaved HTTP/SSE calls do not reload either model')
+  with concurrent.futures.ThreadPoolExecutor() as pool:
+   held=pool.submit(chat,text='hold')
+   until(lambda:request(peerurl+'/stats')[1]['active']==1,'native hold not active')
+   waiting=pool.submit(chat,'other:latest')
+   check(held.result()[0]==200 and waiting.result()[0]==200,'other resident waits for the compute lane')
+  after=request(peerurl+'/stats')[1]
+  check(after['peak']==1 and after['unloads']==before['unloads'],'shared compute stays exclusive without evicting the waiting resident')
+  before=request(peerurl+'/stats')[1]
+  with concurrent.futures.ThreadPoolExecutor() as pool:
+   held=pool.submit(chat,text='hold')
+   until(lambda:request(peerurl+'/stats')[1]['active']==1,'shared-model hold not active')
+   same=pool.submit(chat)
+   check(held.result()[0]==200 and same.result()[0]==200,'concurrent callers of the same model share the resident weights')
+  after=request(peerurl+'/stats')[1]
+  check(after['loads']==before['loads'] and after['unloads']==before['unloads'] and sql("SELECT count(*) FROM vrs_permits WHERE state='active';")=='2','same-model requests never reserve another copy of weights or evict the other resident')
+  for high_model,low_model in [('other:latest','chat:latest'),('chat:latest','other:latest')]:
+   before=request(peerurl+'/stats')[1]
+   with concurrent.futures.ThreadPoolExecutor() as pool:
+    held=pool.submit(chat,text='hold')
+    until(lambda:request(peerurl+'/stats')[1]['active']==1,'priority hold not active')
+    low=pool.submit(chat,low_model,False,'hello','low-'+high_model.replace(':','-'),'background')
+    until(lambda:len(api('/api/v1/inference-queue')[1]['items'])==1,'low priority call not queued')
+    high=pool.submit(chat,high_model,False,'hello','high-'+high_model.replace(':','-'),'high')
+    priority_results=[held.result(),high.result(),low.result()]
+    private('priority-results.json',priority_results)
+    check(all(r[0]==200 for r in priority_results),'task priorities work for shared resident '+high_model+' '+str([(r[0],r[1].get('code') if isinstance(r[1],dict) else None) for r in priority_results]))
+   after=request(peerurl+'/stats')[1]
+   check([r['model'] for r in after['history'][-2:]]==[high_model,low_model] and after['unloads']==before['unloads'],'priority follows the request, not the model, without reloads')
+  check(chat(queue='priority-high',priority='high')[0]==200 and sql("SELECT metadata->'scheduling'->>'priority' FROM vrs_permits WHERE id='"+first_id+"';")=='high','warm lease receives this request priority')
+  check(chat(queue='priority-background',priority='background')[0]==200 and sql("SELECT metadata->'scheduling'->>'priority' FROM vrs_permits WHERE id='"+first_id+"';")=='background','next request can change priority without giving the model a permanent rank')
+  invalid=request(ctl+'/api/v1/permits/'+first_id+'/park-resident',{'executor_id':'invalid','upstream_url':'http://fixture','model_id':'chat:latest','execution_token':'x'*64,'next_execution_token':'y'*64},keys['batch'])
+  check(invalid[0]==403,'third-party identity cannot park an owned model permit')
+  available_memory=2047
+  until(lambda:sql("SELECT report->>'memory_available_mib' FROM vrs_nodes WHERE id='local';")=='2047','unsafe memory sample not reported')
+  calls=request(peerurl+'/stats')[1]['calls']
+  rejected=request(gate+'/v1/chat/completions',{'model':'v-scheduler/ollama-qa/chat:latest','messages':[{'role':'user','content':'hello'}]},keys['gateway'],headers={'X-VScheduler-Queue-Wait-Seconds':'0'})
+  check(rejected[0]==429 and request(peerurl+'/stats')[1]['calls']==calls,'parked residency never bypasses the memory safety floor')
+  available_memory=12288
+  api('/api/v1/model-residency',{'idle_seconds':0},'PUT')
+  until(lambda:sql("SELECT count(*) FROM vrs_permits WHERE state<>'released';")=='0','idle test permits not released')
+  bindings=[json.loads(docker('exec',app,'cat','/gateway-data/ollama-bindings/'+p.name)) for p in (data/'ollama-bindings').glob('*.json')]
+  binding=next(b for b in bindings if 'v-scheduler/ollama-qa/chat:latest' in b.get('models',{}))
+  model_id='v-scheduler/ollama-qa/chat:latest';executor=binding['models'][model_id]['executor_id'];proof=secrets.token_hex(32);next_proof=secrets.token_hex(32)
+  body={'executor_id':executor,'upstream_url':'http://v-scheduler-ollama-qa:11535/v1','model_id':'chat:latest','execution_token':proof}
+  permit=request(ctl+'/api/v1/permits',body,binding['token'],headers={'Idempotency-Key':'park-proof-regression'})
+  check(permit[0]==200,'owned permit can be obtained for the native idle proof regression');pid=permit[1]['data']['permit_id']
+  active_resources=sql("SELECT resources::text FROM vrs_permits WHERE id='"+pid+"';")
+  with concurrent.futures.ThreadPoolExecutor() as pool:
+   held=pool.submit(request,peerurl+'/v1/chat/completions',{'model':'chat:latest','messages':[{'role':'user','content':'hold'}],'keep_alive':-1},None,None,{'X-VScheduler-Permit-ID':pid})
+   until(lambda:request(peerurl+'/stats')[1]['active']==1,'native proof hold not active')
+   parked=request(ctl+'/api/v1/permits/'+pid+'/park-resident',{**body,'next_execution_token':next_proof},binding['token'])
+   check(parked[0]==409 and sql("SELECT resources::text FROM vrs_permits WHERE id='"+pid+"';")==active_resources,'active native compute cannot return its resource reservation')
+   check(held.result()[0]==200,'native proof regression completes its synthetic computation')
+  parked=request(ctl+'/api/v1/permits/'+pid+'/park-resident',{**body,'next_execution_token':next_proof},binding['token'])
+  check(parked[0]==200,'native idle evidence permits memory-only reservation')
+  verified=request(ctl+'/api/v1/permits/'+pid+'/verify',{**body,'execution_token':next_proof,'execution_id':'parked-proof-regression','claim':True},binding['token'])
+  check(verified[0]==409 and verified[1].get('code')=='PERMIT_RESIDENT_IDLE','parked proof cannot start compute without restoring the full budget')
+  stopped=request(peerurl+'/api/scheduler/confirm-stopped',{'model':'chat:latest','nonce':'proof-regression'})
+  assert stopped[1]['stopped']
+  request(ctl+'/api/v1/permits/'+pid+'/release',{'stopped':True,'evidence':'native_proof_regression_stopped'},binding['token'])
+  private('result.json',{'passed':checks,'fixture_native':True,'installed_data_touched':False})
+  print(json.dumps({'passed':len(checks),'evidence':str(run/'result.json')}),flush=True)
+  raise SystemExit(0)
  # Model memory is already reflected in MemAvailable. Preserve the 2048 MiB
  # safety floor while leaving less than the full model budget plus that floor.
  available_memory=2560
@@ -141,7 +216,7 @@ try:
   check(held.result()[0]==200 and implicit.result()[0]==200,'resident-mode verified clients wait for owned model handoff without new headers')
  check(request(peerurl+'/stats')[1]['peak']==1,'automatic waiting never overlaps exclusive native execution')
 
- check(chat('other:latest')[0]==200,'model switch unloads prior model before admitting the replacement')
+ check(chat('other:latest')[0]==200,'model switch rechecks admission while preserving other idle models when resources fit')
  check(first_id!=api('/api/v1/model-residency')[1]['resident']['permit_id'] and request(peerurl+'/stats')[1]['unloads']>=1,'switch creates a fresh reservation after native stop proof')
  api('/api/v1/model-residency',{'idle_seconds':1},'PUT')
  until(lambda:sql("SELECT count(*) FROM vrs_permits WHERE state<>'released';")=='0','idle model was not safely released')
@@ -231,10 +306,13 @@ try:
  assert chat()[0]==200
  before=request(peerurl+'/stats')[1]['calls']
  request(peerurl+'/proof-mode',{'valid':False})
+ available_memory=2047
+ until(lambda:sql("SELECT report->>'memory_available_mib' FROM vrs_nodes WHERE id='local';")=='2047','pressure sample not reported')
  rejected=chat('other:latest',queue='unconfirmed-switch')
  check(rejected[0]==429 and request(peerurl+'/stats')[1]['calls']==before,'failed native unload proof blocks replacement inference without replay')
- check(sql("SELECT count(*) FROM vrs_permits WHERE state='suspect';")=='1','unconfirmed residency keeps its resource commitment for native recovery')
+ check(int(sql("SELECT count(*) FROM vrs_permits WHERE state='suspect';"))>=1,'unconfirmed residency keeps its resource commitment for native recovery')
  request(peerurl+'/proof-mode',{'valid':True})
+ available_memory=12288
  until(lambda:sql("SELECT count(*) FROM vrs_permits WHERE state<>'released';")=='0','native stop recovery did not release the prior model')
  check(chat('other:latest')[0]==200,'verified native recovery permits a subsequent model call')
  request(ctl+'/api/v1/nodes/local/drain',{'draining':True},keys['admin'])

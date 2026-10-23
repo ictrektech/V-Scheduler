@@ -32,7 +32,7 @@ pub(super) async fn preempt(tx: &mut Transaction<'_, Postgres>, node: &str, requ
     }
     // Synchronous requests cannot be replayed. Only their owning application
     // can confirm a cooperative stop, after which the caller may resubmit.
-    let victim = sqlx::query("SELECT p.id,p.executor FROM vrs_permits p WHERE p.node=$1 AND p.state='active' AND p.parent_attempt IS NULL AND p.metadata->'scheduling'->>'preemptible'='true' AND vrs_priority(p.metadata->'scheduling')+floor(extract(epoch FROM (now()-p.created_at))/30)<$2 AND NOT EXISTS(SELECT 1 FROM vrs_stop_requests s WHERE s.permit_id=p.id AND s.confirmed_at IS NULL) ORDER BY vrs_priority(p.metadata->'scheduling'),p.created_at DESC LIMIT 1 FOR UPDATE OF p")
+    let victim = sqlx::query("SELECT p.id,p.executor FROM vrs_permits p WHERE p.node=$1 AND p.state='active' AND p.parent_attempt IS NULL AND p.metadata->'scheduling'->>'preemptible'='true' AND vrs_priority(p.metadata->'scheduling')+floor(extract(epoch FROM (now()-COALESCE((p.metadata->>'request_started_at')::timestamptz,p.created_at)))/30)<$2 AND NOT EXISTS(SELECT 1 FROM vrs_stop_requests s WHERE s.permit_id=p.id AND s.confirmed_at IS NULL) ORDER BY vrs_priority(p.metadata->'scheduling'),p.created_at DESC LIMIT 1 FOR UPDATE OF p")
         .bind(node).bind(options.priority.score()).fetch_optional(&mut **tx).await.map_err(unavailable)?;
     let Some(victim) = victim else { return Ok(false); };
     let id: String = victim.get("id");
