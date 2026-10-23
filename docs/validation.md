@@ -547,3 +547,11 @@ AMD Rust 127 项、ARM Rust 129 项通过，各 1 项既有忽略。版本升级
 - 11 次真实组件调用（含同模型并发）均成功；跨模型交替后仍为三份原许可、相同原生进程，最低可用内存 4298 MiB。完整 HybRAG 上传、解析与摘要、向量/关键词检索、重排、RAG 回答两轮通过；第二轮不新增许可，三个模型保持驻留，结束后无 suspect 和原生在途计算。只创建并删除自有合成知识库与会话。
 - 实机两轮将 Embedding/Rerank 的 high/background 优先级交换：先排队的后台请求均等待后到高优先级请求先执行，证明优先级随任务而非模型固定。
 - 实测另外捕获既有校准参数问题：省略原生 `options.num_predict` 时较小 `max_tokens` 被批准上限覆盖。修复后补入请求 8 token 的回归断言，AMD64 128 项、ARM64 130 项再次通过，各 1 项既有忽略。该修复补发至后续版本并重新升级验证，不能将 0.0.71 镜像视为已包含。
+
+### 0.0.72 发布与 207 最终验收
+
+- [发布工作流](https://github.com/ictrektech/V-Scheduler/actions/runs/39887425901) 的 Release 与 App Store 作业均成功；[0.0.72 安装包](https://github.com/ictrektech/V-Scheduler/releases/tag/v0.0.72) SHA-256 为 `a65f2c8aaf3f1b736debfce7a8b9da36d1d889d38b9219dc96d5b472f2b5bd1f`。两种架构镜像均发布并写入飞书；ARM64 digest `8fe77ea137dbdcd8ecf9369e3989f54ecebfa8de327f89299392cf77d98014b0`，AMD64 digest `30030e2c3fa3b99095f7e6643d2771df16c412733ed95014b7017edc66c57cbe`。
+- 207 通过 VOS 官方应用升级完成 0.0.72，运行镜像 digest 与上述 ARM64 一致；原 L4T profile、安装参数和公共模型目录保持。上述三模型校准、1 GiB 系统预留、300 秒驻留策略均在升级后保留。
+- 在最终安装版本重跑：11 次真实组件调用全部成功；同模型并发与跨模型切换仍复用三份许可、相同原生进程，最低可用内存 4090 MiB。完整 HybRAG 文件上传、解析与摘要、检索重排、流式 RAG 回答全部成功；该业务链路不新建许可，直接复用三份驻留，结束可用内存 4065 MiB。
+- 最终版本再次通过两轮实机 high/background 请求交换测试；较晚到达的高优先级任务均先于已排队后台任务完成。申请 `max_tokens:8` 的真实 QA 请求最终输出恰为 8 token，没有被扩为模型默认上限。结束后保留三个空闲模型、原生计算槽为零、suspect 为零；所有自有测试知识库/会话已删除。
+- 实机证据位于测试机 `~/dev/build/V-Scheduler/hybrag-207-20261023/` 下的 `managed72.log`、`rag72.log`、`priority72.log`、`final-installed.json`。本轮业务验收针对 207 HybRAG 与内置三后端；不声称其他应用已逐一完成真实业务重测。
