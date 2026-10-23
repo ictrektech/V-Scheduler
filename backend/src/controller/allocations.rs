@@ -60,23 +60,24 @@ pub(super) async fn room(
         used.add(&serde_json::from_value(row.get("resources")).map_err(|_| invalid())?);
     }
     let queued: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM vrs_tasks t WHERE node=$1 AND status='queued' AND vrs_priority(t.body->'scheduling')+floor(extract(epoch FROM (now()-t.created_at))/30)>=COALESCE((SELECT priority+floor(extract(epoch FROM (now()-arrived_at))/30) FROM vrs_inference_waiters WHERE app=$2 AND id=$3 AND node=$1 AND executor=$4 AND valid_until>now()),$5))",
+        "SELECT EXISTS(SELECT 1 FROM vrs_tasks t WHERE node=$1 AND status='queued' AND vrs_priority(t.body->'scheduling')+floor(extract(epoch FROM (now()-t.created_at))/30)>=COALESCE((SELECT vrs_wait_priority(priority,force_admission,arrived_at) FROM vrs_inference_waiters WHERE app=$2 AND id=$3 AND node=$1 AND executor=$4 AND valid_until>now()),$5))",
     )
     .bind(&id)
     .bind(app_id)
     .bind(queue_id)
     .bind(executor)
-    .bind(options.priority.score())
+    .bind(options.score())
     .fetch_one(&mut **tx)
     .await
     .map_err(unavailable)?;
     let reserve: Resources =
         serde_json::from_value(node.get("safety_reserve")).map_err(|_| invalid())?;
-    if app_id == ollama::OWNER
-        && (cost.cpu_millicores.saturating_add(used.cpu_millicores) > capacity.cpu_millicores
-            || cost.gpu_slots.saturating_add(used.gpu_slots) > capacity.gpu_slots) {
+    if queued { return Err(Error(StatusCode::TOO_MANY_REQUESTS, "WAIT_TURN")); }
+    if cost.cpu_millicores.saturating_add(used.cpu_millicores) > capacity.cpu_millicores
+            || cost.gpu_slots.saturating_add(used.gpu_slots) > capacity.gpu_slots {
         return Err(Error(StatusCode::TOO_MANY_REQUESTS, "WAIT_COMPUTE_RESOURCE"));
     }
+    let queued = queued || inference_queue::ahead(tx, &id, app_id, queue_id, executor, options.score()).await?;
     if queued || !cost.fits(&used, &capacity) || !cost.fits_guarded_with_policy(&used, &report, &reserve, options.force_admission) {
         let pending_stop: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM vrs_permits WHERE node=$1 AND state='suspect') OR EXISTS(SELECT 1 FROM vrs_reservations WHERE node=$1 AND state='suspect')")
             .bind(&id).fetch_one(&mut **tx).await.map_err(unavailable)?;

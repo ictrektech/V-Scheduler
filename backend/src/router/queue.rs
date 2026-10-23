@@ -60,7 +60,7 @@ impl Queue {
         let entries: Vec<_> = self.ordered().into_iter().enumerate()
             .filter(|(_, e)| id.admin || e.owner == owner(id))
             .map(|(position, e)| json!({"request_id":e.id,"app_id":e.app,"model_id":e.model,
-                "priority":if e.priority==2 {"high"} else if e.priority==1 {"interactive"} else {"background"},
+                "force_admission":e.priority>=1_000_000,"priority":if e.priority>=2 {"high"} else if e.priority==1 {"interactive"} else {"background"},
                 "position":position+1,"wait_ms":e.created.elapsed().as_millis() as u64,"reason":e.reason}))
             .collect();
         json!({"items":entries,"durable":false,"max_wait_seconds":300,"aging_seconds":30})
@@ -108,6 +108,8 @@ pub(super) struct Ticket {
     pub id: String,
     deadline: Instant,
     priority: i64,
+    force: bool,
+    operator: Option<axum::http::HeaderValue>,
     shadow: Mutex<Option<(String, String, Instant)>>,
 }
 impl Ticket {
@@ -137,7 +139,7 @@ impl Ticket {
                 "queued inference requires a verified user or application identity",
             ));
         }
-        let priority = match headers
+        let mut priority = match headers
             .get("x-vscheduler-priority")
             .and_then(|v| v.to_str().ok())
             .unwrap_or("interactive")
@@ -152,6 +154,9 @@ impl Ticket {
                 ));
             }
         };
+        let options = scheduling(headers, id)?;
+        let normal_priority = priority;
+        if options.force_admission { priority = options.score(); }
         let request = headers
             .get("x-vscheduler-request-id")
             .and_then(|v| v.to_str().ok())
@@ -213,7 +218,9 @@ impl Ticket {
             g,
             id: request,
             deadline: Instant::now() + Duration::from_secs(wait),
-            priority,
+            priority: normal_priority,
+            force: options.force_admission,
+            operator: if options.force_admission { headers.get("authorization").cloned() } else { None },
             shadow: Mutex::new(None),
         }))
     }
@@ -227,12 +234,12 @@ impl Ticket {
         {
             return Ok(());
         }
-        lease::call(
+        lease::call_authorized(
             &self.g,
             token,
             "/inference-waiters",
-            json!({"id":self.id,"executor_id":executor,"priority":self.priority}),
-            false,
+            json!({"id":self.id,"executor_id":executor,"priority":self.priority,"force_admission":self.force}),
+            false, self.operator.as_ref(),
         )
         .await?;
         *self.shadow.lock().unwrap() = Some((token.into(), executor.into(), Instant::now()));

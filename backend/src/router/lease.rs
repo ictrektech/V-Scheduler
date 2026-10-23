@@ -678,7 +678,7 @@ pub(super) async fn acquire(
             }
             ticket.heartbeat(&token, &executor).await?;
             {
-              match residency::take(&g, approval, u, model, &options, operator).await {
+              match residency::take(&g, approval, u, model, &options, Some(&ticket.id), operator).await {
                 Ok(Some(mut lease)) => {
                     ticket.check()?;
                     lease.request_slot = request_slot.take();
@@ -719,7 +719,7 @@ pub(super) async fn acquire(
                 ));
             }
             {
-              if let Some(lease) = residency::take(&g, approval, u, model, &options, operator).await? {
+              if let Some(lease) = residency::take(&g, approval, u, model, &options, None, operator).await? {
                 return Ok(lease);
               }
             }

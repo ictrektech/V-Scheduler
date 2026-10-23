@@ -461,6 +461,7 @@ pub struct Scheduling {
     pub force_admission: bool,
 }
 impl Scheduling {
+    pub fn score(&self) -> i64 { if self.force_admission { 1_000_000 } else { self.priority.score() } }
     pub fn is_default(&self) -> bool { self == &Self::default() }
 }
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]

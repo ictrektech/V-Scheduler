@@ -46,6 +46,8 @@ defineProps<{t:(value:string)=>string}>()
   <p>{{t('force_admission 需要控制器再次核验管理员身份并审计；普通应用不能自行启用。通过 X-VScheduler-Admin-Authorization 临时交接当前管理员 token，不写入任务或重启回放。强制尝试仍保留实测预算、硬件容量、节点新鲜度、停止证明及至少 1 GiB 主机内存。')}}</p>
   <p>{{t('统一内存节点可由管理员明确配置 safety_reserve.memory_mib 为 1024；未配置节点保留自动余量。准入仍须满足本次实测预算、已有预约及安全保留，不能仅因剩余 1 GiB 就运行任意模型。')}}</p>
   <p>{{t('优先级属于本次请求或任务，不属于模型。已放行请求不受普通队列阻塞；其他请求按任务优先级和等待时间排序。同一后端实例的权重只保留一份，运行预算不足时排队。')}}</p>
+  <h3>{{t('原生应用统一等待准入')}}</h3>
+  <p>{{t('原生执行端通过 POST /scheduler/api/v1/permits/wait 申请准入，JSON 为 {"request":原 permits 请求,"wait_seconds":30}；默认等待 30 秒，X-VScheduler-Queue-Wait-Seconds 可设为 0..300，0 表示立即尝试。等待只保存身份与顺序，不预约模型权重，不启动或重放推理；超时返回 429 QUEUE_TIMEOUT。V-Voice、Desensitize、V-Sub 在本地执行锁之前进入统一队列，同一已批准原生进程只保留一条执行通道；不同进程的实际副本分别预算。授权强制请求先行，其后按本次任务优先级、等待老化和到达顺序执行。其他应用申请资源不会无条件卸载空闲 Ollama，只有内存不足才请求卸载，确认停止后才释放预算。')}}</p>
   <h3>{{t('模型驻留与卸载')}}</h3>
   <p>{{t('在模型仓库的「模型接入状态」设置空闲保留秒数，默认 60，范围 0..600；0 表示每次卸载。QA、Embedding、Rerank 可同时驻留，空闲时保留已确认内存；调用前恢复完整计算预算，资源不足才按空闲先后卸载。')}}</p>
   <p><code>GET /api/v1/model-residency</code> · <code>PUT /api/v1/model-residency</code> · <code>{"idle_seconds":60}</code></p>

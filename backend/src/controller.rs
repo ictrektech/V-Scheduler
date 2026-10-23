@@ -470,6 +470,7 @@ pub async fn serve(
         .route("/events", get(events))
         .route("/permits", post(permit_acquire).get(permits))
         .route("/inference-waiters", post(inference_queue::update))
+        .route("/permits/wait", post(inference_queue::acquire))
         .route("/permits/{id}/renew", post(permit_renew))
         .route("/permits/{id}/reuse-resident", post(permit_reuse_resident))
         .route("/permits/{id}/park-resident", post(permit_park_resident))
@@ -509,7 +510,7 @@ pub async fn serve(
 }
 async fn discovery() -> Json<Value> {
     ok(
-        json!({"protocol_version":1,"implementation_version":"0.1.0","features":["priority-scheduling-v1","cooperative-preemption-v1","admin-force-admission-v1","application-lifecycle-v1","cooperative-model-stop","tasks","idempotency","reservations","events","static-executors","dynamic-enrollment","node-management","modelinfer-discovery","vos-app-source-metrics","source-budget-planning","multi-node-permits","executor-approval","service-identities","agent-image-studio","permits","backend-permit-verification","permit-history","statistics","permit-release-times","interactive-inference-queue","managed-ollama-residency","model-service-linkage","task-timeline","delegated-permits","safety-headroom","retry","manual-delete","attempt-history"],"unsupported":["artifacts","ha","vos-remote-control"],"authentication":"scoped-bearer","max_body_bytes":262144,"openapi_url":"openapi.json"}),
+        json!({"protocol_version":1,"implementation_version":"0.1.0","features":["native-admission-queue-v1","shared-native-runtime-lane-v1","priority-scheduling-v1","cooperative-preemption-v1","admin-force-admission-v1","application-lifecycle-v1","cooperative-model-stop","tasks","idempotency","reservations","events","static-executors","dynamic-enrollment","node-management","modelinfer-discovery","vos-app-source-metrics","source-budget-planning","multi-node-permits","executor-approval","service-identities","agent-image-studio","permits","backend-permit-verification","permit-history","statistics","permit-release-times","interactive-inference-queue","managed-ollama-residency","model-service-linkage","task-timeline","delegated-permits","safety-headroom","retry","manual-delete","attempt-history"],"unsupported":["artifacts","ha","vos-remote-control"],"authentication":"scoped-bearer","max_body_bytes":262144,"openapi_url":"openapi.json"}),
     )
 }
 async fn executors(State(a): State<App>, h: HeaderMap) -> Api<Json<Value>> {
@@ -847,16 +848,6 @@ async fn claim(
     let p = auth(&a, &h).await?;
     worker(&p, &id)?;
     expire(&a).await?;
-    if a.config.local_agent.as_ref().and_then(|agent|agent["node_id"].as_str())==Some(id.as_str()) {
-        let queued:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM vrs_tasks t WHERE node=$1 AND status='queued' AND NOT EXISTS(SELECT 1 FROM vrs_inference_waiters w WHERE w.node=$1 AND w.valid_until>now() AND w.priority+floor(extract(epoch FROM (now()-w.arrived_at))/30)>vrs_priority(t.body->'scheduling')+floor(extract(epoch FROM (now()-t.created_at))/30)))")
-            .bind(&id).fetch_one(&a.db).await.map_err(unavailable)?;
-        if queued {
-            let current:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM vrs_nodes WHERE id=$1 AND session=$2)")
-                .bind(&id).bind(&b.session_id).fetch_one(&a.db).await.map_err(unavailable)?;
-            if !current {return Err(Error(StatusCode::CONFLICT,"WORKER_SESSION_CONFLICT"));}
-            crate::router::yield_idle_model().await;
-        }
-    }
     let mut tx = a.db.begin().await.map_err(unavailable)?;
     let node=sqlx::query("SELECT *,heartbeat>now()-interval '12 seconds' AS fresh FROM vrs_nodes WHERE id=$1 FOR UPDATE").bind(&id).fetch_one(&mut *tx).await.map_err(unavailable)?;
     if node.get::<Option<String>, _>("session").as_deref() != Some(&b.session_id) {
@@ -900,10 +891,11 @@ async fn claim(
         used.add(&serde_json::from_value(r.get("resources")).map_err(|_| invalid())?);
     }
     let queued=sqlx::query("SELECT * FROM vrs_tasks WHERE node=$1 AND status='queued' ORDER BY vrs_priority(body->'scheduling')+floor(extract(epoch FROM (now()-created_at))/30) DESC,created_at,id LIMIT 32 FOR UPDATE SKIP LOCKED").bind(&id).fetch_all(&mut *tx).await.map_err(unavailable)?;
+    let mut memory_pressure = false;
     for r in queued {
         let created:DateTime<Utc>=r.get("created_at");
-        let task_priority=scheduling::task_options(&r.get("body")).priority.score()+(Utc::now()-created).num_seconds().max(0)/30;
-        let ahead:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM vrs_inference_waiters WHERE node=$1 AND valid_until>now() AND priority+floor(extract(epoch FROM (now()-arrived_at))/30)>$2)")
+        let task_priority=scheduling::task_options(&r.get("body")).score()+(Utc::now()-created).num_seconds().max(0)/30;
+        let ahead:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM vrs_inference_waiters WHERE node=$1 AND valid_until>now() AND vrs_wait_priority(priority,force_admission,arrived_at)>$2)")
             .bind(&id).bind(task_priority).fetch_one(&mut *tx).await.map_err(unavailable)?;
         if ahead {continue;}
         let prior: bool = sqlx::query_scalar(
@@ -934,13 +926,17 @@ async fn claim(
         if !probe_ready(&node.get::<Value, _>("report"), &e.id) {
             continue;
         }
+        if e.resources.cpu_millicores.saturating_add(used.cpu_millicores) > capacity.cpu_millicores
+            || e.resources.gpu_slots.saturating_add(used.gpu_slots) > capacity.gpu_slots { continue; }
         if !e.resources.fits(&used, &capacity) {
+            memory_pressure = true;
             continue;
         }
-        let observed: Value = node.get("report");
+        let observed = ollama::idle_report(&mut tx, &id, &node.get("report"), None).await?;
         let reserve: Resources =
             serde_json::from_value(node.get("safety_reserve")).map_err(|_| invalid())?;
         if !e.resources.fits_guarded_with_policy(&used, &observed, &reserve, scheduling::task_options(&body).force_admission) {
+            memory_pressure |= observed["cpu_used_percent"].as_f64().is_none_or(|v|v<95.0);
             continue;
         }
         let task: String = r.get("id");
@@ -969,6 +965,7 @@ async fn claim(
         return Ok(ok(json!({"commands":[command(&row)]})));
     }
     tx.commit().await.map_err(unavailable)?;
+    if memory_pressure && a.config.local_agent.as_ref().and_then(|agent|agent["node_id"].as_str()) == Some(id.as_str()) { crate::router::yield_idle_model().await; }
     Ok(ok(json!({"commands":[]})))
 }
 #[derive(Deserialize)]
@@ -1132,7 +1129,7 @@ async fn report(
     Ok(ok(json!({"status":status})))
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct PermitRequest {
     #[serde(default)]
@@ -1199,6 +1196,10 @@ async fn permit_inspect(
         json!({"outstanding_permits":outstanding,"binding_ready":true,"node_ready":ready,"resource_admission":"checked-at-request-time"}),
     ))
 }
+fn native_singleton(upstream: &str) -> bool {
+    matches!(upstream.trim_end_matches('/'), "http://v-voice-backend:7070/v1" | "http://v-music-backend:7080/v1" | "http://desensitize-backend:5000/v1")
+        || (upstream.starts_with("http://v-sub-backend:7090/inference/") && upstream.ends_with("/v1"))
+}
 async fn permit_acquire(
     State(a): State<App>,
     h: HeaderMap,
@@ -1232,16 +1233,6 @@ async fn permit_acquire(
     if !approved_upstream(e, &b.upstream_url) || b.model_id.len() > 512 {
         return Err(Error(StatusCode::FORBIDDEN, "UPSTREAM_NOT_APPROVED"));
     }
-    if a.config.local_agent.as_ref().and_then(|agent|agent["node_id"].as_str())
-        .is_some_and(|local|e.allocations().iter().any(|part|part.node_id==local)) {
-        // This is an authorization preflight for idle unloading, not resource
-        // admission. Recheck under node locks after the native exit barrier.
-        let mut preflight=a.db.begin().await.map_err(unavailable)?;
-        management::admit(&mut preflight,e,&p).await?;
-        integrations::admit(&mut preflight,e).await?;
-        preflight.commit().await.map_err(unavailable)?;
-        if p.app_id != ollama::OWNER { crate::router::yield_idle_model().await; }
-    }
     let mut tx = a.db.begin().await.map_err(unavailable)?;
     let nodes = allocations::lock_nodes(&mut tx, e).await?;
     management::admit(&mut tx, e, &p).await?;
@@ -1273,6 +1264,18 @@ async fn permit_acquire(
             json!({"permit_id":old.get::<String,_>("id"),"lease_seconds":30,"node_id":e.node_id}),
         ));
     }
+    if native_singleton(&b.upstream_url) {
+        let occupied: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM vrs_permits WHERE node=$1 AND state<>'released' AND metadata->>'upstream_url'=$2)")
+            .bind(&e.node_id).bind(&b.upstream_url).fetch_one(&mut *tx).await.map_err(unavailable)?;
+        if occupied {
+            if scheduling::preempt(&mut tx, &e.node_id, &format!("permit:{}", key), &b.scheduling).await? {
+                management::audit(&mut tx, &p, "scheduling.preempt-request", &e.node_id).await?;
+                tx.commit().await.map_err(unavailable)?;
+                return Err(Error(StatusCode::TOO_MANY_REQUESTS, "WAIT_STOP_CONFIRMATION"));
+            }
+            return Err(Error(StatusCode::TOO_MANY_REQUESTS, "WAIT_COMPUTE_RESOURCE"));
+        }
+    }
     if p.app_id == ollama::OWNER && !b.model_id.is_empty() {
         let outstanding = sqlx::query("SELECT state,lease_until>now() AS valid FROM vrs_permits WHERE app=$1 AND node=$2 AND state<>'released' AND metadata->>'upstream_url'=$3 AND metadata->>'model_id'=$4 LIMIT 1")
             .bind(&p.app_id).bind(&e.node_id).bind(&b.upstream_url).bind(&b.model_id).fetch_optional(&mut *tx).await.map_err(unavailable)?;
@@ -1303,10 +1306,17 @@ async fn permit_acquire(
             local_memory = report["memory_available_mib"].as_i64();
         }
         if let Err(error) = allocations::room(&mut tx, node, &part.resources, &e.id, local_memory, b.queue_id.as_deref(), &p.app_id, &b.scheduling).await {
-            if error.0 == StatusCode::TOO_MANY_REQUESTS && scheduling::preempt(&mut tx, &part.node_id, &format!("permit:{}", key), &b.scheduling).await? {
+            if error.0 == StatusCode::TOO_MANY_REQUESTS && error.1 != "WAIT_TURN" && scheduling::preempt(&mut tx, &part.node_id, &format!("permit:{}", key), &b.scheduling).await? {
                 management::audit(&mut tx, &p, "scheduling.preempt-request", &part.node_id).await?;
                 tx.commit().await.map_err(unavailable)?;
                 return Err(Error(StatusCode::TOO_MANY_REQUESTS, "WAIT_STOP_CONFIRMATION"));
+            }
+            // Drop node locks before asking the native model to exit. Waiting
+            // for a compute lane or queue turn must not evict idle weights.
+            let reclaim = matches!(error.1, "WAIT_RESOURCE" | "WAIT_MEMORY_HEADROOM" | "WAIT_OBSERVED_PRESSURE");
+            tx.rollback().await.map_err(unavailable)?;
+            if reclaim && a.config.local_agent.as_ref().and_then(|agent|agent["node_id"].as_str()) == Some(part.node_id.as_str()) {
+                crate::router::yield_idle_model().await;
             }
             return Err(error);
         }
@@ -1482,6 +1492,8 @@ struct ResidentReuse {
     next_execution_token: String,
     #[serde(default)]
     scheduling: Scheduling,
+    #[serde(default)]
+    queue_id: Option<String>,
 }
 async fn permit_park_resident(
     State(a): State<App>, h: HeaderMap, Path(id): Path<String>, Json(b): Json<ResidentReuse>,
@@ -1621,11 +1633,11 @@ async fn permit_resident_transition(a: App, h: HeaderMap, id: String, b: Residen
         "SELECT EXISTS(SELECT 1 FROM vrs_tasks WHERE node=$1 AND status='queued' AND vrs_priority(body->'scheduling')+floor(extract(epoch FROM (now()-created_at))/30)>=$2::bigint)",
     )
     .bind(&e.node_id)
-    .bind(b.scheduling.priority.score())
+    .bind(b.scheduling.score())
     .fetch_one(&mut *tx)
     .await
     .map_err(unavailable)?;
-    if queued {
+    if queued || inference_queue::ahead(&mut tx, &e.node_id, &p.app_id, b.queue_id.as_deref(), &e.id, b.scheduling.score()).await? {
         return Err(Error(StatusCode::TOO_MANY_REQUESTS, "WAIT_RESOURCE"));
     }
     }

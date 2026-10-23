@@ -174,6 +174,7 @@ pub(super) async fn take(
     u: &Upstream,
     model: &str,
     options: &crate::model::Scheduling,
+    queue_id: Option<&str>,
     operator: Option<&axum::http::HeaderValue>,
 ) -> Api<Option<lease::Lease>> {
     let mut cache = g.residency.cached.lock().await;
@@ -199,7 +200,7 @@ pub(super) async fn take(
             &resident.lease.token,
             &format!("/permits/{}/reuse-resident", resident.lease.id),
             json!({"executor_id":resident.lease.executor,"upstream_url":u.base_url,"model_id":model,
-                "execution_token":resident.lease.proof,"next_execution_token":proof,"scheduling":options}),
+                "execution_token":resident.lease.proof,"next_execution_token":proof,"scheduling":options,"queue_id":queue_id}),
             false, operator,
         )
         .await;

@@ -79,7 +79,8 @@ try:
  pg=launch('pg','--env-file',str(private('pg.env',f'POSTGRES_USER=postgres\nPOSTGRES_DB=test\nPOSTGRES_PASSWORD={keys["db"]}\n')),os.environ.get('SCHEDULER_TEST_PG_IMAGE','postgres:18'))
  until(lambda:'accepting connections' in docker('exec',pg,'pg_isready','-U','postgres'),'PG not ready')
  peer=launch('peer','--network-alias','v-scheduler-ollama-qa','--network-alias','v-scheduler-ollama-embedding','--network-alias','v-scheduler-ollama-rerank','-v',f'{fixture}:/fixture.mjs:ro','--entrypoint','node',os.environ.get('SCHEDULER_TEST_NODE_IMAGE','node:24-bookworm-slim'),'/fixture.mjs')
- config=private('config/controller.json',{'principals':[{'token':keys['admin'],'role':'admin','app_id':'test'},{'token':keys['worker'],'role':'worker','node_id':'local','app_id':'worker'},{'token':keys['batch'],'role':'submitter','app_id':'batch'}],'nodes':[{'id':'local','capacities':{'cpu_millicores':1000,'memory_mib':8192}}],'executors':[{'id':'batch.fixture','contract_version':'1','task_type':'batch.test','node_id':'local','app_id':'batch','resources':{'cpu_millicores':1000,'memory_mib':128},'retry_mode':'none','max_attempts':1},{'id':'batch.infer','contract_version':'1','task_type':'model.infer','node_id':'local','app_id':'batch','upstream_urls':['http://fixture:9999/v1'],'resources':{'cpu_millicores':1000,'memory_mib':128}}],'local_agent':{'node_id':'local','automatic_capacity':False,'executors':[]}})
+ native_fixture_url='http://v-voice-backend:7070/v1' if os.environ.get('SCHEDULER_TEST_NATIVE_QUEUE')=='1' else 'http://fixture:9999/v1'
+ config=private('config/controller.json',{'principals':[{'token':keys['admin'],'role':'admin','app_id':'test'},{'token':keys['worker'],'role':'worker','node_id':'local','app_id':'worker'},{'token':keys['batch'],'role':'submitter','app_id':'batch'}],'nodes':[{'id':'local','capacities':{'cpu_millicores':3000 if os.environ.get('SCHEDULER_TEST_NATIVE_QUEUE')=='1' else 1000,'memory_mib':8192}}],'executors':[{'id':'batch.fixture','contract_version':'1','task_type':'batch.test','node_id':'local','app_id':'batch','resources':{'cpu_millicores':1000,'memory_mib':128},'retry_mode':'none','max_attempts':1},{'id':'batch.infer','contract_version':'1','task_type':'model.infer','node_id':'local','app_id':'batch','upstream_urls':[native_fixture_url],'resources':{'cpu_millicores':1000,'memory_mib':128}}],'local_agent':{'node_id':'local','automatic_capacity':False,'executors':[]}})
  data=run/'data';data.mkdir(mode=0o700)
  models=run/'models';(models/'registry').mkdir(parents=True,mode=0o700)
  private('models/registry/models.json',{'ollama://chat:latest':{'model_id':'ollama://chat:latest','name':'Chat','source':'ollama','status':'ready','size':1048576},'hf://fixture/weights':{'model_id':'hf://fixture/weights','name':'Selected weights','source':'hf','status':'ready','files':['weights.gguf'],'path':'/models/export/hf/fixture/weights/current'}})
@@ -111,6 +112,45 @@ try:
  check(sql("SELECT count(*) FROM vrs_permits WHERE state='active';")=='1','warm memory retains its resource reservation')
  check(chat(stream=True)[0]==200 and api('/api/v1/model-residency')[1]['resident']['permit_id']==first_id,'same model SSE reuses reserved warm model')
  check(sql("SELECT metadata->>'resident_reuses' FROM vrs_permits WHERE state='active';")=='1','controller records reuse with rotated execution proof')
+ if os.environ.get('SCHEDULER_TEST_NATIVE_QUEUE')=='1':
+  api('/api/v1/model-residency',{'idle_seconds':0},'PUT')
+  until(lambda:sql("SELECT count(*) FROM vrs_permits WHERE state<>'released';")=='0','initial resident not stopped')
+  def native_body(priority='interactive',force=False):
+   return {'executor_id':'batch.infer','upstream_url':native_fixture_url,'model_id':'shared-native-fixture','execution_token':secrets.token_hex(32),'scheduling':{'priority':priority,'force_admission':force}}
+  held=request(ctl+'/api/v1/permits',native_body(),keys['batch'],headers={'Idempotency-Key':'native-held'})
+  assert held[0]==200,held
+  order=[]
+  def queued(label,priority,force=False):
+   result=request(ctl+'/api/v1/permits/wait',{'request':native_body(priority,force),'wait_seconds':5},keys['batch'],headers={'Idempotency-Key':label,**({'X-VScheduler-Admin-Authorization':'Bearer '+keys['admin']} if force else {})})
+   if result[0]==200:
+    order.append(label)
+    request(ctl+'/api/v1/permits/'+result[1]['data']['permit_id']+'/release',{'stopped':True,'evidence':'inference_request_not_started'},keys['batch'])
+   return result
+  with concurrent.futures.ThreadPoolExecutor() as pool:
+   low=pool.submit(queued,'native-low','background')
+   until(lambda:int(sql("SELECT count(*) FROM vrs_inference_waiters;"))==1,'native application did not enter the waiting queue',seconds=8)
+   high=pool.submit(queued,'native-high','high')
+   until(lambda:int(sql("SELECT count(*) FROM vrs_inference_waiters;"))==2,'high priority native application did not queue')
+   forced=pool.submit(queued,'native-forced','background',True)
+   until(lambda:int(sql("SELECT count(*) FROM vrs_inference_waiters;"))==3,'authorized forced native application did not queue')
+   check(sql("SELECT count(*) FROM vrs_permits WHERE state='active';")=='1','waiting native requests reserve no duplicate model memory')
+   request(ctl+'/api/v1/permits/'+held[1]['data']['permit_id']+'/release',{'stopped':True,'evidence':'inference_request_not_started'},keys['batch'])
+   outcomes=[low.result(),high.result(),forced.result()]
+   check(all(r[0]==200 for r in outcomes),'native applications complete bounded admission without retrying inference')
+  check(order==['native-forced','native-high','native-low'],'authorized force first, then task priority, regardless of model identity')
+  until(lambda:sql("SELECT count(*) FROM vrs_inference_waiters;")=='0','native queue hints not cleaned')
+  check(sql("SELECT count(*) FROM vrs_permits WHERE state<>'released';")=='0','native queue completion releases every test permit')
+  denied=request(ctl+'/api/v1/permits/wait',{'request':native_body('high',True),'wait_seconds':1},keys['batch'],headers={'Idempotency-Key':'native-force-denied'})
+  check(denied[0]==403,'native force cannot be enabled by an ordinary application')
+  held=request(ctl+'/api/v1/permits',native_body(),keys['batch'],headers={'Idempotency-Key':'native-timeout-held'})
+  timed=request(ctl+'/api/v1/permits/wait',{'request':native_body(),'wait_seconds':1},keys['batch'],headers={'Idempotency-Key':'native-timeout'})
+  check(timed[0]==429 and timed[1]['code']=='QUEUE_TIMEOUT','native admission deadline does not start computation')
+  until(lambda:sql("SELECT count(*) FROM vrs_inference_waiters;")=='0','timed out hint not cleaned')
+  request(ctl+'/api/v1/permits/'+held[1]['data']['permit_id']+'/release',{'stopped':True,'evidence':'inference_request_not_started'},keys['batch'])
+  check(request(ctl+'/api/v1/permits/wait',{'request':native_body(),'wait_seconds':301},keys['batch'],headers={'Idempotency-Key':'native-invalid-wait'})[0]==422,'native admission wait is bounded')
+  private('result.json',{'passed':checks,'fixture_native':True,'installed_data_touched':False})
+  print(json.dumps({'passed':len(checks),'evidence':str(run/'result.json')}),flush=True)
+  raise SystemExit(0)
  if os.environ.get('SCHEDULER_TEST_MULTI_RESIDENCY')=='1':
   before=request(peerurl+'/stats')[1]
   check(chat('other:latest')[0]==200,'second resident model succeeds')
@@ -292,14 +332,18 @@ try:
  # Unmodified clients acquire a permit directly through the controller.
  api('/api/v1/model-residency',{'idle_seconds':30},'PUT')
  assert chat()[0]==200 and api('/api/v1/model-residency')[1]['resident']
+ before_native=request(peerurl+'/stats')[1]
  direct=request(ctl+'/api/v1/permits',{'executor_id':'batch.infer','upstream_url':'http://fixture:9999/v1','model_id':'direct-fixture','execution_token':secrets.token_hex(32)},keys['batch'],headers={'Idempotency-Key':'direct-after-residency'})
- check(direct[0]==200,'existing direct permit clients trigger idle unloading before resource admission')
+ check(direct[0]==200,'direct permit admission succeeds when the idle resident leaves enough memory')
+ check(request(peerurl+'/stats')[1]['unloads']==before_native['unloads'],'direct native admission preserves fitting idle Ollama weights')
  request(ctl+'/api/v1/permits/'+direct[1]['data']['permit_id']+'/release',{'stopped':True,'evidence':'inference_request_not_started'},keys['batch'])
  assert chat()[0]==200
+ before_native=request(peerurl+'/stats')[1]
  batch_again=request(ctl+'/api/v1/tasks',{**task_body,'app_task_id':'batch-after-warm'},keys['batch'],headers={'Idempotency-Key':'batch-after-warm'})
  assert batch_again[0]==202
  next_command=until(lambda:(lambda r:r[1].get('data',{}).get('commands',[]))(request(ctl+'/api/v1/workers/local/commands/claim',{'session_id':'feature-test'},keys['worker'])),'native worker did not yield the idle model')[0]
- check(next_command['task_id']==batch_again[1]['data']['task_id'],'native task polling also unloads idle residency before assigning work')
+ check(next_command['task_id']==batch_again[1]['data']['task_id'],'native task polling admits work after resource and stop-proof checks')
+ check(request(peerurl+'/stats')[1]['unloads']==before_native['unloads'],'native task admission preserves fitting idle Ollama weights')
  request(ctl+'/api/v1/attempts/'+next_command['attempt_id']+'/report',{'session_id':'feature-test','fence':next_command['fence'],'status':'succeeded','stopped':True,'result':{}},keys['worker'])
  # A fabricated/failed native stop receipt must never free the warm reservation.
  api('/api/v1/model-residency',{'idle_seconds':30},'PUT')

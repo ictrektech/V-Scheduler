@@ -3588,6 +3588,113 @@
           "zh-TW": "內建 Ollama 閒置駐留轉換"
         }
       }
+    },
+    "/permits/wait": {
+      "post": {
+        "operationId": "waitForNativePermit",
+        "summary": "Wait for native inference admission without starting inference",
+        "x-title": {
+          "zh-CN": "申请在线许可",
+          "en": "Acquire online permit",
+          "zh-TW": "申請線上許可"
+        },
+        "x-description": {
+          "zh-CN": "网关创建 HTTP、SSE、WebSocket 或异步模型工作前申请资源。executor_id 与 upstream_url 必须匹配已批准执行器及真实节点；model_id 用于审计，预算来自固定模板。节点离线、遥测过期、排空、系统余量或预约不足时拒绝，不得失败后直跑。异步任务确认不是停止证据。云端供应商不调用此接口。",
+          "en": "Admit HTTP, SSE, WebSocket or asynchronous model creation before computation. executor_id and upstream_url must match an approved executor on the actual node; model_id is recorded for audit. Fixed budgets, fresh telemetry and system headroom gate admission. An async receipt is not stop evidence. Cloud providers do not call this API.",
+          "zh-TW": "網關建立 HTTP、SSE、WebSocket 或非同步模型工作前申請資源。executor_id 與 upstream_url 須匹配已核准執行器及實際節點；model_id 用於稽核，預算來自固定範本。節點離線、遙測過期、排空、系統餘量或預約不足時拒絕。非同步任務確認不是停止證據。雲端供應商不呼叫此介面。"
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-role": "submitter",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "description": "Role or app scope denied"
+          },
+          "404": {
+            "description": "Not found or not visible"
+          },
+          "409": {
+            "description": "State or idempotency conflict"
+          },
+          "422": {
+            "description": "Invalid request"
+          },
+          "429": {
+            "description": "Resource busy or queue quota"
+          },
+          "503": {
+            "description": "Temporarily unavailable"
+          }
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-VScheduler-Admin-Authorization",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only for force_admission: Bearer VOS administrator token; never persist it in a task or replay it after restart."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "request",
+                  "wait_seconds"
+                ],
+                "properties": {
+                  "request": {
+                    "$ref": "#/components/schemas/PermitRequest"
+                  },
+                  "wait_seconds": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 300
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-example": {
+          "executor_id": "v-router.local.infer",
+          "upstream_url": "http://model-service:8000",
+          "model_id": "approved-model"
+        },
+        "description": "Same scoped identity, Idempotency-Key and administrator proof as POST /permits. Waiters reserve no resources. The request contains admission metadata only; never inference payloads. Waiting is bounded to 0..300 seconds; 0 attempts immediate admission. A timeout returns 429 QUEUE_TIMEOUT. No inference is replayed."
+      }
     }
   },
   "components": {
