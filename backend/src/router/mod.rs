@@ -478,7 +478,13 @@ pub(crate) async fn builtin_model_action(
         "enable model idle retention before starting a resident model"
     );
     let qualified = format!("v-scheduler/ollama-{role}/{model}");
+    let decision = {
+        let r=g.registry.lock().unwrap();
+        r.upstreams.get(&format!("v-scheduler/ollama-{role}")).is_some_and(|u|
+            r.models.get(&u.id).is_some_and(|rows|rows.iter().any(|m|m.id==model && registry::supports(u,m,"/systemone"))))
+    };
     let (suffix, body) = match role {
+        _ if decision => ("systemone",json!({"model":qualified,"state":"warmup","questions":{"ready":{"type":"noul","instructions":"Does the state contain the word warmup?"}}})),
         "embedding" => ("embeddings", json!({"model":qualified,"input":"warmup"})),
         "rerank" => (
             "rerank",
