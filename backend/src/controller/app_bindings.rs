@@ -675,6 +675,8 @@ fn safe_failure(error: &anyhow::Error) -> &'static str {
         "credential epoch cannot roll back",
         "invalid measured resources",
         "measurement and stop evidence required",
+        "native input bounds required",
+        "native GPU measurement required",
         "duplicate model calibration",
         "application binding waits for active or unknown execution",
         "application executor was disabled or changed",
