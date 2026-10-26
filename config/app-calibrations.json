@@ -911,6 +911,67 @@
         "video_frames": 0,
         "num_frames": 0
       }
+    },
+    {
+      "app_id": "com.ictrek.v-yue2",
+      "architecture": "x86_64",
+      "profile": "amd",
+      "hardware": [
+        {
+          "name": "NVIDIA RTX 5880 Ada Generation",
+          "memory_type": "dedicated"
+        }
+      ],
+      "execution_settings": {
+        "clamp_fp16": true,
+        "concurrency": 1,
+        "cpu_threads": 8,
+        "engine_admission": "permit-before-native-start-v1",
+        "engine_commit": "c8516dbf44d660cca40d3f420c67063e37ec8258",
+        "engine_sha256": "4805f5d6955dcaaabaaf5db7419c5752c00d43369dc1765a65eb8dfb3b91b84e",
+        "flash_attention": true,
+        "keep_loaded": false,
+        "max_batch": 1,
+        "max_seq": 8192,
+        "model_manifest_sha256": "c67d200cbd57f7e5626242f151eee535568fd7ac1cf5f756b7542c09c409438c",
+        "native_parent_guard": "dedicated-spawn-thread-v1",
+        "runtime": "yue2-cpp-v1",
+        "vae_core": 512,
+        "vae_halo": 16
+      },
+      "model_id": "yue2-q8",
+      "task_type": "model.infer",
+      "resources": {
+        "cpu_millicores": 8000,
+        "memory_mib": 8192,
+        "gpu_slots": 1,
+        "gpu_memory_mib": 6144
+      },
+      "evidence": {
+        "id": "yue2-amd-24cbd5f93c9794d4bf03061d",
+        "candidate_image_id": "sha256:234ec94a52a2e059d9db293bf3189c5a14bd3b48efa1fd98c8871b076757c1f9",
+        "peak_memory_mib": 3864,
+        "cgroup_sample_peak_mib": 2103,
+        "host_available_drop_mib": 1761,
+        "peak_gpu_memory_mib": 3934,
+        "observed_peak_cpu_millicores": 3915,
+        "memory_method": "200ms memory.current samples plus host available-memory decrease; conservative sum may overlap; kernel memory.peak unavailable",
+        "confirmed_stopped": true,
+        "validated_cases": [
+          "queued-no-native",
+          "10-second-generation",
+          "120-second-32-step-full-planner-max-input",
+          "application-cancel",
+          "scheduler-stop-nonce"
+        ]
+      },
+      "max_input_bytes": 65536,
+      "model_limits": {
+        "duration_seconds": 120,
+        "steps": 32,
+        "prompt_characters": 1024,
+        "lyrics_characters": 4096
+      }
     }
   ]
 }

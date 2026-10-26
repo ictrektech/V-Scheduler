@@ -51,6 +51,10 @@ v-YuE2 自己管理业务异步 job，Go broker 在启动账户的原生引擎�
 
 运行时 broker 先认领 permit，再启动本地工作；续租和核验失败必须停止进程组并等待原生退出。正常完成先卸载再 release；收到 stop nonce 必须提交匹配的原生停止证明，结果未知不释放预约。原生计算的优先级、等待、抢占授权与其他应用共用，不能凭 VOS 管理员身份直接跳过准入。
 
+AMD `yue2-q8` 已完成同账本排队、10 秒及最大 120 秒 / 32 步 full planner 生成、应用取消和 Scheduler stop nonce 实测。仅批准 `amd` / x86_64 / NVIDIA RTX 5880 Ada Generation，预算为 8 CPU、8 GiB RAM、1 GPU 槽和 6 GiB 独立显存；最大请求 65536 字节、风格 1024 Unicode 字符、歌词 4096 字符。Q8 主干、F32 VAE、companion-v9、引擎/模型清单哈希、8 线程及专用 native-parent 线程保护全部固定匹配。其他平台、量化、运行设置及输入仍须独立校准。
+
+内核不提供 `memory.peak`：以约 200ms 的 `memory.current` 采样最大值 2103 MiB 加宿主可用内存下降 1761 MiB 保守计量（可能重叠），GPU 采样峰值 3934 MiB；预算包含余量。原生进程组退出、显存归零后才释放许可；这些隔离校准证据仍不能替代正式包安装后的可信自动绑定验收。
+
 ## 当前实测清单
 
 | 目标应用 VOS profile / 硬件 | 模型 | CPU / RAM | GPU | 已测输入范围 |

@@ -326,3 +326,5 @@ v-YuE2 可通过固定 VOS 可信绑定取得独立 submitter 与实测 executor
 ### 应用计算控制 API
 
 应用注册算力时可选登记 `controls[].start_url/stop_url`（仅停止时省略 start_url），由 V-Scheduler 在资源准入后直接启动，在停止/卸载证明核验后释放预约。新增 `POST /scheduler/api/v1/integrations/executions`，支持同一幂等键不重复启动、结果未知保留预约与自动请求停止、重启后继续处理原 nonce；未登记控制 API 的应用保持兼容。管理员可在「节点管理 → 应用统一接入」启动计算及停止。详见 [控制 API 接入指南](docs/application-compute-controls.md)。
+
+`v-YuE2` 原生计算按固定应用身份直接申请许可，不增加网关或 Agent 层。AMD Q8 的实测审批、8 CPU / 8 GiB RAM / 6 GiB 显存预算及输入边界见[应用自动绑定](docs/application-auto-binding.md#v-yue2-原生-broker)；未匹配硬件与完整运行设置时保持拒绝。
