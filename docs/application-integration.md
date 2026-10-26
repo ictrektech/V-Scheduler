@@ -607,3 +607,17 @@ Jev 是结构化决策模型，能力 `decision`，接口 `systemone`；Harness 
 自动发现的能力可在复选框中手动修正；手工修改保存为 `metadata_override=true`，后续刷新保留修正与模型选择范围。选择「重新识别上游能力」清除该标记并重新读取元数据；API 可先 `PATCH /api/v1/models` 传入 `model`、`upstream_id`、`metadata_override=false`，再 `POST /api/v1/upstreams/{id}/refresh`。普通聊天缺失能力的默认补全和其他专用模型接口隔离规则仍适用。
 
 支持 decision 的 Ollama 模型也自动映射到 `/v1/systemone`，使用相同的原生请求与响应；需要上游 Ollama 版本和模型实际支持，不映射为聊天。参考 [Ollama System One](https://docs.ollama.com/api/systemone)。
+
+### 模型注册 API 与自动能力识别
+
+POST /api/v1/registrations 支持 ollama、typesafe 及现有协议。Ollama 可省略 models 自动发现，也可用 model 或 models 指定子集；两种方式均读取 /api/show，自动识别 vision、tools、thinking、embedding、rerank、decision。能力与接口覆盖顺序为自动识别、顶层 capabilities/endpoints、models 内逐模型声明、model_capabilities/model_endpoints 映射；后者优先，声明能力而未声明接口时重新推断接口，避免专用模型误带聊天接口。普通聊天无声明默认 Chat Completions；Jev 为 decision/systemone。心跳只续租；模型或能力变更时使用相同 service_id 重新注册。
+
+```bash
+curl http://v-scheduler:8080/api/v1/registrations \
+  -H "Authorization: Bearer $VOS_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"service_id":"my-ollama","protocol":"ollama","base_url":"http://my-ollama:11434/v1","models":[{"id":"qwen3.5:2b"},{"id":"bge-m3:latest"}],"ttl_seconds":90}'
+```
+
+不传 `models` 即发现上游模型列表；仅传 `model` 可注册单模型。需要修正时可添加 `model_capabilities: {"模型原生ID":["vision","completion"]}` 与 `model_endpoints: {"模型原生ID":["chat_completions"]}`；`rerank` 对应 `/v1/rerank`，`embedding` 对应 `/v1/embeddings`，不能因是多模态模型就虚报其他能力。调用 `POST /api/v1/registrations/{upstream_id}/heartbeat` 按返回的 heartbeat_after_seconds 续租；重注册沿用同一 service_id、身份和可见范围，过期后重新注册。注册和推理沿用统一鉴权；注册模型不等于自动获得本地预算、执行器审批或强制放行权限，资源调度仍按前文统一流程执行。
+
+能力数组省略或为空表示保留自动识别/默认值。核心能力值为 `chat`、`completion`、`vision`、`tools`、`thinking`、`embedding`、`image_embedding`、`rerank`、`image_generation`、`image_edit`、`image_variation`、`video_generation`、`asr`、`tts`、`translation`、`moderation`、`face_recognition`、`person_reid`、`ocr`、`video_structure`、`decision`；已有上游扩展标记仍保留。声明能力不增加上游实际功能。

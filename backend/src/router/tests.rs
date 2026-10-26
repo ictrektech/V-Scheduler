@@ -188,8 +188,51 @@ async fn ollama_capabilities_are_discovered_from_server_and_manual_overrides_sur
     // Explicit Ollama protocol has the same discovery result and chat bridges.
     let mut u=g.registry.lock().unwrap().upstreams["ollama"].clone();u.protocol="ollama".into();
     let rows=manage::models(&g,&u).await.unwrap();assert!(registry::supports(&u,&rows[0],"/responses"));
+    let registration = json!({"service_id":"auto-ollama","protocol":"ollama","capabilities":[],"endpoints":[],"base_url":format!("http://{address}/v1"),"api_key":"fixture-ollama-key","models":[{"id":"plain-name"},{"id":"not-obviously-an-embedding"}],"ttl_seconds":90});
+    let _ = manage::handle(&g,&principal("alice"),req("POST","/api/v1/registrations",registration.clone())).await.unwrap();
+    {
+        let r=g.registry.lock().unwrap();
+        let rows=&r.models["registered-auto-ollama"];
+        assert!(rows[0].capabilities.contains(&"vision".into()));
+        assert!(rows[0].capabilities.contains(&"thinking".into()));
+        assert_eq!(rows[1].endpoints,["embeddings"]);
+    }
+    let mut corrected=registration;
+    corrected["model_capabilities"]=json!({"plain-name":["rerank"]});
+    let _ = manage::handle(&g,&principal("alice"),req("POST","/api/v1/registrations",corrected)).await.unwrap();
+    {
+        let r=g.registry.lock().unwrap();
+        let rows=&r.models["registered-auto-ollama"];
+        assert_eq!(rows[0].endpoints,["rerank"]);
+        assert!(!rows[0].capabilities.contains(&"chat".into()));
+        assert_eq!(rows[1].endpoints,["embeddings"]);
+    }
     task.abort();std::fs::remove_dir_all(root).unwrap();
 }
+#[tokio::test]
+async fn registration_api_infers_chat_and_specialized_native_contracts() {
+    let root = temp();
+    let g = gateway(&root, Router::new());
+    for (service, protocol, caps, endpoint) in [
+        ("chat", "chat_completions", vec![], "chat_completions"),
+        ("rerank", "openai", vec!["rerank"], "rerank"),
+        ("jev", "typesafe", vec![], "systemone"),
+    ] {
+        let body = json!({"service_id":service,"protocol":protocol,"base_url":"http://fixture/v1","model":"sample","capabilities":caps,"visibility":"private"});
+        let request = axum::http::Request::builder().method("POST").uri("/api/v1/registrations")
+            .header("content-type","application/json").body(Body::from(body.to_string())).unwrap();
+        let _ = manage::handle(&g,&principal("alice"),request).await.unwrap();
+        let r = g.registry.lock().unwrap();
+        let row = &r.models[&format!("registered-{service}")][0];
+        assert_eq!(row.endpoints,[endpoint]);
+        assert_eq!(row.capabilities.contains(&"chat".into()),service=="chat");
+        assert!(!row.capabilities.contains(&"vision".into()));
+        assert!(!row.capabilities.contains(&"tools".into()));
+        assert!(!r.upstreams[&format!("registered-{service}")].visible(&principal("bob")));
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}
+
 #[tokio::test]
 #[ignore = "requires SCHEDULER_TEST_OLLAMA_URL for a real Ollama service; reads metadata only"]
 async fn live_ollama_metadata_matches_server_capabilities() {

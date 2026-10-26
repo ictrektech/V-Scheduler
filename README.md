@@ -310,3 +310,5 @@ Jev 使用 `typesafe` 协议，默认 Base URL `https://api.typesafe.ai/v1`。�
 参考：[OpenCode providers](https://opencode.ai/docs/providers/)、[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)、[TypeSafe System One](https://docs.typesafe.ai/api/system-one)、[TypeSafe 模型列表](https://docs.typesafe.ai/api/list-models)。
 
 Ollama 模型能力自动从原生 `/api/show` 读取，包含视觉、工具、推理和 embedding 等能力；内置实例和新 `ollama` 协议上游共用识别逻辑，旧手动兼容上游通过 `/api/version` 识别。手工修正的元数据随状态持久化，刷新不会覆盖；可用模型编辑页「重新识别上游能力」恢复自动识别。识别不会加载权重，详见统一接入指南的 Ollama 小节。
+
+注册 API `/api/v1/registrations` 同样支持 Ollama 能力自动识别、单模型/模型子集、逐模型覆盖与 Jev 原生协议。心跳只续租，元数据改变以同一 service_id 重注册；参见统一接入指南「模型注册 API 与自动能力识别」。

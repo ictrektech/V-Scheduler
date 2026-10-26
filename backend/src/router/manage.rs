@@ -1044,15 +1044,43 @@ async fn register(g: &Gateway, id: &Identity, p: Value) -> Api<Response> {
     } else {
         models(g, &u).await?
     };
+    let declared = models.clone();
+    if explicit && u.protocol == "ollama" {
+        enrich_ollama_models(g, &u, &mut models).await;
+    }
     for m in &mut models {
         if m.id.is_empty() {
             return Err(Failure::new(400, "registered model id is required"));
         }
-        m.capabilities.extend(strings(&p["capabilities"]));
-        m.capabilities
-            .extend(strings(&p["model_capabilities"][&m.id]));
-        m.endpoints.extend(strings(&p["endpoints"]));
-        m.endpoints.extend(strings(&p["model_endpoints"][&m.id]));
+        // Explicit declarations override discovery, with per-model maps last.
+        // A capability override without endpoints must infer a fresh interface.
+        let own = declared.iter().find(|row| row.id == m.id);
+        let mut caps_override = false;
+        let mut endpoints_override = false;
+        if p["capabilities"].as_array().is_some_and(|v| !v.is_empty()) {
+            m.capabilities = strings(&p["capabilities"]);
+            caps_override = true;
+        }
+        if p["endpoints"].as_array().is_some_and(|v| !v.is_empty()) {
+            m.endpoints = strings(&p["endpoints"]);
+            endpoints_override = true;
+        }
+        if explicit {
+            if let Some(own) = own {
+                if !own.capabilities.is_empty() { m.capabilities = own.capabilities.clone(); caps_override = true; }
+                if !own.endpoints.is_empty() { m.endpoints = own.endpoints.clone(); endpoints_override = true; }
+                if !own.kind.is_empty() { m.kind = own.kind.clone(); }
+            }
+        }
+        if p["model_capabilities"][&m.id].as_array().is_some_and(|v| !v.is_empty()) {
+            m.capabilities = strings(&p["model_capabilities"][&m.id]);
+            caps_override = true;
+        }
+        if p["model_endpoints"][&m.id].as_array().is_some_and(|v| !v.is_empty()) {
+            m.endpoints = strings(&p["model_endpoints"][&m.id]);
+            endpoints_override = true;
+        }
+        if caps_override && !endpoints_override { m.endpoints.clear(); m.kind.clear(); }
         m.endpoints = m.endpoints.iter().map(|s| registry::endpoint(s)).collect();
         m.endpoints.sort();
         m.endpoints.dedup();

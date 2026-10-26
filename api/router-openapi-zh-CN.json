@@ -286,7 +286,7 @@
     },
     "/api/v1/registrations": {
       "post": {
-        "description": "需网关 Key 或 VOS 身份。稳定 service_id 生成 registered-<service_id>；相同 ID 更新同一实例，副本须不同 ID。可注册 public 或 private 服务；private 只对注册者身份可见，public 对所有调用者可见。可注册 base_url/models 模型 API，也可提交 model 或 models 显式注册单个/多个模型；显式专用模型应声明 endpoints，普通聊天模型缺省时按协议补全，capabilities/model_kind 用于接口能力过滤；model_endpoints 和 model_capabilities 可逐模型覆盖；ttl_seconds 默认90。",
+        "description": "支持 ollama 自动能力识别和 typesafe/Jev 原生协议。省略 models 发现全部模型；model 或 models 指定子集时同样自动识别 Ollama。覆盖优先级为自动识别、顶层 capabilities/endpoints、models 逐模型声明、model_capabilities/model_endpoints；后者优先。心跳仅续租，能力变更使用同一 service_id 重注册。注册不授予调度或预算审批。 需网关 Key 或 VOS 身份。稳定 service_id 生成 registered-<service_id>；相同 ID 更新同一实例，副本须不同 ID。可注册 public 或 private 服务；private 只对注册者身份可见，public 对所有调用者可见。可注册 base_url/models 模型 API，也可提交 model 或 models 显式注册单个/多个模型；显式专用模型应声明 endpoints，普通聊天模型缺省时按协议补全，capabilities/model_kind 用于接口能力过滤；model_endpoints 和 model_capabilities 可逐模型覆盖；ttl_seconds 默认90。",
         "requestBody": {
           "content": {
             "application/json": {
@@ -309,22 +309,66 @@
                     "type": "string"
                   },
                   "model_capabilities": {
-                    "type": "string"
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
                   },
                   "model_endpoints": {
-                    "type": "string"
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
                   },
                   "model_kind": {
                     "type": "string"
                   },
                   "models": {
-                    "type": "array"
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "id"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "model_kind": {
+                          "type": "string",
+                          "enum": [
+                            "chat",
+                            "embedding",
+                            "unknown"
+                          ]
+                        },
+                        "capabilities": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "endpoints": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
                   },
                   "name": {
                     "type": "string"
                   },
                   "protocol": {
-                    "type": "string"
+                    "type": "string",
+                    "description": "ollama | typesafe | openai | chat_completions | anthropic | offline_asr | image_studio | async_task"
                   },
                   "scheduler": {
                     "type": "object",
@@ -386,6 +430,20 @@
                   "base_url"
                 ],
                 "type": "object"
+              },
+              "example": {
+                "service_id": "my-ollama",
+                "protocol": "ollama",
+                "base_url": "http://my-ollama:11434/v1",
+                "models": [
+                  {
+                    "id": "qwen3.5:2b"
+                  },
+                  {
+                    "id": "bge-m3:latest"
+                  }
+                ],
+                "ttl_seconds": 90
               }
             }
           },

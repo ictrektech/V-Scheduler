@@ -23,6 +23,11 @@ defineProps<{t:(value:string)=>string}>()
   <p>{{t('TypeSafe / Jev 使用 typesafe 协议和 https://api.typesafe.ai/v1，也可使用实现同协议的自有中转。模型列表读取 models[].name；能力为 decision，接口为 systemone，不会冒充 Harness 聊天模型。工作台选择 System One 后输入包含 state、questions 的 JSON 测试。')}}</p>
   <p><code>POST http://v-scheduler:8080/v1/systemone</code> · <code>http://{{locationHost}}:22888/v1/systemone</code></p>
   <p>{{t('局域网端口以安装配置为准。同域入口为 /api/com.ictrek.v-scheduler/v1/systemone；鉴权沿用本人 VOS token 或网关 Key，受限应用凭据保留原白名单。供应商密钥保存在网关，请求仅重写模型 ID，保留 state、questions、assets、功能头及原生 answers、概率、置信度和 usage；不支持 SSE。')}}</p>
+  <h3>{{t('模型注册 API 与自动能力识别')}}</h3>
+  <p>{{t('POST /api/v1/registrations 支持 ollama、typesafe 及现有协议。Ollama 可省略 models 自动发现，也可用 model 或 models 指定子集；两种方式均读取 /api/show，自动识别 vision、tools、thinking、embedding、rerank、decision。能力与接口覆盖顺序为自动识别、顶层 capabilities/endpoints、models 内逐模型声明、model_capabilities/model_endpoints 映射；后者优先，声明能力而未声明接口时重新推断接口，避免专用模型误带聊天接口。普通聊天无声明默认 Chat Completions；Jev 为 decision/systemone。心跳只续租；模型或能力变更时使用相同 service_id 重新注册。')}}</p>
+  <p>{{t('能力和接口数组省略或为空时保留自动识别或默认值；注册只声明模型，不自动授予资源预算、执行器审批或强制放行权限。')}}</p>
+  <pre>{"service_id":"my-ollama","protocol":"ollama","base_url":"http://my-ollama:11434/v1","models":[{"id":"qwen3.5:2b"},{"id":"bge-m3:latest"}],"ttl_seconds":90}</pre>
+  <p><code>POST http://v-scheduler:8080/api/v1/registrations</code> · <code>POST /api/com.ictrek.v-scheduler/api/v1/registrations</code></p>
   <h3>{{t('应用和模型自动发现')}}</h3>
   <p>{{t('安装支持的应用后，网关会按发现间隔读取其可用模型与服务。内置三个 Ollama 由本应用直接接入；其他应用支持 Image Studio、V-Voice、V-Music、ML Server 和视频结构化服务。')}}</p>
   <p>{{t('V-Voice 就绪后会主动接入调度器，自动绑定已校准的执行器与模型映射。外部云端服务可在上游页面配置。')}}</p>
