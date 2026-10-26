@@ -61,6 +61,10 @@ curl -i "$GATEWAY/v1/chat/completions" -H "Authorization: Bearer $VOS_TOKEN" -H 
   <p>{{t('V-Voice（含配乐）、V-Sub、Desensitize 和 Image Studio 在可信绑定后自动登记。调用方 V-ChatCut、HybRAG 复用实际执行端，不重复申报预算。')}}</p>
   <p>{{t('应用私有目录保存已确认停止的回执，重启后继续重试；未知执行不推定停止。阻塞式原生调用须等待实际返回及卸载，异步任务在统一接入页面使用取消。')}}</p>
   <p>{{t('GPU 槽位是调度并发计数，不是独立显存。统一内存预算只计一份：Thor 的 SenseVoice、Kokoro 和 CAM++ 使用实测的 4 GiB 共享内存预算；较大语音与音乐模型使用各自校准。192 的 CPU 语音记录为 1.75 GiB、GPU 并发计数 0，不因统一内存就自动改为 GPU 执行。')}}</p>
+  <h3>{{t('计算启动与停止 API')}}</h3>
+  <p>{{t('应用注册已批准算力时，可选 controls：executor_id、start_url 和 stop_url；仅停止可省略 start_url。地址必须与执行器已批准服务同 origin。POST /scheduler/api/v1/integrations/executions 先准入再启动，停止沿用 permits/{id}/stop 与原生证明；启动超时保留预约，不重放计算。')}}</p>
+  <pre>{"controls":[{"executor_id":"my-compute","start_url":"http://my-app:9000/compute/start","stop_url":"http://my-app:9000/compute/stop-and-unload"}]}</pre>
+  <p><a href="https://github.com/ictrektech/V-Scheduler/blob/main/docs/application-compute-controls.md" target="_blank" rel="noopener">{{t('计算控制 API 完整指南')}}</a></p>
   <h3>{{t('推理等待队列')}}</h3>
   <p>{{t('本地推理设置 X-VScheduler-Queue-Wait-Seconds（1..300）、X-VScheduler-Priority（background/interactive/high）和唯一 X-VScheduler-Request-ID。开启内置驻留且身份已验证时，未设置等待默认等 30 秒；显式 0 保持立即准入。试聊默认等待 120 秒，可查看位置并取消。')}}</p>
   <p><code>GET /api/v1/inference-queue</code> · <code>DELETE /api/v1/inference-queue/{id}</code></p>

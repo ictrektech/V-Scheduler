@@ -3,6 +3,7 @@
 本文是应用和模型服务的统一操作入口，覆盖原 V-Router 模型调用、V-Scheduler 调度接管、vLLM 主动注册，以及是否由本 Scheduler 调度。VOS 安装统一应用 `com.ictrek.v-scheduler`；网关、调度器和模型仓库均由该应用提供。
 
 - [Auto 自动选模型、界面勾选与配置 API](auto-routing.md)
+- [可选计算启动/停止 API](application-compute-controls.md)
 - [选择接入方式与调度策略](#integration-mode)
 - [地址、端口与身份](#addresses-and-identity)
 - [一个推理实例的完整接入流程：服务管理、模型路由与调度](#managed-inference)
@@ -628,3 +629,9 @@ curl http://v-scheduler:8080/api/v1/registrations \
 管理员在「Auto 自动选型」勾选候选，也可通过网关 `GET /api/v1/auto-routing/candidates` 获取模型实例，`GET /api/v1/auto-routing` 获取配置和 revision，然后 `PUT /api/v1/auto-routing` 完整替换候选与策略。两种方式保存同一份持久配置。客户端使用 `POST /v1/chat/completions`、`model=auto`；`POST /api/v1/auto-routing/test` 仅测试选型。默认本地规则可离线运行，Jev 为需单独同意发送分类内容的可选分类器。模型调用继续遵守权限、能力、上下文与调度准入。
 
 完整字段、复制即用的 cURL、Jev 配置、候选档位、流式、会话及错误处理见 [Auto 接入指南](auto-routing.md)。
+
+## 可选的应用计算启动与停止接口
+
+应用登记已批准执行器时可附带 `controls`，填写 `executor_id`、可选 `start_url` 及 `stop_url`；控制地址限定在该执行器已批准的服务 origin 内。`POST /scheduler/api/v1/integrations/executions` 先申请预算，再由 Scheduler 调用应用启动 API；`POST /scheduler/api/v1/permits/{id}/stop` 会主动调用停止/卸载 API，并在匹配的原生停止回执后释放预算。省略控制字段的应用保持原协议。节点管理的「应用统一接入」也支持启动已注册计算与停止。
+
+注册 JSON、请求幂等、许可认领、正常完成、重启恢复与完整停止回执示例见 [应用计算启动与停止指南](application-compute-controls.md)。

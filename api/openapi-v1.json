@@ -3695,6 +3695,81 @@
         },
         "description": "Same scoped identity, Idempotency-Key and administrator proof as POST /permits. Waiters reserve no resources. The request contains admission metadata only; never inference payloads. Waiting is bounded to 0..300 seconds; 0 attempts immediate admission. A timeout returns 429 QUEUE_TIMEOUT. No inference is replayed."
       }
+    },
+    "/integrations/executions": {
+      "post": {
+        "operationId": "start_controlled_execution",
+        "summary": "启动已注册应用计算",
+        "x-title": {
+          "zh-CN": "启动已注册应用计算",
+          "en": "Start registered application computation"
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-role": "submitter",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token"
+          },
+          "403": {
+            "description": "Role or app scope denied"
+          },
+          "404": {
+            "description": "Not found or not visible"
+          },
+          "409": {
+            "description": "State or idempotency conflict"
+          },
+          "422": {
+            "description": "Invalid request"
+          },
+          "429": {
+            "description": "Resource busy or queue quota"
+          },
+          "503": {
+            "description": "Temporarily unavailable"
+          }
+        },
+        "x-description": {
+          "zh-CN": "先取得已批准预算，再调用注册应用的启动 API；幂等重试不重放启动。结果未知保留预约并请求停止。",
+          "en": "Reserve the approved budget before the registered start API. Idempotent retries never replay start; unknown outcomes retain reservations and request stop."
+        },
+        "description": "Reserve the approved resource budget before one idempotent start callback. Unknown outcomes request a stop and retain the reservation. A successful HTTP callback alone does not prove execution or stop.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ControlledExecutionRequest"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 256
+            }
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -4729,6 +4804,13 @@
           },
           "stop_protocol": {
             "const": "permit-native-exit-v1"
+          },
+          "controls": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "$ref": "#/components/schemas/IntegrationControl"
+            }
           }
         }
       },
@@ -4813,6 +4895,78 @@
           "force_admission": {
             "type": "boolean",
             "default": false
+          }
+        }
+      },
+      "IntegrationControl": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "executor_id",
+          "stop_url"
+        ],
+        "properties": {
+          "executor_id": {
+            "type": "string"
+          },
+          "start_url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "stop_url": {
+            "type": "string",
+            "format": "uri"
+          }
+        },
+        "description": "Optional application HTTP controls on an administrator-approved executor origin. Stop-only is supported; start requires an application-owned executor."
+      },
+      "ControlledExecutionRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "request",
+          "input"
+        ],
+        "properties": {
+          "app_id": {
+            "type": "string",
+            "description": "Administrator may target a registered application. Other identities can only use their own app."
+          },
+          "request": {
+            "type": "object",
+            "required": [
+              "executor_id",
+              "upstream_url",
+              "execution_token"
+            ],
+            "properties": {
+              "executor_id": {
+                "type": "string"
+              },
+              "upstream_url": {
+                "type": "string"
+              },
+              "model_id": {
+                "type": "string"
+              },
+              "execution_token": {
+                "type": "string",
+                "minLength": 32,
+                "maxLength": 128
+              },
+              "scheduling": {
+                "type": "object"
+              }
+            }
+          },
+          "input": {
+            "description": "Application-defined bounded input, at most 256 KiB."
+          },
+          "idempotency_key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "description": "Alternatively use Idempotency-Key. Conflicting values are rejected."
           }
         }
       }

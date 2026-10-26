@@ -41,6 +41,7 @@
     "QUEUE_CANCELLED": "Request was cancelled before execution.",
     "QUEUE_ID_IN_USE": "Request ID already waiting; no execution replayed.",
     "RESIDENT_REUSE_NOT_ALLOWED": "Warm reservation reuse is restricted to the owning built-in Ollama identity.",
-    "MODEL_BINDING_PENDING": "Current native model size has no matching resource binding. No provider request has been sent; wait for discovery or verify model size and node budget."
+    "MODEL_BINDING_PENDING": "Current native model size has no matching resource binding. No provider request has been sent; wait for discovery or verify model size and node budget.",
+    "START_ADAPTER_NOT_REGISTERED": "Application has not registered a start callback for this approved executor. No computation was started."
   }
 }

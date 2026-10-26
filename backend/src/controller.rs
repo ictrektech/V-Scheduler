@@ -419,6 +419,7 @@ pub async fn serve(
     crate::voice::start(path, runtime, a.db.clone());
     ollama::start(shared.clone());
     modelinfer_discovery::start();
+    integrations::controls::start_loop(shared.clone());
     let ticker_state = shared.clone();
     tokio::spawn(async move {
         loop {
@@ -441,6 +442,7 @@ pub async fn serve(
         )
         .route("/integrations", get(integrations::list).post(integrations::register).delete(integrations::unregister))
         .route("/integrations/heartbeat", post(integrations::heartbeat))
+        .route("/integrations/executions", post(integrations::controls::start_execution))
         .route("/permits/{id}/stop", post(integrations::request_stop))
         .route("/permits/{id}/stopped", post(integrations::stopped))
         .route("/management", get(management::overview))
@@ -1206,8 +1208,11 @@ async fn permit_acquire(
     Json(b): Json<PermitRequest>,
 ) -> Api<Json<Value>> {
     let p = auth(&a, &h).await?;
-    require(&p, "submitter")?;
-    let force_actor = scheduling::authorize(&a, &p, &h, &b.scheduling).await?;
+    acquire_for(&a,&p,&h,b,false).await
+}
+async fn acquire_for(a:&App,p:&Principal,h:&HeaderMap,b:PermitRequest,controlled:bool)->Api<Json<Value>> {
+    require(p, "submitter")?;
+    let force_actor = scheduling::authorize(a, p, h, &b.scheduling).await?;
     voice_admission(&a, &b.executor_id)?;
     if !b.execution_token.is_empty() && !(32..=128).contains(&b.execution_token.len()) {
         return Err(invalid());
@@ -1221,7 +1226,7 @@ async fn permit_acquire(
         .config
         .executors
         .iter()
-        .find(|e| e.id == b.executor_id && e.app_id == p.app_id && e.task_type == "model.infer")
+        .find(|e| e.id == b.executor_id && e.app_id == p.app_id && (controlled || e.task_type == "model.infer"))
         .cloned()
         .ok_or(Error(StatusCode::FORBIDDEN, "EXECUTOR_NOT_ALLOWED"))?;
     // Administrator calibration for an application-owned model changes only the
@@ -1427,7 +1432,7 @@ async fn permit_verify(
         .config
         .executors
         .iter()
-        .find(|e| e.id == b.executor_id && e.task_type == "model.infer")
+        .find(|e| e.id == b.executor_id)
         .ok_or(Error(StatusCode::FORBIDDEN, "EXECUTOR_NOT_ALLOWED"))?;
     if (executor.app_id != p.app_id && !p.permit_executors.contains(&executor.id))
         || !approved_upstream(executor, &b.upstream_url)
@@ -1440,6 +1445,7 @@ async fn permit_verify(
         .ok_or(Error(StatusCode::NOT_FOUND,"NOT_FOUND"))?;
     management::principal_active(&mut tx, &p).await?;
     let mut metadata: Value = row.get("metadata");
+    if executor.task_type != "model.infer" && !metadata["managed_control"].is_object() {return Err(Error(StatusCode::FORBIDDEN,"EXECUTOR_NOT_ALLOWED"));}
     integrations::stop_pending(&mut tx,&id).await?;
     if row.get::<String, _>("state") != "active" || !row.get::<bool, _>("valid") {
         return Err(Error(StatusCode::CONFLICT, "PERMIT_NOT_ACTIVE"));

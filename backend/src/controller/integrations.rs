@@ -1,6 +1,7 @@
 //! One opt-in app lifecycle contract over existing node and execution ledgers.
-//! No client supplied URL is called and registration never grants a budget.
+//! Optional callbacks stay on approved executor origins; registration never grants a budget.
 use super::*;
+pub(super) mod controls;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -9,6 +10,8 @@ pub(super) struct Registration {
     revision: i64,
     executors: Vec<String>,
     stop_protocol: String,
+    #[serde(default)]
+    controls: Vec<controls::Control>,
 }
 fn owned(p: &Principal, e: &Executor) -> bool {
     p.role == "submitter" && (e.app_id == p.app_id || p.permit_executors.contains(&e.id))
@@ -47,6 +50,7 @@ pub(super) async fn register(
         return Err(invalid());
     }
     let defs = definitions(&a, &p, &b.executors)?;
+    controls::validate(&a,&p,&b.executors,&b.controls)?;
     let mut tx = a.db.begin().await.map_err(unavailable)?;
     management::principal_active(&mut tx, &p).await?;
     // Serialize first registrations as well as updates for this app identity.
@@ -82,7 +86,8 @@ pub(super) async fn register(
     if b.revision != current {
         return Err(Error(StatusCode::CONFLICT, "INTEGRATION_REVISION_CONFLICT"));
     }
-    let manifest = json!({"protocol_version":1,"executors":defs,"stop_protocol":b.stop_protocol});
+    let mut manifest = json!({"protocol_version":1,"executors":defs,"stop_protocol":b.stop_protocol});
+    if !b.controls.is_empty() {manifest["controls"]=json!(b.controls);}
     let changed = previous
         .as_ref()
         .is_none_or(|r| r.get::<Value, _>("manifest") != manifest);
@@ -239,6 +244,9 @@ pub(super) async fn stopped(
     Json(b): Json<Stopped>,
 ) -> Api<Json<Value>> {
     let p = auth(&a, &h).await?;
+    confirm_stopped(&a,&p,&id,b).await
+}
+async fn confirm_stopped(a:&App,p:&Principal,id:&str,b:Stopped)->Api<Json<Value>> {
     if p.role != "submitter"
         || !b.native_exit_barrier
         || !b.model_unloaded
@@ -315,11 +323,11 @@ pub(super) async fn list(State(a): State<App>, h: HeaderMap) -> Api<Json<Value>>
         let application: String = row.get("app_id");
         let running=sqlx::query("SELECT p.id,p.executor,p.metadata,p.state,s.requested_at FROM vrs_permits p LEFT JOIN vrs_stop_requests s ON s.permit_id=p.id AND s.confirmed_at IS NULL WHERE p.state<>'released' AND ($1 OR p.app=$2) AND EXISTS(SELECT 1 FROM vrs_integrations i,jsonb_array_elements(i.manifest->'executors') x WHERE i.app_id=$3 AND x->>'id'=p.executor) ORDER BY p.created_at LIMIT 64")
             .bind(p.role=="admin").bind(&p.app_id).bind(&application).fetch_all(&a.db).await.map_err(unavailable)?;
-        let executions:Vec<Value>=running.iter().map(|r|{let m:Value=r.get("metadata");json!({"permit_id":r.get::<String,_>("id"),"executor_id":r.get::<String,_>("executor"),"model_id":m["model_id"],"state":r.get::<String,_>("state"),"stop_requested":r.get::<Option<DateTime<Utc>>,_>("requested_at").is_some()})}).collect();
+        let executions:Vec<Value>=running.iter().map(|r|{let m:Value=r.get("metadata");json!({"permit_id":r.get::<String,_>("id"),"executor_id":r.get::<String,_>("executor"),"model_id":m["model_id"],"state":r.get::<String,_>("state"),"stop_requested":r.get::<Option<DateTime<Utc>>,_>("requested_at").is_some(),"control_phase":m["managed_control"]["phase"],"controlled":m["managed_control"].is_object()})}).collect();
         let task_rows=sqlx::query("SELECT id,app,status,body FROM vrs_tasks WHERE status IN ('queued','assigned','running','cancelling','recovering') AND EXISTS(SELECT 1 FROM jsonb_array_elements($1::jsonb) x WHERE x->>'id'=body->'executor'->>'id') AND ($2 OR app=$3) ORDER BY created_at LIMIT 64")
             .bind(&manifest["executors"]).bind(p.role=="admin").bind(&p.app_id).fetch_all(&a.db).await.map_err(unavailable)?;
         let tasks:Vec<Value>=task_rows.iter().map(|r|{let body:Value=r.get("body");json!({"task_id":r.get::<String,_>("id"),"status":r.get::<String,_>("status"),"executor_id":body["executor"]["id"],"scheduling":body["scheduling"],"preemption":body["_scheduler_preemption"]})}).collect();
-        items.push(json!({"app_id":row.get::<String,_>("app_id"),"revision":row.get::<i64,_>("revision"),"heartbeat":row.get::<DateTime<Utc>,_>("heartbeat"),"fresh":row.get::<bool,_>("fresh"),"executors":executors,"stop_protocol":manifest["stop_protocol"],"executions":executions,"tasks":tasks}));
+        items.push(json!({"app_id":row.get::<String,_>("app_id"),"revision":row.get::<i64,_>("revision"),"heartbeat":row.get::<DateTime<Utc>,_>("heartbeat"),"fresh":row.get::<bool,_>("fresh"),"executors":executors,"stop_protocol":manifest["stop_protocol"],"controls":manifest["controls"].as_array().cloned().unwrap_or_default(),"executions":executions,"tasks":tasks}));
     }
     Ok(ok(
         json!({"items":items,"node_heartbeat_seconds":2,"node_stale_seconds":12,"application_heartbeat_seconds":5,"application_stale_seconds":20}),

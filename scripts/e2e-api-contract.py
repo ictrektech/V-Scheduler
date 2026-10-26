@@ -6,12 +6,13 @@ import argparse, json, os, pathlib, secrets, socket, subprocess, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 p=argparse.ArgumentParser();p.add_argument('--rust-router',action='store_true',default=True);p.add_argument('--build-root',default=str(pathlib.Path.home()/'dev/build/V-Scheduler/contracts'));a=p.parse_args()
 root=pathlib.Path(a.build_root);run=root/uuid.uuid4().hex;run.mkdir(parents=True,mode=0o700)
-repo=pathlib.Path(__file__).resolve().parents[1];spec=json.loads((repo/'api/error-contract.json').read_text());keys={k:secrets.token_hex(32) for k in ['db','admin','submitter','gateway','vos_admin','vos_user','vos_other']};children=[];checks=[];container='vs-contract-pg-'+uuid.uuid4().hex[:12]
+repo=pathlib.Path(__file__).resolve().parents[1];spec=json.loads((repo/'api/error-contract.json').read_text());keys={k:secrets.token_hex(32) for k in ['db','admin','submitter','gateway','vos_admin','vos_user','vos_other','control_worker']};children=[];checks=[];container='vs-contract-pg-'+uuid.uuid4().hex[:12]
 def private(name,value):
  f=run/name;f.write_text(value if isinstance(value,str) else json.dumps(value));f.chmod(0o600);return f
 def port():
  s=socket.socket();s.bind(('127.0.0.1',0));n=s.getsockname()[1];s.close();return n
 ports={k:port() for k in ['db','controller','hub','gateway']}
+control_records={};control_counts={'start':0,'stop':0};control_proof={'valid':False};control_heartbeat=threading.Event();control_heartbeat.set();control_shutdown=threading.Event()
 class Fixture(BaseHTTPRequestHandler):
  def log_message(self,*_):pass
  def reply(self,status,value):
@@ -25,6 +26,18 @@ class Fixture(BaseHTTPRequestHandler):
   return self.reply(404,{})
  def do_POST(self):
   body=json.loads(self.rfile.read(int(self.headers.get('Content-Length',0))) or b'{}')
+  if self.path=='/control/start':
+   control_counts['start']+=1;control_records[body['permit_id']]=body
+   if body.get('input',{}).get('reject'):return self.reply(200,{'permit_id':body['permit_id'],'execution_id':body['execution_id'],'started':False})
+   n,_,_=request(controller,'/api/v1/permits/'+body['permit_id']+'/verify',keys['submitter'],{k:body[k] for k in ['executor_id','upstream_url','model_id','execution_token','execution_id']}|{'claim':True})
+   if n==200:control_records[body['permit_id']]['process']=subprocess.Popen([__import__('sys').executable,'-c','import time;time.sleep(600)'])
+   return self.reply(200,{'permit_id':body['permit_id'],'execution_id':body['execution_id'],'started':n==200})
+  if self.path=='/control/stop':
+   control_counts['stop']+=1;original=control_records.get(body['permit_id'],{})
+   if control_proof['valid'] and original.get('process') is not None:
+    process=original['process']
+    if process.poll() is None:process.terminate();process.wait(timeout=3)
+   return self.reply(200,{'nonce':body['nonce'] if control_proof['valid'] else 'wrong','execution_id':body.get('execution_id'),'execution_token':original.get('execution_token','x'*64),'native_exit_barrier':True,'model_unloaded':True,'evidence':'fixture computation exited and allocations freed'})
   if self.path=='/v1/files':return self.reply(200,{'id':'file-owned','object':'file'})
   if self.path=='/v1/chat/completions':
    if body.get('stream'):
@@ -33,7 +46,7 @@ class Fixture(BaseHTTPRequestHandler):
   return self.reply(404,{})
 mock=ThreadingHTTPServer(('0.0.0.0',0),Fixture);threading.Thread(target=mock.serve_forever,daemon=True).start();vos=f'http://127.0.0.1:{mock.server_port}'
 def launch(name,args,env):
- log=open(run/(name+'.log'),'ab');os.chmod(log.name,0o600);proc=subprocess.Popen(args,env={**os.environ,**env},stdout=log,stderr=log);children.append(proc);return proc
+ log=open(run/(name+'.log'),'ab');os.chmod(log.name,0o600);proc=subprocess.Popen(args,env={**os.environ,**env},stdout=log,stderr=log);children.append(proc);proc.fixture_environment=env;return proc
 binary=os.environ.get('SCHEDULER_BINARY',str(pathlib.Path.home()/'dev/build/V-Scheduler/cargo/debug/v-scheduler'))
 controller=f'http://127.0.0.1:{ports["controller"]}';hub=f'http://127.0.0.1:{ports["hub"]}';gate=f'http://127.0.0.1:{ports["gateway"]}'
 def request(origin,path,token=None,body=None,method=None,scheme='Bearer',extra_headers=None):
@@ -69,13 +82,23 @@ try:
  for _ in range(60):
   if subprocess.run(['docker','exec',container,'pg_isready','-h','127.0.0.1','-U','scheduler'],capture_output=True).returncode==0:break
   time.sleep(.2)
- config=private('controller.json',{'principals':[{'role':'admin','app_id':'admin','token':keys['admin']},{'role':'submitter','app_id':'alpha','token':keys['submitter']}],'nodes':[],'executors':[]})
+ control_origin=f'http://{socket.gethostbyname(socket.gethostname())}:{mock.server_port}'
+ control_executor={'id':'control-executor','contract_version':'1','task_type':'compute.demo','node_id':'control-node','app_id':'alpha','resources':{'cpu_millicores':1000,'memory_mib':128},'upstream_urls':[control_origin+'/v1']}
+ config=private('controller.json',{'principals':[{'role':'admin','app_id':'admin','token':keys['admin']},{'role':'submitter','app_id':'alpha','token':keys['submitter']},{'role':'worker','app_id':'worker','node_id':'control-node','token':keys['control_worker']}],'nodes':[{'id':'control-node','capacities':{'cpu_millicores':2000,'memory_mib':8192}}],'executors':[control_executor,{**control_executor,'id':'control-stop-executor','task_type':'model.infer'}]})
  gateway_env={'V_ROUTER_ADDR':f'127.0.0.1:{ports["gateway"]}','V_ROUTER_STATE_PATH':str(run/'state.json'),'V_ROUTER_CONTROLLER_URL':controller,'V_SCHEDULER_MODEL_MANAGEMENT_URL':hub,'V_ROUTER_API_KEY':keys['gateway'],'V_ROUTER_REQUIRE_KEY':'true','V_ROUTER_USAGE_PATH':str(run/'usage.jsonl'),'V_ROUTER_AUTH_DISABLED':'false','V_ROUTER_MODEL_HUB_URL':'','V_ROUTER_IMAGE_STUDIO_URL':'','V_ROUTER_V_SUB_URLS':'','V_ROUTER_V_VOICE_URLS':'','V_ROUTER_V_MUSIC_URLS':'','V_ROUTER_ML_SERVER_URLS':'','V_ROUTER_VIDEO_STRUCTURE_URLS':'','V_ROUTER_VIDEO_STRUCTURE_DETECT_URLS':''}
  storage=run/'models';storage.mkdir()
  gateway_env.update({'SCHEDULER_EMBEDDED_MODEL_HUB':'true','MODEL_HUB_LISTEN':f'127.0.0.1:{ports["hub"]}','MODELS_BASE_DIR':str(storage)})
  ctl=launch('controller',[binary,'controller','--config',str(config),'--listen',f'127.0.0.1:{ports["controller"]}','--ui-dir',os.environ.get('SCHEDULER_UI_DIR',str(root/'ui'))],{'SCHEDULER_DATABASE_URL':f'postgres://scheduler:{keys["db"]}@127.0.0.1:{ports["db"]}/scheduler','SCHEDULER_EMBEDDED_AGENT':'false','SCHEDULER_VOS_URL':vos,**gateway_env})
  check(True,'model workspace is embedded in the controller process')
  for origin,path in [(controller,'/health'),(hub,'/health'),(gate,'/healthz')]:ready(origin,path)
+ def control_heartbeat_loop():
+  while not control_shutdown.is_set():
+   try:
+    request(controller,'/api/v1/workers/control-node/heartbeat',keys['control_worker'],{'session_id':'control-test','report':{'observed_at':__import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat(),'cpu_logical_count':2,'cpu_used_percent':0,'memory_total_mib':8192,'memory_available_mib':8192}})
+    if control_heartbeat.is_set():request(controller,'/api/v1/integrations/heartbeat',keys['submitter'],{'revision':1})
+   except (OSError,TimeoutError):pass
+   time.sleep(.5)
+ threading.Thread(target=control_heartbeat_loop,daemon=True).start()
  for path in ['/api/v1/status','/model-hub/api/v1/models']:failure(gate,path,401)
  check(request(gate,'/api/v1/status',keys['vos_user'])[0]==200,'VOS account authenticates gateway')
  check(request(gate,'/model-hub/api/v1/models',keys['vos_user'])[:2]==(200,[]),'same account authenticates model workspace; legacy success array preserved')
@@ -138,6 +161,77 @@ try:
  n,usage,_=request(gate,'/api/v1/usage?period=all',keys['vos_user']);assert n==200 and all(key in usage for key in ['totals','per_model','per_upstream','per_user','recent']) and usage['totals']['requests']>=4
  check(True,'legacy usage aggregation and per-user JSONL history remain available')
 
+ # Application HTTP controls: the same approved budget and native stop ledger.
+ registration={'protocol_version':1,'revision':0,'executors':['control-executor','control-stop-executor'],'stop_protocol':'permit-native-exit-v1','controls':[{'executor_id':'control-executor','start_url':control_origin+'/control/start','stop_url':control_origin+'/control/stop'},{'executor_id':'control-stop-executor','stop_url':control_origin+'/control/stop'}]}
+ bad={**registration,'controls':[{'executor_id':'control-executor','stop_url':'http://unapproved.invalid/stop'}]}
+ assert request(controller,'/api/v1/integrations',keys['submitter'],bad)[0]==422
+ assert request(controller,'/api/v1/integrations',keys['submitter'],registration)[0]==200
+ command={'request':{'executor_id':'control-executor','upstream_url':control_origin+'/v1','model_id':'calculation','execution_token':secrets.token_hex(32)},'input':{'task':'fixture'},'idempotency_key':'controlled-one'}
+ n,value,_=request(controller,'/api/v1/integrations/executions',keys['submitter'],command);assert n==200 and value['data']['phase']=='running',(n,value)
+ permit=value['data']['permit_id'];assert control_counts['start']==1 and control_records[permit]['process'].poll() is None
+ n,value,_=request(controller,'/api/v1/integrations/executions',keys['submitter'],command);assert n==200 and value['data']['replayed'] is False and control_counts['start']==1
+ assert request(controller,'/api/v1/integrations/executions',keys['submitter'],{**command,'input':{'different':True}})[0]==409
+ denied={**command,'idempotency_key':'controlled-capacity','request':{**command['request'],'execution_token':secrets.token_hex(32)}}
+ assert request(controller,'/api/v1/integrations/executions',keys['submitter'],denied)[0]==429 and control_counts['start']==1
+ initial_lease=next(v for v in request(controller,'/api/v1/permits',keys['submitter'])[1]['data']['items'] if v['permit_id']==permit)['lease_until']
+ for _ in range(30):
+  current=next(v for v in request(controller,'/api/v1/permits',keys['submitter'])[1]['data']['items'] if v['permit_id']==permit)
+  if current['lease_until']>initial_lease:break
+  time.sleep(.2)
+ else:raise AssertionError('controller did not renew its running computation lease')
+ check(True,'registered start/stop callbacks enforce approved origins, claim an admitted generic computation, and never replay or bypass capacity')
+ assert request(controller,'/api/v1/permits/'+permit+'/stop',keys['submitter'],{})[0]==200
+ for _ in range(30):
+  if control_counts['stop']:break
+  time.sleep(.2)
+ assert control_counts['stop']>0
+ n,listing,_=request(controller,'/api/v1/permits',keys['submitter']);assert any(v['permit_id']==permit and v['state']!='released' for v in listing['data']['items'])
+ check(True,'HTTP 200 and an invalid native receipt do not release controlled computation resources')
+ pending=request(controller,'/api/v1/integrations/heartbeat',keys['submitter'],{'revision':1})[1]['data']['stop_requests'][0]
+ args=ctl.args;environment=ctl.fixture_environment;ctl.terminate();ctl.wait(timeout=10)
+ ctl=launch('controller-restarted',args,environment);ready(controller,'/health')
+ again=request(controller,'/api/v1/integrations/heartbeat',keys['submitter'],{'revision':1})[1]['data']['stop_requests'][0]
+ assert again['nonce']==pending['nonce'] and control_records[permit]['process'].poll() is None
+ check(True,'controller restart retains registered controls and the exact pending stop nonce without replaying computation')
+ control_proof['valid']=True
+ for _ in range(50):
+  listing=request(controller,'/api/v1/permits',keys['submitter'])[1]
+  if any(v['permit_id']==permit and v['state']=='released' for v in listing['data']['items']):break
+  time.sleep(.2)
+ else:raise AssertionError('matched callback receipt did not release permit')
+ assert control_records[permit]['process'].poll() is not None
+ check(True,'scheduler directly invokes stop API, confirms the actual child process exited, and then releases its reservation')
+ def released(target):return any(v['permit_id']==target and v['state']=='released' for v in request(controller,'/api/v1/permits',keys['submitter'])[1]['data']['items'])
+ unknown={**command,'idempotency_key':'controlled-unknown','input':{'reject':True},'request':{**command['request'],'execution_token':secrets.token_hex(32)}}
+ n,value,_=request(controller,'/api/v1/integrations/executions',keys['submitter'],unknown);assert n==200 and value['data']['phase']=='unknown'
+ uncertain=value['data']['permit_id']
+ for _ in range(50):
+  if released(uncertain):break
+  time.sleep(.2)
+ else:raise AssertionError('unknown start was not stopped and proved never started')
+ check(True,'unclaimed start failure automatically requests stop and releases only after matching never-started proof')
+ external={**command['request'],'executor_id':'control-stop-executor','model_id':'self-started','execution_token':secrets.token_hex(32)}
+ n,value,_=request(controller,'/api/v1/permits',keys['submitter'],external,extra_headers={'Idempotency-Key':'stop-only'});assert n==200
+ external_id=value['data']['permit_id'];verify={**external,'execution_id':'external-execution','claim':True}
+ assert request(controller,'/api/v1/permits/'+external_id+'/verify',keys['submitter'],verify)[0]==200
+ control_records[external_id]={**verify,'process':subprocess.Popen([__import__('sys').executable,'-c','import time;time.sleep(600)'])}
+ assert request(controller,'/api/v1/permits/'+external_id+'/stop',keys['submitter'],{})[0]==200
+ for _ in range(50):
+  if released(external_id):break
+  time.sleep(.2)
+ else:raise AssertionError('stop-only callback did not release externally started execution')
+ assert control_records[external_id]['process'].poll() is not None
+ check(True,'optional stop-only API controls an application-started execution without changing its original permit flow')
+ admin_command={**command,'app_id':'alpha','idempotency_key':'admin-start','request':{**command['request'],'execution_token':secrets.token_hex(32)}}
+ n,value,_=request(controller,'/api/v1/integrations/executions',keys['vos_admin'],admin_command);assert n==200 and value['data']['phase']=='running',(n,value)
+ admin_permit=value['data']['permit_id'];assert request(controller,'/api/v1/permits/'+admin_permit+'/stop',keys['vos_admin'],{})[0]==200
+ for _ in range(50):
+  if released(admin_permit):break
+  time.sleep(.2)
+ else:raise AssertionError('administrator controlled execution did not stop')
+ check(True,'verified VOS administrator can start and stop registered application computation through the management UI API')
+ # Registrations are leased snapshots and must register again after restart.
+ assert request(gate,'/api/v1/registrations',keys['gateway'],{'service_id':'contract','name':'Contract fixture','ttl_seconds':3600,'base_url':base,'protocol':'chat_completions','model':'contract-echo','model_kind':'chat','endpoints':['chat/completions','responses','messages'],'visibility':'public','scheduler':{'mode':'cloud'}})[0]==200
  # Auto uses the same persistent API as the checkbox UI and the real proxy.
  for path in ['/api/v1/auto-routing','/api/v1/auto-routing/candidates']:
   assert request(gate,path,keys['vos_user'])[0]==403
@@ -195,6 +289,10 @@ try:
  check(request(hub,'/api/v1/version')[1]['images'].__len__()==4,'About lists the four deployed containers')
  private('evidence.json',{'fixture':'actual unified Rust gateway/controller/model workspace'+', synthetic identity/model and isolated PostgreSQL','checks':checks,'success':True});print('Evidence:',run)
 finally:
+ control_shutdown.set()
+ for record in control_records.values():
+  process=record.get('process')
+  if process is not None and process.poll() is None:process.terminate();process.wait(timeout=5)
  for child in reversed(children):
   if child.poll() is None:
    child.terminate()

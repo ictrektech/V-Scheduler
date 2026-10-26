@@ -1,4 +1,18 @@
 export const messages:Record<string,[string,string]>={
+"计算启动与停止 API":["Compute start and stop API", "運算啟動與停止 API"],
+"应用注册已批准算力时，可选 controls：executor_id、start_url 和 stop_url；仅停止可省略 start_url。地址必须与执行器已批准服务同 origin。POST /scheduler/api/v1/integrations/executions 先准入再启动，停止沿用 permits/{id}/stop 与原生证明；启动超时保留预约，不重放计算。":["Register optional controls (executor_id, start_url and stop_url) with approved resources. Omit start_url for stop-only control. URLs must share an approved origin. POST /scheduler/api/v1/integrations/executions admits before start; stop uses permits/{id}/stop and native proof. Start timeouts retain reservations without replay.", "註冊已批准算力時可選 controls：executor_id、start_url 與 stop_url；僅停止可省略 start_url。地址須與已批准服務同 origin。POST /scheduler/api/v1/integrations/executions 先准入再啟動；停止沿用原生證明，啟動逾時保留預約，不重放運算。"],
+"计算控制 API 完整指南":["Full compute control API guide", "運算控制 API 完整指南"],
+
+"计算控制":["Compute control", "運算控制"],
+"应用自行控制":["Application controlled", "應用自行控制"],
+"已注册停止接口":["Stop API registered", "已註冊停止介面"],
+"启动计算":["Start computation", "啟動運算"],
+"计算已启动":["Computation started", "運算已啟動"],
+"启动结果待核实，已请求停止并保留预约。":["Start outcome unknown; stop requested and reservation retained.", "啟動結果待核實，已請求停止並保留預約。"],
+"模型或计算名称":["Model or computation name", "模型或運算名稱"],
+"计算输入 JSON":["Computation input JSON", "運算輸入 JSON"],
+"先申请批准预算，再调用应用启动 API；停止确认前保留资源预约。":["Reserve the approved budget before calling the application start API. Keep the reservation until stop is confirmed.", "先申請已批准預算，再呼叫應用啟動 API；停止確認前保留資源預約。"],
+
 "管理员在 Auto 页面勾选候选模型，或用 GET/PUT /api/v1/auto-routing 设置同一份配置。候选绑定 model 和 upstream_id；PUT 完整替换，revision 从最新 GET 读取，冲突返回 409。":["Select candidate models in Auto, or GET/PUT the same configuration at /api/v1/auto-routing. Candidates bind model and upstream_id. PUT replaces the full configuration using the latest revision; conflicts return 409.", "管理員在 Auto 頁面勾選候選模型，或以 GET/PUT /api/v1/auto-routing 設定同一份配置。候選綁定 model 與 upstream_id；PUT 完整替換，revision 取自最新 GET，衝突傳回 409。"],
 "默认本地规则无需额外模型。按实际能力设置 simple/standard/complex 档位；复杂请求没有 complex 候选时失败。客户端使用 model=auto，目前仅支持 Chat Completions；本地计算继续经过资源准入。":["Local rules need no extra model. Assign simple/standard/complex tiers to actual capabilities; complex requests fail without a complex candidate. Clients use model=auto with Chat Completions. Local execution still requires admission.", "預設本機規則無需額外模型。依實際能力設定 simple/standard/complex；複雜請求沒有 complex 候選時失敗。用戶端使用 model=auto，目前僅支援 Chat Completions；本機運算仍需資源准入。"],
 "Jev 需先添加 TypeSafe 上游，再设置 classifier=jev、jev_model、jev_upstream_id、allow_cloud_classifier=true 和 classifier_timeout_ms。云端回答与云端分类独立许可；Jev 失败回退规则，Local-Only 请求不调用 Jev。":["Add a TypeSafe upstream, then set classifier=jev, jev_model, jev_upstream_id, allow_cloud_classifier=true and classifier_timeout_ms. Cloud inference and classification need separate permission. Jev failure falls back to rules; Local-Only never calls Jev.", "Jev 須先新增 TypeSafe 上游，再設定 classifier=jev、jev_model、jev_upstream_id、allow_cloud_classifier=true 及 classifier_timeout_ms。雲端回答與分類獨立許可；Jev 失敗退回規則，Local-Only 不呼叫 Jev。"],
