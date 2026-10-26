@@ -1,5 +1,24 @@
 "use strict";
 export const VRouterMessages = {
+"Ollama（自动识别能力）":{"en":"Ollama (automatic capabilities)","zh-TW":"Ollama（自動識別能力）"},
+"重新识别上游能力":{"en":"Rediscover upstream capabilities","zh-TW":"重新識別上游能力"},
+"已重新识别上游能力":{"en":"Upstream capabilities rediscovered","zh-TW":"已重新識別上游能力"},
+
+"文本生成":{"en": "Text generation", "zh-TW": "文字生成"},
+"图片理解":{"en": "Image understanding", "zh-TW": "圖片理解"},
+"工具调用":{"en": "Tool calling", "zh-TW": "工具呼叫"},
+"推理":{"en": "Reasoning", "zh-TW": "推理"},
+"图片向量":{"en": "Image embedding", "zh-TW": "圖片向量"},
+"翻译":{"en": "Translation", "zh-TW": "翻譯"},
+"人脸识别":{"en": "Face recognition", "zh-TW": "人臉辨識"},
+"行人重识别":{"en": "Person re-identification", "zh-TW": "行人重識別"},
+"文字识别":{"en": "OCR", "zh-TW": "文字辨識"},
+"结构化决策（Jev）":{"en": "Typed decisions (Jev)", "zh-TW": "結構化決策（Jev）"},
+"TypeSafe / Jev（System One 决策）":{"en": "TypeSafe / Jev (System One decisions)", "zh-TW": "TypeSafe / Jev（System One 決策）"},
+"从上游模型列表选择":{"en": "Select from upstream models", "zh-TW": "從上游模型清單選擇"},
+"选择实际支持的能力；未声明时按接口和协议补全默认能力，不自动声明工具或图片能力。":{"en": "Select actual capabilities. Missing metadata uses conservative protocol/endpoint defaults; tools and vision require explicit declaration.", "zh-TW": "選擇實際支援能力；未聲明時依介面與協定補上預設能力，不自動聲明工具或圖片能力。"},
+"选择实际支持的接口；普通聊天上游默认 Chat Completions，Jev 使用 System One。":{"en": "Select supported endpoints. Ordinary chat providers default to Chat Completions; Jev uses System One.", "zh-TW": "選擇實際支援介面；一般聊天上游預設 Chat Completions，Jev 使用 System One。"},
+
 "任务优先级":{"en": "Task priority", "zh-TW": "任務優先級"},
 "后台":{"en": "Background", "zh-TW": "背景"},
 "交互":{"en": "Interactive", "zh-TW": "互動"},
@@ -427,7 +446,7 @@ export const VRouterMessages = {
   "模型能力预设": {"en": "Capability preset", "zh-TW": "模型能力預設"},
   "生成": {"en": "Generation", "zh-TW": "生成"},
   "文本补全": {"en": "Text completion", "zh-TW": "文字補全"},
-  "重排序": {"en": "Reranking", "zh-TW": "重新排序"},
+  "重排序（Rerank）": {"en": "Reranking", "zh-TW": "重新排序"},
   "图片生成": {"en": "Image generation", "zh-TW": "圖片生成"},
   "图片编辑": {"en": "Image editing", "zh-TW": "圖片編輯"},
   "图片变体": {"en": "Image variations", "zh-TW": "圖片變體"},

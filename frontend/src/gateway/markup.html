@@ -234,7 +234,7 @@
       </div>
       <div class="field">
         <label for="ufProtocol">上游协议</label>
-        <select id="ufProtocol" onchange="app.updateUpstreamProtocol()"><option value="openai">OpenAI 原生透传</option><option value="chat_completions">仅 Chat Completions（转换 Responses / Messages）</option><option value="anthropic">Anthropic 原生</option><option value="offline_asr">离线 ASR（/transcribe 适配）</option><option value="image_studio">Image Studio（生图/生视频适配）</option><option value="async_task">通用异步图片任务（创建 + 轮询）</option></select>
+        <select id="ufProtocol" onchange="app.updateUpstreamProtocol()"><option value="openai">OpenAI 原生透传</option><option value="chat_completions">仅 Chat Completions（转换 Responses / Messages）</option><option value="anthropic">Anthropic 原生</option><option value="ollama">Ollama（自动识别能力）</option><option value="typesafe">TypeSafe / Jev（System One 决策）</option><option value="offline_asr">离线 ASR（/transcribe 适配）</option><option value="image_studio">Image Studio（生图/生视频适配）</option><option value="async_task">通用异步图片任务（创建 + 轮询）</option></select>
         <label for="ufBaseURL">Base URL</label>
         <input type="text" id="ufBaseURL" autocomplete="off" placeholder="https://api.example.com/v1" />
         <div class="hint" id="ufBaseHint">可填 OpenAI 兼容 /v1、Anthropic API 地址；未写协议时默认 https，未写路径时默认 /v1。</div>
@@ -344,15 +344,16 @@
       </div>
       <div class="field">
         <label for="modelEditCapabilities">模型能力</label>
-        <input id="modelEditCapabilities" type="text" placeholder="chat, completion, tools" />
-        <div class="hint">逗号分隔。留空表示不声明能力和按接口推断。</div>
+        <div id="modelEditCapabilities" class="metadata-choices" role="group" aria-label="模型能力"></div>
+        <div class="hint">选择实际支持的能力；未声明时按接口和协议补全默认能力，不自动声明工具或图片能力。</div>
       </div>
       <div class="field">
         <label for="modelEditEndpoints">支持接口</label>
-        <input id="modelEditEndpoints" type="text" placeholder="chat_completions, responses, embeddings" />
-        <div class="hint">逗号分隔。留空表示按上游协议默认放开；修改后立即影响网关的端点路由。</div>
+        <div id="modelEditEndpoints" class="metadata-choices" role="group" aria-label="支持接口"></div>
+        <div class="hint">选择实际支持的接口；普通聊天上游默认 Chat Completions，Jev 使用 System One。</div>
       </div>
       <div class="form-error" id="modelEditError"></div>
+      <button type="button" class="btn" onclick="app.rediscoverModelMetadata()">重新识别上游能力</button>
       <div class="form-actions"><button type="button" class="btn" onclick="app.element('modelDialog').close()">取消</button><button type="submit" class="btn primary">保存</button></div>
     </form>
   </dialog>
@@ -365,7 +366,7 @@
       <div class="field"><label for="regPreset">厂商预配置</label><select id="regPreset" onchange="app.applyRegistrationProviderPreset()"></select><div class="hint">外部厂商通常建议在“添加上游”中添加；注册服务需要在租约过期前发送心跳。</div></div>
       <div class="field"><label for="regName">显示名称</label><input id="regName" type="text" placeholder="例如 VLLM Node 1" /></div>
       <div class="field"><label for="regVisibility">可见范围</label><select id="regVisibility"><option value="public">Public：所有 VOS 用户和匿名内网调用可见</option><option value="private">Private：仅当前注册用户和管理员可见</option></select></div>
-      <div class="field"><label for="regProtocol">上游协议</label><select id="regProtocol" onchange="app.updateRegistrationProtocol()"><option value="openai">OpenAI 原生透传</option><option value="chat_completions">仅 Chat Completions（转换 Responses / Messages）</option><option value="anthropic">Anthropic 原生</option><option value="offline_asr">离线 ASR（/transcribe 适配）</option><option value="image_studio">Image Studio（生图/生视频适配）</option></select></div>
+      <div class="field"><label for="regProtocol">上游协议</label><select id="regProtocol" onchange="app.updateRegistrationProtocol()"><option value="openai">OpenAI 原生透传</option><option value="chat_completions">仅 Chat Completions（转换 Responses / Messages）</option><option value="anthropic">Anthropic 原生</option><option value="ollama">Ollama（自动识别能力）</option><option value="typesafe">TypeSafe / Jev（System One 决策）</option><option value="offline_asr">离线 ASR（/transcribe 适配）</option><option value="image_studio">Image Studio（生图/生视频适配）</option></select></div>
       <div class="field"><label for="regBaseURL">Base URL</label><input id="regBaseURL" type="text" required placeholder="http://host:8000/v1" /></div>
       <div class="field"><label for="regAPIKey">上游 API Key（可选）</label><input id="regAPIKey" type="password" autocomplete="off" placeholder="供应商或模型服务自己的 key" /></div>
       <div class="field" id="regSchedulerField" hidden><label for="regScheduler">调度方式</label><select id="regScheduler"><option value="scheduled">由 V-Scheduler 调度（默认）</option><option value="direct">直接放行（不主动调度）</option></select><div class="hint">直接放行会让该服务跳过调度准入与模型预算，仅管理员可设置；默认按本机模型调度策略处理。</div></div>
@@ -373,9 +374,9 @@
       <div class="field" id="regModelPickField" hidden><label for="regModelPick">从探测列表选择模型</label><select id="regModelPick" onchange="app.pickRegistrationModel()"></select><div class="hint">先点“测试”获取模型列表；选择后会切换到单模型注册，可再选择能力预设。</div></div>
       <div id="regSingleFields" hidden>
         <div class="field"><label for="regModel">模型 ID</label><input id="regModel" type="text" placeholder="例如 qwen3:8b / text-embedding-3-small" /></div>
-        <div class="field"><label for="regCapabilityPreset">模型能力预设</label><select id="regCapabilityPreset" onchange="app.applyRegistrationPreset()"><option value="chat">对话 / 生成（Chat + Responses + Messages）</option><option value="chat_completions">仅 Chat Completions</option><option value="responses">Responses</option><option value="messages">Anthropic Messages</option><option value="completions">文本补全 Completions</option><option value="embedding">Embedding</option><option value="rerank">重排序 Rerank</option><option value="image_generation">图片生成</option><option value="image_edit">图片编辑</option><option value="image_variation">图片变体</option><option value="video_generation">视频生成</option><option value="asr">语音识别 ASR</option><option value="audio_translation">语音翻译</option><option value="tts">语音合成 TTS</option><option value="moderation">内容审核 Moderation</option><option value="custom">自定义</option></select><div class="hint">单个模型只能按模型真实能力选择；不要给单个模型声明它实际不支持的接口。</div></div>
-        <div class="field"><label for="regEndpoints">支持接口</label><input id="regEndpoints" type="text" placeholder="chat_completions, responses, embeddings" /><div class="hint">单模型注册必须填写。常用值：chat_completions、responses、messages、completions、embeddings、images/generations、images/edits、videos/generations、audio/speech、audio/transcriptions、moderations、rerank。离线 ASR 服务请选 offline_asr，并声明 audio/transcriptions；Image Studio 请选择 image_studio，可声明 images/generations、images/edits 或 videos/generations。</div></div>
-        <div class="field"><label for="regCapabilities">模型能力（可选）</label><input id="regCapabilities" type="text" placeholder="completion, tools, embedding" /></div>
+        <div class="field"><label for="regCapabilityPreset">模型能力预设</label><select id="regCapabilityPreset" onchange="app.applyRegistrationPreset()"><option value="chat">对话 / 生成（默认 Chat Completions）</option><option value="chat_completions">仅 Chat Completions</option><option value="responses">Responses</option><option value="messages">Anthropic Messages</option><option value="completions">文本补全 Completions</option><option value="embedding">Embedding</option><option value="rerank">重排序 Rerank</option><option value="image_generation">图片生成</option><option value="image_edit">图片编辑</option><option value="image_variation">图片变体</option><option value="video_generation">视频生成</option><option value="asr">语音识别 ASR</option><option value="audio_translation">语音翻译</option><option value="tts">语音合成 TTS</option><option value="decision">结构化决策（Jev）</option><option value="moderation">内容审核 Moderation</option><option value="custom">自定义</option></select><div class="hint">单个模型只能按模型真实能力选择；不要给单个模型声明它实际不支持的接口。</div></div>
+        <div class="field"><label for="regEndpoints">支持接口</label><div id="regEndpoints" class="metadata-choices" role="group" aria-label="支持接口"></div><div class="hint">单模型注册必须填写。常用值：chat_completions、responses、messages、completions、embeddings、images/generations、images/edits、videos/generations、audio/speech、audio/transcriptions、moderations、rerank。离线 ASR 服务请选 offline_asr，并声明 audio/transcriptions；Image Studio 请选择 image_studio，可声明 images/generations、images/edits 或 videos/generations。</div></div>
+        <div class="field"><label for="regCapabilities">模型能力（可选）</label><div id="regCapabilities" class="metadata-choices" role="group" aria-label="模型能力"></div></div>
         <div class="field"><label for="regModelKind">模型类型兜底</label><select id="regModelKind"><option value="unknown">由接口/能力决定</option><option value="chat">对话</option><option value="embedding">Embedding</option></select></div>
       </div>
       <div class="field"><label for="regTTL">租约秒数</label><input id="regTTL" type="number" min="30" max="3600" value="90" /><div class="hint">后端服务应在过期前调用 heartbeat。界面注册适合静态服务；动态副本建议用 API 自动注册。</div></div>

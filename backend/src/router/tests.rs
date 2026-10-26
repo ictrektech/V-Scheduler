@@ -51,6 +51,171 @@ fn model(id: &str) -> Model {
         ..Default::default()
     }
 }
+
+#[test]
+fn provider_metadata_defaults_are_conservative_and_persisted() {
+    let root = temp();
+    let mut r = Registry::default();
+    r.put(upstream("chat"), vec![Model {id:"unknown".into(),kind:"unknown".into(),..Default::default()}]);
+    let row = &r.models["chat"][0];
+    assert_eq!(row.endpoints, ["chat_completions"]);
+    assert!(row.capabilities.contains(&"chat".into()));
+    assert!(!row.capabilities.contains(&"tools".into()));
+    assert!(!row.capabilities.contains(&"vision".into()));
+    let mut decision = upstream("jev"); decision.protocol="typesafe".into();
+    r.put(decision.clone(), vec![model("jev-latest")]);
+    let row=&r.models["jev"][0];
+    assert_eq!(row.endpoints,["systemone"]);
+    assert_eq!(row.capabilities,["decision"]);
+    assert!(registry::supports(&decision,row,"/systemone"));
+    assert!(!registry::supports(&decision,row,"/chat/completions"));
+    for cap in ["embedding","rerank","image_generation","asr","decision"] {
+        let mut row=Model{id:cap.into(),kind:"unknown".into(),capabilities:vec![cap.into()],..Default::default()};
+        registry::normalize_upstream_model(&mut row,&upstream("specialized"));
+        assert!(!row.capabilities.contains(&"chat".into()),"{cap}");
+        assert_ne!(row.endpoints,["chat_completions"]);
+    }
+    r.persist(&root.join("state.json")).unwrap();
+    // Simulate a model saved by older versions with no discoverable metadata.
+    let mut disk:Value=serde_json::from_slice(&std::fs::read(root.join("state.json")).unwrap()).unwrap();
+    disk["models"]["chat"][0]["kind"]=json!("unknown");
+    disk["models"]["chat"][0]["endpoints"]=json!([]);
+    disk["models"]["chat"][0]["capabilities"]=json!([]);
+    std::fs::write(root.join("state.json"),serde_json::to_vec(&disk).unwrap()).unwrap();
+    let restored=Registry::open(&root.join("state.json")).unwrap();
+    assert_eq!(restored.models["chat"][0].endpoints,["chat_completions"]);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
+async fn typesafe_native_catalog_and_proxy_preserve_typed_contract_and_credentials() {
+    let root=temp();
+    let server=Router::new()
+        .route("/v1/models",axum::routing::get(|headers:HeaderMap|async move {
+            assert_eq!(headers["authorization"],"Bearer fixture-typesafe-key");
+            Json(json!({"models":[{"name":"jev-latest","description":"System One","release_date":"2026-09-15"}]}))
+        }))
+        .route("/v1/systemone",post(|headers:HeaderMap,Json(body):Json<Value>|async move {
+            assert_eq!(headers["authorization"],"Bearer fixture-typesafe-key");
+            assert_eq!(headers["typesafe-danger-zone-images"],"true");
+            assert_eq!(body["model"],"jev-latest");
+            assert_eq!(body["state"],json!({"ticket":"charged twice"}));
+            assert_eq!(body["questions"]["billing"]["type"],"noul");
+            assert!(body.get("messages").is_none());
+            Json(json!({"model":"jev-latest","answers":{"billing":{"type":"noul","noul":0.98}},"usage":{"input_tokens":12,"output_tokens":3}}))
+        }));
+    let listener=tokio::net::TcpListener::bind("127.0.0.2:0").await.unwrap();
+    let address=listener.local_addr().unwrap();
+    let task=tokio::spawn(async move {axum::serve(listener,server).await.unwrap();});
+    let g=gateway(&root,Router::new());
+    let mut u=manage::normalize(&json!({"name":"TypeSafe","kind":"cloud","protocol":"typesafe","base_url":format!("http://{address}/v1"),"api_key":"fixture-typesafe-key","visibility":"private"})).unwrap();
+    u.id="typesafe".into();u.model_prefix="ai.typesafe.api".into();u.owner="alice".into();u.healthy=true;u.source="api".into();
+    let rows=manage::models(&g,&u).await.unwrap();
+    assert_eq!(rows[0].id,"jev-latest");assert_eq!(rows[0].endpoints,["systemone"]);
+    g.registry.lock().unwrap().put(u,rows);
+    let request=||axum::http::Request::builder().method("POST").uri("/v1/systemone").header("content-type","application/json").header("authorization","Bearer caller-secret").header("typesafe-danger-zone-images","true")
+        .body(Body::from(json!({"model":"ai.typesafe.api/jev-latest","state":{"ticket":"charged twice"},"questions":{"billing":{"type":"noul","instructions":"Is this about billing?"}}}).to_string())).unwrap();
+    let response=proxy::handle(g.clone(),principal("alice"),request()).await.unwrap();
+    assert_eq!(response.status(),StatusCode::OK);
+    let body=axum::body::to_bytes(response.into_body(),65536).await.unwrap();
+    let result:Value=serde_json::from_slice(&body).unwrap();
+    assert_eq!(result["answers"]["billing"]["noul"],0.98);
+    assert_eq!(result["usage"]["input_tokens"],12);
+    assert!(!String::from_utf8_lossy(&body).contains("fixture-typesafe-key"));
+    assert!(proxy::handle(g,principal("bob"),request()).await.is_err());
+    task.abort();std::fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
+async fn ollama_capabilities_are_discovered_from_server_and_manual_overrides_survive_refresh() {
+    let root=temp();
+    let server=Router::new()
+        .route("/v1/models",axum::routing::get(||async {Json(json!({"data":[{"id":"plain-name"},{"id":"not-obviously-an-embedding"},{"id":"old-vision"},{"id":"native-decision"},{"id":"transient-show-error"}]}))}))
+        .route("/api/version",axum::routing::get(||async {Json(json!({"version":"fixture"}))}))
+        .route("/api/show",post(|headers:HeaderMap,Json(body):Json<Value>|async move {
+            assert_eq!(headers["authorization"],"Bearer fixture-ollama-key");
+            if body["model"] == "transient-show-error" {
+                return (StatusCode::BAD_GATEWAY, Json(json!({"error":"temporary"})));
+            }
+            (StatusCode::OK, Json(match body["model"].as_str().unwrap() {
+                "plain-name"=>json!({"capabilities":["completion","vision","tools","thinking"]}),
+                "not-obviously-an-embedding"=>json!({"capabilities":["embedding"]}),
+                "old-vision"=>json!({"projector_info":{"general.architecture":"clip"}}),
+                "native-decision"=>json!({"capabilities":["decision"]}),
+                _=>panic!("unexpected model"),
+            }))
+        }));
+    let server = server.route("/v1/systemone",post(|Json(body):Json<Value>|async move {
+        assert_eq!(body["model"],"native-decision");
+        assert_eq!(body["questions"]["ready"]["type"],"noul");
+        Json(json!({"answers":{"ready":{"type":"noul","noul":0.9}}}))
+    }));
+    let listener=tokio::net::TcpListener::bind("127.0.0.2:0").await.unwrap();
+    let address=listener.local_addr().unwrap();
+    let task=tokio::spawn(async move {axum::serve(listener,server).await.unwrap();});
+    let g=gateway(&root,Router::new());
+    let mut u=upstream("ollama");u.base_url=format!("http://{address}/v1");u.owner="alice".into();u.api_key="fixture-ollama-key".into();
+    g.registry.lock().unwrap().put(u.clone(), vec![Model {
+        id:"transient-show-error".into(),capabilities:vec!["vision".into()],..Default::default()
+    }]);
+    // Existing OpenAI-compatible entries are recognized without re-creating them.
+    let rows=manage::models(&g,&u).await.unwrap();
+    assert!(rows[0].capabilities.iter().any(|c|c=="vision"));
+    assert!(rows[0].capabilities.iter().any(|c|c=="tools"));
+    assert!(rows[0].capabilities.iter().any(|c|c=="thinking"));
+    assert_eq!(rows[1].endpoints,["embeddings"]);
+    assert!(!rows[1].capabilities.iter().any(|c|c=="chat"));
+    assert!(rows[2].capabilities.iter().any(|c|c=="vision"));
+    assert!(rows[4].capabilities.contains(&"vision".into()), "temporary metadata errors must preserve prior capabilities");
+    assert_eq!(rows[3].endpoints,["systemone"]);
+    assert!(registry::supports(&u,&rows[3],"/systemone"));
+    assert!(!registry::supports(&u,&rows[3],"/chat/completions"));
+    g.registry.lock().unwrap().put(u,rows);
+    let inference = axum::http::Request::builder().method("POST").uri("/v1/systemone")
+        .header("content-type","application/json")
+        .body(Body::from(json!({"model":"manual/native-decision","state":"Ready","questions":{"ready":{"type":"noul","instructions":"Ready?"}}}).to_string())).unwrap();
+    let response = proxy::handle(g.clone(),principal("alice"),inference).await.unwrap();
+    assert_eq!(response.status(),StatusCode::OK);
+    let result:Value = serde_json::from_slice(&axum::body::to_bytes(response.into_body(),65536).await.unwrap()).unwrap();
+    assert_eq!(result["answers"]["ready"]["noul"],0.9);
+    let req=|method:&str,path:&str,value:Value|axum::http::Request::builder().method(method).uri(path).header("content-type","application/json").body(Body::from(value.to_string())).unwrap();
+    let _=manage::handle(&g,&principal("alice"),req("PATCH","/api/v1/models",json!({"model":"manual/plain-name","upstream_id":"ollama","capabilities":["completion"],"endpoints":["chat_completions"]}))).await.unwrap();
+    let _=manage::handle(&g,&principal("alice"),req("POST","/api/v1/upstreams/ollama/refresh",json!({}))).await.unwrap();
+    assert!(!g.registry.lock().unwrap().models["ollama"][0].capabilities.iter().any(|c|c=="vision"));
+    let _=manage::handle(&g,&principal("alice"),req("PATCH","/api/v1/models",json!({"model":"manual/plain-name","upstream_id":"ollama","metadata_override":false}))).await.unwrap();
+    let _=manage::handle(&g,&principal("alice"),req("POST","/api/v1/upstreams/ollama/refresh",json!({}))).await.unwrap();
+    assert!(g.registry.lock().unwrap().models["ollama"][0].capabilities.iter().any(|c|c=="vision"));
+    // Explicit Ollama protocol has the same discovery result and chat bridges.
+    let mut u=g.registry.lock().unwrap().upstreams["ollama"].clone();u.protocol="ollama".into();
+    let rows=manage::models(&g,&u).await.unwrap();assert!(registry::supports(&u,&rows[0],"/responses"));
+    task.abort();std::fs::remove_dir_all(root).unwrap();
+}
+#[tokio::test]
+#[ignore = "requires SCHEDULER_TEST_OLLAMA_URL for a real Ollama service; reads metadata only"]
+async fn live_ollama_metadata_matches_server_capabilities() {
+    let root = temp();
+    let base = std::env::var("SCHEDULER_TEST_OLLAMA_URL").unwrap();
+    let base = base.trim_end_matches('/');
+    let g = gateway(&root, Router::new());
+    let mut u = upstream("live-ollama");
+    u.protocol = "ollama".into();
+    u.base_url = format!("{base}/v1");
+    let rows = manage::models(&g, &u).await.unwrap();
+    assert!(!rows.is_empty(), "live service must have installed models");
+    for row in rows {
+        let value: Value = g.client.post(format!("{base}/api/show"))
+            .json(&json!({"model":row.id})).send().await.unwrap().json().await.unwrap();
+        for cap in strings(&value["capabilities"]) {
+            assert!(row.capabilities.contains(&cap), "{} lost {cap}", row.id);
+        }
+        if value["capabilities"].as_array().is_some_and(|caps| caps.contains(&json!("embedding"))) {
+            assert!(row.endpoints.contains(&"embeddings".into()));
+            assert!(!row.capabilities.contains(&"chat".into()));
+        }
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}
+
 fn temp() -> PathBuf {
     let path = std::env::temp_dir().join(format!("v-scheduler-router-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&path).unwrap();

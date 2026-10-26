@@ -62,7 +62,7 @@ impl Upstream {
         self.healthy && self.expires_at.is_none_or(|at| at > Utc::now())
     }
     pub fn chat_only(&self) -> bool {
-        self.protocol == "chat_completions"
+        ["chat_completions", "ollama"].contains(&self.protocol.as_str())
             || self.protocol.is_empty() && self.source == "model-hub"
     }
 }
@@ -78,6 +78,7 @@ pub(super) struct Model {
     #[serde(deserialize_with = "null_default")]
     pub endpoints: Vec<String>,
     pub owned_by: String,
+    pub metadata_override: bool,
 }
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(default)]
@@ -158,6 +159,11 @@ impl Registry {
             );
             p.weight = p.weight.max(1);
         }
+        for (id, models) in &mut result.models {
+            if let Some(u) = result.upstreams.get(id) {
+                for model in models { normalize_upstream_model(model, u); }
+            }
+        }
         Ok(result)
     }
     pub fn persist(&self, path: &std::path::Path) -> anyhow::Result<()> {
@@ -206,7 +212,7 @@ impl Registry {
             .and_then(|old| old.created_at)
             .or(Some(Utc::now()));
         for m in &mut models {
-            normalize_model(m);
+            normalize_upstream_model(m, &u);
             m.upstream_id = u.id.clone();
             m.qualified = format!("{}/{}", u.prefix(), m.id);
         }
@@ -397,6 +403,7 @@ impl Registry {
     }
 }
 pub(super) fn supports(u: &Upstream, m: &Model, path: &str) -> bool {
+    if u.protocol == "typesafe" && path != "/systemone" { return false; }
     if ["v-scheduler", "model-hub"].contains(&u.source.as_str()) {
         if u.role == "rerank" && path != "/rerank" {
             return false;
@@ -457,6 +464,7 @@ pub(super) fn supports(u: &Upstream, m: &Model, path: &str) -> bool {
         "/audio/translations" => &["translation", "translations"],
         "/audio/music/generations" => &["music", "text-to-music", "instrumental"],
         "/moderations" => &["moderation", "moderations"],
+        "/systemone" => &["decision"],
         "/ml/predictions" => &[
             "vision",
             "image_embedding",
@@ -503,6 +511,7 @@ pub(super) fn endpoint(v: &str) -> String {
         "ml/video/structure" | "ml_video_structure" => "ml/video/structure",
         "ml/video/structure/tasks" | "ml_video_structure_tasks" => "ml/video/structure/tasks",
         "rerank" | "reranking" => "rerank",
+        "systemone" | "system_one" => "systemone",
         _ => value,
     }
     .into()
@@ -530,6 +539,7 @@ pub(super) fn normalize_model(model: &mut Model) {
             "audio/music/generations" => "text-to-music",
             "moderations" => "moderation",
             "rerank" => "rerank",
+            "systemone" => "decision",
             "ml/predictions" => "vision",
             "ml/video/structure" | "ml/video/structure/tasks" => "video_structure",
             _ => "",
@@ -572,4 +582,50 @@ pub(super) fn normalize_model(model: &mut Model) {
         }
         .into();
     }
+}
+
+/// Publish useful, conservative defaults for catalogs without metadata. Never
+/// advertise tools, vision or native Responses support merely from a provider name.
+pub(super) fn normalize_upstream_model(model: &mut Model, u: &Upstream) {
+    if u.protocol == "typesafe" {
+        model.endpoints = vec!["systemone".into()];
+        model.capabilities = vec!["decision".into()];
+        model.kind = "unknown".into();
+    } else if model.endpoints.is_empty() {
+        for cap in &model.capabilities {
+            let endpoint = match cap.trim().to_ascii_lowercase().as_str() {
+                "embedding" | "embeddings" => "embeddings",
+                "rerank" | "reranking" => "rerank",
+                "image_generation" => "images/generations",
+                "image_edit" => "images/edits",
+                "image_variation" => "images/variations",
+                "video_generation" => "videos/generations",
+                "asr" | "transcription" => "audio/transcriptions",
+                "tts" | "speech" => "audio/speech",
+                "translation" => "audio/translations",
+                "moderation" => "moderations",
+                "image_embedding" | "face_recognition" | "person_reid" | "ocr" => "ml/predictions",
+                "video_structure" => "ml/video/structure",
+                "decision" => "systemone",
+                _ => "",
+            };
+            if !endpoint.is_empty() { model.endpoints.push(endpoint.into()); }
+        }
+        if model.endpoints.is_empty() && model.kind == "embedding" {
+            model.endpoints.push("embeddings".into());
+        }
+        if model.endpoints.is_empty() && ["openai", "chat_completions", "anthropic", "ollama"].contains(&u.protocol.as_str()) {
+            // Unknown non-chat extensions must not become chat models implicitly.
+            if model.capabilities.is_empty() || model.capabilities.iter().any(|c| ["chat", "completion", "completions", "generate", "generation", "tools", "thinking", "vision"].contains(&c.as_str())) {
+                model.endpoints.push(if u.protocol == "anthropic" { "messages" } else { "chat_completions" }.into());
+            }
+        }
+    }
+    normalize_model(model);
+    if model.endpoints.iter().any(|e| ["chat_completions", "responses", "messages", "completions"].contains(&e.as_str())) {
+        if !model.capabilities.iter().any(|c| c == "chat") { model.capabilities.push("chat".into()); }
+        if model.kind.is_empty() || model.kind == "unknown" { model.kind = "chat".into(); }
+    }
+    model.capabilities.sort();
+    model.capabilities.dedup();
 }

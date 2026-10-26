@@ -16,6 +16,13 @@ defineProps<{t:(value:string)=>string}>()
   <p>{{t('正式别名由当前 V-Scheduler 安装声明；兼容别名仅供旧客户端使用。新应用优先使用正式别名；与旧 V-Router 共存时不要向兼容别名发送私有凭据。所有别名均指向现有容器，不新增服务。')}}</p>
   <h3>{{t('本地与云端模型')}}</h3>
   <p>{{t('本地和纳管远端模型先取得资源许可；云端供应商模型不占本地资源预约。资源忙时遵守重试提示，不能绕过网关直接启动同一次计算。')}}</p>
+  <h3>{{t('Provider 与模型能力')}}</h3>
+  <p>{{t('上游页面可选厂商预设或自定义中转地址，测试后勾选要导入的模型。模型能力和接口使用复选框；普通聊天上游缺失声明时默认 chat / completion 与 chat_completions，Anthropic 默认 messages。显式接口优先，图片、语音、向量和决策模型不会自动声明为聊天；tools 和 vision 必须按真实能力勾选。')}}</p>
+  <p>{{t('Ollama 模型通过 /api/show 自动读取 completion、vision、tools、thinking、embedding、decision 等实际能力，内置实例与手动添加的实例使用同一逻辑。旧版 OpenAI 兼容配置通过 /api/version 识别；读取失败保留已有信息。手动修改后刷新不会覆盖，点击「重新识别上游能力」可恢复自动识别。')}}</p>
+  <h3>{{t('Jev 原生决策与中转')}}</h3>
+  <p>{{t('TypeSafe / Jev 使用 typesafe 协议和 https://api.typesafe.ai/v1，也可使用实现同协议的自有中转。模型列表读取 models[].name；能力为 decision，接口为 systemone，不会冒充 Harness 聊天模型。工作台选择 System One 后输入包含 state、questions 的 JSON 测试。')}}</p>
+  <p><code>POST http://v-scheduler:8080/v1/systemone</code> · <code>http://{{locationHost}}:22888/v1/systemone</code></p>
+  <p>{{t('局域网端口以安装配置为准。同域入口为 /api/com.ictrek.v-scheduler/v1/systemone；鉴权沿用本人 VOS token 或网关 Key，受限应用凭据保留原白名单。供应商密钥保存在网关，请求仅重写模型 ID，保留 state、questions、assets、功能头及原生 answers、概率、置信度和 usage；不支持 SSE。')}}</p>
   <h3>{{t('应用和模型自动发现')}}</h3>
   <p>{{t('安装支持的应用后，网关会按发现间隔读取其可用模型与服务。内置三个 Ollama 由本应用直接接入；其他应用支持 Image Studio、V-Voice、V-Music、ML Server 和视频结构化服务。')}}</p>
   <p>{{t('V-Voice 就绪后会主动接入调度器，自动绑定已校准的执行器与模型映射。外部云端服务可在上游页面配置。')}}</p>

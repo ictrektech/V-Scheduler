@@ -298,3 +298,15 @@ V-Voice 0.0.28 沿用 0.0.27 的正式接入地址、模型审批与资源预算
 ### 原生应用统一等待准入
 
 原生执行端通过 POST /scheduler/api/v1/permits/wait 申请准入，JSON 为 {"request":原 permits 请求,"wait_seconds":30}；默认等待 30 秒，X-VScheduler-Queue-Wait-Seconds 可设为 0..300，0 表示立即尝试。等待只保存身份与顺序，不预约模型权重，不启动或重放推理；超时返回 429 QUEUE_TIMEOUT。V-Voice、Desensitize、V-Sub 在本地执行锁之前进入统一队列，同一已批准原生进程只保留一条执行通道；不同进程的实际副本分别预算。授权强制请求先行，其后按本次任务优先级、等待老化和到达顺序执行。其他应用申请资源不会无条件卸载空闲 Ollama，只有内存不足才请求卸载，确认停止后才释放预算。
+
+### Provider 预设、模型能力与 Jev
+
+上游管理复用统一 provider 预设：已有供应商不重复添加，新增 Google Gemini、Mistral AI、Groq、Cerebras、Deep Infra、Fireworks AI、Together AI、NVIDIA NIM、Hugging Face Inference Providers、Venice AI、Ollama Cloud、TypeSafe / Jev。预设只提供名称、地址和协议；模型 ID 从上游探测，不固定易过期的模型版本，密钥仍由网关私有保存。自定义地址和原有配置继续可用。Chat Completions 兼容协议会复用现有 Responses / Messages 转换，而不是假设供应商都提供原生接口。
+
+模型编辑、逐模型上游配置、单模型注册使用有限能力和接口复选框。缺失元数据的普通聊天模型默认 `chat` / `completion` 与 `chat_completions`，也适用于重启后读取的旧配置，保证 Harness 能发现；显式接口优先，Embedding、图像、语音、决策模型不会自动变成聊天模型。`vision`、`tools` 依据上游真实能力自动识别或手动校正，上游扩展标记保留，不静默删除。
+
+Jev 使用 `typesafe` 协议，默认 Base URL `https://api.typesafe.ai/v1`。原生模型列表按 `models[].name` 读取；网关通过 `POST http://v-scheduler:8080/v1/systemone` 转发 `model`、`state`、`questions`、`assets` 等字段，保留原生 answers、概率、置信度、usage 和 TypeSafe 功能头。支持用户配置的中转 Base URL，但必须实现同一原生协议。模型能力为 `decision`、接口为 `systemone`，不会假冒聊天模型出现在 Harness 的聊天模型列表；工作台可选 System One 输入 JSON 测试，不支持流式。详见 [统一接入指南](docs/application-integration.md#provider-与模型能力声明)。
+
+参考：[OpenCode providers](https://opencode.ai/docs/providers/)、[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)、[TypeSafe System One](https://docs.typesafe.ai/api/system-one)、[TypeSafe 模型列表](https://docs.typesafe.ai/api/list-models)。
+
+Ollama 模型能力自动从原生 `/api/show` 读取，包含视觉、工具、推理和 embedding 等能力；内置实例和新 `ollama` 协议上游共用识别逻辑，旧手动兼容上游通过 `/api/version` 识别。手工修正的元数据随状态持久化，刷新不会覆盖；可用模型编辑页「重新识别上游能力」恢复自动识别。识别不会加载权重，详见统一接入指南的 Ollama 小节。

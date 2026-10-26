@@ -407,3 +407,7 @@ summary:focus-visible, #nav button:focus-visible { outline: 2px solid var(--prim
 .side-footer .user-role { color: var(--muted); opacity: 1; }
 
 :host{display:block;font-family:inherit;color:#17243a}.shell{display:block;min-height:0}.sidebar{display:none!important}.topbar{display:flex!important;padding:0;margin:0 0 18px;min-height:0;border:0;background:transparent}.topbar>div:first-child,.topbar .locale-select{display:none!important}.top-actions{width:100%;justify-content:flex-end;flex-wrap:wrap}.side-footer{padding:0;margin-right:auto;border:0}.side-footer .user-chip{min-width:130px}.main{margin:0!important;width:100%;min-height:0}.content{padding:0!important}.error-banner{margin:0 0 16px}.tab[hidden]{display:none!important}
+
+.metadata-choices { display: flex; flex-wrap: wrap; gap: 8px 16px; padding: 10px; border: 1px solid var(--border, #dce4ee); border-radius: 8px; }
+.metadata-choices .check { display: inline-flex; align-items: center; gap: 6px; margin: 0; font-size: 13px; }
+.metadata-choices input[type="checkbox"] { width: auto; margin: 0; }

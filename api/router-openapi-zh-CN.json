@@ -182,6 +182,80 @@
           "manage"
         ],
         "x-gateway-auth": "manage"
+      },
+      "patch": {
+        "summary": "修改模型元数据",
+        "description": "修改 API 创建上游的模型，model 使用 qualified 名称，可同时传 upstream_id。capabilities 和 endpoints 为字符串数组。手动修改设置 metadata_override=true，刷新保留；传 false 后 POST /api/v1/upstreams/{id}/refresh 恢复 Ollama 自动识别。仅 owner 和管理员可修改；内置、注册、发现模型仍只读。",
+        "tags": [
+          "manage"
+        ],
+        "x-gateway-auth": "manage",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "model"
+                ],
+                "properties": {
+                  "model": {
+                    "type": "string"
+                  },
+                  "upstream_id": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "",
+                      "unknown",
+                      "chat",
+                      "embedding"
+                    ]
+                  },
+                  "capabilities": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "endpoints": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "metadata_override": {
+                    "type": "boolean"
+                  }
+                }
+              },
+              "example": {
+                "model": "manual/model",
+                "upstream_id": "ollama",
+                "metadata_override": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated model metadata"
+          },
+          "default": {
+            "description": "Gateway error"
+          }
+        }
       }
     },
     "/api/v1/openapi.json": {
@@ -212,7 +286,7 @@
     },
     "/api/v1/registrations": {
       "post": {
-        "description": "需网关 Key 或 VOS 身份。稳定 service_id 生成 registered-<service_id>；相同 ID 更新同一实例，副本须不同 ID。可注册 public 或 private 服务；private 只对注册者身份可见，public 对所有调用者可见。可注册 base_url/models 模型 API，也可提交 model 或 models 显式注册单个/多个模型；显式模型必须声明 endpoints，capabilities/model_kind 用于接口能力过滤；model_endpoints 和 model_capabilities 可逐模型覆盖；ttl_seconds 默认90。",
+        "description": "需网关 Key 或 VOS 身份。稳定 service_id 生成 registered-<service_id>；相同 ID 更新同一实例，副本须不同 ID。可注册 public 或 private 服务；private 只对注册者身份可见，public 对所有调用者可见。可注册 base_url/models 模型 API，也可提交 model 或 models 显式注册单个/多个模型；显式专用模型应声明 endpoints，普通聊天模型缺省时按协议补全，capabilities/model_kind 用于接口能力过滤；model_endpoints 和 model_capabilities 可逐模型覆盖；ttl_seconds 默认90。",
         "requestBody": {
           "content": {
             "application/json": {
@@ -546,7 +620,7 @@
         "x-gateway-auth": "manage"
       },
       "post": {
-        "description": "登记上游，kind 支持 manual/cloud，protocol 支持 openai（原生）、chat_completions（转换 Responses/Messages）、anthropic（原生）、offline_asr（离线 ASR /transcribe 适配）、image_studio（Image Studio 生图/生视频适配）、async_task（通用异步图片任务创建/轮询适配）。云端模型前缀按域名反转生成，例如 ai.ictrek.com -> com.ictrek.ai。默认保存前探测模型列表；async_task 改为校验单模型及任务字段，不创建付费任务。visibility 支持 public（共享，默认，所有调用者可见可用）和 private（仅创建者与管理员可见可用）；创建者身份记录为 owner，之后只有 owner 和管理员能修改、刷新、删除该上游或配置调度。历史存量上游 owner 为空，升级后保持共享且所有登录用户可管理。",
+        "description": "新增 ollama（自动读取 /api/show 能力）与 typesafe（Jev System One）协议；普通聊天未声明接口时保守补全 Chat Completions，专用能力仍按实际接口隔离。登记上游，kind 支持 manual/cloud，protocol 支持 openai（原生）、chat_completions（转换 Responses/Messages）、anthropic（原生）、offline_asr（离线 ASR /transcribe 适配）、image_studio（Image Studio 生图/生视频适配）、async_task（通用异步图片任务创建/轮询适配）。云端模型前缀按域名反转生成，例如 ai.ictrek.com -> com.ictrek.ai。默认保存前探测模型列表；async_task 改为校验单模型及任务字段，不创建付费任务。visibility 支持 public（共享，默认，所有调用者可见可用）和 private（仅创建者与管理员可见可用）；创建者身份记录为 owner，之后只有 owner 和管理员能修改、刷新、删除该上游或配置调度。历史存量上游 owner 为空，升级后保持共享且所有登录用户可管理。",
         "requestBody": {
           "content": {
             "application/json": {
@@ -11484,6 +11558,128 @@
             "description": "Structured gateway error"
           }
         }
+      }
+    },
+    "/v1/systemone": {
+      "post": {
+        "description": "TypeSafe / Jev 原生结构化决策转发。请求保留 state、questions、assets 等原生字段，仅重写已选模型 ID；供应商密钥由网关保存。返回 answers、概率、置信度及 usage，不转换为聊天文本。支持 TypeSafe 及提供 systemone 接口的 Ollama 模型，不支持 SSE。",
+        "parameters": [
+          {
+            "description": "指定上游 ID；严格固定，不自动切换，需身份与原生模型名。不指定时按匹配模型、协议及健康状态，以进行中请求/权重选择，平局在当前模型与接口范围内按权重平滑轮换；全满返回429。模型前缀限定来源，短名跨来源（包括云端）。资源接口必须指定。",
+            "in": "header",
+            "name": "X-VRouter-Upstream",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/SchedulingQueueWaitSeconds"
+          },
+          {
+            "$ref": "#/components/parameters/SchedulingPriority"
+          },
+          {
+            "$ref": "#/components/parameters/SchedulingRequestID"
+          },
+          {
+            "$ref": "#/components/parameters/SchedulingPreemptible"
+          },
+          {
+            "$ref": "#/components/parameters/SchedulingAllowPreemption"
+          },
+          {
+            "$ref": "#/components/parameters/SchedulingForceAdmission"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "model",
+                  "state",
+                  "questions"
+                ],
+                "properties": {
+                  "model": {
+                    "type": "string"
+                  },
+                  "state": {
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "object"
+                      },
+                      {
+                        "type": "array"
+                      }
+                    ]
+                  },
+                  "questions": {
+                    "type": "object",
+                    "minProperties": 1
+                  }
+                },
+                "additionalProperties": true
+              },
+              "example": {
+                "model": "ai.typesafe.api/jev-latest",
+                "state": "I was charged twice",
+                "questions": {
+                  "billing": {
+                    "type": "noul",
+                    "instructions": "Is this about billing?"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "原生 JSON：answers、概率、置信度与 token 用量；不支持 SSE。",
+            "headers": {
+              "X-VRouter-Routing": {
+                "description": "least-inflight 或 pinned",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-VRouter-Upstream": {
+                "description": "实际命中的上游 ID",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "资源或并发准入拒绝；遵守 Retry-After，或按调度参数等待排队。"
+          },
+          "default": {
+            "description": "网关拒绝或上游原始错误"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          },
+          {}
+        ],
+        "summary": "Jev / System One 结构化决策",
+        "tags": [
+          "TypeSafe / Jev"
+        ],
+        "x-gateway-auth": "inference",
+        "operationId": "systemOne"
       }
     }
   },

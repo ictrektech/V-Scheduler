@@ -182,6 +182,80 @@
           "manage"
         ],
         "x-gateway-auth": "manage"
+      },
+      "patch": {
+        "summary": "Update model metadata",
+        "description": "Update an API-created upstream model using its qualified model ID and optional upstream_id. Capabilities and endpoints are string arrays. Manual edits set metadata_override=true and survive refresh. Set metadata_override=false, then POST /api/v1/upstreams/{id}/refresh to rediscover Ollama capabilities. Only the owner and administrators may edit; built-in/registered/discovered models remain read-only.",
+        "tags": [
+          "manage"
+        ],
+        "x-gateway-auth": "manage",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "model"
+                ],
+                "properties": {
+                  "model": {
+                    "type": "string"
+                  },
+                  "upstream_id": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "",
+                      "unknown",
+                      "chat",
+                      "embedding"
+                    ]
+                  },
+                  "capabilities": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "endpoints": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "metadata_override": {
+                    "type": "boolean"
+                  }
+                }
+              },
+              "example": {
+                "model": "manual/model",
+                "upstream_id": "ollama",
+                "metadata_override": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated model metadata"
+          },
+          "default": {
+            "description": "Gateway error"
+          }
+        }
       }
     },
     "/api/v1/openapi.json": {
@@ -212,7 +286,7 @@
     },
     "/api/v1/registrations": {
       "post": {
-        "description": "Requires a gateway key or VOS identity. A stable service_id produces registered-<service_id>; the same ID updates the same instance, replicas need distinct IDs. Public services are visible to all callers; private services only to the registrant. Register a base_url/models API or explicitly supply model/models. Explicit models must declare endpoints; capabilities/model_kind supports capability filtering. model_endpoints/model_capabilities can override individual models. ttl_seconds defaults to 90.",
+        "description": "Requires a gateway key or VOS identity. A stable service_id produces registered-<service_id>; the same ID updates the same instance, replicas need distinct IDs. Public services are visible to all callers; private services only to the registrant. Register a base_url/models API or explicitly supply model/models. Explicit specialized models should declare endpoints; ordinary chat defaults are inferred from the protocol; capabilities/model_kind supports capability filtering. model_endpoints/model_capabilities can override individual models. ttl_seconds defaults to 90.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -546,7 +620,7 @@
         "x-gateway-auth": "manage"
       },
       "post": {
-        "description": "Registers an upstream. kind: manual/cloud. protocol: openai (native), chat_completions (Responses/Messages conversion), anthropic (native), offline_asr (/transcribe adapter), image_studio (image/video adapter), async_task (generic asynchronous image task creation/polling). Cloud model prefixes reverse the domain, e.g. ai.ictrek.com -> com.ictrek.ai. Models are probed before saving; async_task validates the single-model/task configuration without creating a paid task. visibility: public (default, shared with all callers) or private (owner and administrators only). The creator becomes owner; only the owner and administrators may edit, refresh, delete or configure scheduling. Legacy upstreams with an empty owner remain shared and manageable by all signed-in users.",
+        "description": "Also supports ollama (automatic /api/show capabilities) and typesafe (Jev System One). Undeclared ordinary chat models default to Chat Completions; specialized models retain their actual endpoints. Registers an upstream. kind: manual/cloud. protocol: openai (native), chat_completions (Responses/Messages conversion), anthropic (native), offline_asr (/transcribe adapter), image_studio (image/video adapter), async_task (generic asynchronous image task creation/polling). Cloud model prefixes reverse the domain, e.g. ai.ictrek.com -> com.ictrek.ai. Models are probed before saving; async_task validates the single-model/task configuration without creating a paid task. visibility: public (default, shared with all callers) or private (owner and administrators only). The creator becomes owner; only the owner and administrators may edit, refresh, delete or configure scheduling. Legacy upstreams with an empty owner remain shared and manageable by all signed-in users.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -11484,6 +11558,128 @@
             "description": "Structured gateway error"
           }
         }
+      }
+    },
+    "/v1/systemone": {
+      "post": {
+        "description": "Proxies the native TypeSafe System One request, preserving state, questions and assets while rewriting the selected model ID. Provider credentials remain server-side. Returns native answers, probabilities, confidence and usage without a chat conversion. Supports TypeSafe and Ollama models exposing the systemone endpoint; SSE is not supported.",
+        "parameters": [
+          {
+            "description": "Pins an upstream ID without fallback; requires identity and native model names. Otherwise matches model, protocol and health, selecting by in-flight requests/weight. Ties use smooth weighted rotation within the current model/interface. Returns 429 if all candidates are full. A prefix limits source; short names span sources, including cloud. Required for resource APIs.",
+            "in": "header",
+            "name": "X-VRouter-Upstream",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/SchedulingQueueWaitSeconds"
+          },
+          {
+            "$ref": "#/components/parameters/SchedulingPriority"
+          },
+          {
+            "$ref": "#/components/parameters/SchedulingRequestID"
+          },
+          {
+            "$ref": "#/components/parameters/SchedulingPreemptible"
+          },
+          {
+            "$ref": "#/components/parameters/SchedulingAllowPreemption"
+          },
+          {
+            "$ref": "#/components/parameters/SchedulingForceAdmission"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "model",
+                  "state",
+                  "questions"
+                ],
+                "properties": {
+                  "model": {
+                    "type": "string"
+                  },
+                  "state": {
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "object"
+                      },
+                      {
+                        "type": "array"
+                      }
+                    ]
+                  },
+                  "questions": {
+                    "type": "object",
+                    "minProperties": 1
+                  }
+                },
+                "additionalProperties": true
+              },
+              "example": {
+                "model": "ai.typesafe.api/jev-latest",
+                "state": "I was charged twice",
+                "questions": {
+                  "billing": {
+                    "type": "noul",
+                    "instructions": "Is this about billing?"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Native JSON answers, probabilities, confidence and token usage; no SSE.",
+            "headers": {
+              "X-VRouter-Routing": {
+                "description": "least-inflight or pinned",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-VRouter-Upstream": {
+                "description": "Selected upstream ID",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Resource or concurrency admission rejected; follow Retry-After or opt into the scheduling queue."
+          },
+          "default": {
+            "description": "Gateway rejection or original upstream error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          },
+          {}
+        ],
+        "summary": "Jev / System One typed decisions",
+        "tags": [
+          "TypeSafe / Jev"
+        ],
+        "x-gateway-auth": "inference",
+        "operationId": "systemOne"
       }
     }
   },

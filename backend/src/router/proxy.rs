@@ -425,6 +425,9 @@ pub(super) async fn handle(g: Arc<Gateway>, id: Identity, request: Request) -> A
             (Some(buffer), bytes, vec![], value, model)
         }
     };
+    if path == "/v1/systemone" && value["stream"] == true {
+        return Err(Failure::new(400, "TypeSafe System One does not support streaming"));
+    }
     if !pinned.is_empty() {
         auth::identity(&g, &headers, true).await?;
     }
@@ -488,6 +491,7 @@ pub(super) async fn handle(g: Arc<Gateway>, id: Identity, request: Request) -> A
                 "models",
                 "moderations",
                 "rerank",
+                "systemone",
                 "ml",
             ]
             .contains(&family)

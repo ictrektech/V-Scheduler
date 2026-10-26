@@ -35,6 +35,7 @@ fn models(rows: &Value) -> Vec<Model> {
                 endpoints,
                 capabilities: strings(&v["capabilities"]),
                 owned_by: text(v, "owned_by").into(),
+                metadata_override: false,
                 ..Default::default()
             })
         })
@@ -224,15 +225,10 @@ async fn ollama(g: &Gateway, role: &str) {
         role: if role == "qa" { "generate" } else { role }.into(),
         base_url: format!("{base}/v1"),
         model_prefix: id,
-        protocol: if role == "qa" {
-            "chat_completions"
-        } else {
-            "openai"
-        }
-        .into(),
+        protocol: "ollama".into(),
         ..Default::default()
     };
-    let Some(tags) = get(g, format!("{base}/api/tags"), None).await else {
+    let Some(_tags) = get(g, format!("{base}/api/tags"), None).await else {
         u.last_error = "built-in Ollama unavailable".into();
         g.registry.lock().unwrap().put(u, vec![]);
         return;
@@ -243,42 +239,6 @@ async fn ollama(g: &Gateway, role: &str) {
         g.registry.lock().unwrap().put(u, vec![]);
         return;
     };
-    for m in &mut rows {
-        if let Some(tag) = tags["models"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .find(|t| text(t, "name") == m.id || text(t, "model") == m.id)
-        {
-            m.capabilities = strings(&tag["capabilities"]);
-        }
-        if m.capabilities.is_empty() {
-            if let Ok(response) = g
-                .client
-                .post(format!("{base}/api/show"))
-                .json(&json!({"model":m.id}))
-                .timeout(Duration::from_secs(5))
-                .send()
-                .await
-            {
-                if response.status().is_success() {
-                    if let Ok(v) = read_json(response, 1 << 20).await {
-                        m.capabilities = strings(&v["capabilities"]);
-                    }
-                }
-            }
-        }
-        m.kind = if m
-            .capabilities
-            .iter()
-            .any(|c| ["embedding", "embeddings"].contains(&c.as_str()))
-        {
-            "embedding"
-        } else {
-            "chat"
-        }
-        .into();
-    }
     rows.retain(|m| {
         !m.capabilities.is_empty()
             && registry::supports(
@@ -287,6 +247,7 @@ async fn ollama(g: &Gateway, role: &str) {
                 match role {
                     "embedding" => "/embeddings",
                     "rerank" => "/rerank",
+                    _ if m.endpoints.iter().any(|e| e == "systemone") => "/systemone",
                     _ => "/chat/completions",
                 },
             )

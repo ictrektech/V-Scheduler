@@ -573,3 +573,37 @@ GPU 槽位是调度并发计数，不是独立显存。统一内存预算只计�
 ### 原生应用统一等待准入
 
 原生执行端通过 POST /scheduler/api/v1/permits/wait 申请准入，JSON 为 {"request":原 permits 请求,"wait_seconds":30}；默认等待 30 秒，X-VScheduler-Queue-Wait-Seconds 可设为 0..300，0 表示立即尝试。等待只保存身份与顺序，不预约模型权重，不启动或重放推理；超时返回 429 QUEUE_TIMEOUT。V-Voice、Desensitize、V-Sub 在本地执行锁之前进入统一队列，同一已批准原生进程只保留一条执行通道；不同进程的实际副本分别预算。授权强制请求先行，其后按本次任务优先级、等待老化和到达顺序执行。其他应用申请资源不会无条件卸载空闲 Ollama，只有内存不足才请求卸载，确认停止后才释放预算。
+
+## Provider 与模型能力声明
+
+使用上游页面选择 provider 预设并填入自己的服务凭据，测试后勾选要导入的模型。供应商和模型 ID 分开管理；支持修改中转 Base URL。不会因选择供应商就承诺所有模型都支持工具、图片、Responses 或 Messages。使用 OpenAI-compatible Chat Completions 的供应商可选 `chat_completions` 协议，网关提供已有的 Responses / Messages 转换；原生 OpenAI、Anthropic 保持原协议。不要把需要独立签名或 OAuth 的供应商当作普通 Bearer API。
+
+模型能力和支持接口均为有限选项复选框，适用于模型元数据、上游逐模型配置和单模型注册。普通聊天协议缺失声明时补全 `capabilities=["chat","completion"]`、`endpoints=["chat_completions"]`；Anthropic 默认 `messages`。旧持久化模型在读入时同样补全，Harness 可从 `GET /api/v1/models` 获取明确接口。显式接口优先；Embedding、Rerank、图像、语音和决策能力按各自接口保留，不默认声明聊天。仅有实际图片输入能力才勾选 `vision`，支持工具调用才勾选 `tools`。已有未知扩展标记保留，界面不提供任意字符串新增入口。
+
+### Jev 原生集成与转发
+
+选择 TypeSafe / Jev，协议 `typesafe`，Base URL `https://api.typesafe.ai/v1`；也可填实现相同协议的自有中转地址。测试调用原生 `GET /models`，按 `models[].name` 展示可用模型和别名；指定模型测试使用 `POST /systemone`，不会向聊天接口发送 ping。
+
+调用方使用统一网关地址，供应商密钥仍只配置在上游中：
+
+```sh
+curl http://v-scheduler:8080/v1/systemone \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"ai.typesafe.api/jev-latest","state":"I was charged twice","questions":{"billing":{"type":"noul","instructions":"Is this about billing?"}}}'
+```
+
+`model` 使用网关列表中的真实 `qualified` ID；自定义中转的前缀可能不同。局域网入口为 `http://<vos-host>:22888/v1/systemone`（端口以安装配置为准）；VOS 同域页面为 `/api/com.ictrek.v-scheduler/v1/systemone`。需要鉴权时携带自己的 VOS Bearer 或网关 Key；不向调用方下发供应商 Key。受限应用凭据保持原有端点白名单，不自动扩大权限。
+
+请求的 `state`、`questions`、`assets` 及 TypeSafe 功能头保持原协议，网关只将模型名改为上游原生 ID；返回 `answers`、概率、置信度、usage，不包装成聊天文本。支持 choice、noul、score 等上游当前原语；图像和长上下文等扩展仍受供应商自身能力及功能头要求约束。System One 不支持 SSE。工作台选择 Jev 模型和 System One 后输入包含 `state`、`questions` 的 JSON 即可测试。
+
+Jev 是结构化决策模型，能力 `decision`，接口 `systemone`；Harness 聊天选择器应排除它，而普通聊天模型必须可见。原生协议参考：[System One](https://docs.typesafe.ai/api/system-one)、[模型列表](https://docs.typesafe.ai/api/list-models)。
+
+### Ollama 能力自动识别
+
+内置三个 Ollama，以及上游页使用 `ollama` 协议添加的自建 Ollama，会逐模型读取同源 `POST /api/show` 的 `capabilities`，识别 completion、vision、tools、thinking、embedding / rerank 等真实声明并映射到接口与复选框。旧的手动 OpenAI-compatible Ollama 上游会先通过同源 `GET /api/version` 识别服务器，通常无需重新添加。不会按模型 ID 或参数规模猜能力，也不会因为模型名含 VL、Rerank 就声明视觉或排序。
+
+旧版服务缺失能力列表但暴露非空 `projector_info` 时，可据实际投影器元数据保留视觉能力；仍无信息时按已配置实例角色或普通聊天协议保守回退，不默认开启工具或推理。识别只读取元数据，不预热模型或加载权重。Ollama Cloud 的原生能力接口可用时同样读取，不可用时保留保守声明。
+
+自动发现的能力可在复选框中手动修正；手工修改保存为 `metadata_override=true`，后续刷新保留修正与模型选择范围。选择「重新识别上游能力」清除该标记并重新读取元数据；API 可先 `PATCH /api/v1/models` 传入 `model`、`upstream_id`、`metadata_override=false`，再 `POST /api/v1/upstreams/{id}/refresh`。普通聊天缺失能力的默认补全和其他专用模型接口隔离规则仍适用。
+
+支持 decision 的 Ollama 模型也自动映射到 `/v1/systemone`，使用相同的原生请求与响应；需要上游 Ollama 版本和模型实际支持，不映射为聊天。参考 [Ollama System One](https://docs.ollama.com/api/systemone)。

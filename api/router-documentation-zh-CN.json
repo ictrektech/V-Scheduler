@@ -297,7 +297,7 @@
           "method": "POST",
           "path": "/api/v1/upstreams",
           "summary": "添加云端或手动上游",
-          "desc": "登记上游，kind 支持 manual/cloud，protocol 支持 openai（原生）、chat_completions（转换 Responses/Messages）、anthropic（原生）、offline_asr（离线 ASR /transcribe 适配）、image_studio（Image Studio 生图/生视频适配）、async_task（通用异步图片任务创建/轮询适配）。云端模型前缀按域名反转生成，例如 ai.ictrek.com -> com.ictrek.ai。默认保存前探测模型列表；async_task 改为校验单模型及任务字段，不创建付费任务。visibility 支持 public（共享，默认，所有调用者可见可用）和 private（仅创建者与管理员可见可用）；创建者身份记录为 owner，之后只有 owner 和管理员能修改、刷新、删除该上游或配置调度。历史存量上游 owner 为空，升级后保持共享且所有登录用户可管理。",
+          "desc": "新增 ollama（自动读取 /api/show 能力）与 typesafe（Jev System One）协议；普通聊天未声明接口时保守补全 Chat Completions，专用能力仍按实际接口隔离。登记上游，kind 支持 manual/cloud，protocol 支持 openai（原生）、chat_completions（转换 Responses/Messages）、anthropic（原生）、offline_asr（离线 ASR /transcribe 适配）、image_studio（Image Studio 生图/生视频适配）、async_task（通用异步图片任务创建/轮询适配）。云端模型前缀按域名反转生成，例如 ai.ictrek.com -> com.ictrek.ai。默认保存前探测模型列表；async_task 改为校验单模型及任务字段，不创建付费任务。visibility 支持 public（共享，默认，所有调用者可见可用）和 private（仅创建者与管理员可见可用）；创建者身份记录为 owner，之后只有 owner 和管理员能修改、刷新、删除该上游或配置调度。历史存量上游 owner 为空，升级后保持共享且所有登录用户可管理。",
           "auth": "manage",
           "example": "curl -X POST http://<vos-host>:22888/api/v1/upstreams \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"kind\":\"cloud\",\"name\":\"ICTrek AI\",\"base_url\":\"https://ai.ictrek.com/v1\",\"api_key\":\"sk-...\",\"visibility\":\"public\"}'"
         },
@@ -354,7 +354,7 @@
           "method": "POST",
           "path": "/api/v1/registrations",
           "summary": "推理后端主动注册 / 更新",
-          "desc": "需网关 Key 或 VOS 身份。稳定 service_id 生成 registered-<service_id>；相同 ID 更新同一实例，副本须不同 ID。可注册 public 或 private 服务；private 只对注册者身份可见，public 对所有调用者可见。可注册 base_url/models 模型 API，也可提交 model 或 models 显式注册单个/多个模型；显式模型必须声明 endpoints，capabilities/model_kind 用于接口能力过滤；model_endpoints 和 model_capabilities 可逐模型覆盖；ttl_seconds 默认90。",
+          "desc": "需网关 Key 或 VOS 身份。稳定 service_id 生成 registered-<service_id>；相同 ID 更新同一实例，副本须不同 ID。可注册 public 或 private 服务；private 只对注册者身份可见，public 对所有调用者可见。可注册 base_url/models 模型 API，也可提交 model 或 models 显式注册单个/多个模型；显式专用模型应声明 endpoints，普通聊天模型缺省时按协议补全，capabilities/model_kind 用于接口能力过滤；model_endpoints 和 model_capabilities 可逐模型覆盖；ttl_seconds 默认90。",
           "auth": "manage"
         },
         {
@@ -405,6 +405,14 @@
           "auth": "manage",
           "summary": "权重、服务、路由与调度关联",
           "desc": "关联仓库模型、已发现的网关路由、后端健康和调度绑定；绑定就绪不代表当前资源一定可用。所选文件 READY 不代表完整仓库已下载。"
+        },
+        {
+          "auth": "manage",
+          "method": "PATCH",
+          "path": "/api/v1/models",
+          "summary": "修改模型元数据",
+          "desc": "修改 API 创建上游的模型，model 使用 qualified 名称，可同时传 upstream_id。capabilities 和 endpoints 为字符串数组。手动修改设置 metadata_override=true，刷新保留；传 false 后 POST /api/v1/upstreams/{id}/refresh 恢复 Ollama 自动识别。仅 owner 和管理员可修改；内置、注册、发现模型仍只读。",
+          "example": "PATCH /api/v1/models {\"model\":\"manual/model\",\"upstream_id\":\"ollama\",\"metadata_override\":false}"
         }
       ],
       "id": "manage",
@@ -1471,6 +1479,21 @@
       ],
       "id": "video-structure",
       "title": "视频结构化 API"
+    },
+    {
+      "id": "typesafe",
+      "title": "TypeSafe / Jev",
+      "endpoints": [
+        {
+          "auth": "inference",
+          "desc": "TypeSafe / Jev 原生结构化决策转发。请求保留 state、questions、assets 等原生字段，仅重写已选模型 ID；供应商密钥由网关保存。返回 answers、概率、置信度及 usage，不转换为聊天文本。仅 typesafe 协议支持，不支持 SSE。",
+          "example": "curl http://v-scheduler:8080/v1/systemone -H \"Content-Type: application/json\" -d '{\"model\":\"ai.typesafe.api/jev-latest\",\"state\":\"I was charged twice\",\"questions\":{\"billing\":{\"type\":\"noul\",\"instructions\":\"Is this about billing?\"}}}'",
+          "group": "typesafe",
+          "method": "POST",
+          "path": "/v1/systemone",
+          "summary": "Jev / System One 结构化决策"
+        }
+      ]
     }
   ],
   "identity": [

@@ -140,6 +140,8 @@ pub(super) fn normalize(value: &Value) -> Api<Upstream> {
         "openai",
         "chat_completions",
         "anthropic",
+        "typesafe",
+        "ollama",
         "offline_asr",
         "image_studio",
         "async_task",
@@ -178,7 +180,7 @@ pub(super) fn normalize(value: &Value) -> Api<Upstream> {
     }
     if matches!(
         protocol.as_str(),
-        "openai" | "chat_completions" | "anthropic"
+        "openai" | "chat_completions" | "anthropic" | "typesafe" | "ollama"
     ) && parsed.path() == "/"
     {
         base.push_str("/v1");
@@ -304,12 +306,18 @@ pub(super) fn select_models(payload: &Value, probed: Vec<Model>) -> Api<Vec<Mode
             if !endpoints.is_empty() {
                 model.endpoints = endpoints;
             }
+            if item.get("kind").is_some() || item.get("capabilities").is_some() || item.get("endpoints").is_some() {
+                model.metadata_override = item["metadata_override"].as_bool().unwrap_or(true);
+            }
         }
         result.push(model);
     }
     Ok(result)
 }
 fn update_model(g: &Arc<Gateway>, id: &Identity, payload: Value) -> Api<Response> {
+    if payload.get("metadata_override").is_some_and(|v| !v.is_boolean()) {
+        return Err(Failure::new(400, "metadata_override must be a boolean"));
+    }
     for key in ["model", "upstream_id", "kind", "owned_by"] {
         if payload
             .get(key)
@@ -382,7 +390,8 @@ fn update_model(g: &Arc<Gateway>, id: &Identity, payload: Value) -> Api<Response
     {
         model.kind.clear();
     }
-    registry::normalize_model(&mut model);
+    model.metadata_override = payload["metadata_override"].as_bool().unwrap_or(true);
+    registry::normalize_upstream_model(&mut model, u);
     if !explicit.is_empty() {
         model.kind = explicit;
     }
@@ -495,11 +504,11 @@ pub(super) async fn models(g: &Gateway, u: &Upstream) -> Api<Vec<Model>> {
             .or(value.as_array())
             .ok_or_else(|| Failure::new(502, "upstream did not return a model list"))?;
         for v in rows {
-            let native = v.as_str().unwrap_or_else(|| text(v, "id"));
+            let native = v.as_str().unwrap_or_else(|| if u.protocol == "typesafe" { text(v, "name") } else { text(v, "id") });
             if native.is_empty() {
                 continue;
             }
-            result.push(Model {
+            let mut model = Model {
                 id: native.into(),
                 qualified: format!("{}/{native}", u.prefix()),
                 upstream_id: u.id.clone(),
@@ -511,9 +520,13 @@ pub(super) async fn models(g: &Gateway, u: &Upstream) -> Api<Vec<Model>> {
                 capabilities: strings(&v["capabilities"]),
                 endpoints: strings(&v["endpoints"]),
                 owned_by: text(v, "owned_by").into(),
-            });
+                metadata_override: false,
+            };
+            registry::normalize_upstream_model(&mut model, u);
+            result.push(model);
         }
         if u.protocol != "anthropic" || value["has_more"] != true {
+            enrich_ollama_models(g, u, &mut result).await;
             return Ok(result);
         }
         let last = text(&value, "last_id");
@@ -540,8 +553,48 @@ pub(super) async fn models(g: &Gateway, u: &Upstream) -> Api<Vec<Model>> {
         "Anthropic model pagination exceeded 100 pages",
     ))
 }
+
+/// Query the model server, not model-name heuristics. Legacy manually-added
+/// OpenAI-compatible Ollama endpoints are recognized through /api/version.
+async fn enrich_ollama_models(g: &Gateway, u: &Upstream, rows: &mut [Model]) {
+    let native = u.base_url.trim_end_matches('/').strip_suffix("/v1").unwrap_or(u.base_url.trim_end_matches('/'));
+    if u.protocol != "ollama" {
+        if u.kind == "cloud" || !["openai", "chat_completions"].contains(&u.protocol.as_str()) { return; }
+        let Ok(response) = proxy::outgoing(g,u,axum::http::Method::GET,format!("{native}/api/version"),&HeaderMap::new(),None).timeout(Duration::from_secs(2)).send().await else {return;};
+        if !response.status().is_success() {return;}
+        let Ok(value)=read_json(response,65536).await else {return;};
+        if !value["version"].is_string() {return;}
+    }
+    let previous = g.registry.lock().unwrap().models.get(&u.id).cloned().unwrap_or_default();
+    for row in rows {
+        if let Some(old) = previous.iter().find(|old| old.id == row.id) {
+            row.kind = old.kind.clone();
+            row.capabilities = old.capabilities.clone();
+            row.endpoints = old.endpoints.clone();
+        }
+        let Ok(response)=proxy::outgoing(g,u,axum::http::Method::POST,format!("{native}/api/show"),&HeaderMap::new(),None)
+            .json(&json!({"model":row.id})).timeout(Duration::from_secs(5)).send().await else {continue;};
+        if !response.status().is_success() {continue;}
+        let Ok(value)=read_json(response,1<<20).await else {continue;};
+        let mut capabilities=strings(&value["capabilities"]);
+        // Older multimodal Ollama versions may expose a projector but no list.
+        if value["projector_info"].as_object().is_some_and(|p|!p.is_empty()) && !capabilities.iter().any(|c|c=="vision") {capabilities.push("vision".into());}
+        if capabilities.is_empty() {
+            capabilities=match u.role.as_str() {
+                "embedding"|"embed"=>vec!["embedding".into()],
+                "rerank"=>vec!["rerank".into()],
+                _=>continue,
+            };
+        }
+        row.capabilities=capabilities;
+        row.endpoints.clear();row.kind.clear();
+        registry::normalize_upstream_model(row,u);
+    }
+}
 async fn probe_model(g: &Gateway, u: &Upstream, model: &str) -> Api<()> {
-    let suffix = if u.protocol == "anthropic" {
+    let suffix = if u.protocol == "typesafe" {
+        "/systemone"
+    } else if u.protocol == "anthropic" {
         "/messages"
     } else {
         "/chat/completions"
@@ -555,7 +608,9 @@ async fn probe_model(g: &Gateway, u: &Upstream, model: &str) -> Api<()> {
         None,
     )
     .timeout(Duration::from_secs(10))
-    .json(&json!({"model":model,"max_tokens":1,"messages":[{"role":"user","content":"ping"}]}))
+    .json(&if u.protocol == "typesafe" {
+        json!({"model":model,"state":"Connection check","questions":{"connected":{"type":"noul","instructions":"Is this a connection check?"}}})
+    } else { json!({"model":model,"max_tokens":1,"messages":[{"role":"user","content":"ping"}]}) })
     .send()
     .await
     .map_err(|_| Failure::new(502, "model test connection failed"))?;
@@ -832,7 +887,12 @@ pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) ->
                 probed
             } else {
                 let ids: std::collections::BTreeSet<_> = previous.iter().map(|m| m.id.as_str()).collect();
-                probed.into_iter().filter(|m| ids.contains(m.id.as_str())).collect()
+                probed.into_iter().filter(|m| ids.contains(m.id.as_str())).map(|mut model| {
+                    if let Some(old)=previous.iter().find(|old|old.id==model.id && old.metadata_override) {
+                        model.kind=old.kind.clone();model.capabilities=old.capabilities.clone();model.endpoints=old.endpoints.clone();model.metadata_override=true;
+                    }
+                    model
+                }).collect()
             }
         } else {
             select_models(&payload, probed)?
@@ -998,6 +1058,7 @@ async fn register(g: &Gateway, id: &Identity, p: Value) -> Api<Response> {
         m.endpoints.dedup();
         m.capabilities.sort();
         m.capabilities.dedup();
+        registry::normalize_upstream_model(m, &u);
         if explicit && m.endpoints.is_empty() {
             return Err(Failure::new(
                 400,

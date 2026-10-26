@@ -1,6 +1,7 @@
 import {apiError} from '../http-client.js';
 import { createGatewayI18n } from './locale.js';
 import { playgroundStreamEvent } from './playground-stream.js';
+import { CAPABILITIES, ENDPOINTS, PROVIDER_PRESETS, effectiveMetadata, systemOneRequest } from './model-options.js';
 export function mountGateway(root, options) {
 const i18n = createGatewayI18n(root, options.locale);
 const VRouterI18n = i18n;
@@ -33,27 +34,9 @@ const PG_ENDPOINTS = [
   { id: "completions", path: "/completions", label: "Text Completions", stream: true },
   { id: "embeddings", path: "/embeddings", label: "Embeddings", stream: false },
   { id: "videos", path: "/videos/generations", label: "Video Generations", stream: false },
+  { id: "systemone", path: "/systemone", label: "System One (Jev)", stream: false },
 ];
 
-// Vendor defaults mirror the provider catalog used by ZCode. Base URLs point
-// at each vendor's OpenAI-compatible API where one exists; MiMo only exposes an
-// Anthropic-compatible endpoint.
-const PROVIDER_PRESETS = [
-  { id: "openrouter", name: "OpenRouter", base: "https://openrouter.ai/api/v1", protocol: "openai", model: "openai/gpt-5.6-sol" },
-  { id: "deepseek", name: "DeepSeek", base: "https://api.deepseek.com/v1", protocol: "openai", model: "deepseek-v4-pro" },
-  { id: "bailian", name: "Alibaba Cloud Bailian (China)", base: "https://dashscope.aliyuncs.com/compatible-mode/v1", protocol: "openai", model: "qwen3.8-max" },
-  { id: "bailian-intl", name: "Alibaba Cloud Bailian (Intl)", base: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", protocol: "openai", model: "qwen3.8-max" },
-  { id: "zai", name: "Z.ai / GLM", base: "https://api.z.ai/api/paas/v4", protocol: "openai", model: "glm-5.3" },
-  { id: "bigmodel", name: "BigModel / GLM", base: "https://open.bigmodel.cn/api/paas/v4", protocol: "openai", model: "glm-5.3" },
-  { id: "moonshot", name: "Moonshot Kimi", base: "https://api.moonshot.cn/v1", protocol: "openai", model: "kimi-k3" },
-  { id: "minimax", name: "MiniMax", base: "https://api.minimaxi.com/v1", protocol: "openai", model: "MiniMax-M3" },
-  { id: "mimo", name: "Xiaomi MiMo", base: "https://api.xiaomimimo.com/anthropic/v1", protocol: "anthropic", model: "mimo-v2.6-pro" },
-  { id: "openai", name: "OpenAI", base: "https://api.openai.com/v1", protocol: "openai", model: "gpt-5.6-sol" },
-  { id: "anthropic", name: "Anthropic", base: "https://api.anthropic.com/v1", protocol: "anthropic", model: "claude-sonnet-5" },
-  { id: "xai", name: "xAI", base: "https://api.x.ai/v1", protocol: "openai", model: "grok-4.6" },
-  { id: "opencode-zen", name: "OpenCode Zen", base: "https://opencode.ai/zen/v1", protocol: "openai", model: "glm-5.2" },
-  { id: "opencode-go", name: "OpenCode Go", base: "https://opencode.ai/zen/go/v1", protocol: "openai", model: "glm-5.3" },
-];
 
 const app = {
   element: id => root.getElementById(id),
@@ -630,8 +613,10 @@ const app = {
     $("modelEditQualified").value = model.qualified;
     $("modelEditUpstream").value = model.upstream_id || "";
     $("modelEditKind").value = ["chat", "embedding", "unknown"].includes(model.kind) ? model.kind : "";
-    $("modelEditCapabilities").value = (model.capabilities || []).join(", ");
-    $("modelEditEndpoints").value = (model.endpoints || []).join(", ");
+    const protocol = this.state.upstreams.find(u => u.id === model.upstream_id)?.protocol || 'openai';
+    const metadata = effectiveMetadata(model, protocol);
+    setChoices($("modelEditCapabilities"), CAPABILITIES, metadata.capabilities);
+    setChoices($("modelEditEndpoints"), ENDPOINTS, metadata.endpoints);
     $("modelEditError").textContent = "";
     $("modelDialog").showModal();
   },
@@ -643,8 +628,8 @@ const app = {
       const payload = {
         model: $("modelEditQualified").value,
         upstream_id: $("modelEditUpstream").value,
-        capabilities: splitList($("modelEditCapabilities").value),
-        endpoints: splitList($("modelEditEndpoints").value),
+        capabilities: readChoices($("modelEditCapabilities")),
+        endpoints: readChoices($("modelEditEndpoints")),
       };
       const kind = $("modelEditKind").value;
       if (kind) payload.kind = kind;
@@ -656,6 +641,18 @@ const app = {
       $("modelEditError").textContent = err.message;
     }
     return false;
+  },
+
+  async rediscoverModelMetadata() {
+    $("modelEditError").textContent = '';
+    try {
+      const upstream = $("modelEditUpstream").value;
+      await this.api('PATCH', '/api/v1/models', {model: $("modelEditQualified").value, upstream_id: upstream, metadata_override: false});
+      await this.api('POST', '/api/v1/upstreams/' + encodeURIComponent(upstream) + '/refresh');
+      $("modelDialog").close();
+      await this.refresh();
+      this.toast(VRouterI18n.t('已重新识别上游能力'));
+    } catch (error) { $("modelEditError").textContent = error.message; }
   },
 
   renderUpstreams() {
@@ -745,7 +742,7 @@ const app = {
     const isEmbedding = endpoint?.id === "embeddings";
     $("pgStream").disabled = !endpoint?.stream;
     $("pgStream").checked = !!endpoint?.stream && $("pgStream").checked;
-    VRouterI18n.bind($("pgInput"), "placeholder", () => isEmbedding ? VRouterI18n.t("输入要向量化的文本，Enter 发送") : VRouterI18n.t("输入消息，Enter 发送，Shift+Enter 换行"));
+    VRouterI18n.bind($("pgInput"), "placeholder", () => endpoint?.id === 'systemone' ? '{"state":"A billing issue", "questions":{"billing":{"type":"noul","instructions":"Is this about billing?"}}}' : isEmbedding ? VRouterI18n.t("输入要向量化的文本，Enter 发送") : VRouterI18n.t("输入消息，Enter 发送，Shift+Enter 换行"));
   },
   playgroundModelRank(value) {
     const endpoints = this.playgroundEndpointsForValue(value);
@@ -780,13 +777,14 @@ const app = {
     return out;
   },
   upstreamSupportsEndpoint(u, model, path) {
+    if (u.protocol === 'typesafe' && path !== '/systemone') return false;
     const source = u.source || (u.kind === "local" ? "model-hub" : "");
     if (["model-hub", "v-scheduler"].includes(source)) {
       const role = (u.role || "").toLowerCase();
       if (role === "rerank" && path !== "/rerank") return false;
       if (path === "/rerank" && ["generate", "embed", "embedding"].includes(role)) return false;
     }
-    const chatOnly = u.protocol === "chat_completions" || (!u.protocol && source === "model-hub");
+    const chatOnly = ["chat_completions", "ollama"].includes(u.protocol) || (!u.protocol && source === "model-hub");
     if (path === "/messages") {
       if (!chatOnly && u.protocol !== "anthropic") return false;
     } else if (u.protocol === "anthropic") {
@@ -887,16 +885,20 @@ const app = {
     $("regError").textContent = "";
     this.renderRegistrationResult(null);
     this.setRegistrationModelChoices([]);
+    this.applyRegistrationPreset();
     this.updateRegistrationMode();
     $("registrationDialog").showModal();
   },
   updateRegistrationMode() {
     const single = $("regMode").value === "single";
     $("regSingleFields").hidden = !single;
-    if (single && !$("regEndpoints").value.trim()) this.applyRegistrationPreset();
+    if (single && !readChoices($("regEndpoints")).length) this.applyRegistrationPreset();
   },
   updateRegistrationProtocol() {
-    if ($("regProtocol").value === "offline_asr") {
+    if ($("regProtocol").value === "typesafe") {
+      $("regCapabilityPreset").value = "decision";
+      this.applyRegistrationPreset();
+    } else if ($("regProtocol").value === "offline_asr") {
       $("regMode").value = "single";
       $("regCapabilityPreset").value = "asr";
       this.applyRegistrationPreset();
@@ -915,7 +917,7 @@ const app = {
     const preset = $("regCapabilityPreset").value;
     if (preset === "custom") return;
     const presets = {
-      chat: { endpoints: "chat_completions, responses, messages", caps: "chat, completion, tools", kind: "chat" },
+      chat: { endpoints: "chat_completions", caps: "chat, completion", kind: "chat" },
       chat_completions: { endpoints: "chat_completions", caps: "chat, completion", kind: "chat" },
       responses: { endpoints: "responses", caps: "completion, tools", kind: "chat" },
       messages: { endpoints: "messages", caps: "chat, completion", kind: "chat" },
@@ -930,10 +932,11 @@ const app = {
       audio_translation: { endpoints: "audio/translations", caps: "translation", kind: "unknown" },
       tts: { endpoints: "audio/speech", caps: "tts", kind: "unknown" },
       moderation: { endpoints: "moderations", caps: "moderation", kind: "unknown" },
+      decision: { endpoints: "systemone", caps: "decision", kind: "unknown" },
     };
     const p = presets[preset] || presets.chat;
-    $("regEndpoints").value = p.endpoints;
-    $("regCapabilities").value = p.caps;
+    setChoices($("regEndpoints"), ENDPOINTS, splitList(p.endpoints));
+    setChoices($("regCapabilities"), CAPABILITIES, splitList(p.caps));
     $("regModelKind").value = p.kind;
   },
   setRegistrationModelChoices(models) {
@@ -953,7 +956,7 @@ const app = {
     this.updateRegistrationMode();
   },
   listFromInput(id) {
-    return splitList($(id).value);
+    return $(id).matches('.metadata-choices') ? readChoices($(id)) : splitList($(id).value);
   },
   registrationPayload() {
     const p = {
@@ -1058,21 +1061,23 @@ const app = {
       seen.add(model.id);
       const prior = previous.get(model.id);
       const kind = model.kind === "unknown" ? "" : model.kind || "";
-      this.modelChoices.push({
+      this.modelChoices.push(effectiveMetadata({
         id: model.id,
         kind: prior ? prior.kind : kind,
         capabilities: prior ? prior.capabilities : (model.capabilities || []),
         endpoints: prior ? prior.endpoints : (model.endpoints || []),
-      });
+      }, $("ufProtocol").value));
+      this.modelChoices[this.modelChoices.length - 1].id = model.id;
+      this.modelChoices[this.modelChoices.length - 1].metadata_override = prior ? prior.metadata_override : model.metadata_override === true;
     }
     this.modelChoicesLoaded = loaded;
     const selected = selectedBefore && !allSelected ? new Set([...selectedBefore].filter((id) => seen.has(id))) : seen;
     $("ufModels").innerHTML = this.modelChoices.map((model) => `<div class="model-choice" data-model="${esc(model.id)}">
-      <label class="check"><input type="checkbox" value="${esc(model.id)}" ${selected.has(model.id) ? "checked" : ""} onchange="app.updateUpstreamModelsHint()" /><span class="mono">${esc(model.id)}</span></label>
+      <label class="check"><input data-model-select type="checkbox" value="${esc(model.id)}" ${selected.has(model.id) ? "checked" : ""} onchange="app.updateUpstreamModelsHint()" /><span class="mono">${esc(model.id)}</span></label>
       <div class="model-meta">
         <select class="uf-model-kind" title="${esc(VRouterI18n.t("模型类型"))}">${modelKindOptions(model.kind)}</select>
-        <input class="uf-model-caps" type="text" value="${esc((model.capabilities || []).join(", "))}" placeholder="${esc(VRouterI18n.t("能力（可选，逗号分隔）"))}" title="${esc(VRouterI18n.t("模型能力"))}" />
-        <input class="uf-model-endpoints" type="text" value="${esc((model.endpoints || []).join(", "))}" placeholder="${esc(VRouterI18n.t("接口（可选，逗号分隔）"))}" title="${esc(VRouterI18n.t("支持接口"))}" />
+        <details><summary>${esc(VRouterI18n.t("模型能力"))}</summary><div class="uf-model-caps metadata-choices">${choiceMarkup(CAPABILITIES, model.capabilities)}</div></details>
+        <details><summary>${esc(VRouterI18n.t("支持接口"))}</summary><div class="uf-model-endpoints metadata-choices">${choiceMarkup(ENDPOINTS, model.endpoints)}</div></details>
       </div>
     </div>`).join("");
     $("ufModelsField").hidden = $("ufProtocol").value === "async_task" || !this.modelChoices.length;
@@ -1081,16 +1086,20 @@ const app = {
   readModelRows() {
     const rows = new Map();
     for (const row of $("ufModels").querySelectorAll(".model-choice")) {
-      rows.set(row.dataset.model, {
+      const metadata = {
         kind: row.querySelector(".uf-model-kind")?.value || "",
-        capabilities: splitList(row.querySelector(".uf-model-caps")?.value || ""),
-        endpoints: splitList(row.querySelector(".uf-model-endpoints")?.value || ""),
-      });
+        capabilities: readChoices(row.querySelector(".uf-model-caps")),
+        endpoints: readChoices(row.querySelector(".uf-model-endpoints")),
+      };
+      const original = this.modelChoices.find(model => model.id === row.dataset.model);
+      const sorted = values => JSON.stringify([...(values || [])].sort());
+      metadata.metadata_override = original?.metadata_override === true || metadata.kind !== original?.kind || sorted(metadata.capabilities) !== sorted(original?.capabilities) || sorted(metadata.endpoints) !== sorted(original?.endpoints);
+      rows.set(row.dataset.model, metadata);
     }
     return rows;
   },
   upstreamModelSelection() {
-    return [...$("ufModels").querySelectorAll('input[type="checkbox"]:checked')].map((el) => el.value);
+    return [...$("ufModels").querySelectorAll('input[data-model-select]:checked')].map((el) => el.value);
   },
   upstreamModelPayload() {
     const rows = this.readModelRows();
@@ -1100,11 +1109,12 @@ const app = {
       if (row.kind) item.kind = row.kind;
       if (row.capabilities?.length) item.capabilities = row.capabilities;
       if (row.endpoints?.length) item.endpoints = row.endpoints;
+      item.metadata_override = row.metadata_override === true;
       return item;
     });
   },
   selectAllUpstreamModels(on) {
-    for (const el of $("ufModels").querySelectorAll('input[type="checkbox"]')) el.checked = on;
+    for (const el of $("ufModels").querySelectorAll('input[data-model-select]')) el.checked = on;
     this.updateUpstreamModelsHint();
   },
   updateUpstreamModelsHint() {
@@ -1126,7 +1136,7 @@ const app = {
     $(fields.key).placeholder = fields.keyPlaceholder || "sk-...";
     if (fields.model) {
       $(fields.model).value = "";
-      $(fields.model).placeholder = `${VRouterI18n.t("例如")} ${preset.model}`;
+      $(fields.model).placeholder = preset.model || VRouterI18n.t("从上游模型列表选择");
     }
   },
   applyUpstreamPreset() {
@@ -1622,6 +1632,7 @@ const app = {
     }
   },
   playgroundRequestBody(endpoint, model, text, stream) {
+    if (endpoint === 'systemone') return systemOneRequest(model, text);
     if (endpoint === "responses") return { model, stream, input: text, store: false };
     if (endpoint === "messages") return { model, stream, max_tokens: 1024, messages: [{ role: "user", content: text }] };
     if (endpoint === "completions") return { model, stream, prompt: text, max_tokens: 1024 };
@@ -1630,6 +1641,7 @@ const app = {
     return { model, stream, messages: [{ role: "user", content: text }] };
   },
   playgroundText(endpoint, data) {
+    if (endpoint === 'systemone') return JSON.stringify(data, null, 2);
     if (endpoint === "responses") return data.output_text || data.output?.flatMap(o => o.content || []).map(c => c.text || "").join("") || JSON.stringify(data);
     if (endpoint === "messages") return data.content?.map(c => c.text || "").join("") || JSON.stringify(data);
     if (endpoint === "completions") return data.choices?.[0]?.text ?? JSON.stringify(data);
@@ -1650,6 +1662,13 @@ function stat(icon, num, label) {
 function kindLabel(kind) {
   return { registered: VRouterI18n.t("注册后端"), local: VRouterI18n.t("本地"), manual: VRouterI18n.t("手动"), cloud: VRouterI18n.t("云端") }[kind] || kind;
 }
+function choiceMarkup(options, values = []) {
+  const known = new Set(options.map(([id]) => id));
+  const rows = [...options, ...values.filter(id => !known.has(id)).map(id => [id, id])];
+  return rows.map(([id, label]) => `<label class="check"><input type="checkbox" value="${esc(id)}" ${values.includes(id) ? 'checked' : ''} ${!known.has(id) ? 'disabled' : ''}/><span data-option-label="${esc(label)}">${esc(VRouterI18n.t(label))}</span></label>`).join('');
+}
+function setChoices(element, options, values) { element.innerHTML = choiceMarkup(options, values); }
+function readChoices(element) { return [...(element?.querySelectorAll('input[type="checkbox"]:checked') || [])].map(input => input.value); }
 function splitList(value) {
   return String(value ?? "").split(/[\n,， ]+/).map((s) => s.trim()).filter(Boolean);
 }
@@ -1678,6 +1697,13 @@ const localeChanged = () => {
   const selected = ids.map(id => $(id).value);
   const streaming = $("pgStream").checked;
   app.renderAll(true);
+  for (const id of ["ufPreset", "regPreset"]) {
+    const select = $(id), value = select.value;
+    app.renderProviderPresets(select);
+    select.value = value;
+  }
+  root.querySelectorAll(".uf-model-kind").forEach(select => { const value = select.value; select.innerHTML = modelKindOptions(value); });
+  root.querySelectorAll("[data-option-label]").forEach(node => {node.textContent = VRouterI18n.t(node.dataset.optionLabel);});
   ids.forEach((id, index) => { if ([...$(id).options].some(option => option.value === selected[index])) $(id).value = selected[index]; });
   $("pgStream").checked = streaming;
   app.updatePlaygroundMode();

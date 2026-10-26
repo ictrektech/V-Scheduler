@@ -295,7 +295,7 @@
         },
         {
           "auth": "manage",
-          "desc": "Registers an upstream. kind: manual/cloud. protocol: openai (native), chat_completions (Responses/Messages conversion), anthropic (native), offline_asr (/transcribe adapter), image_studio (image/video adapter), async_task (generic asynchronous image task creation/polling). Cloud model prefixes reverse the domain, e.g. ai.ictrek.com -> com.ictrek.ai. Models are probed before saving; async_task validates the single-model/task configuration without creating a paid task. visibility: public (default, shared with all callers) or private (owner and administrators only). The creator becomes owner; only the owner and administrators may edit, refresh, delete or configure scheduling. Legacy upstreams with an empty owner remain shared and manageable by all signed-in users.",
+          "desc": "Also supports ollama (automatic /api/show capabilities) and typesafe (Jev System One). Undeclared ordinary chat models default to Chat Completions; specialized models retain their actual endpoints. Registers an upstream. kind: manual/cloud. protocol: openai (native), chat_completions (Responses/Messages conversion), anthropic (native), offline_asr (/transcribe adapter), image_studio (image/video adapter), async_task (generic asynchronous image task creation/polling). Cloud model prefixes reverse the domain, e.g. ai.ictrek.com -> com.ictrek.ai. Models are probed before saving; async_task validates the single-model/task configuration without creating a paid task. visibility: public (default, shared with all callers) or private (owner and administrators only). The creator becomes owner; only the owner and administrators may edit, refresh, delete or configure scheduling. Legacy upstreams with an empty owner remain shared and manageable by all signed-in users.",
           "example": "curl -X POST http://<vos-host>:22888/api/v1/upstreams \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"kind\":\"cloud\",\"name\":\"ICTrek AI\",\"base_url\":\"https://ai.ictrek.com/v1\",\"api_key\":\"sk-...\",\"visibility\":\"public\"}'",
           "method": "POST",
           "path": "/api/v1/upstreams",
@@ -352,7 +352,7 @@
         },
         {
           "auth": "manage",
-          "desc": "Requires a gateway key or VOS identity. A stable service_id produces registered-<service_id>; the same ID updates the same instance, replicas need distinct IDs. Public services are visible to all callers; private services only to the registrant. Register a base_url/models API or explicitly supply model/models. Explicit models must declare endpoints; capabilities/model_kind supports capability filtering. model_endpoints/model_capabilities can override individual models. ttl_seconds defaults to 90.",
+          "desc": "Requires a gateway key or VOS identity. A stable service_id produces registered-<service_id>; the same ID updates the same instance, replicas need distinct IDs. Public services are visible to all callers; private services only to the registrant. Register a base_url/models API or explicitly supply model/models. Explicit specialized models should declare endpoints; ordinary chat defaults are inferred from the protocol; capabilities/model_kind supports capability filtering. model_endpoints/model_capabilities can override individual models. ttl_seconds defaults to 90.",
           "method": "POST",
           "path": "/api/v1/registrations",
           "summary": "Register or update an inference backend"
@@ -405,6 +405,14 @@
           "auth": "manage",
           "summary": "Weights, services, routes and scheduler linkage",
           "desc": "Exact repository model links, discovered gateway routes, backend health and private binding availability. Ready bindings do not guarantee current capacity. Selected files being ready does not mean the entire repository is downloaded."
+        },
+        {
+          "auth": "manage",
+          "method": "PATCH",
+          "path": "/api/v1/models",
+          "summary": "Update model metadata",
+          "desc": "Update an API-created upstream model using its qualified model ID and optional upstream_id. Capabilities and endpoints are string arrays. Manual edits set metadata_override=true and survive refresh. Set metadata_override=false, then POST /api/v1/upstreams/{id}/refresh to rediscover Ollama capabilities. Only the owner and administrators may edit; built-in/registered/discovered models remain read-only.",
+          "example": "PATCH /api/v1/models {\"model\":\"manual/model\",\"upstream_id\":\"ollama\",\"metadata_override\":false}"
         }
       ],
       "id": "manage",
@@ -1471,6 +1479,21 @@
       ],
       "id": "video-structure",
       "title": "Video structure API"
+    },
+    {
+      "id": "typesafe",
+      "title": "TypeSafe / Jev",
+      "endpoints": [
+        {
+          "auth": "inference",
+          "desc": "Proxies the native TypeSafe System One request, preserving state, questions and assets while rewriting the selected model ID. Provider credentials remain server-side. Returns native answers, probabilities, confidence and usage without a chat conversion. Requires typesafe protocol; SSE is not supported.",
+          "example": "curl http://v-scheduler:8080/v1/systemone -H \"Content-Type: application/json\" -d '{\"model\":\"ai.typesafe.api/jev-latest\",\"state\":\"I was charged twice\",\"questions\":{\"billing\":{\"type\":\"noul\",\"instructions\":\"Is this about billing?\"}}}'",
+          "group": "typesafe",
+          "method": "POST",
+          "path": "/v1/systemone",
+          "summary": "Jev / System One typed decisions"
+        }
+      ]
     }
   ],
   "identity": [
