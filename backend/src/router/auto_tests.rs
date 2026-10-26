@@ -633,3 +633,60 @@ async fn local_systemone_classifier_requires_admission_unloads_and_works_local_o
     deny.store(true,Ordering::SeqCst);let result=auto::resolve(&g,&principal("alice"),&body("hello"),&h).await.unwrap();assert_eq!(json!(result.classification)["fallback"],true);assert_eq!(invoked.load(Ordering::SeqCst),1);
     task.abort();std::fs::remove_dir_all(root).unwrap();
 }
+
+#[tokio::test]
+async fn auto_request_types_and_context_budgets_need_no_model_and_keep_hard_filters() {
+    let root=temp();let g=gateway(&root,Router::new());let mut cfg=setup(&g);
+    cfg["classifier"]=json!("request_type");
+    let saved=auto::configure(&g,&admin(),cfg).unwrap();
+    let mut h=HeaderMap::new();h.insert("x-vscheduler-auto-task","reasoning".parse().unwrap());
+    let d=auto::resolve(&g,&principal("alice"),&body("Hello"),&h).await.unwrap();
+    assert_eq!(d.resolved_model,"manual/large");assert_eq!(json!(d.classification)["source"],"request_type");
+    h.insert("x-vscheduler-auto-task","translation".parse().unwrap());
+    assert_eq!(auto::resolve(&g,&principal("alice"),&body("Hello"),&h).await.unwrap().resolved_model,"manual/small");
+    h.insert("x-vscheduler-auto-task","other".parse().unwrap());
+    assert_eq!(auto::resolve(&g,&principal("alice"),&body("Hello"),&h).await.err().unwrap().status,422);
+    let mut cfg=saved;cfg["classifier"]=json!("context_size");cfg["context_simple_max_tokens"]=json!(512);cfg["context_standard_max_tokens"]=json!(1024);
+    let saved=auto::configure(&g,&admin(),cfg).unwrap();
+    for (input,model) in [("Hello".to_string(),"manual/small"),("x".repeat(1200),"manual/large")] {
+        let d=auto::resolve(&g,&principal("alice"),&body(&input),&HeaderMap::new()).await.unwrap();assert_eq!(d.resolved_model,model);assert_eq!(json!(d.classification)["source"],"context_size");
+    }
+    let mut huge=body("Hello");huge["max_tokens"]=json!(u64::MAX);assert!(auto::resolve(&g,&principal("alice"),&huge,&HeaderMap::new()).await.unwrap().resolved_model.is_empty());
+    let mut tool=body("Hello");tool["tools"]=json!([{"type":"function","function":{"name":"lookup"}}]);
+    assert!(auto::resolve(&g,&principal("alice"),&tool,&HeaderMap::new()).await.unwrap().resolved_model.is_empty());
+    let mut bad=saved;bad["context_standard_max_tokens"]=json!(512);assert!(auto::configure(&g,&admin(),bad).is_err());
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
+async fn auto_cloud_chat_classifier_uses_registered_key_json_sse_and_safe_fallback() {
+    use std::sync::atomic::AtomicUsize;
+    let root=temp();let calls=Arc::new(AtomicUsize::new(0));let malformed=Arc::new(AtomicBool::new(false));
+    let (c,m)=(calls.clone(),malformed.clone());
+    let native=Router::new().route("/v1/chat/completions",post(move|h:HeaderMap,Json(v):Json<Value>|{let(c,m)=(c.clone(),m.clone());async move{
+        if v["model"]=="classifier" {
+            c.fetch_add(1,Ordering::SeqCst);assert_eq!(h["authorization"],"Bearer cloud-classifier-test-key");assert_eq!(v["stream"],false);assert_eq!(v["max_tokens"],256);
+            let content=if m.load(Ordering::SeqCst){"not JSON".to_string()}else{json!({"task":"code","complexity":"complex","confidence":0.99}).to_string()};
+            Json(json!({"choices":[{"message":{"content":content}}]})).into_response()
+        } else {
+            assert!(h.get("x-vscheduler-auto-task").is_none());
+            if v["stream"]==true { ([("content-type","text/event-stream")],"data: {\"choices\":[{\"delta\":{\"content\":\"answer\"}}]}\n\ndata: [DONE]\n\n").into_response() }
+            else { Json(json!({"choices":[{"message":{"content":"answer"}}]})).into_response() }
+        }
+    }}));
+    let listener=tokio::net::TcpListener::bind("127.0.0.2:0").await.unwrap();let addr=listener.local_addr().unwrap();let server=tokio::spawn(async move{axum::serve(listener,native).await.unwrap()});
+    let g=gateway(&root,Router::new());let mut cfg=setup(&g);
+    {let mut r=g.registry.lock().unwrap();for u in r.upstreams.values_mut(){u.base_url=format!("http://{addr}/v1");}let mut u=upstream("c");u.base_url=format!("http://{addr}/v1");u.kind="cloud".into();u.api_key="cloud-classifier-test-key".into();r.put(u,vec![model("classifier")]);}
+    cfg["classifier"]=json!("llm");cfg["jev_model"]=json!("manual/classifier");cfg["jev_upstream_id"]=json!("c");
+    assert_eq!(auto::configure(&g,&admin(),cfg.clone()).unwrap_err().status,422);
+    cfg["allow_cloud_classifier"]=json!(true);auto::configure(&g,&admin(),cfg).unwrap();
+    let d=auto::resolve(&g,&principal("alice"),&body("Hello"),&HeaderMap::new()).await.unwrap();assert_eq!(d.resolved_model,"manual/large");assert_eq!(json!(d.classification)["source"],"cloud_llm");
+    let before=calls.load(Ordering::SeqCst);let mut local=HeaderMap::new();local.insert("x-vscheduler-auto-local-only","true".parse().unwrap());auto::resolve(&g,&principal("alice"),&body("Hello"),&local).await.unwrap();assert_eq!(calls.load(Ordering::SeqCst),before);
+    for stream in [false,true] {
+        let mut v=body("Hello");v["stream"]=json!(stream);
+        let request=axum::http::Request::builder().method("POST").uri("/v1/chat/completions").header("content-type","application/json").header("x-vscheduler-auto-task","code").body(Body::from(v.to_string())).unwrap();
+        let response=proxy::handle(g.clone(),principal("alice"),request).await.unwrap();assert_eq!(response.headers()["x-vscheduler-auto-model"],"manual/large");let bytes=axum::body::to_bytes(response.into_body(),65536).await.unwrap();assert!(String::from_utf8_lossy(&bytes).contains(if stream {"[DONE]"} else {"answer"}));
+    }
+    malformed.store(true,Ordering::SeqCst);let d=auto::resolve(&g,&principal("alice"),&body("Hello"),&HeaderMap::new()).await.unwrap();let c=json!(d.classification);assert_eq!(c["source"],"rules");assert_eq!(c["fallback"],true);
+    server.abort();std::fs::remove_dir_all(root).unwrap();
+}

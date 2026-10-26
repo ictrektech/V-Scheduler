@@ -77,6 +77,7 @@ fn clean_headers(headers: &HeaderMap) -> HeaderMap {
         "x-vscheduler-request-id",
         "x-vscheduler-auto-policy",
         "x-vscheduler-auto-local-only",
+        "x-vscheduler-auto-task",
         "x-vscheduler-session-id",
         "x-vscheduler-auto-model",
         "x-vscheduler-auto-decision-id",

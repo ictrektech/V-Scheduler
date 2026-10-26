@@ -21,6 +21,39 @@ Auto 在现有网关内选择真实模型，再走原有实例并发、队列、
 
 默认分类方式为本地规则，无额外模型、GPU 或外网依赖。不确定的普通请求走 standard，中文和英文的明确任务/复杂度信号影响档位；规则分类不保证回答质量。Auto 默认不允许云端回答：公开 DNS 域名及 cloud 上游需显式许可，短容器别名、私有 IP 属于本地范围。私有域名也保守归入云端范围；本地标记不能取代原有调度审批。
 
+## 选择路由方式：不必运行分类模型
+
+「路由方式」和 balanced/fast/quality/economy 排序策略分别配置。前者决定任务档位，后者在通过全部硬约束的候选中排序。
+
+| classifier | 界面选项 | 分类资源与行为 |
+|---|---|---|
+| rules | 本地规则（默认） | 关键词、输入结构及长度规则；不运行模型 |
+| request_type | 按请求类型 | `X-VScheduler-Auto-Task` 指定 general/code/translation/summary/reasoning，未指定则用文本规则识别类型；按 `request_type_tiers` 选择档位，不运行模型 |
+| context_size | 按上下文大小 | 按完整输入的 UTF-8 保守 token 上界、输出上限和最大声明图片预算分档；不运行模型 |
+| llm | 聊天模型分类器（本地／云端） | 从 V-Scheduler 已添加的 Chat Completions 模型选择；原有供应商 Key 留在网关 |
+| systemone / jev | System One / Jev | 使用已发现的决策模型，支持本地 Ollama 或云端服务 |
+
+请求类型默认档位：general/code/summary 为 standard、translation 为 simple、reasoning 为 complex；可在界面逐项修改。当前类型是 Chat Completions 内的任务类别，图片、工具及结构化输出继续按实际能力过滤；不会跨协议选择 ASR 等模型。同一轮工具续调须保持相同类型头及会话 ID。请求方给出的类型是路由提示，不能授予未勾选模型或计算权限。类型不保证难度，明确复杂请求应使用合适档位配置。
+
+上下文策略使用 `context_simple_max_tokens=2048`、`context_standard_max_tokens=8192`，大于后者为 complex；必须满足 `512 <= simple < standard <= 2097152`。这是保守预算，不是模型 tokenizer 的精确计数。短输入可能仍是复杂任务；选择此策略表示只按长度分档，建议先评测。
+
+纯规则、请求类型和上下文策略不需要选择分类模型，也不发送分类文本到外部。所有方式仍检查模型 endpoint、可见性、Local-Only、工具/图片能力、上下文、输出上限及资源准入。
+
+聊天分类模式沿用 `jev_model` / `jev_upstream_id` 保存分类实例以兼容原 API：选择支持 Chat Completions 的真实模型即可，不需要支持 System One。外部模型必须单独开启 `allow_cloud_classifier=true`；这不等于允许云端回答。Local-Only 请求不调用云端分类器。本地聊天分类经过原有许可并在分类后卸载。云端分类使用外部算力，不占本机 GPU 预算；网关仍有并发限制。
+
+聊天分类返回的 JSON 只接受枚举 task、complexity 及 0..1 confidence；无效输出、低置信度、超时、不可用均回退本地规则。聊天模型自报 confidence 不等于已校准的正确率，优先选轻量、稳定输出 JSON 的模型并评测业务样本。
+
+例如按请求类型保存完整配置：
+
+```bash
+curl -fsS "$GATEWAY/api/v1/auto-routing" -H "Authorization: Bearer $VOS_TOKEN" > auto-config.json
+jq '.classifier="request_type" | .request_type_tiers={general:"standard",code:"standard",translation:"simple",summary:"standard",reasoning:"complex"}' auto-config.json > auto-next.json
+curl -fsS -X PUT "$GATEWAY/api/v1/auto-routing" -H "Authorization: Bearer $VOS_TOKEN" -H 'Content-Type: application/json' --data-binary @auto-next.json
+curl -fsS "$GATEWAY/api/v1/auto-routing/test" -H "Authorization: Bearer $VOS_TOKEN" -H 'Content-Type: application/json' -H 'X-VScheduler-Auto-Task: translation' -d '{"model":"auto","messages":[{"role":"user","content":"Hello"}],"max_tokens":8}'
+```
+
+切换上下文策略时，在最新 GET 配置中设置 `classifier=context_size` 与两个上下文阈值。切换聊天分类时设置 `classifier=llm`、实际模型实例、云端分类许可及超时。每次都读取最新 revision 后完整 PUT；界面与 API 共用同一配置。
+
 ## 配置 API：勾选与命令使用同一份配置
 
 以下接口均在网关 base 下：容器内 `http://v-scheduler:8080`；局域网 `http://<vos-host>:22888`（以安装端口为准）；同域 `/api/com.ictrek.v-scheduler`。不要使用模型管理的 `/model-hub` 前缀或控制器的 `38120` 管理端口。
