@@ -37,7 +37,7 @@ pub(super) async fn json_request(
     headers: &HeaderMap,
     body: Option<Value>,
 ) -> Api<(StatusCode, Value)> {
-    let mut builder = proxy::outgoing(
+    let mut builder = proxy::outgoing_rewritten(
         &exchange.g,
         &exchange.u,
         method,
@@ -118,7 +118,7 @@ pub(super) async fn forward(
             if let Some(lease) = exchange.lease.as_ref() {
                 lease.begin();
             }
-            let response = proxy::outgoing(
+            let response = proxy::outgoing_rewritten(
                 &g,
                 &exchange.u,
                 method,
@@ -211,7 +211,7 @@ async fn ml(
             if let Some(lease) = e.lease.as_ref() {
                 lease.begin();
             }
-            let response = proxy::outgoing(
+            let response = proxy::outgoing_rewritten(
                 &g,
                 &e.u,
                 axum::http::Method::POST,
@@ -311,7 +311,7 @@ async fn ml(
         if let Some(lease) = e.lease.as_ref() {
             lease.begin();
         }
-        let response = proxy::outgoing(
+        let response = proxy::outgoing_rewritten(
             &g,
             &e.u,
             method,
@@ -345,7 +345,7 @@ async fn ml(
             e.async_job = jobs::prepare(&e, target.clone(), &headers)?;
         }
         let mut builder =
-            proxy::outgoing(&g, &e.u, method.clone(), target, &headers, e.lease.as_ref());
+            proxy::outgoing_rewritten(&g, &e.u, method.clone(), target, &headers, e.lease.as_ref());
         if method == axum::http::Method::POST {
             builder = builder.json(&input);
         }
@@ -436,7 +436,7 @@ async fn image(
                 Some("input.png".into()),
                 Some("application/octet-stream".into()),
             )]);
-            let mut builder = proxy::outgoing(
+            let mut builder = proxy::outgoing_rewritten(
                 &g,
                 &e.u,
                 axum::http::Method::POST,

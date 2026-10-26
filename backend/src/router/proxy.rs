@@ -119,6 +119,20 @@ pub(super) fn outgoing(
     }
     builder
 }
+// A rebuilt body owns its MIME type and multipart boundary. Keep the original
+// headers for input parsing and for byte-preserving request/response forwarding.
+pub(super) fn outgoing_rewritten(
+    g: &Gateway,
+    u: &Upstream,
+    method: axum::http::Method,
+    url: String,
+    headers: &HeaderMap,
+    lease: Option<&lease::Lease>,
+) -> reqwest::RequestBuilder {
+    let mut rewritten = headers.clone();
+    rewritten.remove("content-type");
+    outgoing(g, u, method, url, &rewritten, lease)
+}
 pub(super) async fn management(g: &Gateway, mut request: Request, path: &str) -> Api<Response> {
     let raw = env(
         "V_SCHEDULER_MODEL_MANAGEMENT_URL",

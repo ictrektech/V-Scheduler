@@ -330,3 +330,5 @@ v-YuE2 可通过固定 VOS 可信绑定取得独立 submitter 与实测 executor
 `v-YuE2` 原生计算按固定应用身份直接申请许可，不增加网关或 Agent 层。AMD Q8 的实测审批、8 CPU / 8 GiB RAM / 6 GiB 显存预算及输入边界见[应用自动绑定](docs/application-auto-binding.md#v-yue2-原生-broker)；未匹配硬件与完整运行设置时保持拒绝。
 
 Auto 路由方式可选本地规则（默认）、请求类型、上下文大小、聊天模型分类器和 Jev/System One；前三种不运行额外模型。云端分类从已添加的上游模型选择，单独授权，不占本地 GPU 预算；界面与 API 参数见 [Auto 接入指南](docs/auto-routing.md#选择路由方式不必运行分类模型)。
+
+网关协议适配重建 multipart、二进制或 JSON 请求体时，会先移除客户端原来的 Content-Type，再发送与新 body 匹配的单一类型；覆盖 ML Server 文本/图片 embedding、离线 ASR 和 Image Studio 输入上传。普通透传请求及上游响应保留原 MIME，文件二进制不变；调用方无需修改标准 SDK 或 curl 表单请求。

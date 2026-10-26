@@ -1921,3 +1921,43 @@ async fn managed_upstream_direct_routing_requires_an_administrator() {
     assert_eq!(response.status(), StatusCode::OK);
     std::fs::remove_dir_all(root).unwrap();
 }
+
+fn issue_one_multipart(model: &str, field: &str) -> Vec<u8> {
+    let mut bytes=format!("--client-boundary-issue1\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\nmanual/{model}\r\n--client-boundary-issue1\r\nContent-Disposition: form-data; name=\"prompt\"\r\n\r\ntest image\r\n--client-boundary-issue1\r\nContent-Disposition: form-data; name=\"{field}\"; filename=\"input.bin\"\r\nContent-Type: application/octet-stream\r\n\r\n").into_bytes();
+    bytes.extend_from_slice(b"\0\xffimage\r\nbytes");bytes.extend_from_slice(b"\r\n--client-boundary-issue1--\r\n");bytes
+}
+fn issue_one_mime(headers: &HeaderMap) -> &str {
+    assert_eq!(headers.get_all("content-type").iter().count(),1,"upstream must receive exactly one MIME header");
+    headers["content-type"].to_str().unwrap()
+}
+#[tokio::test]
+async fn rebuilt_adapters_replace_client_mime_and_preserve_binary_parts() {
+    use std::sync::atomic::AtomicUsize;
+    let seen=Arc::new(AtomicUsize::new(0));let count=seen.clone();
+    let native=Router::new().route("/predict",post(move|h:HeaderMap,bytes:Bytes|{let count=count.clone();async move{
+        let mime=issue_one_mime(&h);assert!(mime.starts_with("multipart/form-data; boundary=v-scheduler-"));
+        let parts=proxy::multipart(&bytes,mime).unwrap();let entries=parts.iter().find(|p|p.name=="entries").unwrap();let entries:Value=serde_json::from_slice(&bytes[entries.start..entries.end]).unwrap();assert!(entries["clip"].is_object());
+        if let Some(image)=parts.iter().find(|p|p.name=="image"){assert_eq!(&bytes[image.start..image.end],b"\0\xffimage\r\nbytes");}else{let text=parts.iter().find(|p|p.name=="text").unwrap();assert_eq!(&bytes[text.start..text.end],b"hello");}
+        count.fetch_add(1,Ordering::SeqCst);Json(json!({"clip":serde_json::to_string(&vec![0.25;768]).unwrap()}))
+    }})).route("/transcribe",post(|h:HeaderMap,bytes:Bytes|async move{assert_eq!(issue_one_mime(&h),"application/octet-stream");assert_eq!(&bytes[..],b"\0\xffimage\r\nbytes");Json(json!({"text":"audio ok"}))}))
+    .route("/api/v1/inputs",post(|h:HeaderMap,bytes:Bytes|async move{let mime=issue_one_mime(&h);let parts=proxy::multipart(&bytes,mime).unwrap();let file=parts.iter().find(|p|p.name=="file").unwrap();assert_eq!(&bytes[file.start..file.end],b"\0\xffimage\r\nbytes");Json(json!({"input_id":"input-1"}))}))
+    .route("/api/v1/generate",post(|h:HeaderMap,Json(v):Json<Value>|async move{assert_eq!(issue_one_mime(&h),"application/json");assert_eq!(v["init_input_id"],"input-1");assert_eq!(v["prompt"],"test image");Json(json!({"job_id":"job-1","status":"succeeded"}))}));
+    let listener=tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();let address=listener.local_addr().unwrap();let server=tokio::spawn(async move{axum::serve(listener,native).await.unwrap()});let root=temp();let g=gateway(&root,Router::new());
+    for (id,protocol,endpoints) in [("ViT-fixture","ml_server",vec!["embeddings","ml/predictions"]),("offline","offline_asr",vec!["audio/transcriptions"]),("image","image_studio",vec!["images/generations"])] {
+        let mut u=upstream(id);u.protocol=protocol.into();u.kind="cloud".into();u.base_url=format!("http://{address}");g.registry.lock().unwrap().put(u,vec![Model{endpoints:endpoints.into_iter().map(String::from).collect(),..model(id)}]);
+    }
+    let request=axum::http::Request::builder().method("POST").uri("/v1/embeddings").header("content-type","application/json").body(Body::from(json!({"model":"manual/ViT-fixture","input":"hello"}).to_string())).unwrap();
+    let response=proxy::handle(g.clone(),principal("alice"),request).await.unwrap();let value:Value=serde_json::from_slice(&axum::body::to_bytes(response.into_body(),1<<20).await.unwrap()).unwrap();assert_eq!(value["data"][0]["embedding"].as_array().unwrap().len(),768);
+    for (id,field,path,status) in [("ViT-fixture","image","/v1/ml/predictions",200),("offline","file","/v1/audio/transcriptions",200),("image","image","/v1/images/generations",202)] {
+        let request=axum::http::Request::builder().method("POST").uri(path).header("content-type","multipart/form-data; boundary=client-boundary-issue1").body(Body::from(issue_one_multipart(id,field))).unwrap();let response=proxy::handle(g.clone(),principal("alice"),request).await.unwrap();assert_eq!(response.status().as_u16(),status);axum::body::to_bytes(response.into_body(),1<<20).await.unwrap();
+    }
+    assert_eq!(seen.load(Ordering::SeqCst),2);server.abort();std::fs::remove_dir_all(root).unwrap();
+}
+#[tokio::test]
+async fn ordinary_multipart_and_binary_response_keep_their_original_mime() {
+    let native=Router::new().route("/v1/audio/transcriptions",post(|h:HeaderMap,bytes:Bytes|async move{
+        assert_eq!(issue_one_mime(&h),"multipart/form-data; boundary=client-boundary-issue1");let parts=proxy::multipart(&bytes,issue_one_mime(&h)).unwrap();let file=parts.iter().find(|p|p.name=="file").unwrap();assert_eq!(&bytes[file.start..file.end],b"\0\xffimage\r\nbytes");
+        ([("content-type","application/octet-stream")],vec![0u8,255,3])
+    }));let listener=tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();let address=listener.local_addr().unwrap();let server=tokio::spawn(async move{axum::serve(listener,native).await.unwrap()});let root=temp();let g=gateway(&root,Router::new());let mut u=upstream("pass");u.kind="cloud".into();u.base_url=format!("http://{address}/v1");g.registry.lock().unwrap().put(u,vec![Model{endpoints:vec!["audio/transcriptions".into()],..model("pass")}]);
+    let request=axum::http::Request::builder().method("POST").uri("/v1/audio/transcriptions").header("content-type","multipart/form-data; boundary=client-boundary-issue1").body(Body::from(issue_one_multipart("pass","file"))).unwrap();let response=proxy::handle(g,principal("alice"),request).await.unwrap();assert_eq!(response.headers()["content-type"],"application/octet-stream");assert_eq!(&axum::body::to_bytes(response.into_body(),1<<20).await.unwrap()[..],&[0u8,255,3]);server.abort();std::fs::remove_dir_all(root).unwrap();
+}
