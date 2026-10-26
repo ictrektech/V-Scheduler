@@ -15,9 +15,10 @@ pub(super) struct Application {
     upstream: &'static str,
     discovery: &'static str,
     asynchronous: bool,
+    native_permit_only: bool,
 }
 
-const APPLICATIONS: [Application; 3] = [
+const APPLICATIONS: [Application; 4] = [
     Application {
         slug: "v-music",
         id: "com.ictrek.v-music",
@@ -25,6 +26,7 @@ const APPLICATIONS: [Application; 3] = [
         upstream: "app-v-music",
         discovery: "/api/v1/discovery",
         asynchronous: false,
+        native_permit_only: false,
     },
     Application {
         slug: "desensitize",
@@ -33,6 +35,7 @@ const APPLICATIONS: [Application; 3] = [
         upstream: "app-desensitize",
         discovery: "/api/v1/discovery",
         asynchronous: false,
+        native_permit_only: false,
     },
     Application {
         slug: "image-studio",
@@ -41,6 +44,16 @@ const APPLICATIONS: [Application; 3] = [
         upstream: "app-image-studio",
         discovery: "/api/v1/v-router/registration",
         asynchronous: true,
+        native_permit_only: false,
+    },
+    Application {
+        slug: "v-yue2",
+        id: "com.ictrek.v-yue2",
+        origin: "http://v-yue2-backend:8791",
+        upstream: "app-v-yue2",
+        discovery: "/api/v1/scheduler/discovery",
+        asynchronous: false,
+        native_permit_only: true,
     },
 ];
 
@@ -51,6 +64,7 @@ pub(super) const VSUB: Application = Application {
     upstream: "v-sub",
     discovery: "/api/v1/scheduler/discovery",
     asynchronous: false,
+    native_permit_only: false,
 };
 
 // CPU 总核数属于主机观测；已固定 --threads 4 的图像运行时仍按原批准预算准入。
@@ -65,7 +79,7 @@ fn execution_settings_match(application: Application, expected: &Value, actual: 
 }
 
 fn supported_profile(application: Application, profile: &str) -> bool {
-    let profiles: &[&str] = if application.slug == "desensitize" {
+    let profiles: &[&str] = if application.slug == "desensitize" || application.native_permit_only {
         &[
             "amd",
             "amd-without-cuda",
@@ -81,7 +95,7 @@ fn supported_profile(application: Application, profile: &str) -> bool {
 }
 
 fn upstream(application: Application) -> String {
-    if application.asynchronous {
+    if application.asynchronous || application.native_permit_only {
         application.origin.to_owned()
     } else {
         format!("{}/v1", application.origin)
@@ -150,11 +164,11 @@ fn build(
     );
     let previous = old.filter(|value| value["credential_epoch"] == epoch);
     let token = credential(previous, "token");
-    let executor_token = credential(previous, "executor_token");
-    let gateway_token = previous
+    let executor_token = if application.native_permit_only { String::new() } else { credential(previous, "executor_token") };
+    let gateway_token = if application.native_permit_only { String::new() } else { previous
         .and_then(|value| value["gateway"]["token"].as_str())
         .map(str::to_owned)
-        .unwrap_or_else(|| format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple()));
+        .unwrap_or_else(|| format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple())) };
     let owner = format!("v-scheduler.app-gateway.{}", application.slug);
     let mut models = serde_json::Map::new();
     let mut gateway_executors = serde_json::Map::new();
@@ -251,6 +265,14 @@ fn build(
                     .is_some_and(|limits| !limits.is_empty()),
             "model input limits required"
         );
+        if application.native_permit_only {
+            for key in ["duration_seconds", "steps", "prompt_characters", "lyrics_characters"] {
+                ensure!(approval["model_limits"][key].as_u64().is_some_and(|v|v>0), "native input bounds required");
+            }
+            if resources.gpu_memory_mib > 0 {
+                ensure!(approval["evidence"]["peak_gpu_memory_mib"].as_i64().is_some_and(|v|v>0 && v<=resources.gpu_memory_mib), "native GPU measurement required");
+            }
+        }
         let gateway_executor = format!("app-gateway-{}-{}", application.slug, &digest[..24]);
         ensure!(!models.contains_key(model), "duplicate model calibration");
         models.insert(model.into(), json!(executor));
@@ -266,7 +288,7 @@ fn build(
             model_parameters.insert(model.into(), approval["model_parameters"].clone());
         }
         executors.push(json!({"id":executor,"app_id":application.id,"node_id":node,"contract_version":"1","task_type":task_type,"resources":resources,"upstream_urls":[upstream(application)],"placements":[],"retry_mode":if restart {"idempotent"} else {"none"},"max_attempts":if restart {3} else {1}}));
-        executors.push(json!({"id":gateway_executor,"app_id":owner,"node_id":node,"contract_version":"1","task_type":"model.infer","resources":resources,"upstream_urls":[upstream(application)],"placements":[],"retry_mode":"none","max_attempts":1}));
+        if !application.native_permit_only { executors.push(json!({"id":gateway_executor,"app_id":owner,"node_id":node,"contract_version":"1","task_type":"model.infer","resources":resources,"upstream_urls":[upstream(application)],"placements":[],"retry_mode":"none","max_attempts":1})); }
         if restart {
             let mut task = executors[executors.len()-2].clone();
             task["id"] = json!(format!("app-auto-{}-{}",application.slug,&legacy_digest[..24]));
@@ -275,16 +297,23 @@ fn build(
             gateway["id"] = json!(format!("app-gateway-{}-{}",application.slug,&legacy_digest[..24]));
             policy_predecessors.extend([task,gateway]);
         }
-        gateway_ids.push(gateway_executor.clone());
+        if !application.native_permit_only { gateway_ids.push(gateway_executor.clone()); }
         if application.asynchronous {
             delegated_ids.push(executor.clone());
             adapters.push(json!({"id":executor,"url":format!("{}/api/v1",application.origin),"token":executor_token,"health_url":format!("{}/health",application.origin)}));
         }
-        policies.insert(format!("{}/{model}",application.upstream),json!({"mode":if application.asynchronous {"delegated"} else {"permit"},"executor_id":gateway_executor,"completion":"synchronous","upstream_url":upstream(application),"max_input_bytes":maximum,"limits":approval["limits"].as_object().cloned().unwrap_or_default()}));
+        if !application.native_permit_only { policies.insert(format!("{}/{model}",application.upstream),json!({"mode":if application.asynchronous {"delegated"} else {"permit"},"executor_id":gateway_executor,"completion":"synchronous","upstream_url":upstream(application),"max_input_bytes":maximum,"limits":approval["limits"].as_object().cloned().unwrap_or_default()})); }
     }
     let mut state = json!({"credential_epoch":epoch,"binding":{"protocol_version":1,"binding_revision":1,"app_id":application.id,"url":CONTROLLER,"token":token,"executor_token":executor_token,"upstream_url":upstream(application),"execution_settings":contract["execution_settings"],"models":models,"gateway_executors":gateway_executors,"model_limits":model_limits,"model_parameters":model_parameters},
         "principals":[{"token":token,"role":"submitter","app_id":application.id,"permit_executors":gateway_ids},{"token":gateway_token,"role":"submitter","app_id":owner,"delegated_executors":delegated_ids}],
         "executors":executors,"adapters":adapters,"gateway":{"url":CONTROLLER,"token":gateway_token,"require_model_policy":true,"models":policies}});
+    if application.native_permit_only {
+        state["binding"]["url"] = json!("http://v-scheduler:8080/scheduler/api/v1");
+        state["principals"].as_array_mut().unwrap().truncate(1);
+        let b=state["binding"].as_object_mut().unwrap();
+        for key in ["executor_token","gateway_executors","model_parameters"] { b.remove(key); }
+        state["gateway"] = Value::Null;
+    }
     if !policy_predecessors.is_empty() { state["policy_predecessors"] = json!(policy_predecessors); }
     if contract["lifecycle_protocol_version"] == 1 {
         state["binding"]["lifecycle_protocol_version"] = json!(1);
@@ -591,6 +620,7 @@ async fn reconcile(
         persist(&a, application, &state, old.as_ref()).await?;
         save_private(&path, &state)?;
     }
+    if !application.native_permit_only {
     // Sharing this lock with V-Voice's read/merge/write prevents one app's
     // adapter refresh from losing another app's configuration.
     let agent_path = directory.join("local-agent.json");
@@ -620,6 +650,7 @@ async fn reconcile(
             .join(format!("{}.json", application.slug)),
         &state["gateway"],
     )?;
+    }
     if state["binding"]["models"]
         .as_object()
         .is_some_and(|models| !models.is_empty())
@@ -984,4 +1015,24 @@ mod tests {
             .is_err()
         );
     }
+    #[test]
+    fn yue_native_binding_uses_one_identity_and_only_measured_complete_bounds() {
+        let app=APPLICATIONS.iter().find(|a|a.slug=="v-yue2").copied().unwrap();
+        assert!(supported_profile(app,"amd"));assert!(supported_profile(app,"thor-spark"));
+        assert_eq!(upstream(app),"http://v-yue2-backend:8791");
+        let contract=json!({"protocol_version":1,"app_id":app.id,"executor_base_url":app.origin,"upstream_url":app.origin,"binding_endpoint":"/api/v1/scheduler/binding","execution_settings":{"cpu_threads":8,"keep_loaded":false},"sync_models":[{"id":"yue2-q8","task_type":"model.infer"}]});
+        declaration(app,&json!({"scheduler":contract})).unwrap();
+        let mut bad=contract.clone();bad["upstream_url"]=json!(format!("{}/v1",app.origin));assert!(declaration(app,&json!({"scheduler":bad})).is_err());
+        let capacity=Resources{cpu_millicores:16000,memory_mib:65536,gpu_slots:1,gpu_memory_mib:65536};
+        let baseline=Resources::default();let report=json!({"gpus":[]});
+        let mut approvals=json!({"protocol_version":1,"credential_epoch":1,"approvals":[{"app_id":app.id,"architecture":std::env::consts::ARCH,"profile":"amd","hardware":[],"execution_settings":contract["execution_settings"],"model_id":"yue2-q8","task_type":"model.infer","resources":{"cpu_millicores":8000,"memory_mib":32768,"gpu_slots":1,"gpu_memory_mib":32768},"evidence":{"id":"unit-fixture-only","peak_memory_mib":16000,"peak_gpu_memory_mib":12000,"confirmed_stopped":true},"max_input_bytes":65536,"model_limits":{"duration_seconds":120,"steps":32,"prompt_characters":1024,"lyrics_characters":4096}}]});
+        let state=build(app,"local",&capacity,&baseline,"amd",&report,&contract,&approvals,None).unwrap();
+        assert_eq!(state["executors"].as_array().unwrap().len(),1);assert_eq!(state["principals"].as_array().unwrap().len(),1);assert!(state["adapters"].as_array().unwrap().is_empty());assert!(state["gateway"].is_null());
+        assert_eq!(state["binding"]["url"],"http://v-scheduler:8080/scheduler/api/v1");assert!(state["binding"].get("executor_token").is_none());
+        assert_eq!(state["executors"][0]["upstream_urls"],json!([app.origin]));
+        let repeated=build(app,"local",&capacity,&baseline,"amd",&report,&contract,&approvals,Some(&state)).unwrap();assert_eq!(repeated["binding"],state["binding"]);
+        approvals["approvals"][0]["model_limits"].as_object_mut().unwrap().remove("lyrics_characters");assert!(build(app,"local",&capacity,&baseline,"amd",&report,&contract,&approvals,None).is_err());
+        approvals["approvals"][0]["model_limits"]["lyrics_characters"]=json!(4096);approvals["approvals"][0]["evidence"].as_object_mut().unwrap().remove("peak_gpu_memory_mib");assert!(build(app,"local",&capacity,&baseline,"amd",&report,&contract,&approvals,None).is_err());
+    }
+
 }

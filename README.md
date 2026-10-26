@@ -313,6 +313,10 @@ Ollama 模型能力自动从原生 `/api/show` 读取，包含视觉、工具、
 
 注册 API `/api/v1/registrations` 同样支持 Ollama 能力自动识别、单模型/模型子集、逐模型覆盖与 Jev 原生协议。心跳只续租，元数据改变以同一 service_id 重注册；参见统一接入指南「模型注册 API 与自动能力识别」。
 
+### v-YuE2 原生接入
+
+v-YuE2 可通过固定 VOS 可信绑定取得独立 submitter 与实测 executor，Go broker 在原生引擎启动前等待许可，终态确认进程组退出后释放；不额外叠加 gateway/Agent 层。未校准的硬件、模型或设置保持拒绝。详见 [固定应用绑定](docs/application-auto-binding.md#v-yue2-原生-broker)。
+
 ### Auto 自动选模型
 
 新增「Auto 自动选型」页面：管理员勾选真实模型及上游实例，设置档位和策略；同一份配置也支持网关 `GET/PUT /api/v1/auto-routing` 与候选目录 `GET /api/v1/auto-routing/candidates`。默认本地规则无需额外模型，可选本地 Ollama System One 决策模型或云端 Jev；本地分类经过资源准入并在回答前卸载，云端分类需单独开启外发许可。OpenRouter 原生 Jev 可使用已有 Key。

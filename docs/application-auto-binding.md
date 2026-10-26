@@ -9,6 +9,7 @@
 | `com.ictrek.v-music` | `http://v-music-backend:7080` | `/api/v1/discovery` | 同步 `model.infer` |
 | `com.ictrek.desensitize` | `http://desensitize-backend:5000` | `/api/v1/discovery` | 同步 `model.infer` |
 | `com.ictrek.image-studio` | `http://image-studio-backend:5000` | `/api/v1/v-router/registration` | 异步 `image.generate` / `video.generate` |
+| `com.ictrek.v-yue2` | `http://v-yue2-backend:8791` | `/api/v1/scheduler/discovery` | 原生 `model.infer`；应用 broker 持有许可 |
 
 ## 信任与校准
 
@@ -39,6 +40,16 @@
 内容相同时保留 revision 和凭据。变更必须等待本应用活动任务、许可及停止未知的预约结束；提高 `credential_epoch` 才轮换凭据，并撤销旧身份。管理员已禁用的执行器和已撤销的身份不会被同一配置重新启用。运行配置不再匹配时，旧自动执行器退出可执行集合；即使客户端尚持旧快照，也不能据此取得执行授权。
 
 [V-Sub 每用户 worker / Root broker](v-sub-auto-binding.md) 和 [HybRAG 后台网关凭据](hybrag-gateway-identity.md) 使用各自契约，不属于本固定三应用模块。协议测试与真实任务验收分别记录，见[发布验收记录](validation.md)。
+
+## v-YuE2 原生 broker
+
+v-YuE2 自己管理业务异步 job，Go broker 在启动账户的原生引擎前通过 `/permits/wait` 等待同一资源账本准入；无需再增加 task/Agent 适配或网关原生音乐接口。固定 origin 与 `upstream_url` 均为 `http://v-yue2-backend:8791`，不追加 `/v1`。声明使用 `scheduler.sync_models` 中的 `model.infer`，完整运行参数放入 `execution_settings`。
+
+控制器只向安装在同一 VOS 的固定接收端下发单一独立 submitter 身份、批准 executor 与输入边界。该应用的正式调度地址为 `http://v-scheduler:8080/scheduler/api/v1`；不创建额外 gateway identity、网关模型策略或 Agent adapter，不下发 `executor_token`。供应商模型仍从统一网关目录选择；外部独立算力不占用本地音乐的预算。
+
+每个批准组合必须精确匹配硬件、实际安装 profile、模型及完整线程/引擎设置。`model_limits` 必须包含正数 `duration_seconds`、`steps`、`prompt_characters`、`lyrics_characters`；独立显存预算还须有正数 `evidence.peak_gpu_memory_mib`，且不能超过预约。缺少实测、原生停止证明、输入上限或就绪模型时，不创建可执行授权。单纯准备模型不授予计算权限，未校准组合继续拒绝。
+
+运行时 broker 先认领 permit，再启动本地工作；续租和核验失败必须停止进程组并等待原生退出。正常完成先卸载再 release；收到 stop nonce 必须提交匹配的原生停止证明，结果未知不释放预约。原生计算的优先级、等待、抢占授权与其他应用共用，不能凭 VOS 管理员身份直接跳过准入。
 
 ## 当前实测清单
 
