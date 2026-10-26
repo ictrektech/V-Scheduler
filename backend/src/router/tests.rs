@@ -24,14 +24,14 @@ async fn vos_gateway_administrator_requires_server_verified_enabled_role() {
         task.abort();
     }
 }
-fn principal(name: &str) -> Identity {
+pub(super) fn principal(name: &str) -> Identity {
     Identity {
         owner: name.into(),
         username: name.into(),
         ..Default::default()
     }
 }
-fn upstream(id: &str) -> Upstream {
+pub(super) fn upstream(id: &str) -> Upstream {
     Upstream {
         id: id.into(),
         name: id.into(),
@@ -44,7 +44,7 @@ fn upstream(id: &str) -> Upstream {
         ..Default::default()
     }
 }
-fn model(id: &str) -> Model {
+pub(super) fn model(id: &str) -> Model {
     Model {
         id: id.into(),
         kind: "chat".into(),
@@ -259,14 +259,15 @@ async fn live_ollama_metadata_matches_server_capabilities() {
     std::fs::remove_dir_all(root).unwrap();
 }
 
-fn temp() -> PathBuf {
+pub(super) fn temp() -> PathBuf {
     let path = std::env::temp_dir().join(format!("v-scheduler-router-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&path).unwrap();
     path
 }
-fn gateway(root: &Path, controller: Router) -> Arc<Gateway> {
+pub(super) fn gateway(root: &Path, controller: Router) -> Arc<Gateway> {
     Arc::new(Gateway {
         registry: Mutex::new(Registry::default()),
+        auto_runtime: Default::default(),
         queue: Mutex::new(Default::default()),
         residency: residency::Residency::disabled(),
         state_path: root.join("state.json"),

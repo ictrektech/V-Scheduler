@@ -11739,6 +11739,136 @@
         "x-gateway-auth": "inference",
         "operationId": "systemOne"
       }
+    },
+    "/api/v1/auto-routing": {
+      "get": {
+        "summary": "Auto 配置",
+        "description": "管理员读取持久化 Auto 配置、候选实例和 revision。",
+        "tags": [
+          "manage"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "403": {
+            "description": "Administrator required for configuration"
+          },
+          "409": {
+            "description": "Revision conflict"
+          },
+          "422": {
+            "description": "Invalid configuration or request"
+          }
+        }
+      },
+      "put": {
+        "summary": "设置 Auto 候选与策略",
+        "description": "管理员完整替换配置，revision 乐观锁；候选绑定 model 和 upstream_id，空列表不允许启用。",
+        "tags": [
+          "manage"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "403": {
+            "description": "Administrator required for configuration"
+          },
+          "409": {
+            "description": "Revision conflict"
+          },
+          "422": {
+            "description": "Invalid configuration or request"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auto-routing/test": {
+      "post": {
+        "summary": "测试 Auto 选型",
+        "description": "与实际 model=auto 共用选型，不运行回答模型。配置 Jev 时可能调用收费分类器。",
+        "tags": [
+          "manage"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "403": {
+            "description": "Administrator required for configuration"
+          },
+          "409": {
+            "description": "Revision conflict"
+          },
+          "422": {
+            "description": "Invalid configuration or request"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auto-routing/candidates": {
+      "get": {
+        "summary": "Auto 候选目录",
+        "description": "管理员读取全部真实模型及实例，用于勾选候选和 Jev 分类器。",
+        "tags": [
+          "manage"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "403": {
+            "description": "Administrator required for configuration"
+          },
+          "409": {
+            "description": "Revision conflict"
+          },
+          "422": {
+            "description": "Invalid configuration or request"
+          }
+        }
+      }
     }
   },
   "servers": [

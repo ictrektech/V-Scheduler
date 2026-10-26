@@ -11739,6 +11739,136 @@
         "x-gateway-auth": "inference",
         "operationId": "systemOne"
       }
+    },
+    "/api/v1/auto-routing": {
+      "get": {
+        "summary": "Auto configuration",
+        "description": "Administrator reads persisted Auto configuration and revision.",
+        "tags": [
+          "manage"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "403": {
+            "description": "Administrator required for configuration"
+          },
+          "409": {
+            "description": "Revision conflict"
+          },
+          "422": {
+            "description": "Invalid configuration or request"
+          }
+        }
+      },
+      "put": {
+        "summary": "Set Auto routing",
+        "description": "Administrator replaces the complete configuration using the current revision. Candidates bind qualified model and upstream_id.",
+        "tags": [
+          "manage"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "403": {
+            "description": "Administrator required for configuration"
+          },
+          "409": {
+            "description": "Revision conflict"
+          },
+          "422": {
+            "description": "Invalid configuration or request"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auto-routing/test": {
+      "post": {
+        "summary": "Test Auto routing",
+        "description": "Uses the same selector as inference. Does not run the answering model. Configured Jev classification may incur fees; unavailable candidates remain excluded.",
+        "tags": [
+          "manage"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "403": {
+            "description": "Administrator required for configuration"
+          },
+          "409": {
+            "description": "Revision conflict"
+          },
+          "422": {
+            "description": "Invalid configuration or request"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auto-routing/candidates": {
+      "get": {
+        "summary": "Auto candidate catalog",
+        "description": "Administrator lists physical model instances and decision classifiers.",
+        "tags": [
+          "manage"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "403": {
+            "description": "Administrator required for configuration"
+          },
+          "409": {
+            "description": "Revision conflict"
+          },
+          "422": {
+            "description": "Invalid configuration or request"
+          }
+        }
+      }
     }
   },
   "servers": [

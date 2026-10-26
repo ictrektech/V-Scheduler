@@ -2,6 +2,7 @@
 
 本文是应用和模型服务的统一操作入口，覆盖原 V-Router 模型调用、V-Scheduler 调度接管、vLLM 主动注册，以及是否由本 Scheduler 调度。VOS 安装统一应用 `com.ictrek.v-scheduler`；网关、调度器和模型仓库均由该应用提供。
 
+- [Auto 自动选模型、界面勾选与配置 API](auto-routing.md)
 - [选择接入方式与调度策略](#integration-mode)
 - [地址、端口与身份](#addresses-and-identity)
 - [一个推理实例的完整接入流程：服务管理、模型路由与调度](#managed-inference)
@@ -621,3 +622,9 @@ curl http://v-scheduler:8080/api/v1/registrations \
 不传 `models` 即发现上游模型列表；仅传 `model` 可注册单模型。需要修正时可添加 `model_capabilities: {"模型原生ID":["vision","completion"]}` 与 `model_endpoints: {"模型原生ID":["chat_completions"]}`；`rerank` 对应 `/v1/rerank`，`embedding` 对应 `/v1/embeddings`，不能因是多模态模型就虚报其他能力。调用 `POST /api/v1/registrations/{upstream_id}/heartbeat` 按返回的 heartbeat_after_seconds 续租；重注册沿用同一 service_id、身份和可见范围，过期后重新注册。注册和推理沿用统一鉴权；注册模型不等于自动获得本地预算、执行器审批或强制放行权限，资源调度仍按前文统一流程执行。
 
 能力数组省略或为空表示保留自动识别/默认值。核心能力值为 `chat`、`completion`、`vision`、`tools`、`thinking`、`embedding`、`image_embedding`、`rerank`、`image_generation`、`image_edit`、`image_variation`、`video_generation`、`asr`、`tts`、`translation`、`moderation`、`face_recognition`、`person_reid`、`ocr`、`video_structure`、`decision`；已有上游扩展标记仍保留。声明能力不增加上游实际功能。
+
+## Auto 自动选模型
+
+管理员在「Auto 自动选型」勾选候选，也可通过网关 `GET /api/v1/auto-routing/candidates` 获取模型实例，`GET /api/v1/auto-routing` 获取配置和 revision，然后 `PUT /api/v1/auto-routing` 完整替换候选与策略。两种方式保存同一份持久配置。客户端使用 `POST /v1/chat/completions`、`model=auto`；`POST /api/v1/auto-routing/test` 仅测试选型。默认本地规则可离线运行，Jev 为需单独同意发送分类内容的可选分类器。模型调用继续遵守权限、能力、上下文与调度准入。
+
+完整字段、复制即用的 cURL、Jev 配置、候选档位、流式、会话及错误处理见 [Auto 接入指南](auto-routing.md)。

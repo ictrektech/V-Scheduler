@@ -96,17 +96,17 @@ try:
  for path in ['/scheduler/api/v1/unknown','/model-hub/api/v1/unknown']:failure(gate,path,404,keys['vos_admin'])
  check(True,'malformed JSON and unknown APIs share machine-readable errors and response trace IDs')
  host=socket.gethostbyname(socket.gethostname());base=f'http://{host}:{mock.server_port}/v1'
- status,_,_=request(gate,'/api/v1/registrations',keys['gateway'],{'service_id':'contract','name':'Contract fixture','base_url':base,'protocol':'chat_completions','model':'contract-echo','model_kind':'chat','endpoints':['chat/completions','responses','messages'],'visibility':'public','scheduler':{'mode':'cloud'}})
+ status,_,_=request(gate,'/api/v1/registrations',keys['gateway'],{'service_id':'contract','name':'Contract fixture','ttl_seconds':3600,'base_url':base,'protocol':'chat_completions','model':'contract-echo','model_kind':'chat','endpoints':['chat/completions','responses','messages'],'visibility':'public','scheduler':{'mode':'cloud'}})
  assert status==200,status
  for path in ['/v1/chat/completions','/v1/responses','/v1/messages']:
   body={'model':'registered/contract-echo','messages':[{'role':'user','content':'echo'}],'max_tokens':8} if path!='/v1/responses' else {'model':'registered/contract-echo','input':'echo','max_output_tokens':8}
   n,value,_=request(gate,path,keys['vos_user'],body);assert n==200,(path,n,value);assert 'contract echo' in json.dumps(value)
  check(True,'Chat Completions, Responses and Messages preserve real gateway protocol conversion')
  for language in ['zh-CN','en']:
-  n,doc,_=request(gate,'/api/v1/apidoc?lang='+language,keys['vos_user']);assert n==200 and len(doc['groups'])==6
+  n,doc,_=request(gate,'/api/v1/apidoc?lang='+language,keys['vos_user']);assert n==200 and {g['id'] for g in doc['groups']} >= {'system','openai','anthropic','manage','resource','video-structure','typesafe'}
   assert all(isinstance(group.get('endpoints'),list) for group in doc['groups'])
   assert any(endpoint['path']=='/api/v1/registrations' for group in doc['groups'] for endpoint in group['endpoints'])
- check(True,'unified API documentation preserves all six endpoint groups and English localization')
+ check(True,'unified API documentation preserves endpoint groups, TypeSafe and English localization')
  n,created,_=request(gate,'/api/v1/upstreams',keys['vos_user'],{'name':'Preserved upstream','kind':'cloud','base_url':base,'protocol':'chat_completions','visibility':'private','api_key':secrets.token_hex(16)})
  assert n==201 and created['api_key']=='' and created['has_key'] is True
  created_id=created['id']
@@ -137,6 +137,38 @@ try:
  check(True,'a rejected inference can retry successfully after eligibility recovers')
  n,usage,_=request(gate,'/api/v1/usage?period=all',keys['vos_user']);assert n==200 and all(key in usage for key in ['totals','per_model','per_upstream','per_user','recent']) and usage['totals']['requests']>=4
  check(True,'legacy usage aggregation and per-user JSONL history remain available')
+
+ # Auto uses the same persistent API as the checkbox UI and the real proxy.
+ for path in ['/api/v1/auto-routing','/api/v1/auto-routing/candidates']:
+  assert request(gate,path,keys['vos_user'])[0]==403
+  assert request(gate,path,keys['vos_admin'])[0]==200
+ auto_config={'enabled':True,'revision':0,'classifier':'rules','candidates':[{'model':'registered/contract-echo','upstream_id':'registered-contract','tier':'complex','context_tokens':32768,'max_output_tokens':4096}]}
+ n,auto_config,_=request(gate,'/api/v1/auto-routing',keys['vos_admin'],auto_config,'PUT');assert n==200,(n,auto_config)
+ assert request(gate,'/api/v1/auto-routing',keys['vos_user'],auto_config,'PUT')[0]==403
+ stale={**auto_config,'revision':0};assert request(gate,'/api/v1/auto-routing',keys['vos_admin'],stale,'PUT')[0]==409
+ n,listing,_=request(gate,'/v1/models',keys['vos_user']);assert any(m['id']=='auto' for m in listing['data'])
+ auto_body={'model':'auto','messages':[{'role':'user','content':'Explain a concurrency issue'}],'max_tokens':8}
+ n,decision,_=request(gate,'/api/v1/auto-routing/test',keys['vos_user'],auto_body);assert n==200 and decision['resolved_model']=='registered/contract-echo',(n,decision)
+ for stream in [False,True]:
+  n,value,headers=request(gate,'/v1/chat/completions',keys['vos_user'],{**auto_body,'stream':stream})
+  assert n==200 and 'contract echo' in (value if isinstance(value,str) else json.dumps(value)) and headers['x-vscheduler-auto-model']=='registered/contract-echo',(n,value)
+ n,value,_=request(gate,'/api/v1/usage?period=all',keys['vos_admin']);assert any(v.get('auto_routing',{}).get('resolved_model')=='registered/contract-echo' for v in value['recent'])
+ check(True,'Auto admin configuration, revision conflicts, model discovery, dry-run and real JSON/SSE dispatch agree')
+ # Restrict candidates without relaxing to a healthy unselected model.
+ disabled={**auto_config,'enabled':False};n,disabled,_=request(gate,'/api/v1/auto-routing',keys['vos_admin'],disabled,'PUT');assert n==200
+ assert request(gate,'/v1/chat/completions',keys['vos_user'],auto_body)[0]==404
+ n,auto_config,_=request(gate,'/api/v1/auto-routing',keys['vos_admin'],{**disabled,'enabled':True},'PUT');assert n==200
+ check(True,'Auto is explicitly enabled and candidate settings survive ordinary model calls')
+ if os.environ.get('SCHEDULER_AUTO_UI_HOLD')=='1':
+  private('ui-session.json',{'gateway':gate,'token':keys['vos_admin'],'config':auto_config,'controller_pid':ctl.pid})
+  print('Auto UI ready:',run,flush=True)
+  # A protected stop marker lets browser QA release this owned fixture.
+  last_heartbeat=time.monotonic()
+  while not (run/'ui-done').exists():
+   if time.monotonic()-last_heartbeat>30:
+    assert request(gate,'/api/v1/registrations/registered-contract/heartbeat',keys['gateway'],{'ttl_seconds':3600})[0]==200
+    last_heartbeat=time.monotonic()
+   time.sleep(.5)
 
  n,stream,_=request(gate,'/v1/chat/completions',keys['vos_user'],{'model':'registered/contract-echo','messages':[{'role':'user','content':'echo'}],'stream':True});check(n==200 and '[DONE]' in stream and 'contract echo' in stream,'SSE reaches terminal output without envelope rewriting')
  subprocess.run(['docker','stop','--time','2',container],check=True,stdout=subprocess.DEVNULL)

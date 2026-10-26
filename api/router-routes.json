@@ -1785,5 +1785,41 @@
     "method": "POST",
     "path": "/v1/systemone",
     "summary": "Jev / System One 结构化决策"
+  },
+  {
+    "auth": "manage",
+    "group": "manage",
+    "method": "GET",
+    "path": "/api/v1/auto-routing",
+    "summary": "Auto 配置",
+    "desc": "管理员读取持久化 Auto 配置、候选实例和 revision。",
+    "example": "curl -fsS http://v-scheduler:8080/api/v1/auto-routing -H \"Authorization: Bearer $VOS_TOKEN\""
+  },
+  {
+    "auth": "manage",
+    "group": "manage",
+    "method": "PUT",
+    "path": "/api/v1/auto-routing",
+    "summary": "设置 Auto 候选与策略",
+    "desc": "管理员完整替换配置，revision 乐观锁；候选绑定 model 和 upstream_id，空列表不允许启用。",
+    "example": "curl -fsS http://v-scheduler:8080/api/v1/auto-routing -H \"Authorization: Bearer $VOS_TOKEN\" -X PUT -H \"Content-Type: application/json\" --data-binary @auto-config.json"
+  },
+  {
+    "auth": "manage",
+    "group": "manage",
+    "method": "POST",
+    "path": "/api/v1/auto-routing/test",
+    "summary": "测试 Auto 选型",
+    "desc": "与实际 model=auto 共用选型，不运行回答模型。配置 Jev 时可能调用收费分类器。",
+    "example": "curl -fsS http://v-scheduler:8080/api/v1/auto-routing/test -H \"Authorization: Bearer $VOS_TOKEN\" -H \"Content-Type: application/json\" -d '{\"model\":\"auto\",\"messages\":[{\"role\":\"user\",\"content\":\"Summarize this text\"}],\"max_tokens\":256}'"
+  },
+  {
+    "auth": "manage",
+    "group": "manage",
+    "method": "GET",
+    "path": "/api/v1/auto-routing/candidates",
+    "summary": "Auto 候选目录",
+    "desc": "管理员读取全部真实模型及实例，用于勾选候选和 Jev 分类器。",
+    "example": "curl -fsS http://v-scheduler:8080/api/v1/auto-routing/candidates -H \"Authorization: Bearer $VOS_TOKEN\""
   }
 ]

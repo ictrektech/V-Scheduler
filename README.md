@@ -312,3 +312,9 @@ Jev 使用 `typesafe` 协议，默认 Base URL `https://api.typesafe.ai/v1`。�
 Ollama 模型能力自动从原生 `/api/show` 读取，包含视觉、工具、推理和 embedding 等能力；内置实例和新 `ollama` 协议上游共用识别逻辑，旧手动兼容上游通过 `/api/version` 识别。手工修正的元数据随状态持久化，刷新不会覆盖；可用模型编辑页「重新识别上游能力」恢复自动识别。识别不会加载权重，详见统一接入指南的 Ollama 小节。
 
 注册 API `/api/v1/registrations` 同样支持 Ollama 能力自动识别、单模型/模型子集、逐模型覆盖与 Jev 原生协议。心跳只续租，元数据改变以同一 service_id 重注册；参见统一接入指南「模型注册 API 与自动能力识别」。
+
+### Auto 自动选模型
+
+新增「Auto 自动选型」页面：管理员勾选真实模型及上游实例，设置档位和策略；同一份配置也支持网关 `GET/PUT /api/v1/auto-routing` 与候选目录 `GET /api/v1/auto-routing/candidates`。默认本地规则无需额外模型，Jev 原生分类可选且需单独开启外发许可。
+
+调用 `POST /v1/chat/completions`，设置 `model=auto`；`POST /api/v1/auto-routing/test` 查看候选过滤和选型原因。界面同时支持测试选型、真实调用与流式验证。候选白名单、身份隔离、能力、上下文和原有 permit/队列仍然生效；没有合格候选不放宽到其他模型。详细 API/cURL、配置替换与 revision、Jev 和会话说明见 [Auto 接入指南](docs/auto-routing.md)。

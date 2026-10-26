@@ -411,7 +411,7 @@ const app = {
             if (m.upstream_source === "api" && m.upstream_manageable !== false) {
               actions.push(`<button class="btn" onclick="app.openModelDialog('${esc(m.qualified)}', '${esc(m.upstream_id)}')">${VRouterI18n.t("编辑元数据")}</button>`);
             }
-            if (admin && !m.upstream_direct && m.kind !== "service") {
+            if (admin && !m.virtual && !m.upstream_direct && m.kind !== "service") {
               if (m.direct) {
                 actions.push(`<button class="btn" onclick="app.setModelDirect('${esc(m.upstream_id)}', '${esc(m.id)}', false)">${VRouterI18n.t("取消放行")}</button>`);
               } else if (budget && budget.mode === "direct") {
@@ -449,6 +449,7 @@ const app = {
   },
 
   budgetCell(model, budget) {
+    if (model.virtual) return `<span class="muted">Auto</span>`;
     if (model.upstream_direct) return `<span class="pill warn">${VRouterI18n.t("直接放行（上游）")}</span>`;
     if (model.direct) return `<span class="pill warn">${VRouterI18n.t("直接放行（模型）")}</span>`;
     if (model.kind === "service") return `<span class="muted">${VRouterI18n.t("服务直通")}</span>`;
@@ -762,6 +763,7 @@ const app = {
   playgroundCandidates(value, endpoint) {
     if (!value || !endpoint) return [];
     const rows = this.state.models.filter(m => !m.short && m.qualified === value);
+    if (rows.some(m => m.virtual)) return endpoint.path === '/chat/completions' ? [{id:'auto',name:'Auto'}] : [];
     const seen = new Set();
     const out = [];
     for (const row of rows) {
@@ -1537,7 +1539,7 @@ const app = {
     try {
       const headers = await this.authHeaders();
       headers["Content-Type"] = "application/json";
-      headers["X-VRouter-Upstream"] = pinned;
+      if (model !== 'auto') headers["X-VRouter-Upstream"] = pinned;
       headers["X-VScheduler-Queue-Wait-Seconds"] = "120";
       headers["X-VScheduler-Priority"] = $("pgPriority").value;
       headers["X-VScheduler-Preemptible"] = String($("pgPreemptible").checked);

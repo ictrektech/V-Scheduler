@@ -102,6 +102,7 @@ fn model_views(r: &Registry, id: &Identity) -> Vec<Value> {
         .map(|m| model_view(r, m, id))
         .collect::<Vec<_>>();
     rows.extend(business_views(r).1);
+    if auto::advertised(r,id) { rows.push(auto::model_view()); }
     rows
 }
 pub(super) fn normalize(value: &Value) -> Api<Upstream> {
@@ -629,7 +630,7 @@ pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) ->
     // Reuse the controller's verified role check for these administrative APIs;
     // never infer an administrator from a username or a gateway registration.
     let mut scoped_identity = id.clone();
-    if !id.admin && (matches!(path.as_str(), "/api/v1/model-residency" | "/api/v1/model-lifecycle" | "/api/v1/inference-queue")
+    if !id.admin && (matches!(path.as_str(), "/api/v1/model-residency" | "/api/v1/model-lifecycle" | "/api/v1/inference-queue" | "/api/v1/auto-routing" | "/api/v1/auto-routing/candidates")
         || path.starts_with("/api/v1/inference-queue/")) {
         match crate::identity::verify(request.headers()).await {
             Ok(_) => scoped_identity.admin = true,
@@ -652,6 +653,13 @@ pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) ->
         if !id.admin {return Err(Failure::new(403,"residency management requires an administrator"));}
         return Ok(Json(g.residency.snapshot().await).into_response());
     }
+    if path=="/api/v1/auto-routing/candidates" && method=="GET" {
+        if !id.admin {return Err(Failure::new(403,"Auto candidate management requires an administrator"));}
+        let r=g.registry.lock().unwrap();
+        let models:Vec<Value>=r.models.values().flatten().filter(|m|r.upstreams.get(&m.upstream_id).is_some_and(|u|u.visible(id))).map(|m|{let mut v=model_view(&r,m,id);v["protocol"]=json!(r.upstreams[&m.upstream_id].protocol);v}).collect();
+        return Ok(Json(json!({"models":models})).into_response());
+    }
+    if path=="/api/v1/auto-routing" && method=="GET" { return Ok(Json(auto::configuration(g,id)?).into_response()); }
     if method == "GET" {
         let catalog_readiness = readiness::snapshot(g);
         let r = g.registry.lock().unwrap();
@@ -666,6 +674,7 @@ pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) ->
             _=>{}
         }
     }
+    let auto_headers = request.headers().clone();
     let bytes = axum::body::to_bytes(request.into_body(), 1 << 20)
         .await
         .map_err(|_| Failure::new(413, "management request body too large"))?;
@@ -674,6 +683,8 @@ pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) ->
     } else {
         serde_json::from_slice(&bytes).map_err(|_| Failure::new(400, "invalid JSON request"))?
     };
+    if path=="/api/v1/auto-routing" && method=="PUT" { return Ok(Json(auto::configure(g,id,payload)?).into_response()); }
+    if path=="/api/v1/auto-routing/test" && method=="POST" { return Ok(Json(auto::resolve(g,id,&payload,&auto_headers).await?).into_response()); }
     if path=="/api/v1/model-residency" && method=="PUT" {
         if !id.admin {return Err(Failure::new(403,"residency management requires an administrator"));}
         let seconds=payload["idle_seconds"].as_u64().ok_or_else(||Failure::new(422,"idle_seconds must be 0..600"))?;

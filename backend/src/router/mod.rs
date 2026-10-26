@@ -1,6 +1,9 @@
 //! In-process inference gateway. The controller and gateway share one Rust
 //! runtime; the old TCP listeners and persisted gateway schema stay compatible.
 mod adapters;
+mod auto;
+#[cfg(test)]
+mod auto_tests;
 mod auth;
 mod bridge;
 mod discovery;
@@ -123,6 +126,7 @@ type Api<T> = Result<T, Failure>;
 static MANAGED_GATEWAY: std::sync::OnceLock<std::sync::Weak<Gateway>> = std::sync::OnceLock::new();
 struct Gateway {
     registry: Mutex<Registry>,
+    auto_runtime: auto::Runtime,
     queue: Mutex<queue::Queue>,
     residency: residency::Residency,
     state_path: PathBuf,
@@ -261,6 +265,7 @@ pub(crate) async fn start(
     let state_path = PathBuf::from(env("V_ROUTER_STATE_PATH", "/gateway-data/state.json"));
     let state = Arc::new(Gateway {
         registry: Mutex::new(Registry::open(&state_path)?),
+        auto_runtime: Default::default(),
         queue: Mutex::new(Default::default()),
         residency: residency::Residency::open(&state_path)?,
         usage: Mutex::new(usage::Usage::open(&PathBuf::from(env(

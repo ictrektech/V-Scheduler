@@ -11,6 +11,7 @@ pub(super) struct Exchange {
     pub u: Upstream,
     pub id: Identity,
     pub model: String,
+    auto_decision: Option<Value>,
     pub native: String,
     pub path: String,
     start: Instant,
@@ -40,7 +41,7 @@ impl Drop for Exchange {
             .as_i64()
             .or(self.usage["output_tokens"].as_i64())
             .unwrap_or(0);
-        self.g.usage.lock().unwrap().record(json!({"time":Utc::now(),"user":if self.id.admin{"gateway-admin"}else{&self.id.username},"model":self.model,"native_id":self.native,"upstream_id":self.u.id,"upstream_name":self.u.name,"endpoint":self.path.trim_start_matches('/'),"status":self.status,"latency_ms":self.start.elapsed().as_millis()as u64,"stream":self.stream,"usage_reported":self.usage.is_object(),"input_tokens":input,"output_tokens":output,"total_tokens":self.usage["total_tokens"].as_i64().unwrap_or(input+output),"cached_tokens":self.usage["prompt_tokens_details"]["cached_tokens"].as_i64().unwrap_or(0),"reasoning_tokens":self.usage["completion_tokens_details"]["reasoning_tokens"].as_i64().unwrap_or(0)}));
+        self.g.usage.lock().unwrap().record(json!({"time":Utc::now(),"user":if self.id.admin{"gateway-admin"}else{&self.id.username},"model":self.model,"native_id":self.native,"upstream_id":self.u.id,"upstream_name":self.u.name,"endpoint":self.path.trim_start_matches('/'),"status":self.status,"latency_ms":self.start.elapsed().as_millis()as u64,"stream":self.stream,"usage_reported":self.usage.is_object(),"input_tokens":input,"output_tokens":output,"total_tokens":self.usage["total_tokens"].as_i64().unwrap_or(input+output),"cached_tokens":self.usage["prompt_tokens_details"]["cached_tokens"].as_i64().unwrap_or(0),"reasoning_tokens":self.usage["completion_tokens_details"]["reasoning_tokens"].as_i64().unwrap_or(0),"auto_routing":self.auto_decision}));
     }
 }
 fn clean_headers(headers: &HeaderMap) -> HeaderMap {
@@ -74,6 +75,11 @@ fn clean_headers(headers: &HeaderMap) -> HeaderMap {
         "x-vscheduler-force-admission",
         "x-vscheduler-admin-authorization",
         "x-vscheduler-request-id",
+        "x-vscheduler-auto-policy",
+        "x-vscheduler-auto-local-only",
+        "x-vscheduler-session-id",
+        "x-vscheduler-auto-model",
+        "x-vscheduler-auto-decision-id",
         "cookie",
         // Browser origin belongs to this gateway; upstream calls are server-to-server.
         "origin",
@@ -326,6 +332,14 @@ fn record_owner(exchange: &Exchange, value: &Value) {
     }
 }
 pub(super) async fn handle(g: Arc<Gateway>, id: Identity, request: Request) -> Api<Response> {
+    handle_inner(g,id,request,false).await
+}
+// Only auto::jev can use this fixed-target internal call with an already verified
+// identity. No request header can opt into this authentication bypass.
+pub(super) async fn classifier(g: Arc<Gateway>, id: Identity, request: Request) -> Api<Response> {
+    handle_inner(g,id,request,true).await
+}
+async fn handle_inner(g: Arc<Gateway>, id: Identity, request: Request, classifier: bool) -> Api<Response> {
     let path = request.uri().path().to_string();
     let pinned = request
         .headers()
@@ -343,13 +357,17 @@ pub(super) async fn handle(g: Arc<Gateway>, id: Identity, request: Request) -> A
         if g.catalog_initializing() && g.registry.lock().unwrap().list_models(&id).is_empty() {
             return Err(super::readiness::initializing());
         }
-        return Ok(axum::Json(json!({"object":"list","data":g.registry.lock().unwrap().list_models(&id).iter().map(|m|json!({"id":m.qualified,"object":"model","created":0,"owned_by":m.owned_by})).collect::<Vec<_>>()})).into_response());
+        let r=g.registry.lock().unwrap();
+        let mut models=r.list_models(&id).iter().map(|m|json!({"id":m.qualified,"object":"model","created":0,"owned_by":m.owned_by})).collect::<Vec<_>>();
+        if auto::advertised(&r,&id) {models.push(json!({"id":"auto","object":"model","created":0,"owned_by":"v-scheduler"}));}
+        return Ok(axum::Json(json!({"object":"list","data":models})).into_response());
     }
     let slot = g
         .slots
         .clone()
         .try_acquire_owned()
         .map_err(|_| Failure::new(429, "gateway request capacity exhausted"))?;
+    let mut slot = Some(slot);
     let query = request.uri().query().unwrap_or("").to_string();
     let method = request.method().clone();
     let mut headers = request.headers().clone();
@@ -428,7 +446,21 @@ pub(super) async fn handle(g: Arc<Gateway>, id: Identity, request: Request) -> A
     if path == "/v1/systemone" && value["stream"] == true {
         return Err(Failure::new(400, "TypeSafe System One does not support streaming"));
     }
-    if !pinned.is_empty() {
+    let mut auto_decision = None;
+    let requested = if requested == "auto" {
+        if classifier || path != "/v1/chat/completions" { return Err(Failure::new(400,"Auto supports Chat Completions only")); }
+        // A nested classifier uses a normal inference slot. Do not hold the
+        // answering slot while waiting, which could deadlock at full capacity.
+        slot.take();
+        let decision = auto::resolve(&g,&id,&value,&headers).await?;
+        if decision.resolved_model.is_empty() {return Err(Failure::new(503,"no eligible Auto candidate; inspect test routing"));}
+        slot=Some(g.slots.clone().try_acquire_owned().map_err(|_|Failure::new(429,"gateway request capacity exhausted"))?);
+        if value.get("max_tokens").is_none() && value.get("max_completion_tokens").is_none() {value["max_tokens"]=json!(1024);}
+        let resolved=decision.resolved_model.clone();
+        auto_decision=Some(decision);
+        resolved
+    } else { requested };
+    if !pinned.is_empty() && !classifier {
         auth::identity(&g, &headers, true).await?;
     }
     let suffix = path.strip_prefix("/v1").unwrap_or(&path).to_string();
@@ -506,22 +538,26 @@ pub(super) async fn handle(g: Arc<Gateway>, id: Identity, request: Request) -> A
             &suffix
         };
         g.local_model_readiness(&requested)?;
-        g.registry
-            .lock()
-            .unwrap()
-            .acquire(&requested, routing_path, &pinned, &id)?
+        let mut registry = g.registry.lock().unwrap();
+        if let Some(decision) = &auto_decision {
+            if registry.auto.revision != decision.revision {return Err(Failure::new(409,"Auto configuration changed before dispatch; retry"));}
+            registry.acquire_from(&requested, routing_path, &pinned, &id, Some(&decision.upstream_id))?
+        } else {
+            registry.acquire(&requested, routing_path, &pinned, &id)?
+        }
     };
     let mut exchange = Exchange {
         g: g.clone(),
         u: u.clone(),
         id: id.clone(),
         model: requested,
+        auto_decision: auto_decision.as_ref().map(|d| {let mut value=json!(d);value.as_object_mut().unwrap().remove("candidates");value}),
         native: native.clone(),
         path: suffix.clone(),
         start: Instant::now(),
         status: 499,
         stream: value["stream"] == true,
-        _slot: Some(slot),
+        _slot: slot,
         buffer,
         lease: None,
         retained: false,
@@ -735,6 +771,7 @@ pub(super) async fn handle(g: Arc<Gateway>, id: Identity, request: Request) -> A
             return Err(error);
         }
     };
+    if response.status().is_success() { if let Some(decision)=&auto_decision {auto::remember(&g,&id,&headers,decision);} }
     finish_response(exchange, response, conversion).await
 }
 pub(super) async fn finish_response(
@@ -770,6 +807,11 @@ pub(super) async fn finish_response(
             .map_err(|_| Failure::new(502, "invalid upstream identifier"))?,
     );
     headers.insert("x-vrouter-routing", "least-inflight".parse().unwrap());
+    if let Some(decision)=&exchange.auto_decision {
+        headers.insert("x-vrouter-routing","auto".parse().unwrap());
+        if let Ok(value)=text(decision,"resolved_model").parse() {headers.insert("x-vscheduler-auto-model",value);}
+        if let Ok(value)=text(decision,"id").parse() {headers.insert("x-vscheduler-auto-decision-id",value);}
+    }
     if content_type.contains("text/event-stream") {
         exchange.stream = true;
         exchange.buffer.take();

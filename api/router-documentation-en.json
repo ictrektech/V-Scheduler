@@ -413,6 +413,38 @@
           "summary": "Update model metadata",
           "desc": "Update an API-created upstream model using its qualified model ID and optional upstream_id. Capabilities and endpoints are string arrays. Manual edits set metadata_override=true and survive refresh. Set metadata_override=false, then POST /api/v1/upstreams/{id}/refresh to rediscover Ollama capabilities. Only the owner and administrators may edit; built-in/registered/discovered models remain read-only.",
           "example": "PATCH /api/v1/models {\"model\":\"manual/model\",\"upstream_id\":\"ollama\",\"metadata_override\":false}"
+        },
+        {
+          "auth": "manage",
+          "method": "GET",
+          "path": "/api/v1/auto-routing",
+          "summary": "Auto configuration",
+          "desc": "Administrator reads persisted Auto configuration and revision.",
+          "example": "curl -fsS http://v-scheduler:8080/api/v1/auto-routing -H \"Authorization: Bearer $VOS_TOKEN\""
+        },
+        {
+          "auth": "manage",
+          "method": "PUT",
+          "path": "/api/v1/auto-routing",
+          "summary": "Set Auto routing",
+          "desc": "Administrator replaces the complete configuration using the current revision. Candidates bind qualified model and upstream_id.",
+          "example": "curl -fsS http://v-scheduler:8080/api/v1/auto-routing -H \"Authorization: Bearer $VOS_TOKEN\" -X PUT -H \"Content-Type: application/json\" --data-binary @auto-config.json"
+        },
+        {
+          "auth": "manage",
+          "method": "POST",
+          "path": "/api/v1/auto-routing/test",
+          "summary": "Test Auto routing",
+          "desc": "Uses the same selector as inference. Does not run the answering model. Configured Jev classification may incur fees; unavailable candidates remain excluded.",
+          "example": "curl -fsS http://v-scheduler:8080/api/v1/auto-routing/test -H \"Authorization: Bearer $VOS_TOKEN\" -H \"Content-Type: application/json\" -d '{\"model\":\"auto\",\"messages\":[{\"role\":\"user\",\"content\":\"Summarize this text\"}],\"max_tokens\":256}'"
+        },
+        {
+          "auth": "manage",
+          "method": "GET",
+          "path": "/api/v1/auto-routing/candidates",
+          "summary": "Auto candidate catalog",
+          "desc": "Administrator lists physical model instances and decision classifiers.",
+          "example": "curl -fsS http://v-scheduler:8080/api/v1/auto-routing/candidates -H \"Authorization: Bearer $VOS_TOKEN\""
         }
       ],
       "id": "manage",

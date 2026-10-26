@@ -5,6 +5,15 @@ const endpoints=ref<any[]>([])
 const locationHost=location.hostname||'<vos-host>'
 onMounted(async()=>{try{endpoints.value=(await request('/api/v1/integration')).endpoints}catch{}})
 defineProps<{t:(value:string)=>string}>()
+const autoExamples=`# GATEWAY: http://v-scheduler:8080
+# VOS_TOKEN: VOS administrator token / gateway administrator key
+curl -fsS "$GATEWAY/api/v1/auto-routing/candidates" -H "Authorization: Bearer $VOS_TOKEN"
+curl -fsS "$GATEWAY/api/v1/auto-routing" -H "Authorization: Bearer $VOS_TOKEN" > auto-config.json
+# Edit candidates (model + upstream_id), tiers and policy; keep current revision.
+curl -fsS -X PUT "$GATEWAY/api/v1/auto-routing" -H "Authorization: Bearer $VOS_TOKEN" -H 'Content-Type: application/json' --data-binary @auto-config.json
+curl -fsS "$GATEWAY/api/v1/auto-routing/test" -H "Authorization: Bearer $VOS_TOKEN" -H 'Content-Type: application/json' -d '{"model":"auto","messages":[{"role":"user","content":"Summarize this text"}],"max_tokens":256}'
+curl -i "$GATEWAY/v1/chat/completions" -H "Authorization: Bearer $VOS_TOKEN" -H 'Content-Type: application/json' -H 'X-VScheduler-Auto-Local-Only: true' -d '{"model":"auto","messages":[{"role":"user","content":"Hello"}],"max_tokens":256}'`
+
 </script>
 <template>
  <article class="integration-guide panel">
@@ -16,6 +25,14 @@ defineProps<{t:(value:string)=>string}>()
   <p>{{t('正式别名由当前 V-Scheduler 安装声明；兼容别名仅供旧客户端使用。新应用优先使用正式别名；与旧 V-Router 共存时不要向兼容别名发送私有凭据。所有别名均指向现有容器，不新增服务。')}}</p>
   <h3>{{t('本地与云端模型')}}</h3>
   <p>{{t('本地和纳管远端模型先取得资源许可；云端供应商模型不占本地资源预约。资源忙时遵守重试提示，不能绕过网关直接启动同一次计算。')}}</p>
+  <h3>{{t('Auto 自动选型')}}</h3>
+  <p>{{t('管理员在 Auto 页面勾选候选模型，或用 GET/PUT /api/v1/auto-routing 设置同一份配置。候选绑定 model 和 upstream_id；PUT 完整替换，revision 从最新 GET 读取，冲突返回 409。')}}</p>
+  <p>{{t('默认本地规则无需额外模型。按实际能力设置 simple/standard/complex 档位；复杂请求没有 complex 候选时失败。客户端使用 model=auto，目前仅支持 Chat Completions；本地计算继续经过资源准入。')}}</p>
+  <p>{{t('测试选型不运行回答模型；启用 Jev 时可能产生分类费用。实际调用会运行选中模型。')}}</p>
+  <p>{{t('Jev 需先添加 TypeSafe 上游，再设置 classifier=jev、jev_model、jev_upstream_id、allow_cloud_classifier=true 和 classifier_timeout_ms。云端回答与云端分类独立许可；Jev 失败回退规则，Local-Only 请求不调用 Jev。')}}</p>
+  <pre>{{autoExamples}}</pre>
+  <p>{{t('X-VScheduler-Auto-Policy 支持 balanced/fast/quality/economy；X-VScheduler-Auto-Local-Only=true 只能收紧策略。响应头 X-VScheduler-Auto-Model 与 X-VScheduler-Auto-Decision-ID 标识实际选型。工具续轮须使用同一 X-VScheduler-Session-ID，失效返回 409，不静默换模型。')}}</p>
+  <p><a href="https://github.com/ictrektech/V-Scheduler/blob/main/docs/auto-routing.md" target="_blank" rel="noopener">{{t('Auto 配置与 API 完整指南')}}</a></p>
   <h3>{{t('Provider 与模型能力')}}</h3>
   <p>{{t('上游页面可选厂商预设或自定义中转地址，测试后勾选要导入的模型。模型能力和接口使用复选框；普通聊天上游缺失声明时默认 chat / completion 与 chat_completions，Anthropic 默认 messages。显式接口优先，图片、语音、向量和决策模型不会自动声明为聊天；tools 和 vision 必须按真实能力勾选。')}}</p>
   <p>{{t('Ollama 模型通过 /api/show 自动读取 completion、vision、tools、thinking、embedding、decision 等实际能力，内置实例与手动添加的实例使用同一逻辑。旧版 OpenAI 兼容配置通过 /api/version 识别；读取失败保留已有信息。手动修改后刷新不会覆盖，点击「重新识别上游能力」可恢复自动识别。')}}</p>

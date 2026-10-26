@@ -413,6 +413,38 @@
           "summary": "修改模型元数据",
           "desc": "修改 API 创建上游的模型，model 使用 qualified 名称，可同时传 upstream_id。capabilities 和 endpoints 为字符串数组。手动修改设置 metadata_override=true，刷新保留；传 false 后 POST /api/v1/upstreams/{id}/refresh 恢复 Ollama 自动识别。仅 owner 和管理员可修改；内置、注册、发现模型仍只读。",
           "example": "PATCH /api/v1/models {\"model\":\"manual/model\",\"upstream_id\":\"ollama\",\"metadata_override\":false}"
+        },
+        {
+          "auth": "manage",
+          "method": "GET",
+          "path": "/api/v1/auto-routing",
+          "summary": "Auto 配置",
+          "desc": "管理员读取持久化 Auto 配置、候选实例和 revision。",
+          "example": "curl -fsS http://v-scheduler:8080/api/v1/auto-routing -H \"Authorization: Bearer $VOS_TOKEN\""
+        },
+        {
+          "auth": "manage",
+          "method": "PUT",
+          "path": "/api/v1/auto-routing",
+          "summary": "设置 Auto 候选与策略",
+          "desc": "管理员完整替换配置，revision 乐观锁；候选绑定 model 和 upstream_id，空列表不允许启用。",
+          "example": "curl -fsS http://v-scheduler:8080/api/v1/auto-routing -H \"Authorization: Bearer $VOS_TOKEN\" -X PUT -H \"Content-Type: application/json\" --data-binary @auto-config.json"
+        },
+        {
+          "auth": "manage",
+          "method": "POST",
+          "path": "/api/v1/auto-routing/test",
+          "summary": "测试 Auto 选型",
+          "desc": "与实际 model=auto 共用选型，不运行回答模型。配置 Jev 时可能调用收费分类器。",
+          "example": "curl -fsS http://v-scheduler:8080/api/v1/auto-routing/test -H \"Authorization: Bearer $VOS_TOKEN\" -H \"Content-Type: application/json\" -d '{\"model\":\"auto\",\"messages\":[{\"role\":\"user\",\"content\":\"Summarize this text\"}],\"max_tokens\":256}'"
+        },
+        {
+          "auth": "manage",
+          "method": "GET",
+          "path": "/api/v1/auto-routing/candidates",
+          "summary": "Auto 候选目录",
+          "desc": "管理员读取全部真实模型及实例，用于勾选候选和 Jev 分类器。",
+          "example": "curl -fsS http://v-scheduler:8080/api/v1/auto-routing/candidates -H \"Authorization: Bearer $VOS_TOKEN\""
         }
       ],
       "id": "manage",

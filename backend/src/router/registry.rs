@@ -106,6 +106,7 @@ impl Default for Routing {
 #[derive(Default, Deserialize, Serialize)]
 #[serde(default)]
 pub(super) struct Disk {
+    pub auto: auto::Config,
     pub version: u32,
     #[serde(deserialize_with = "null_default")]
     pub upstreams: Vec<Upstream>,
@@ -118,8 +119,9 @@ pub(super) struct Disk {
     #[serde(deserialize_with = "null_default")]
     pub resources: Vec<Value>,
 }
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub(super) struct Registry {
+    pub auto: auto::Config,
     pub upstreams: BTreeMap<String, Upstream>,
     pub models: BTreeMap<String, Vec<Model>>,
     pub routing: BTreeMap<String, Routing>,
@@ -138,6 +140,7 @@ impl Registry {
             Err(e) => return Err(e.into()),
         };
         let mut result = Self {
+            auto: disk.auto,
             models: disk.models,
             routing: disk.routing,
             model_routing: disk.model_routing,
@@ -175,6 +178,7 @@ impl Registry {
             .collect();
         let disk = Disk {
             version: 2,
+            auto: self.auto.clone(),
             models: self
                 .models
                 .iter()
@@ -282,9 +286,13 @@ impl Registry {
         pinned: &str,
         id: &Identity,
     ) -> Result<(Upstream, String), Failure> {
+        self.acquire_from(requested, path, pinned, id, None)
+    }
+    pub fn acquire_from(&mut self, requested: &str, path: &str, pinned: &str, id: &Identity, selected_upstream: Option<&str>) -> Result<(Upstream, String), Failure> {
         let mut choices: Vec<(Upstream, String)> = vec![];
         let (mut found, mut live, mut compatible) = (false, false, false);
         for u in self.upstreams.values().filter(|u| u.visible(id)) {
+            if selected_upstream.is_some_and(|key| u.id != key) { continue; }
             if !pinned.is_empty() && u.id != pinned {
                 continue;
             }
