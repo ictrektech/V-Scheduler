@@ -102,8 +102,8 @@ pub(super) fn configure(g: &Gateway, id: &Identity, payload: Value) -> Api<Value
     let mut config: Config = serde_json::from_value(payload)
         .map_err(|_| error(422, "invalid Auto configuration fields or types"))?;
     if !policy(&config.policy)
-        || !["rules", "jev"].contains(&config.classifier.as_str())
-        || !(100..=5000).contains(&config.classifier_timeout_ms)
+        || !["rules", "jev", "systemone"].contains(&config.classifier.as_str())
+        || !(100..=120000).contains(&config.classifier_timeout_ms)
         || config.candidates.len() > 256
     {
         return Err(error(
@@ -160,16 +160,16 @@ pub(super) fn configure(g: &Gateway, id: &Identity, payload: Value) -> Api<Value
             ));
         }
     }
-    if config.enabled && config.classifier == "jev" {
-        if !config.allow_cloud_classifier {
+    if config.enabled && config.classifier != "rules" {
+        let cloud_classifier = r.upstreams.get(&config.jev_upstream_id).is_some_and(external);
+        if cloud_classifier && !config.allow_cloud_classifier {
             return Err(error(
                 422,
-                "Jev requires explicit cloud classification permission",
+                "external classifier requires explicit cloud classification permission",
             ));
         }
         let valid = r.upstreams.get(&config.jev_upstream_id).is_some_and(|u| {
             u.visible(id)
-                && u.protocol == "typesafe"
                 && r.models.get(&u.id).is_some_and(|ms| {
                     ms.iter().any(|m| {
                         m.qualified == config.jev_model && registry::supports(u, m, "/systemone")
@@ -179,7 +179,7 @@ pub(super) fn configure(g: &Gateway, id: &Identity, payload: Value) -> Api<Value
         if !valid {
             return Err(error(
                 422,
-                "select a discovered TypeSafe decision classifier",
+                "select a discovered System One decision classifier",
             ));
         }
     }
@@ -394,9 +394,6 @@ async fn jev(
     config: &Config,
     body: &Value,
 ) -> Api<Classification> {
-    if !config.allow_cloud_classifier {
-        return Err(error(403, "cloud classifier disabled"));
-    }
     let _guard = g
         .auto_runtime
         .classifiers
@@ -415,7 +412,7 @@ async fn jev(
         let u = r
             .upstreams
             .get(&config.jev_upstream_id)
-            .filter(|u| available(&r, u, id) && u.protocol == "typesafe")
+            .filter(|u| available(&r, u, id))
             .ok_or_else(|| error(503, "classifier unavailable"))?;
         let m = r
             .models
@@ -426,6 +423,9 @@ async fn jev(
             .ok_or_else(|| error(503, "classifier unavailable"))?;
         (u.clone(), m.id.clone())
     };
+    if external(&upstream) && !config.allow_cloud_classifier {
+        return Err(error(403, "cloud classifier disabled"));
+    }
     let messages: Vec<Value> = body["messages"]
         .as_array()
         .into_iter()
@@ -447,16 +447,16 @@ async fn jev(
     }});
     // Use the normal authenticated caller's visibility and resource admission;
     // a fixed decision model prevents recursive Auto selection.
+    let mut payload = json!({"model":native,"state":content["state"],"questions":content["questions"]});
+    // Release local classifier weights before admitting the answer model.
+    if !external(&upstream) { payload["keep_alive"] = json!(0); }
     let request = axum::http::Request::builder()
         .method("POST")
         .uri("/v1/systemone")
         .header("content-type", "application/json")
         .header("x-vrouter-upstream", &upstream.id)
         .body(Body::from(
-            serde_json::to_vec(
-                &json!({"model":native,"state":content["state"],"questions":content["questions"]}),
-            )
-            .unwrap(),
+            serde_json::to_vec(&payload).unwrap(),
         ))
         .unwrap();
     // Pinned public API calls normally reauthenticate headers. Classifier calls
@@ -484,7 +484,7 @@ async fn jev(
     Ok(Classification {
         task: task.into(),
         complexity: complexity.into(),
-        source: "jev".into(),
+        source: if external(&upstream) { "jev" } else { "local_systemone" }.into(),
         confidence,
         fallback: false,
         elapsed_ms: 0,
@@ -542,7 +542,11 @@ pub(super) async fn resolve(
     };
     let started = Instant::now();
     let mut classification = rules(body);
-    if config.classifier == "jev" && local_only != "true" && visible_pool {
+    let classifier_allowed = {
+        let r = g.registry.lock().unwrap();
+        r.upstreams.get(&config.jev_upstream_id).is_some_and(|u| local_only != "true" || !external(u))
+    };
+    if config.classifier != "rules" && classifier_allowed && visible_pool {
         match tokio::time::timeout(
             Duration::from_millis(config.classifier_timeout_ms),
             jev(g, id, &config, body),

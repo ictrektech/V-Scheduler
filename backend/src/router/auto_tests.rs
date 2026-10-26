@@ -372,6 +372,7 @@ async fn auto_jev_native_classification_real_chat_sse_and_fallback() {
         let mut u = upstream("j");
         u.base_url = format!("http://{addr}/v1");
         u.protocol = "typesafe".into();
+        u.kind = "cloud".into();
         u.api_key = "classifier-secret".into();
         r.put(u, vec![model("jev")]);
     }
@@ -603,4 +604,32 @@ async fn auto_policies_use_profile_cost_and_load_only_after_quality_floor() {
         "balanced should avoid a slower cold load when a qualified faster candidate exists"
     );
     std::fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
+async fn local_systemone_classifier_requires_admission_unloads_and_works_local_only() {
+    use std::sync::atomic::AtomicUsize;
+    let admitted=Arc::new(AtomicUsize::new(0)); let released=Arc::new(AtomicUsize::new(0));
+    let invoked=Arc::new(AtomicUsize::new(0)); let deny=Arc::new(AtomicBool::new(false));
+    let (a,r,d)=(admitted.clone(),released.clone(),deny.clone());
+    let controller=Router::new().route("/api/v1/permits",post(move||{let(a,d)=(a.clone(),d.clone());async move{a.fetch_add(1,Ordering::SeqCst);if d.load(Ordering::SeqCst){(StatusCode::TOO_MANY_REQUESTS,Json(json!({"code":"WAIT_RESOURCE"})))}else{(StatusCode::OK,Json(json!({"data":{"permit_id":"local-classifier"}})))}}}))
+      .route("/api/v1/permits/{id}/release",post(move|Json(v):Json<Value>|{let r=r.clone();async move{assert_eq!(v["stopped"],true);r.fetch_add(1,Ordering::SeqCst);Json(json!({"data":{"state":"released"}}))}}));
+    let n=invoked.clone();
+    let native=Router::new().route("/v1/systemone",post(move|h:HeaderMap,Json(v):Json<Value>|{let n=n.clone();async move{
+        assert_eq!(h["x-vscheduler-permit-id"],"local-classifier");assert_eq!(v["model"],"tev");assert_eq!(v["keep_alive"],0);
+        n.fetch_add(1,Ordering::SeqCst);Json(json!({"answers":{"task":{"choice":"general"},"complexity":{"choice":"simple","confidence":0.99}}}))
+    }}));
+    let listener=tokio::net::TcpListener::bind("127.0.0.2:0").await.unwrap();let addr=listener.local_addr().unwrap();
+    let task=tokio::spawn(async move{axum::serve(listener,native).await.unwrap()});
+    let root=temp();let g=gateway(&root,controller);let mut cfg=setup(&g);
+    {let mut r=g.registry.lock().unwrap();let mut u=upstream("j");u.base_url=format!("http://{addr}/v1");u.protocol="ollama".into();r.put(u,vec![Model{id:"tev".into(),capabilities:vec!["decision".into()],..Default::default()}]);}
+    let policy=json!({"mode":"permit","executor_id":"local-decision","completion":"synchronous","max_input_bytes":4096,"limits":{"max_tokens":1024}});
+    let binding=json!({"url":"http://v-scheduler:38120/api/v1","token":"auto-fixture-scoped-submitter-token-1234567890","require_model_policy":true,"models":{"j/tev":policy,"s/small":policy,"l/large":policy}});
+    use std::os::unix::fs::PermissionsExt;let path=root.join("scheduler.local.json");std::fs::write(&path,binding.to_string()).unwrap();std::fs::set_permissions(&path,std::fs::Permissions::from_mode(0o600)).unwrap();
+    cfg["classifier"]=json!("systemone");cfg["jev_model"]=json!("manual/tev");cfg["jev_upstream_id"]=json!("j");cfg["classifier_timeout_ms"]=json!(60000);
+    auto::configure(&g,&admin(),cfg).unwrap();let mut h=HeaderMap::new();h.insert("x-vscheduler-auto-local-only","true".parse().unwrap());
+    let result=auto::resolve(&g,&principal("alice"),&body("hello"),&h).await.unwrap();assert_eq!(json!(result.classification)["source"],"local_systemone");assert_eq!(result.resolved_model,"manual/small");
+    assert_eq!(admitted.load(Ordering::SeqCst),1);assert_eq!(released.load(Ordering::SeqCst),1);assert_eq!(invoked.load(Ordering::SeqCst),1);
+    deny.store(true,Ordering::SeqCst);let result=auto::resolve(&g,&principal("alice"),&body("hello"),&h).await.unwrap();assert_eq!(json!(result.classification)["fallback"],true);assert_eq!(invoked.load(Ordering::SeqCst),1);
+    task.abort();std::fs::remove_dir_all(root).unwrap();
 }

@@ -69,6 +69,10 @@ fn provider_metadata_defaults_are_conservative_and_persisted() {
     assert_eq!(row.capabilities,["decision"]);
     assert!(registry::supports(&decision,row,"/systemone"));
     assert!(!registry::supports(&decision,row,"/chat/completions"));
+    let mut local=upstream("local-decision");local.protocol="ollama".into();
+    r.put(local,vec![Model{id:"tev1:0.8b".into(),kind:"chat".into(),capabilities:vec!["decision".into(),"vision".into()],endpoints:vec!["chat_completions".into()],..Default::default()}]);
+    assert_eq!(r.models["local-decision"][0].endpoints,["systemone"]);
+    assert!(r.models["local-decision"][0].capabilities.contains(&"vision".into()));
     for cap in ["embedding","rerank","image_generation","asr","decision"] {
         let mut row=Model{id:cap.into(),kind:"unknown".into(),capabilities:vec![cap.into()],..Default::default()};
         registry::normalize_upstream_model(&mut row,&upstream("specialized"));

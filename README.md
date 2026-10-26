@@ -315,7 +315,7 @@ Ollama 模型能力自动从原生 `/api/show` 读取，包含视觉、工具、
 
 ### Auto 自动选模型
 
-新增「Auto 自动选型」页面：管理员勾选真实模型及上游实例，设置档位和策略；同一份配置也支持网关 `GET/PUT /api/v1/auto-routing` 与候选目录 `GET /api/v1/auto-routing/candidates`。默认本地规则无需额外模型，Jev 原生分类可选且需单独开启外发许可。
+新增「Auto 自动选型」页面：管理员勾选真实模型及上游实例，设置档位和策略；同一份配置也支持网关 `GET/PUT /api/v1/auto-routing` 与候选目录 `GET /api/v1/auto-routing/candidates`。默认本地规则无需额外模型，可选本地 Ollama System One 决策模型或云端 Jev；本地分类经过资源准入并在回答前卸载，云端分类需单独开启外发许可。OpenRouter 原生 Jev 可使用已有 Key。
 
 调用 `POST /v1/chat/completions`，设置 `model=auto`；`POST /api/v1/auto-routing/test` 查看候选过滤和选型原因。界面同时支持测试选型、真实调用与流式验证。候选白名单、身份隔离、能力、上下文和原有 permit/队列仍然生效；没有合格候选不放宽到其他模型。详细 API/cURL、配置替换与 revision、Jev 和会话说明见 [Auto 接入指南](docs/auto-routing.md)。
 

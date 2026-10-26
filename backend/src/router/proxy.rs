@@ -646,7 +646,7 @@ async fn handle_inner(g: Arc<Gateway>, id: Identity, request: Request, classifie
         }
         if residency::native_origin(&u).is_some() {
             exchange._model_guard=crate::modelhub::inference_guard(&native).await.map_err(|e|Failure::new(409,e.to_string()))?;
-            value["keep_alive"]=json!(g.residency.seconds());
+            value["keep_alive"]=json!(if classifier {0} else {g.residency.seconds()});
         }
         let scheduling = queue::scheduling(&headers, &id)?;
         if scheduling.preemptible || scheduling.allow_preemption || scheduling.force_admission { value["keep_alive"] = json!(0); }

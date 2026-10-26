@@ -93,27 +93,39 @@ curl -i "$GATEWAY/v1/chat/completions" \
 
 实际响应头 `X-VScheduler-Auto-Model` 是选择的 qualified ID，`X-VScheduler-Auto-Decision-ID` 可与统计中 `auto_routing` 记录关联。响应体保留上游模型名和正常 Chat/SSE 协议，不改写成决策 JSON。缺少输出上限时注入 `max_tokens=1024`；同时设置两种输出上限或 `n!=1` 会被拒绝。实际输入仍受后端预算校验。
 
-`X-VScheduler-Auto-Policy` 可选 balanced/fast/quality/economy。`X-VScheduler-Auto-Local-Only: true` 只收紧策略，同时禁用本次 Jev 分类。请求不能放宽管理员的云端限制。`auto` 与 `X-VRouter-Upstream` 冲突返回 400。Auto 不会因为资源不足自动调用未勾选的云端模型，也不自动重放失败或已经输出的请求。
+`X-VScheduler-Auto-Policy` 可选 balanced/fast/quality/economy。`X-VScheduler-Auto-Local-Only: true` 只收紧策略，同时禁用本次云端分类（本地 System One 分类仍可使用）。请求不能放宽管理员的云端限制。`auto` 与 `X-VRouter-Upstream` 冲突返回 400。Auto 不会因为资源不足自动调用未勾选的云端模型，也不自动重放失败或已经输出的请求。
 
-## Jev 可选分类
+## System One 可选分类：本地 Ollama 或云端 Jev
 
-先在上游添加 TypeSafe/Jev 或相同原生协议的中转，完成模型发现。选择 `classifier=jev`，勾选“允许向 Jev 发送分类内容”，从目录选分类模型；云端回答开关与分类开关相互独立。API 在上述配置中增加：
+默认 `classifier=rules`，无需额外模型。选择 `classifier=systemone` 后，可从已发现的 `systemone` 模型中选择分类器；旧 `classifier=jev` 继续兼容。API 字段沿用 `jev_model` 和 `jev_upstream_id`，二者仍绑定真实 qualified ID 和实例。
+
+### 本地 Ollama
+
+需要支持该模型版本的原生 Ollama 镜像；例如 `tev1:0.8b` 的当前清单要求 Ollama 至少 0.40.4。更新后在「模型仓库」下载 `tev1:0.8b`，等待模型发现和资源绑定就绪，确认 `/api/show` 声明 `decision`，网关目录声明 `systemone`。Tev1、Nimble 是兼容 Jev API 的独立本地模型，不是 Jev 官方权重；中文准确率、质量与置信阈值须单独评测。
+
+在 Auto 分类方式选择「System One 本地／云端分类器」，选择该本地决策模型。无需启用云端分类许可；建议先使用 30000 毫秒超时（含加载及资源准入），允许范围 100..120000。分类模型只参与决策，不得勾作聊天回答候选。
 
 ```json
 {
-  "classifier": "jev",
-  "jev_model": "ai.typesafe.api/jev-latest",
-  "jev_upstream_id": "实际上游ID",
-  "allow_cloud_classifier": true,
-  "classifier_timeout_ms": 1000
+  "classifier": "systemone",
+  "jev_model": "v-scheduler/ollama-qa/tev1:0.8b",
+  "jev_upstream_id": "v-scheduler/ollama-qa",
+  "allow_cloud_classifier": false,
+  "classifier_timeout_ms": 30000
 }
 ```
 
-这是完整配置中的字段片段，不能直接用它覆盖整个配置。分类器必须是已发现的 `typesafe` / `systemone` 模型，且调用者可见。网关复用已保存供应商密钥，不在 Auto 配置中复制 Key。
+这是完整配置的字段片段，合并到最新 GET 配置后 PUT，不可用此片段覆盖候选配置。本地分类经过原有 permit 和队列，分类后卸载并核验资源释放，再准入回答模型，避免分类器常驻阻塞同一 GPU 的回答模型。`X-VScheduler-Auto-Local-Only=true` 允许该本地分类器，仍禁止云端分类和云端回答。决策来源显示 `local_systemone`。
 
-Jev 只判断 task 与 complexity，不输出 URL 或授权。使用最多最近 5 条消息的独立分类视图（当前超过 16000 UTF-8 字节直接回退规则），原回答输入保持不变。分类请求不携带用户的调度控制头，不递归 Auto，仍走原有资源许可；全局最多 2 个并发分类。失败、超时、繁忙、无权限或复杂度 confidence 小于 0.7 时回退规则，失败后冷却 30 秒。阈值是初始保守值，需要中文任务评测校准，不能当作目标回答正确率。
+### 云端 Jev 与 OpenRouter
 
-**测试选型也可能产生 Jev 分类费用并向其发送上述内容。** 本地限定请求不会调用 Jev。统计将分类推理作为独立请求记录 token，回答请求附带 `auto_routing.classification`；尚未将两者转换成实际账单或提供费用总额保证。
+可添加 `typesafe` 协议上游：官方 Base URL `https://api.typesafe.ai/v1`；已有 OpenRouter Key 可使用 `https://openrouter.ai/api/v1`，手动选择模型 `typesafe/jev-1.14`。OpenRouter 的普通模型目录可能不列出决策模型，可在添加上游时明确指定 `models:["typesafe/jev-1.14"]`；以原生 `/systemone` 实际调用确认，不要把 `typesafe/jev-router` 聊天路由产品当作本分类器。
+
+配置真实目录中的 `jev_model`、`jev_upstream_id`，启用 `allow_cloud_classifier=true`。默认建议 1000 毫秒，跨境网络可在有界范围内调整；本次实测使用 5000 毫秒。云端回答开关与云端分类开关独立。网关复用已保存的上游 Key，Auto 配置不复制 Key；本地限定请求不会调用云端分类器。决策来源显示 `jev`。
+
+分类仅判断 task 与 complexity，不能指定 URL 或授予权限。最多截取最近 5 条消息建立独立分类视图，超过 16000 UTF-8 字节回退规则，原回答输入不变。分类请求不携带用户的调度控制头，不递归 Auto；全局最多 2 个并发分类。失败、超时、忙碌、无权限或 complexity confidence <0.7 时回退规则，并冷却 30 秒。该阈值是起始配置，不代表回答正确率。
+
+**测试选型会实际运行可选分类器**：本地模型消耗本地算力；云端模型会发送分类文本并可能计费。测试不会运行回答模型。统计独立记录分类请求 token，并在回答的 `auto_routing.classification` 中关联决策；尚不提供账单总额保证。云端 Jev 经 OpenRouter 的真实分类、异常回退、超时恢复和本地回答 JSON/SSE 已验证。
 
 ## 会话与边界
 

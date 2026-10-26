@@ -29,7 +29,7 @@ curl -i "$GATEWAY/v1/chat/completions" -H "Authorization: Bearer $VOS_TOKEN" -H 
   <p>{{t('管理员在 Auto 页面勾选候选模型，或用 GET/PUT /api/v1/auto-routing 设置同一份配置。候选绑定 model 和 upstream_id；PUT 完整替换，revision 从最新 GET 读取，冲突返回 409。')}}</p>
   <p>{{t('默认本地规则无需额外模型。按实际能力设置 simple/standard/complex 档位；复杂请求没有 complex 候选时失败。客户端使用 model=auto，目前仅支持 Chat Completions；本地计算继续经过资源准入。')}}</p>
   <p>{{t('测试选型不运行回答模型；启用 Jev 时可能产生分类费用。实际调用会运行选中模型。')}}</p>
-  <p>{{t('Jev 需先添加 TypeSafe 上游，再设置 classifier=jev、jev_model、jev_upstream_id、allow_cloud_classifier=true 和 classifier_timeout_ms。云端回答与云端分类独立许可；Jev 失败回退规则，Local-Only 请求不调用 Jev。')}}</p>
+  <p>{{t('选择已发现的 systemone 决策模型，设置 classifier=systemone（兼容 jev）、jev_model 和 jev_upstream_id。本地 Ollama 模型无需云端许可，经过资源准入，分类后卸载再调用回答模型；Local-Only 允许本地分类。云端 Jev 可通过 TypeSafe 或 OpenRouter /api/v1 接入，须另开 allow_cloud_classifier=true；失败回退规则。')}}</p>
   <pre>{{autoExamples}}</pre>
   <p>{{t('X-VScheduler-Auto-Policy 支持 balanced/fast/quality/economy；X-VScheduler-Auto-Local-Only=true 只能收紧策略。响应头 X-VScheduler-Auto-Model 与 X-VScheduler-Auto-Decision-ID 标识实际选型。工具续轮须使用同一 X-VScheduler-Session-ID，失效返回 409，不静默换模型。')}}</p>
   <p><a href="https://github.com/ictrektech/V-Scheduler/blob/main/docs/auto-routing.md" target="_blank" rel="noopener">{{t('Auto 配置与 API 完整指南')}}</a></p>

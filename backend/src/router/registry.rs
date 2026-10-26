@@ -595,9 +595,9 @@ pub(super) fn normalize_model(model: &mut Model) {
 /// Publish useful, conservative defaults for catalogs without metadata. Never
 /// advertise tools, vision or native Responses support merely from a provider name.
 pub(super) fn normalize_upstream_model(model: &mut Model, u: &Upstream) {
-    if u.protocol == "typesafe" {
+    if u.protocol == "typesafe" || model.capabilities.iter().any(|c|c=="decision") {
         model.endpoints = vec!["systemone".into()];
-        model.capabilities = vec!["decision".into()];
+        if u.protocol == "typesafe" { model.capabilities = vec!["decision".into()]; }
         model.kind = "unknown".into();
     } else if model.endpoints.is_empty() {
         for cap in &model.capabilities {
