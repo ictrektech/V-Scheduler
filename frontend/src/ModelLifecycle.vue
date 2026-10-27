@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import {userErrorMessage} from "./diagnostics.js"
 import {onMounted,onUnmounted,ref} from 'vue'
 import {gatewayRequest} from './gateway-client'
 defineProps<{t:(text:string)=>string}>()
@@ -10,9 +11,9 @@ async function refresh(){
  try{
   const [lifecycle,residency]=await Promise.all([gatewayRequest('/api/v1/model-lifecycle'),gatewayRequest('/api/v1/model-residency')])
   if(!disposed){items.value=lifecycle.items;policy.value=residency;if(!editing)seconds.value=residency.idle_seconds;error.value=''}
- }catch(e){if(!disposed)error.value=e instanceof Error?e.message:String(e)}finally{busy.value=false}
+ }catch(e){if(!disposed)error.value=userErrorMessage(e)}finally{busy.value=false}
 }
-async function save(){if(busy.value)return;busy.value=true;try{await gatewayRequest('/api/v1/model-residency',{idle_seconds:seconds.value},'PUT');editing=false}catch(e){error.value=e instanceof Error?e.message:String(e);return}finally{busy.value=false}await refresh()}
+async function save(){if(busy.value)return;busy.value=true;try{await gatewayRequest('/api/v1/model-residency',{idle_seconds:seconds.value},'PUT');editing=false}catch(e){error.value=userErrorMessage(e);return}finally{busy.value=false}await refresh()}
 const reasons:Record<string,string>={EXECUTION_NODE_UNAVAILABLE:'执行节点尚未就绪',GATEWAY_MODEL_NOT_DISCOVERED:'网关尚未发现该服务模型',NO_LINKED_GATEWAY_SERVICE:'未关联可发现的推理服务',UPSTREAM_UNAVAILABLE:'推理后端不可达',ROUTING_PAUSED:'路由已暂停',WEIGHTS_NOT_READY:'权重尚未就绪',SCHEDULER_BINDING_PENDING:'调度绑定尚未就绪'}
 onMounted(()=>{void refresh();timer=setInterval(refresh,5000)})
 onUnmounted(()=>{disposed=true;clearInterval(timer)})

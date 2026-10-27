@@ -27,3 +27,8 @@ test('permission errors do not renew credentials or replay mutations',async()=>{
 test('an upstream service identity failure does not renew a browser identity',async()=>{
  let calls=0;const response=await authenticatedFetch('/v1/chat/completions',{method:'POST',body:'{}'},{token:async()=>'caller',clearToken:()=>assert.fail('service identity is not browser identity'),fetch:async()=>{calls++;return new Response('{"code":"UNAUTHENTICATED","category":"v-scheduler"}',{status:503})}});assert.equal(response.status,503);assert.equal(calls,1);
 });
+
+test('a provider credential failure does not trigger a browser token refresh',async()=>{
+ let calls=0;const response=await authenticatedFetch('/v1/chat/completions',{method:'POST',body:'{}'},{token:async()=>'browser-token',clearToken:()=>assert.fail('provider key is separate'),fetch:async()=>{calls++;return new Response('{"category":"v-scheduler","error":{"code":"PROVIDER_AUTH_REQUIRED","type":"authentication_error"}}',{status:401})}});assert.equal(response.status,401);assert.equal(calls,1);
+ const err=apiError({error:{type:'authentication_error',message:'provider credentials invalid'}},401);assert.equal(err.sessionError,false);
+});

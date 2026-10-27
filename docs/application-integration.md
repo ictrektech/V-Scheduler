@@ -578,7 +578,7 @@ GPU 槽位是调度并发计数，不是独立显存。统一内存预算只计�
 
 ## Provider 与模型能力声明
 
-使用上游页面选择 provider 预设并填入自己的服务凭据，测试后勾选要导入的模型。供应商和模型 ID 分开管理；支持修改中转 Base URL。不会因选择供应商就承诺所有模型都支持工具、图片、Responses 或 Messages。使用 OpenAI-compatible Chat Completions 的供应商可选 `chat_completions` 协议，网关提供已有的 Responses / Messages 转换；原生 OpenAI、Anthropic 保持原协议。不要把需要独立签名或 OAuth 的供应商当作普通 Bearer API。
+使用「模型与上游」页面选择 provider 预设并填入自己的服务凭据，测试后勾选要导入的模型。供应商和模型 ID 分开管理；支持修改中转 Base URL。不会因选择供应商就承诺所有模型都支持工具、图片、Responses 或 Messages。使用 OpenAI-compatible Chat Completions 的供应商可选 `chat_completions` 协议，网关提供已有的 Responses / Messages 转换；原生 OpenAI、Anthropic 保持原协议。不要把需要独立签名或 OAuth 的供应商当作普通 Bearer API。
 
 模型能力和支持接口均为有限选项复选框，适用于模型元数据、上游逐模型配置和单模型注册。普通聊天协议缺失声明时补全 `capabilities=["chat","completion"]`、`endpoints=["chat_completions"]`；Anthropic 默认 `messages`。旧持久化模型在读入时同样补全，Harness 可从 `GET /api/v1/models` 获取明确接口。显式接口优先；Embedding、Rerank、图像、语音和决策能力按各自接口保留，不默认声明聊天。仅有实际图片输入能力才勾选 `vision`，支持工具调用才勾选 `tools`。已有未知扩展标记保留，界面不提供任意字符串新增入口。
 
@@ -635,3 +635,98 @@ curl http://v-scheduler:8080/api/v1/registrations \
 应用登记已批准执行器时可附带 `controls`，填写 `executor_id`、可选 `start_url` 及 `stop_url`；控制地址限定在该执行器已批准的服务 origin 内。`POST /scheduler/api/v1/integrations/executions` 先申请预算，再由 Scheduler 调用应用启动 API；`POST /scheduler/api/v1/permits/{id}/stop` 会主动调用停止/卸载 API，并在匹配的原生停止回执后释放预算。省略控制字段的应用保持原协议。节点管理的「应用统一接入」也支持启动已注册计算与停止。
 
 注册 JSON、请求幂等、许可认领、正常完成、重启恢复与完整停止回执示例见 [应用计算启动与停止指南](application-compute-controls.md)。
+
+
+<a id="native-provider-runtime"></a>
+## 一处配置与原生 Provider 运行时
+
+从首页「去配置上游模型」进入统一工作区，添加上游、测试并选择模型；单个模型同样保存到一个有明确服务网址的上游，不要求手工维护租约。由应用主动维护的服务仍通过注册与心跳接口接入，界面的「更多接入 → 注册模型服务」保留此流程。按上游或应用来源分组、搜索网址或能力即可查找设置。模型权重下载、选中文件、更新及推理服务管理位于「权重管理」。现有共享目录、路由、身份、host alias 和内外端口均不改变。
+
+配置后 VOS 内应用仍调用 `http://v-scheduler:8080/v1`；私有上游仅所有者与管理员可见可用，共享上游对允许的调用者开放，修改与路由设置由所有者或管理员管理。本机/自建与云服务描述服务位置、模型前缀和资源责任，不等同于放行开关；实际内网计算来源仍按原策略准入。路由权重与并发在上游设置中调整，单模型放行和预算在模型设置中调整，任务优先级随请求提交。
+
+### Provider 配置去重
+
+预设覆盖本次对照的 dsh 42 个 provider ID；Qwen Token Plan International / Individual 使用相同服务与鉴权，合并为一个配置。原有供应商及自定义连接保留，不重复迁移。地区、产品或计费端点不同的配置分别保留：
+
+| 配置组 | 补充的 provider |
+| --- | --- |
+| API 服务与网关 | Ant Ling、Baseten、Azure OpenAI v1、Cloudflare Workers AI、Meta、Vercel AI Gateway |
+| Coding 与地区服务 | Kimi Coding、MiniMax International、Moonshot International、Qwen Token Plan International/Individual 与 China、MiMo Token Plan CN/AMS/SGP、Z.ai Coding International 与 China |
+| 原生协议或鉴权 | Amazon Bedrock、Google Vertex AI、OpenAI Codex、GitHub Copilot、Radius、Cloudflare AI Gateway |
+
+原生选择器来自固定依赖 `@earendil-works/pi-ai@1.1.0` 的 provider 目录。Google Gemini 等已有配置可选择原生协议；已有 OpenAI-compatible 地址继续可用。Jev/System One 继续使用 `typesafe` 原生决策接口，Ollama 的 embedding/rerank 和其他专用模型仍由原有协议识别，不受 pi-ai 的聊天目录范围限制。
+
+### API 配置与鉴权
+
+`POST /api/v1/upstreams`、探测、编辑及 `POST /api/v1/registrations` 新增以下可选字段；使用同一现有管理身份，注册续租和调度绑定不变：
+
+| 字段 | 说明 |
+| --- | --- |
+| `protocol` | `pi` 启用原生 provider；旧协议保持原义 |
+| `provider` | pi-ai provider ID，例如 `deepseek`、`google`、`amazon-bedrock` |
+| `api_key` | 普通服务密钥，原字段；编辑留空保留 |
+| `provider_credentials` | 仅写入的私有 JSON，支持 `type=api_key` 或 `type=oauth`；编辑省略/null 保留；切换 provider/地址需重新提供凭据 |
+| `base_url` | 原生目录默认服务地址，或显式中转地址；预设默认地址由目录按模型选择协议路径，修改后作为显式地址覆盖 |
+
+普通 Key 例子（管理请求需带原有 VOS 管理身份）：
+
+```json
+{
+  "name": "DeepSeek Native",
+  "kind": "cloud",
+  "base_url": "https://api.deepseek.com",
+  "protocol": "pi",
+  "provider": "deepseek",
+  "api_key": "<provider-key>",
+  "visibility": "private"
+}
+```
+
+区域与项目配置使用 `provider_credentials.env`。Bedrock 可使用 `api_key` 的 bearer token，或 `{"type":"api_key","env":{"AWS_ACCESS_KEY_ID":"...","AWS_SECRET_ACCESS_KEY":"...","AWS_REGION":"us-east-1"}}`；临时凭据可增加 `AWS_SESSION_TOKEN`。Vertex 可填写自己的 API Key 与 `GOOGLE_CLOUD_PROJECT`、`GOOGLE_CLOUD_LOCATION`。Azure 使用资源地址及 SDK 所需的 Azure 配置。Cloudflare 使用 `CLOUDFLARE_ACCOUNT_ID`、`CLOUDFLARE_GATEWAY_ID` 和对应权限的令牌。参数均为每个连接独立配置，不继承宿主机或其他上游的凭据；不允许通过此接口指定任意本地凭据文件、shell 命令或代理环境。
+
+OAuth provider 使用已完成供应商授权的 `{"type":"oauth","access":"...","refresh":"...","expires":<Unix毫秒>,...}`，额外账号字段沿用供应商返回值。运行时自动刷新并串行保存旋转后的 token；初次网页登录授权需在供应商支持的客户端完成，本版没有内置登录向导。管理员读取上游时只得到 `has_provider_credentials`，不会获得原 JSON。切换地址或 provider 不会将已有原生凭据转发给新目标，需显式重新填写。
+
+### 接口与能力边界
+
+原生模式对外接受 Chat Completions；现有桥接继续提供 Responses 和 Anthropic Messages，流式/非流式、工具调用、data URL 图片和推理内容共用此边界。SDK 目录的能力用于发现，目录存在不代表账号已获模型权限；「测试模型」会发送一次轻量真实请求。供应商错误转换为统一错误结构，401/429 等状态保留；未知错误不会回传供应商包含密钥的原文，流式开始后的错误通过 SSE 返回。网关不自行重试生成；OpenAI/Anthropic 禁用 SDK 自动重试，Bedrock 限制为一次尝试，其他原生 SDK 沿用其协议实现。单次原生操作有 120 秒取消期限。
+
+原生模式明确拒绝不能保真的扩展字段、多个候选 `n>1` 和远程图片 URL；后者可使用 base64 data URL。目录外模型、原样供应商扩展、embedding/rerank、图像/音视频、Jev 决策和异步任务继续用已有透明/业务协议，不会因为引入运行时而丢失入口。首次进程启动有 SDK 加载开销，运行时异常返回可重试服务错误，不改变其他协议可用性。
+
+实现参考：[dsh provider construction](https://github.com/deepseek-ai/deepseek-harness/blob/main/packages/llm/llm-pi-ai/src/provider.ts)、[pi-ai provider/auth API](https://github.com/earendil-works/pi/tree/main/packages/ai)。两者提供厂商适配；V-Scheduler 继续负责统一身份、资源预算、优先级排队、停止证明与调度许可。
+
+
+### 服务心跳、下线与恢复
+
+手动保存的上游和单模型是持久配置，不因时间到期而失效。主动发现的 Ollama、应用服务由 Scheduler 持续探测；检测不可用后从上游和模型目录移除，恢复后自动发现。内置后端下线仍可在权重管理修复，已知不可用的内置模型请求返回可重试的 `UPSTREAM_UNAVAILABLE`，不会用“租约到期”阻止用户修复。
+
+程序注册服务按以下流程维护存在状态，无需用户部署 Agent：
+
+1. `POST /api/v1/registrations` 提交稳定且独立的 `service_id`、地址、模型声明及 `heartbeat_timeout_seconds`（默认 90，范围 30..3600）。旧字段 `ttl_seconds` 继续兼容，两字段同时提供时须相同。
+2. 保存响应的 `upstream_id` 和 `heartbeat_after_seconds`，按返回间隔（默认 30 秒）调用 `POST /api/v1/registrations/{id}/heartbeat`。推荐每次携带完整注册快照；服务首次启动先注册，以后心跳可在记录丢失或 Scheduler 重启后自动重建同一 ID。
+3. 已登记服务的普通心跳只更新健康与截止时间，不修改模型、鉴权或预算；模型/地址等变更仍重新注册。`healthy:false` 立即移除目录项，恢复后发送完整快照或重新注册。对于只发送 `{heartbeat_timeout_seconds:90}` 的旧客户端，404 / `REGISTRATION_REQUIRED` 表示需要重新注册，客户端应自动处理。
+4. 心跳中断后自动移除动态上游和模型，不保留“租约过期”卡片。清理周期为 1 秒，实际心跳超时按注册配置计算；主动探测按 `V_ROUTER_DISCOVERY_INTERVAL`（默认 30 秒）运行，不通过有费用的模型生成请求探活。
+5. 目录移除不等于任务停止或权重卸载，不会释放正在运行的 permit、资源预约或改变既有模型预算；资源仍需原生停止证明才释放。后续同一服务恢复后保留原路由配置。
+
+可自恢复的完整心跳示例：
+
+```json
+{
+  "service_id": "my-app-worker-1",
+  "base_url": "http://my-app-backend:8000/v1",
+  "protocol": "chat_completions",
+  "models": [{"id":"my-model","capabilities":["chat","completion"],"endpoints":["chat_completions"]}],
+  "heartbeat_timeout_seconds": 90,
+  "healthy": true
+}
+```
+
+将此快照发送至 `/api/v1/registrations/registered-my-app-worker-1/heartbeat`，并使用原有管理身份。若初次注册使用私有可见范围、服务密钥或已批准的 scheduler 配置，心跳快照也应保留这些字段；凭据由应用后端私有保存，不放入浏览器或日志。现存记录只续心跳，缺失记录按原注册权限重新建立，不会借心跳绕过所有者权限或预算审批。
+
+模型目录心跳与 `/scheduler/api/v1/integrations/heartbeat` 各自保留职责：前者维护可调用模型存在性，后者维护执行器、运行任务与停止证明；不能用目录下线代替调度停止。
+
+
+### 界面认证恢复与诊断
+
+应用内已使用 VOS 桥接的 `oauth2.token({grant_type:"refresh_token",refresh_token,client_id})` 维护应用会话，平台登录有效时先后台准备应用凭据；空闲后优先续期，不反复调用依赖平台 JWT 的 `authorize/confirm`。刷新并发合并、授权限频、平台 token 就地轮换、用户切换与退出隔离均保留。所有凭据仅在内存中使用，不能把应用 refresh_token 当作模型服务 key。
+
+偶发认证过期不会把原始 `ExpiredSignature` 或业务校验堆栈显示在主界面。请在「高级管理 → 诊断日志」查看本浏览器会话的安全事件码与阶段；短暂失败保留已加载的模型、预算和页面内容并后台恢复。日志不保存 token、密钥、完整请求/响应或个人身份字段，也不自动上传。上游 provider 凭据错误与 VOS 浏览器身份错误分开处理，避免错误刷新或重复执行推理/修改请求。

@@ -1,14 +1,15 @@
 <script setup lang="ts">
+import {userErrorMessage} from "./diagnostics.js"
 import {ref,onMounted,onUnmounted} from 'vue'
 const props=defineProps<{request:(path:string,body?:unknown,method?:string)=>Promise<any>,t:(value:string)=>string}>()
 const items=ref<any[]>([]),error=ref(''),busy=ref(false),startForm=ref<any>(null),notice=ref('')
 let disposed=false,timer:ReturnType<typeof setInterval>|undefined
-async function refresh(){try{const value=await props.request('integrations');if(!disposed){items.value=value.items;error.value=''}}catch(e){if(!disposed)error.value=e instanceof Error?e.message:String(e)}}
-async function cancelTask(id:string){if(busy.value)return;busy.value=true;try{await props.request('tasks/'+encodeURIComponent(id)+'/cancel',{});await refresh()}catch(e){error.value=e instanceof Error?e.message:String(e)}finally{busy.value=false}}
+async function refresh(){try{const value=await props.request('integrations');if(!disposed){items.value=value.items;error.value=''}}catch(e){if(!disposed)error.value=userErrorMessage(e)}}
+async function cancelTask(id:string){if(busy.value)return;busy.value=true;try{await props.request('tasks/'+encodeURIComponent(id)+'/cancel',{});await refresh()}catch(e){error.value=userErrorMessage(e)}finally{busy.value=false}}
 function randomToken(){return [...crypto.getRandomValues(new Uint8Array(32))].map(n=>n.toString(16).padStart(2,'0')).join('')}
 function openStart(item:any,e:any){startForm.value={app_id:item.app_id,executor:e.definition,model_id:'',input:'{}',key:randomToken(),execution_token:randomToken()}}
-async function start(){if(!startForm.value||busy.value)return;busy.value=true;error.value='';try{const f=startForm.value;const value=await props.request('integrations/executions',{app_id:f.app_id,request:{executor_id:f.executor.id,upstream_url:f.executor.upstream_urls[0],model_id:f.model_id,execution_token:f.execution_token},input:JSON.parse(f.input),idempotency_key:f.key});notice.value=props.t(value.phase==='running'?'计算已启动':'启动结果待核实，已请求停止并保留预约。');startForm.value=null;await refresh()}catch(e){error.value=e instanceof Error?e.message:String(e)}finally{busy.value=false}}
-async function stop(id:string){if(busy.value)return;busy.value=true;try{await props.request('permits/'+encodeURIComponent(id)+'/stop',{});await refresh()}catch(e){error.value=e instanceof Error?e.message:String(e)}finally{busy.value=false}}
+async function start(){if(!startForm.value||busy.value)return;busy.value=true;error.value='';try{const f=startForm.value;const value=await props.request('integrations/executions',{app_id:f.app_id,request:{executor_id:f.executor.id,upstream_url:f.executor.upstream_urls[0],model_id:f.model_id,execution_token:f.execution_token},input:JSON.parse(f.input),idempotency_key:f.key});notice.value=props.t(value.phase==='running'?'计算已启动':'启动结果待核实，已请求停止并保留预约。');startForm.value=null;await refresh()}catch(e){error.value=userErrorMessage(e)}finally{busy.value=false}}
+async function stop(id:string){if(busy.value)return;busy.value=true;try{await props.request('permits/'+encodeURIComponent(id)+'/stop',{});await refresh()}catch(e){error.value=userErrorMessage(e)}finally{busy.value=false}}
 onMounted(()=>{void refresh();timer=setInterval(()=>void refresh(),5000)})
 onUnmounted(()=>{disposed=true;if(timer)clearInterval(timer)})
 </script>

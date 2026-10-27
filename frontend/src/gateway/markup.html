@@ -130,9 +130,10 @@
 
         <!-- 模型 -->
         <div id="tab-models" class="tab" hidden>
-          <section class="card">
-            <div id="modelsTable"></div>
-          </section>
+          <section class="catalog-intro"><div><h2>模型与上游</h2><p>一处配置，VOS 内应用按权限共享使用。</p></div><div class="catalog-entry-actions"><button class="btn primary" onclick="app.openUpstreamDialog()">＋ 添加上游</button><button class="btn" onclick="app.openSingleModelDialog()">添加单个模型</button><details class="catalog-actions"><summary>更多接入</summary><div><button class="btn" onclick="app.openRegistrationDialog()">注册模型服务</button></div></details></div></section>
+          <div class="catalog-filter"><label><span>搜索模型或来源</span><input id="catalogSearch" type="search" placeholder="名称、网址或模型能力" oninput="app.updateCatalogQuery(this.value)" /></label><label><span>分组方式</span><select id="catalogGrouping" onchange="app.updateCatalogGrouping(this.value)"><option value="upstream">按上游分组</option><option value="application">按应用来源分组</option></select></label><span id="catalogCount" role="status"></span></div>
+          <div id="modelsTable"></div>
+          <details class="catalog-help"><summary>调度、放行与优先级有什么区别？</summary><p>上游设置控制该来源的路由权重、并发和放行；模型设置保留单模型放行、预算校准与能力配置。任务优先级由调用方随每次请求提交，不是模型的固定优先级。</p><p>权重文件的下载和更新请前往权重管理；应用接入地址与协议保持不变。</p></details>
         </div>
 
         <!-- 上游 -->
@@ -192,7 +193,7 @@
         <div id="tab-apidoc" class="tab" hidden>
           <section class="card">
             <h2>接入方式<span class="spacer"></span><button class="btn" onclick="app.downloadOpenAPI()">下载 OpenAPI</button></h2>
-            <div id="apidocIntro"></div>
+            <p id="providerIntegrationGuide" class="hint"></p><p id="serviceHeartbeatGuide" class="hint"></p><div id="apidocIntro"></div>
           </section>
           <section class="card">
             <h2>身份与访问权限</h2>
@@ -223,9 +224,10 @@
     <form id="upstreamForm" autocomplete="off" onsubmit="return app.submitUpstream(event)">
       <input type="hidden" id="ufId" />
       <input type="hidden" id="ufKind" value="manual" />
+      <div class="field"><label for="ufKindChoice">服务位置</label><select id="ufKindChoice" onchange="app.changeUpstreamLocation(this.value)"><option value="manual">本机或自建服务</option><option value="cloud">外部云服务</option></select><div class="hint">云服务使用域名模型前缀，不占本地资源预约；本机或纳管服务需按预算准入。放行、并发和路由权重在保存后的上游设置中独立配置。已有配置不会自动转换。</div></div>
       <div class="field" id="ufPresetField">
         <label for="ufPreset">厂商预配置</label>
-        <select id="ufPreset" onchange="app.applyUpstreamPreset()"></select>
+        <select id="ufPreset" onchange="app.applyUpstreamPreset()"></select><p id="ufProviderNote" class="provider-note" hidden></p>
         <div class="hint">选择常用供应商会自动填写名称、Base URL 和协议；仍可手动修改。</div>
       </div>
       <div class="field">
@@ -234,7 +236,7 @@
       </div>
       <div class="field">
         <label for="ufProtocol">上游协议</label>
-        <select id="ufProtocol" onchange="app.updateUpstreamProtocol()"><option value="openai">OpenAI 原生透传</option><option value="chat_completions">仅 Chat Completions（转换 Responses / Messages）</option><option value="anthropic">Anthropic 原生</option><option value="ollama">Ollama（自动识别能力）</option><option value="typesafe">TypeSafe / Jev（System One 决策）</option><option value="offline_asr">离线 ASR（/transcribe 适配）</option><option value="image_studio">Image Studio（生图/生视频适配）</option><option value="async_task">通用异步图片任务（创建 + 轮询）</option></select>
+        <select id="ufProtocol" onchange="app.updateUpstreamProtocol(true)"><option value="pi">原生 Provider（pi-ai）</option><option value="openai">OpenAI 原生透传</option><option value="chat_completions">仅 Chat Completions（转换 Responses / Messages）</option><option value="anthropic">Anthropic 原生</option><option value="ollama">Ollama（自动识别能力）</option><option value="typesafe">TypeSafe / Jev（System One 决策）</option><option value="offline_asr">离线 ASR（/transcribe 适配）</option><option value="image_studio">Image Studio（生图/生视频适配）</option><option value="async_task">通用异步图片任务（创建 + 轮询）</option></select>
         <label for="ufBaseURL">Base URL</label>
         <input type="text" id="ufBaseURL" autocomplete="off" placeholder="https://api.example.com/v1" />
         <div class="hint" id="ufBaseHint">可填 OpenAI 兼容 /v1、Anthropic API 地址；未写协议时默认 https，未写路径时默认 /v1。</div>
@@ -244,11 +246,20 @@
         <input type="password" id="ufAPIKey" autocomplete="off" placeholder="sk-..." />
         <div class="hint" id="ufKeyHint">密钥保存在本机状态文件中，接口永不回显。</div>
       </div>
-      <div class="field">
+      <div id="ufNativeFields" hidden class="field">
+        <label for="ufNativeProvider">原生 Provider</label><select id="ufNativeProvider" onchange="app.applyNativeProvider(true)"></select>
+        <p class="hint">复用厂商原生协议、工具调用和鉴权。现有透明代理接口继续保留；原生模式提供对话、Responses 和 Messages。</p>
+        <details class="advanced-fields"><summary>原生凭据与区域配置</summary>
+          <label for="ufNativeCredential">原生凭据 JSON</label><textarea id="ufNativeCredential" rows="5" autocomplete="off" spellcheck="false" placeholder='{"type":"api_key","env":{}}'></textarea>
+          <p class="hint">留空保留已保存凭据。区域、项目等写入 env；OAuth 填入已授权的 access、refresh、expires，运行时负责续期。凭据不回显，保存后清空输入。</p>
+        </details>
+      </div>
+      <details class="advanced-fields"><summary>访问权限与高级连接选项</summary>      <div class="field">
         <label for="ufVisibility">可见范围</label>
         <select id="ufVisibility"><option value="public">共享（所有用户可见可用）</option><option value="private">私有（仅我和管理员可见可用）</option></select>
         <div class="hint">私有时其他用户在模型列表看不到该上游也不能调用；修改、刷新、删除和调度配置仅限本人和管理员。已有上游保持共享。</div>
       </div>
+</details>
       <div id="ufAsyncFields" hidden>
         <div class="field"><label for="ufAsyncModel">模型 ID</label><input id="ufAsyncModel" type="text" placeholder="例如 nano-banana-2" /><div class="hint">该上游只登记这个模型，并通过 OpenAI <span class="mono">/v1/images/generations</span> 调用。</div></div>
         <div class="field"><label for="ufAsyncCreatePath">创建任务路径</label><input id="ufAsyncCreatePath" type="text" placeholder="/api/v1/jobs/createTask" /></div>
@@ -363,7 +374,7 @@
     <h3>注册模型服务</h3>
     <form id="registrationForm" onsubmit="return app.submitRegistration(event)">
       <div class="field"><label for="regServiceId">服务 ID</label><input id="regServiceId" type="text" required placeholder="例如 vllm-node-1" /><div class="hint">稳定 ID 会生成上游 <span class="mono">registered-&lt;service_id&gt;</span>；同一服务续租/更新请保持不变。</div></div>
-      <div class="field"><label for="regPreset">厂商预配置</label><select id="regPreset" onchange="app.applyRegistrationProviderPreset()"></select><div class="hint">外部厂商通常建议在“添加上游”中添加；注册服务需要在租约过期前发送心跳。</div></div>
+      <div class="field"><label for="regPreset">厂商预配置</label><select id="regPreset" onchange="app.applyRegistrationProviderPreset()"></select><p id="regProviderNote" class="provider-note" hidden></p><div class="hint">固定上游和手动模型请用“添加上游”或“添加单个模型”；程序注册的服务按返回间隔发送心跳。</div></div>
       <div class="field"><label for="regName">显示名称</label><input id="regName" type="text" placeholder="例如 VLLM Node 1" /></div>
       <div class="field"><label for="regVisibility">可见范围</label><select id="regVisibility"><option value="public">Public：所有 VOS 用户和匿名内网调用可见</option><option value="private">Private：仅当前注册用户和管理员可见</option></select></div>
       <div class="field"><label for="regProtocol">上游协议</label><select id="regProtocol" onchange="app.updateRegistrationProtocol()"><option value="openai">OpenAI 原生透传</option><option value="chat_completions">仅 Chat Completions（转换 Responses / Messages）</option><option value="anthropic">Anthropic 原生</option><option value="ollama">Ollama（自动识别能力）</option><option value="typesafe">TypeSafe / Jev（System One 决策）</option><option value="offline_asr">离线 ASR（/transcribe 适配）</option><option value="image_studio">Image Studio（生图/生视频适配）</option></select></div>
@@ -379,7 +390,7 @@
         <div class="field"><label for="regCapabilities">模型能力（可选）</label><div id="regCapabilities" class="metadata-choices" role="group" aria-label="模型能力"></div></div>
         <div class="field"><label for="regModelKind">模型类型兜底</label><select id="regModelKind"><option value="unknown">由接口/能力决定</option><option value="chat">对话</option><option value="embedding">Embedding</option></select></div>
       </div>
-      <div class="field"><label for="regTTL">租约秒数</label><input id="regTTL" type="number" min="30" max="3600" value="90" /><div class="hint">后端服务应在过期前调用 heartbeat。界面注册适合静态服务；动态副本建议用 API 自动注册。</div></div>
+      <div class="field"><label for="regTTL">心跳超时秒数</label><input id="regTTL" type="number" min="30" max="3600" value="90" /><div class="hint">服务心跳中断或报告不可用时自动移除，恢复后重新注册。完整注册快照可随心跳发送，支持网关重启或短暂掉线后自动恢复。</div></div>
       <div class="probe-result" id="regProbeResult" hidden></div>
       <div class="form-error" id="regError"></div>
       <div class="form-actions"><button type="button" class="btn" onclick="app.element('registrationDialog').close()">取消</button><button type="button" class="btn" onclick="app.testRegistration()">测试</button><button type="submit" class="btn primary" id="regSubmit">注册</button></div>

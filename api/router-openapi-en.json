@@ -286,7 +286,7 @@
     },
     "/api/v1/registrations": {
       "post": {
-        "description": "Supports ollama automatic capabilities and the native typesafe/Jev protocol. Omit models for discovery; explicit model/models subsets also detect Ollama capabilities. Precedence: discovery, top-level capabilities/endpoints, individual models, then model_capabilities/model_endpoints maps. Heartbeats renew leases only; re-register the same service_id for metadata changes. Registration does not grant scheduler or budget approval. Requires a gateway key or VOS identity. A stable service_id produces registered-<service_id>; the same ID updates the same instance, replicas need distinct IDs. Public services are visible to all callers; private services only to the registrant. Register a base_url/models API or explicitly supply model/models. Explicit specialized models should declare endpoints; ordinary chat defaults are inferred from the protocol; capabilities/model_kind supports capability filtering. model_endpoints/model_capabilities can override individual models. ttl_seconds defaults to 90.",
+        "description": "Supports ollama automatic capabilities and the native typesafe/Jev protocol. Omit models for discovery; explicit model/models subsets also detect Ollama capabilities. Precedence: discovery, top-level capabilities/endpoints, individual models, then model_capabilities/model_endpoints maps. Heartbeats renew leases only; re-register the same service_id for metadata changes. Registration does not grant scheduler or budget approval. Requires a gateway key or VOS identity. A stable service_id produces registered-<service_id>; the same ID updates the same instance, replicas need distinct IDs. Public services are visible to all callers; private services only to the registrant. Register a base_url/models API or explicitly supply model/models. Explicit specialized models should declare endpoints; ordinary chat defaults are inferred from the protocol; capabilities/model_kind supports capability filtering. model_endpoints/model_capabilities can override individual models. ttl_seconds defaults to 90. Native protocol=pi accepts provider and write-only provider_credentials; serves chat, Responses and Messages through the existing admission path. Existing protocols and endpoints retain their behavior. See docs/application-integration.md#native-provider-runtime. Send heartbeats at heartbeat_after_seconds. Stale entries are removed automatically. A full registration snapshot heartbeat restores the same service after a restart or disconnect.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -419,10 +419,27 @@
                     "type": "string"
                   },
                   "ttl_seconds": {
-                    "type": "integer"
+                    "type": "integer",
+                    "deprecated": true
                   },
                   "visibility": {
                     "type": "string"
+                  },
+                  "provider": {
+                    "type": "string",
+                    "description": "Native pi-ai provider ID; required for protocol=pi."
+                  },
+                  "provider_credentials": {
+                    "type": "object",
+                    "writeOnly": true,
+                    "description": "Private api_key credential with scoped env, or authorized OAuth access/refresh/expires (Unix milliseconds). Omit/null on edit to retain. Never returned by management APIs."
+                  },
+                  "heartbeat_timeout_seconds": {
+                    "type": "integer",
+                    "minimum": 30,
+                    "maximum": 3600,
+                    "default": 90,
+                    "description": "Service heartbeat timeout; ttl_seconds remains a legacy alias."
                   }
                 },
                 "required": [
@@ -510,7 +527,7 @@
     },
     "/api/v1/registrations/{id}/heartbeat": {
       "post": {
-        "description": "Submit JSON {ttl_seconds:90}; renew every 30 seconds. A 404 indicates an expired lease or restarted gateway; register again. Heartbeats do not refresh models; register again when models change.",
+        "description": "Send heartbeats at heartbeat_after_seconds. heartbeat_timeout_seconds defaults to 90; ttl_seconds remains compatible. healthy:false removes the catalog entry immediately. Stale heartbeats remove upstreams and models without releasing running reservations. Include the full registration snapshot to restore a missing service with normal ownership and approval checks. Legacy short heartbeats should re-register on REGISTRATION_REQUIRED/404. Existing records only refresh liveness; re-register to change metadata.",
         "parameters": [
           {
             "in": "path",
@@ -527,10 +544,156 @@
               "schema": {
                 "properties": {
                   "ttl_seconds": {
-                    "default": 90,
-                    "maximum": 3600,
+                    "type": "integer",
+                    "deprecated": true
+                  },
+                  "provider": {
+                    "type": "string",
+                    "description": "Native pi-ai provider ID; required for protocol=pi."
+                  },
+                  "provider_credentials": {
+                    "type": "object",
+                    "writeOnly": true,
+                    "description": "Private api_key credential with scoped env, or authorized OAuth access/refresh/expires (Unix milliseconds). Omit/null on edit to retain. Never returned by management APIs."
+                  },
+                  "api_key": {
+                    "type": "string"
+                  },
+                  "base_url": {
+                    "type": "string"
+                  },
+                  "capabilities": {
+                    "type": "array"
+                  },
+                  "endpoints": {
+                    "type": "array"
+                  },
+                  "model": {
+                    "type": "string"
+                  },
+                  "model_capabilities": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "model_endpoints": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "model_kind": {
+                    "type": "string"
+                  },
+                  "models": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "id"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "model_kind": {
+                          "type": "string",
+                          "enum": [
+                            "chat",
+                            "embedding",
+                            "unknown"
+                          ]
+                        },
+                        "capabilities": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "endpoints": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "protocol": {
+                    "type": "string",
+                    "description": "ollama | typesafe | openai | chat_completions | anthropic | offline_asr | image_studio | async_task"
+                  },
+                  "scheduler": {
+                    "type": "object",
+                    "properties": {
+                      "mode": {
+                        "type": "string",
+                        "enum": [
+                          "cloud",
+                          "permit",
+                          "delegated"
+                        ]
+                      },
+                      "executor_id": {
+                        "type": "string"
+                      },
+                      "completion": {
+                        "type": "string",
+                        "enum": [
+                          "synchronous"
+                        ]
+                      },
+                      "websocket_completion": {
+                        "type": "string",
+                        "enum": [
+                          "server_close"
+                        ]
+                      },
+                      "max_input_bytes": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 33554432
+                      },
+                      "limits": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "number"
+                        }
+                      },
+                      "secondary_models": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "service_id": {
+                    "type": "string"
+                  },
+                  "visibility": {
+                    "type": "string"
+                  },
+                  "heartbeat_timeout_seconds": {
+                    "type": "integer",
                     "minimum": 30,
-                    "type": "integer"
+                    "maximum": 3600,
+                    "default": 90,
+                    "description": "Service heartbeat timeout; ttl_seconds remains a legacy alias."
+                  },
+                  "healthy": {
+                    "type": "boolean",
+                    "description": "false removes the catalog entry immediately, without releasing running reservations."
                   }
                 },
                 "type": "object"
@@ -678,7 +841,7 @@
         "x-gateway-auth": "manage"
       },
       "post": {
-        "description": "Also supports ollama (automatic /api/show capabilities) and typesafe (Jev System One). Undeclared ordinary chat models default to Chat Completions; specialized models retain their actual endpoints. Registers an upstream. kind: manual/cloud. protocol: openai (native), chat_completions (Responses/Messages conversion), anthropic (native), offline_asr (/transcribe adapter), image_studio (image/video adapter), async_task (generic asynchronous image task creation/polling). Cloud model prefixes reverse the domain, e.g. ai.ictrek.com -> com.ictrek.ai. Models are probed before saving; async_task validates the single-model/task configuration without creating a paid task. visibility: public (default, shared with all callers) or private (owner and administrators only). The creator becomes owner; only the owner and administrators may edit, refresh, delete or configure scheduling. Legacy upstreams with an empty owner remain shared and manageable by all signed-in users.",
+        "description": "Also supports ollama (automatic /api/show capabilities) and typesafe (Jev System One). Undeclared ordinary chat models default to Chat Completions; specialized models retain their actual endpoints. Registers an upstream. kind: manual/cloud. protocol: openai (native), chat_completions (Responses/Messages conversion), anthropic (native), offline_asr (/transcribe adapter), image_studio (image/video adapter), async_task (generic asynchronous image task creation/polling). Cloud model prefixes reverse the domain, e.g. ai.ictrek.com -> com.ictrek.ai. Models are probed before saving; async_task validates the single-model/task configuration without creating a paid task. visibility: public (default, shared with all callers) or private (owner and administrators only). The creator becomes owner; only the owner and administrators may edit, refresh, delete or configure scheduling. Legacy upstreams with an empty owner remain shared and manageable by all signed-in users. Native protocol=pi accepts provider and write-only provider_credentials; serves chat, Responses and Messages through the existing admission path. Existing protocols and endpoints retain their behavior. See docs/application-integration.md#native-provider-runtime.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -714,6 +877,15 @@
                   },
                   "visibility": {
                     "type": "string"
+                  },
+                  "provider": {
+                    "type": "string",
+                    "description": "Native pi-ai provider ID; required for protocol=pi."
+                  },
+                  "provider_credentials": {
+                    "type": "object",
+                    "writeOnly": true,
+                    "description": "Private api_key credential with scoped env, or authorized OAuth access/refresh/expires (Unix milliseconds). Omit/null on edit to retain. Never returned by management APIs."
                   }
                 },
                 "required": [
@@ -751,7 +923,7 @@
     },
     "/api/v1/upstreams/probe": {
       "post": {
-        "description": "Probes models using the current form parameters. Optional test_model performs a lightweight connectivity test. A failed probe returns diagnostics without saving the upstream.",
+        "description": "Probes models using the current form parameters. Optional test_model performs a lightweight connectivity test. A failed probe returns diagnostics without saving the upstream. Native protocol=pi accepts provider and write-only provider_credentials; serves chat, Responses and Messages through the existing admission path. Existing protocols and endpoints retain their behavior. See docs/application-integration.md#native-provider-runtime.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -822,7 +994,7 @@
         "x-gateway-auth": "manage"
       },
       "put": {
-        "description": "Updates name, URL, protocol, key or visibility. An empty api_key retains the existing key. Cloud model prefixes are recalculated from base_url. Owner and administrators only: editing another user's public upstream returns 403; accessing their private upstream returns 404. Ownership cannot be transferred.",
+        "description": "Updates name, URL, protocol, key or visibility. An empty api_key retains the existing key. Cloud model prefixes are recalculated from base_url. Owner and administrators only: editing another user's public upstream returns 403; accessing their private upstream returns 404. Ownership cannot be transferred. Native protocol=pi accepts provider and write-only provider_credentials; serves chat, Responses and Messages through the existing admission path. Existing protocols and endpoints retain their behavior. See docs/application-integration.md#native-provider-runtime.",
         "parameters": [
           {
             "in": "path",
@@ -868,6 +1040,15 @@
                   },
                   "visibility": {
                     "type": "string"
+                  },
+                  "provider": {
+                    "type": "string",
+                    "description": "Native pi-ai provider ID; required for protocol=pi."
+                  },
+                  "provider_credentials": {
+                    "type": "object",
+                    "writeOnly": true,
+                    "description": "Private api_key credential with scoped env, or authorized OAuth access/refresh/expires (Unix milliseconds). Omit/null on edit to retain. Never returned by management APIs."
                   }
                 },
                 "required": [
@@ -905,7 +1086,7 @@
     },
     "/api/v1/upstreams/{id}/refresh": {
       "post": {
-        "description": "Probes and refreshes models for API-created cloud/manual upstreams. Owner and administrators only.",
+        "description": "Probes and refreshes models for API-created cloud/manual upstreams. Owner and administrators only. Native protocol=pi accepts provider and write-only provider_credentials; serves chat, Responses and Messages through the existing admission path. Existing protocols and endpoints retain their behavior. See docs/application-integration.md#native-provider-runtime.",
         "parameters": [
           {
             "in": "path",
@@ -952,7 +1133,7 @@
     },
     "/api/v1/upstreams/{id}/routing": {
       "put": {
-        "description": "For manual, Model Hub and registered backends. weight defaults to 1 (1..1000); max_inflight defaults to 0 (unlimited); disabled defaults to false. Limits count only this gateway's in-flight requests; SSE releases its slot on completion or cancellation. Configuration is persisted. Owner/administrators only (403); another user's private upstream returns 404.",
+        "description": "For manual, Model Hub and registered backends. weight defaults to 1 (1..1000); max_inflight defaults to 0 (unlimited); disabled defaults to false. Limits count only this gateway's in-flight requests; SSE releases its slot on completion or cancellation. Configuration is persisted. Owner/administrators only (403); another user's private upstream returns 404. Native protocol=pi accepts provider and write-only provider_credentials; serves chat, Responses and Messages through the existing admission path. Existing protocols and endpoints retain their behavior. See docs/application-integration.md#native-provider-runtime.",
         "parameters": [
           {
             "in": "path",
@@ -977,6 +1158,15 @@
                   },
                   "weight": {
                     "type": "integer"
+                  },
+                  "provider": {
+                    "type": "string",
+                    "description": "Native pi-ai provider ID; required for protocol=pi."
+                  },
+                  "provider_credentials": {
+                    "type": "object",
+                    "writeOnly": true,
+                    "description": "Private api_key credential with scoped env, or authorized OAuth access/refresh/expires (Unix milliseconds). Omit/null on edit to retain. Never returned by management APIs."
                   }
                 },
                 "type": "object"

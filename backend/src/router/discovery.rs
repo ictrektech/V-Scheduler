@@ -144,8 +144,16 @@ pub(crate) fn sync_modelinfer(services: Vec<ModelinferService>) {
         r.put(upstream, vec![model]);
     }
 }
+/// Local sweep for client heartbeats and authenticated discovery snapshots.
+/// No inference requests, tokens, or executor stop/release calls are made.
+pub(super) fn heartbeats(g: Arc<Gateway>) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut timer=tokio::time::interval(Duration::from_secs(1));
+        loop {timer.tick().await;g.registry.lock().unwrap().prune_services(Utc::now());}
+    })
+}
 pub(super) fn start(g: Arc<Gateway>) -> Vec<tokio::task::JoinHandle<()>> {
-    let mut tasks = vec![];
+    let mut tasks = vec![heartbeats(g.clone())];
     let raw = env("V_ROUTER_DISCOVERY_INTERVAL", "30s");
     let seconds = raw
         .trim_end_matches('s')
@@ -230,13 +238,13 @@ async fn ollama(g: &Gateway, role: &str) {
     };
     let Some(_tags) = get(g, format!("{base}/api/tags"), None).await else {
         u.last_error = "built-in Ollama unavailable".into();
-        g.registry.lock().unwrap().put(u, vec![]);
+        let mut r=g.registry.lock().unwrap();r.put(u,vec![]);r.prune_services(Utc::now());
         return;
     };
     let listed = manage::models(g, &u).await;
     let Ok(mut rows) = listed else {
         u.last_error = "built-in Ollama models unavailable".into();
-        g.registry.lock().unwrap().put(u, vec![]);
+        let mut r=g.registry.lock().unwrap();r.put(u,vec![]);r.prune_services(Utc::now());
         return;
     };
     rows.retain(|m| {

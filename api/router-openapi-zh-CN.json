@@ -286,7 +286,7 @@
     },
     "/api/v1/registrations": {
       "post": {
-        "description": "支持 ollama 自动能力识别和 typesafe/Jev 原生协议。省略 models 发现全部模型；model 或 models 指定子集时同样自动识别 Ollama。覆盖优先级为自动识别、顶层 capabilities/endpoints、models 逐模型声明、model_capabilities/model_endpoints；后者优先。心跳仅续租，能力变更使用同一 service_id 重注册。注册不授予调度或预算审批。 需网关 Key 或 VOS 身份。稳定 service_id 生成 registered-<service_id>；相同 ID 更新同一实例，副本须不同 ID。可注册 public 或 private 服务；private 只对注册者身份可见，public 对所有调用者可见。可注册 base_url/models 模型 API，也可提交 model 或 models 显式注册单个/多个模型；显式专用模型应声明 endpoints，普通聊天模型缺省时按协议补全，capabilities/model_kind 用于接口能力过滤；model_endpoints 和 model_capabilities 可逐模型覆盖；ttl_seconds 默认90。",
+        "description": "支持 ollama 自动能力识别和 typesafe/Jev 原生协议。省略 models 发现全部模型；model 或 models 指定子集时同样自动识别 Ollama。覆盖优先级为自动识别、顶层 capabilities/endpoints、models 逐模型声明、model_capabilities/model_endpoints；后者优先。心跳仅续租，能力变更使用同一 service_id 重注册。注册不授予调度或预算审批。 需网关 Key 或 VOS 身份。稳定 service_id 生成 registered-<service_id>；相同 ID 更新同一实例，副本须不同 ID。可注册 public 或 private 服务；private 只对注册者身份可见，public 对所有调用者可见。可注册 base_url/models 模型 API，也可提交 model 或 models 显式注册单个/多个模型；显式专用模型应声明 endpoints，普通聊天模型缺省时按协议补全，capabilities/model_kind 用于接口能力过滤；model_endpoints 和 model_capabilities 可逐模型覆盖；ttl_seconds 默认90。 protocol=pi 接受 provider 与仅写入的 provider_credentials，经原资源准入提供对话、Responses 和 Messages。旧协议与地址不变，详见统一接入指南原生 Provider 小节。 按 heartbeat_after_seconds 发送心跳；心跳中断自动移除，不保留租约到期卡片。完整注册快照可随心跳恢复同一服务。",
         "requestBody": {
           "content": {
             "application/json": {
@@ -419,10 +419,27 @@
                     "type": "string"
                   },
                   "ttl_seconds": {
-                    "type": "integer"
+                    "type": "integer",
+                    "deprecated": true
                   },
                   "visibility": {
                     "type": "string"
+                  },
+                  "provider": {
+                    "type": "string",
+                    "description": "原生 pi-ai provider ID；protocol=pi 时必填。"
+                  },
+                  "provider_credentials": {
+                    "type": "object",
+                    "writeOnly": true,
+                    "description": "仅写入的私有原生凭据：api_key + env 或已授权的 OAuth access/refresh/expires（Unix 毫秒）；编辑省略/null 保留，不回显。"
+                  },
+                  "heartbeat_timeout_seconds": {
+                    "type": "integer",
+                    "minimum": 30,
+                    "maximum": 3600,
+                    "default": 90,
+                    "description": "心跳超时秒数；兼容 ttl_seconds。"
                   }
                 },
                 "required": [
@@ -510,7 +527,7 @@
     },
     "/api/v1/registrations/{id}/heartbeat": {
       "post": {
-        "description": "提交 JSON {ttl_seconds:90}，建议每30秒续期。404 表示租约过期或网关重启，须重新注册。心跳不刷新模型目录；模型变动请重新注册。",
+        "description": "按响应的 heartbeat_after_seconds 发送心跳。heartbeat_timeout_seconds 默认 90，兼容旧 ttl_seconds。healthy:false 立即移除；心跳中断后自动移除上游与模型，不释放运行中资源预约。携带完整注册快照（service_id、base_url、模型及原凭据）时，缺失服务可按原权限自动重新登记；普通心跳收到 REGISTRATION_REQUIRED/404 应自动重新注册。现存服务的心跳不更新模型元数据，配置变更仍重新注册。",
         "parameters": [
           {
             "in": "path",
@@ -527,10 +544,156 @@
               "schema": {
                 "properties": {
                   "ttl_seconds": {
-                    "default": 90,
-                    "maximum": 3600,
+                    "type": "integer",
+                    "deprecated": true
+                  },
+                  "provider": {
+                    "type": "string",
+                    "description": "原生 pi-ai provider ID；protocol=pi 时必填。"
+                  },
+                  "provider_credentials": {
+                    "type": "object",
+                    "writeOnly": true,
+                    "description": "仅写入的私有原生凭据：api_key + env 或已授权的 OAuth access/refresh/expires（Unix 毫秒）；编辑省略/null 保留，不回显。"
+                  },
+                  "api_key": {
+                    "type": "string"
+                  },
+                  "base_url": {
+                    "type": "string"
+                  },
+                  "capabilities": {
+                    "type": "array"
+                  },
+                  "endpoints": {
+                    "type": "array"
+                  },
+                  "model": {
+                    "type": "string"
+                  },
+                  "model_capabilities": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "model_endpoints": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "model_kind": {
+                    "type": "string"
+                  },
+                  "models": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "id"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "model_kind": {
+                          "type": "string",
+                          "enum": [
+                            "chat",
+                            "embedding",
+                            "unknown"
+                          ]
+                        },
+                        "capabilities": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "endpoints": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "protocol": {
+                    "type": "string",
+                    "description": "ollama | typesafe | openai | chat_completions | anthropic | offline_asr | image_studio | async_task"
+                  },
+                  "scheduler": {
+                    "type": "object",
+                    "properties": {
+                      "mode": {
+                        "type": "string",
+                        "enum": [
+                          "cloud",
+                          "permit",
+                          "delegated"
+                        ]
+                      },
+                      "executor_id": {
+                        "type": "string"
+                      },
+                      "completion": {
+                        "type": "string",
+                        "enum": [
+                          "synchronous"
+                        ]
+                      },
+                      "websocket_completion": {
+                        "type": "string",
+                        "enum": [
+                          "server_close"
+                        ]
+                      },
+                      "max_input_bytes": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 33554432
+                      },
+                      "limits": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "number"
+                        }
+                      },
+                      "secondary_models": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "service_id": {
+                    "type": "string"
+                  },
+                  "visibility": {
+                    "type": "string"
+                  },
+                  "heartbeat_timeout_seconds": {
+                    "type": "integer",
                     "minimum": 30,
-                    "type": "integer"
+                    "maximum": 3600,
+                    "default": 90,
+                    "description": "心跳超时秒数；兼容 ttl_seconds。"
+                  },
+                  "healthy": {
+                    "type": "boolean",
+                    "description": "false 立即移除服务目录项，不释放运行中资源。"
                   }
                 },
                 "type": "object"
@@ -678,7 +841,7 @@
         "x-gateway-auth": "manage"
       },
       "post": {
-        "description": "新增 ollama（自动读取 /api/show 能力）与 typesafe（Jev System One）协议；普通聊天未声明接口时保守补全 Chat Completions，专用能力仍按实际接口隔离。登记上游，kind 支持 manual/cloud，protocol 支持 openai（原生）、chat_completions（转换 Responses/Messages）、anthropic（原生）、offline_asr（离线 ASR /transcribe 适配）、image_studio（Image Studio 生图/生视频适配）、async_task（通用异步图片任务创建/轮询适配）。云端模型前缀按域名反转生成，例如 ai.ictrek.com -> com.ictrek.ai。默认保存前探测模型列表；async_task 改为校验单模型及任务字段，不创建付费任务。visibility 支持 public（共享，默认，所有调用者可见可用）和 private（仅创建者与管理员可见可用）；创建者身份记录为 owner，之后只有 owner 和管理员能修改、刷新、删除该上游或配置调度。历史存量上游 owner 为空，升级后保持共享且所有登录用户可管理。",
+        "description": "新增 ollama（自动读取 /api/show 能力）与 typesafe（Jev System One）协议；普通聊天未声明接口时保守补全 Chat Completions，专用能力仍按实际接口隔离。登记上游，kind 支持 manual/cloud，protocol 支持 openai（原生）、chat_completions（转换 Responses/Messages）、anthropic（原生）、offline_asr（离线 ASR /transcribe 适配）、image_studio（Image Studio 生图/生视频适配）、async_task（通用异步图片任务创建/轮询适配）。云端模型前缀按域名反转生成，例如 ai.ictrek.com -> com.ictrek.ai。默认保存前探测模型列表；async_task 改为校验单模型及任务字段，不创建付费任务。visibility 支持 public（共享，默认，所有调用者可见可用）和 private（仅创建者与管理员可见可用）；创建者身份记录为 owner，之后只有 owner 和管理员能修改、刷新、删除该上游或配置调度。历史存量上游 owner 为空，升级后保持共享且所有登录用户可管理。 protocol=pi 接受 provider 与仅写入的 provider_credentials，经原资源准入提供对话、Responses 和 Messages。旧协议与地址不变，详见统一接入指南原生 Provider 小节。",
         "requestBody": {
           "content": {
             "application/json": {
@@ -714,6 +877,15 @@
                   },
                   "visibility": {
                     "type": "string"
+                  },
+                  "provider": {
+                    "type": "string",
+                    "description": "原生 pi-ai provider ID；protocol=pi 时必填。"
+                  },
+                  "provider_credentials": {
+                    "type": "object",
+                    "writeOnly": true,
+                    "description": "仅写入的私有原生凭据：api_key + env 或已授权的 OAuth access/refresh/expires（Unix 毫秒）；编辑省略/null 保留，不回显。"
                   }
                 },
                 "required": [
@@ -751,7 +923,7 @@
     },
     "/api/v1/upstreams/probe": {
       "post": {
-        "description": "按当前表单参数探测模型列表；可提交 test_model 做一次轻量联通测试。失败只返回诊断结果，不保存上游。",
+        "description": "按当前表单参数探测模型列表；可提交 test_model 做一次轻量联通测试。失败只返回诊断结果，不保存上游。 protocol=pi 接受 provider 与仅写入的 provider_credentials，经原资源准入提供对话、Responses 和 Messages。旧协议与地址不变，详见统一接入指南原生 Provider 小节。",
         "requestBody": {
           "content": {
             "application/json": {
@@ -822,7 +994,7 @@
         "x-gateway-auth": "manage"
       },
       "put": {
-        "description": "修改名称、地址、协议、密钥或可见范围；api_key 留空表示保留原密钥。云端上游会按新 base_url 重新计算模型前缀。仅 owner 和管理员可调用：非 owner 修改他人 public 上游返回 403，访问他人 private 上游返回 404。owner 不可转移。",
+        "description": "修改名称、地址、协议、密钥或可见范围；api_key 留空表示保留原密钥。云端上游会按新 base_url 重新计算模型前缀。仅 owner 和管理员可调用：非 owner 修改他人 public 上游返回 403，访问他人 private 上游返回 404。owner 不可转移。 protocol=pi 接受 provider 与仅写入的 provider_credentials，经原资源准入提供对话、Responses 和 Messages。旧协议与地址不变，详见统一接入指南原生 Provider 小节。",
         "parameters": [
           {
             "in": "path",
@@ -868,6 +1040,15 @@
                   },
                   "visibility": {
                     "type": "string"
+                  },
+                  "provider": {
+                    "type": "string",
+                    "description": "原生 pi-ai provider ID；protocol=pi 时必填。"
+                  },
+                  "provider_credentials": {
+                    "type": "object",
+                    "writeOnly": true,
+                    "description": "仅写入的私有原生凭据：api_key + env 或已授权的 OAuth access/refresh/expires（Unix 毫秒）；编辑省略/null 保留，不回显。"
                   }
                 },
                 "required": [
@@ -905,7 +1086,7 @@
     },
     "/api/v1/upstreams/{id}/refresh": {
       "post": {
-        "description": "重新探测 API 创建的云端/手动上游并刷新其模型列表。仅 owner 和管理员可调用。",
+        "description": "重新探测 API 创建的云端/手动上游并刷新其模型列表。仅 owner 和管理员可调用。 protocol=pi 接受 provider 与仅写入的 provider_credentials，经原资源准入提供对话、Responses 和 Messages。旧协议与地址不变，详见统一接入指南原生 Provider 小节。",
         "parameters": [
           {
             "in": "path",
@@ -952,7 +1133,7 @@
     },
     "/api/v1/upstreams/{id}/routing": {
       "put": {
-        "description": "适用于手动、Model Hub 和主动注册后端。weight 默认 1（1..1000），max_inflight 默认 0 不限并发，disabled 默认 false。该上限仅统计本网关进行中请求；SSE 到结束或取消才释放。配置持久化。仅 owner 和管理员可调用（403），他人 private 上游返回 404。",
+        "description": "适用于手动、Model Hub 和主动注册后端。weight 默认 1（1..1000），max_inflight 默认 0 不限并发，disabled 默认 false。该上限仅统计本网关进行中请求；SSE 到结束或取消才释放。配置持久化。仅 owner 和管理员可调用（403），他人 private 上游返回 404。 protocol=pi 接受 provider 与仅写入的 provider_credentials，经原资源准入提供对话、Responses 和 Messages。旧协议与地址不变，详见统一接入指南原生 Provider 小节。",
         "parameters": [
           {
             "in": "path",
@@ -977,6 +1158,15 @@
                   },
                   "weight": {
                     "type": "integer"
+                  },
+                  "provider": {
+                    "type": "string",
+                    "description": "原生 pi-ai provider ID；protocol=pi 时必填。"
+                  },
+                  "provider_credentials": {
+                    "type": "object",
+                    "writeOnly": true,
+                    "description": "仅写入的私有原生凭据：api_key + env 或已授权的 OAuth access/refresh/expires（Unix 毫秒）；编辑省略/null 保留，不回显。"
                   }
                 },
                 "type": "object"

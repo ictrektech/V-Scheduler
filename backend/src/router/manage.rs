@@ -3,6 +3,8 @@ use axum::Json;
 fn view(r: &Registry, u: &Upstream, id: &Identity) -> Value {
     let mut v = serde_json::to_value(u).unwrap();
     v["api_key"] = json!("");
+    v["provider_credentials"] = Value::Null;
+    v["has_provider_credentials"] = json!(!u.provider_credentials.is_null());
     v["has_key"] = json!(!u.api_key.is_empty());
     v["model_ids"] = json!(
         r.models
@@ -112,6 +114,7 @@ pub(super) fn normalize(value: &Value) -> Api<Upstream> {
         "base_url",
         "api_key",
         "protocol",
+        "provider",
         "visibility",
         "test_model",
         "model",
@@ -143,6 +146,7 @@ pub(super) fn normalize(value: &Value) -> Api<Upstream> {
         "anthropic",
         "typesafe",
         "ollama",
+        "pi",
         "offline_asr",
         "image_studio",
         "async_task",
@@ -152,6 +156,7 @@ pub(super) fn normalize(value: &Value) -> Api<Upstream> {
     {
         return Err(Failure::new(400, "unsupported upstream protocol"));
     }
+    if protocol == "pi" { provider_runtime::validate(text(value,"provider"), &value["provider_credentials"])?; }
     let parsed = reqwest::Url::parse(&base)
         .map_err(|_| Failure::new(400, "base_url must be an HTTP(S) URL"))?;
     if !["http", "https"].contains(&parsed.scheme())
@@ -214,6 +219,8 @@ pub(super) fn normalize(value: &Value) -> Api<Upstream> {
         base_url: base,
         api_key: text(value, "api_key").into(),
         protocol,
+        provider: text(value,"provider").into(),
+        provider_credentials: value.get("provider_credentials").cloned().unwrap_or(Value::Null),
         visibility: visibility.into(),
         model_prefix: prefix,
         async_task: value.get("async_task").filter(|v| !v.is_null()).cloned(),
@@ -445,6 +452,7 @@ fn model_routing(g: &Arc<Gateway>, id: &Identity, payload: Value) -> Api<Respons
     Ok(Json(json!({"model_id":model_id,"direct":direct})).into_response())
 }
 pub(super) async fn models(g: &Gateway, u: &Upstream) -> Api<Vec<Model>> {
+    if u.protocol == "pi" {return provider_runtime::models(g,u).await;}
     if u.protocol == "image_studio" {
         let base = u.base_url.trim_end_matches('/');
         let api = if base.ends_with("/api/v1") {
@@ -593,6 +601,11 @@ async fn enrich_ollama_models(g: &Gateway, u: &Upstream, rows: &mut [Model]) {
     }
 }
 async fn probe_model(g: &Gateway, u: &Upstream, model: &str) -> Api<()> {
+    if u.protocol == "pi" {
+        let response=provider_runtime::response(g,u,"chat",json!({"model":model,"max_tokens":1,"messages":[{"role":"user","content":"ping"}]})).await?;
+        if !response.status().is_success(){return Err(provider_runtime::upstream_failure(response.status().as_u16(),"native provider model test failed"));}
+        read_json(response,1<<20).await?;return Ok(());
+    }
     let suffix = if u.protocol == "typesafe" {
         "/systemone"
     } else if u.protocol == "anthropic" {
@@ -624,6 +637,7 @@ async fn probe_model(g: &Gateway, u: &Upstream, model: &str) -> Api<()> {
     Ok(())
 }
 pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) -> Api<Response> {
+    g.registry.lock().unwrap().prune_services(Utc::now());
     let path = request.uri().path().to_string();
     let method = request.method().as_str().to_string();
     // OIDC userinfo establishes the owner, but does not expose platform roles.
@@ -705,14 +719,22 @@ pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) ->
     {
         let probe = path.ends_with("/probe");
         let mut u = normalize(&payload)?;
+        u.owner=id.owner.clone();
         if probe && !text(&payload, "upstream_id").is_empty() {
             let saved = writable(&g.registry.lock().unwrap(), text(&payload, "upstream_id"), id)?;
             if u.api_key.is_empty() && !saved.api_key.is_empty() {
                 if u.base_url != saved.base_url || u.protocol != saved.protocol {
                     return Err(Failure::new(400, "upstream address or protocol changed; enter an API key to test"));
                 }
-                u.api_key = saved.api_key;
+                u.api_key = saved.api_key.clone();
             }
+        }
+        if probe && u.protocol == "pi" && !text(&payload,"upstream_id").is_empty() {
+            let saved=writable(&g.registry.lock().unwrap(),text(&payload,"upstream_id"),id)?;
+            u.owner=saved.owner.clone();
+            let changed=u.base_url!=saved.base_url || u.provider!=saved.provider || saved.protocol!="pi";
+            if changed && text(&payload,"api_key").is_empty() && u.provider_credentials.is_null() {return Err(Failure::new(400,"native provider changed; enter provider credentials to test"));}
+            if !changed && u.provider_credentials.is_null(){u.provider_credentials=saved.provider_credentials;}
         }
         if u.name.is_empty() && !probe {
             return Err(Failure::new(400, "name is required"));
@@ -775,7 +797,7 @@ pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) ->
         let slug = if slug.is_empty() { "upstream" } else { slug };
         u.id = slug.into();
         let mut serial = 2;
-        while r.upstreams.contains_key(&u.id) {
+        while r.upstreams.contains_key(&u.id) || r.registration_owners.contains_key(&u.id) {
             u.id = format!("{slug}-{serial}");
             serial += 1;
         }
@@ -830,6 +852,7 @@ pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) ->
             ));
         }
         if method == "DELETE" && action.is_empty() {
+            provider_runtime::forget(g,&u);
             let mut r = g.registry.lock().unwrap();
             r.upstreams.remove(key);
             r.models.remove(key);
@@ -852,11 +875,18 @@ pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) ->
             if replacement.name.is_empty() {
                 return Err(Failure::new(400, "name is required"));
             }
+            let native_target_changed=replacement.protocol=="pi" && (u.protocol!="pi" || replacement.base_url!=u.base_url || replacement.provider!=u.provider);
+            if native_target_changed && replacement.api_key.is_empty() && replacement.provider_credentials.is_null() {
+                return Err(Failure::new(400,"native provider changed; enter provider credentials"));
+            }
+            if replacement.protocol=="pi" && !native_target_changed && replacement.provider_credentials.is_null() {
+                replacement.provider_credentials=u.provider_credentials.clone();
+            }
             replacement.id = u.id.clone();
             replacement.owner = u.owner.clone();
             replacement.source = u.source.clone();
             replacement.created_at = u.created_at;
-            if replacement.api_key.is_empty() {
+            if replacement.api_key.is_empty() && !native_target_changed {
                 replacement.api_key = u.api_key;
             }
             u = replacement;
@@ -920,27 +950,20 @@ pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) ->
     }
     if let Some(tail) = path.strip_prefix("/api/v1/registrations/") {
         let (key, action) = tail.split_once('/').unwrap_or((tail, ""));
-        let mut r = g.registry.lock().unwrap();
-        let mut u =
-            writable(&r, key, id).map_err(|_| Failure::new(404, "registration not found"))?;
-        if u.source != "registered" {
-            return Err(Failure::new(409, "upstream is not a registration"));
-        }
-        if action == "heartbeat" && method == "POST" {
-            if !u.live() {
-                return Err(Failure::new(
-                    404,
-                    "registration missing or expired; register again",
-                ));
+        if action=="heartbeat" && method=="POST" {
+            if payload.get("healthy").is_some_and(|v|!v.is_boolean()) {return Err(Failure::new(400,"healthy must be a boolean"));}
+            if !text(&payload,"service_id").is_empty() && key!=format!("registered-{}",text(&payload,"service_id")) {return Err(Failure::new(400,"heartbeat service_id does not match registration"));}
+            if let Some(response)=heartbeat(g,id,key,&payload)? {return Ok(response);}
+            if payload["healthy"]==false {return Ok(Json(json!({"upstream_id":key,"status":"removed","registration_required":true})).into_response());}
+            if !text(&payload,"service_id").is_empty() && !text(&payload,"base_url").is_empty() {
+                return register(g,id,payload).await;
             }
-            let ttl = ttl(&payload)?;
-            u.expires_at = Some(Utc::now() + chrono::Duration::seconds(ttl));
-            r.upstreams.insert(key.into(), u.clone());
-            r.breaker.remove(key);
-            r.persist(&g.state_path)
-                .map_err(|_| Failure::new(500, "cannot persist registration"))?;
-            return Ok(Json(json!({"upstream_id":key,"expires_at":u.expires_at,"heartbeat_after_seconds":ttl/3})).into_response());
+            let mut error=Failure::new(404,"service is offline; register again or send a complete registration heartbeat");error.code=Some("REGISTRATION_REQUIRED".into());return Err(error);
         }
+
+        let mut r = g.registry.lock().unwrap();
+        let u=writable(&r,key,id).map_err(|_|Failure::new(404,"registration not found"))?;
+        if u.source!="registered" {return Err(Failure::new(409,"upstream is not a registration"));}
         if action.is_empty() && method == "DELETE" {
             r.upstreams.remove(key);
             r.models.remove(key);
@@ -951,19 +974,30 @@ pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) ->
     }
     Err(Failure::new(404, "unknown API endpoint"))
 }
-fn ttl(v: &Value) -> Api<i64> {
-    if v.get("ttl_seconds")
-        .is_some_and(|v| !v.is_null() && v.as_i64().is_none())
-    {
-        return Err(Failure::new(400, "ttl_seconds must be an integer"));
+fn heartbeat(g:&Gateway,id:&Identity,key:&str,payload:&Value)->Api<Option<Response>> {
+    let mut r=g.registry.lock().unwrap();
+    if !r.upstreams.contains_key(key) {return Ok(None);}
+    let mut u=writable(&r,key,id)?;
+    if u.source!="registered" {return Err(Failure::new(409,"upstream is not a registration"));}
+    if payload["healthy"]==false {
+        r.upstreams.remove(key);r.models.remove(key);
+        return Ok(Some(Json(json!({"upstream_id":key,"status":"removed","registration_required":true})).into_response()));
     }
-    let ttl = v["ttl_seconds"].as_i64().filter(|n| *n != 0).unwrap_or(90);
-    if !(30..=3600).contains(&ttl) {
-        Err(Failure::new(400, "ttl_seconds must be 30..3600"))
-    } else {
-        Ok(ttl)
-    }
+    let timeout=ttl(payload)?;
+    u.healthy=true;u.expires_at=Some(Utc::now()+chrono::Duration::seconds(timeout));
+    r.upstreams.insert(key.into(),u.clone());r.breaker.remove(key);
+    Ok(Some(Json(json!({"upstream_id":key,"status":"online","expires_at":u.expires_at,"heartbeat_timeout_seconds":timeout,"heartbeat_after_seconds":timeout/3})).into_response()))
 }
+fn ttl(v: &Value) -> Api<i64> {
+    let timeout=v.get("heartbeat_timeout_seconds").filter(|v|!v.is_null()).or_else(||v.get("ttl_seconds"));
+    if timeout.is_some_and(|v|!v.is_null() && v.as_i64().is_none()) {return Err(Failure::new(400,"heartbeat_timeout_seconds must be an integer"));}
+    if !v["heartbeat_timeout_seconds"].is_null() && !v["ttl_seconds"].is_null() && v["heartbeat_timeout_seconds"]!=v["ttl_seconds"] {
+        return Err(Failure::new(400,"conflicting heartbeat timeout fields"));
+    }
+    let timeout=timeout.and_then(Value::as_i64).filter(|n|*n!=0).unwrap_or(90);
+    if !(30..=3600).contains(&timeout) {Err(Failure::new(400,"heartbeat timeout must be 30..3600 seconds"))} else {Ok(timeout)}
+}
+
 async fn register(g: &Gateway, id: &Identity, p: Value) -> Api<Response> {
     let service = text(&p, "service_id");
     if service.is_empty()
@@ -1016,6 +1050,9 @@ async fn register(g: &Gateway, id: &Identity, p: Value) -> Api<Response> {
     }
     {
         let r = g.registry.lock().unwrap();
+        if r.registration_owners.get(&u.id).is_some_and(|owner|owner!=&id.owner) && !id.admin {
+            return Err(Failure::new(409,"service_id belongs to another owner"));
+        }
         if let Some(old) = r.upstreams.get(&u.id) {
             if old.source != "registered" || !old.manageable(id) {
                 return Err(Failure::new(
@@ -1114,8 +1151,10 @@ async fn register(g: &Gateway, id: &Identity, p: Value) -> Api<Response> {
     let mut r = g.registry.lock().unwrap();
     let key = u.id.clone();
     r.put(u, models);
+    r.breaker.remove(&key);
+    r.persist(&g.state_path).map_err(|_|Failure::new(500,"cannot persist service ownership"))?;
     Ok(
-        Json(json!({"upstream":view(&r,&r.upstreams[&key],id),"heartbeat_after_seconds":ttl/3}))
+        Json(json!({"upstream":view(&r,&r.upstreams[&key],id),"upstream_id":key,"status":"online","heartbeat_timeout_seconds":ttl,"heartbeat_after_seconds":ttl/3}))
             .into_response(),
     )
 }

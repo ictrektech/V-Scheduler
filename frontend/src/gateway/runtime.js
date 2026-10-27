@@ -1,7 +1,10 @@
-import {apiError} from '../http-client.js';
+import {NATIVE_PROVIDERS} from './native-providers.js';
+import { groupCatalog, sourceLabel } from './model-catalog.js';
+import {apiError,browserIdentityFailure} from '../http-client.js';
+import {recordDiagnostic,isSessionError,userErrorMessage} from '../diagnostics.js';
 import { createGatewayI18n } from './locale.js';
 import { playgroundStreamEvent } from './playground-stream.js';
-import { CAPABILITIES, ENDPOINTS, PROVIDER_PRESETS, effectiveMetadata, systemOneRequest } from './model-options.js';
+import { CAPABILITIES, ENDPOINTS, PROVIDER_PRESETS, effectiveMetadata, systemOneRequest, validateProviderAddress } from './model-options.js';
 export function mountGateway(root, options) {
 const i18n = createGatewayI18n(root, options.locale);
 const VRouterI18n = i18n;
@@ -60,8 +63,10 @@ const app = {
     const headers = await this.authHeaders();
     if (body !== undefined) headers["Content-Type"] = "application/json";
     const res = await fetch(API + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
-    if (res.status === 401 && !retried && headers.Authorization && headers.Authorization !== "Bearer " + this.gatewayKey()) {
+    if (res.status === 401 && !retried && headers.Authorization && headers.Authorization !== "Bearer " + this.gatewayKey() && await browserIdentityFailure(res)) {
+      recordDiagnostic("AUTH_REQUEST_RETRY","gateway_401_retry","info");
       VRouterOIDC.clear(headers.Authorization.slice(7));
+      await res.body?.cancel();
       return this.api(method, path, body, raw, true);
     }
     if (raw) return res;
@@ -189,16 +194,18 @@ const app = {
         const pending = Object.values(catalog.backends || {}).includes("initializing");
         return VRouterI18n.t(pending
           ? "正在发现内置模型，列表将自动更新；已就绪模型仍可调用。"
-          : "部分内置推理后端不可用，请在模型仓库检查推理服务；其他就绪模型仍可调用。");
+          : "部分内置推理后端不可用，请在权重管理检查推理服务；其他就绪模型仍可调用。");
       });
       notice.hidden = !notice.textContent;
       this.renderAll();
       if (this.state.tab === "apidoc") this.renderApiDoc();
       if (admin) this.loadBudgets();
     } catch (err) {
+      if(isSessionError(err)){recordDiagnostic("AUTH_REQUEST_REJECTED","gateway_request");this.showError("");return;}
       if (err.status === 401) {
         this.renderUser(null);
-        await this.diagnoseAuthFailure();
+        recordDiagnostic("AUTH_REQUEST_REJECTED","gateway_refresh");
+        this.showError("");
         return;
       }
       this.showError(() => VRouterI18n.t("加载失败：") + esc(VRouterI18n.t(err.sourceMessage || err.message)));
@@ -220,6 +227,7 @@ const app = {
   },
 
   switchTab(tab) {
+    tab = tab === 'upstreams' ? 'models' : tab;
     this.state.tab = tab;
     if (tab === 'playground') options.select(tab);
     VRouterI18n.bind($("pageTitle"), "textContent", () => VRouterI18n.t(TAB_TITLES[tab] || tab));
@@ -396,45 +404,82 @@ const app = {
       : `<div class="empty">${VRouterI18n.t("暂无请求记录")}</div>`);
   },
 
+  catalogQuery: '',
+  catalogGrouping: 'upstream',
+  catalogOpen: new Set(),
+  catalogActionOpen: new Set(),
+  rememberCatalogAction(key,open) {open?this.catalogActionOpen.add(key):this.catalogActionOpen.delete(key);},
+  rememberCatalogGroup(key, open) { open ? this.catalogOpen.add(key) : this.catalogOpen.delete(key); },
+  updateCatalogQuery(value) { this.catalogQuery = value; this.renderModels(); },
+  updateCatalogGrouping(value) { this.catalogGrouping = value;
+    if(![...this.catalogOpen].some(key=>key.startsWith(value+':'))){const first=groupCatalog(this.state.upstreams,this.state.models,value,this.catalogQuery,label=>VRouterI18n.t(label))[0];if(first)this.catalogOpen.add(first.key);}
+    this.renderModels(); },
+  upstreamCatalogActions(u) {
+    if (u.manageable === false) return `<span class="hint">${VRouterI18n.t('由所属应用管理')} · ${VRouterI18n.t('只读')}</span>`;
+    const actions=[];
+    if (this.state.upstreams.some(item=>item.id===u.id)) actions.push(`<button class="btn" onclick="app.openRouting(${jsArg(u.id)})">${VRouterI18n.t('放行与路由')}</button>`);
+    if (u.source === 'api') {
+      actions.push(`<button class="btn" onclick="app.openUpstreamDialog(${jsArg(u.id)})">${VRouterI18n.t('编辑上游')}</button>`);
+      actions.push(`<button class="btn" onclick="app.refreshUpstream(${jsArg(u.id)})">${VRouterI18n.t('刷新模型')}</button>`);
+      actions.push(`<details class="catalog-actions"><summary>${VRouterI18n.t('更多操作')}</summary><div><button class="btn danger" onclick="app.deleteUpstream(${jsArg(u.id)},${jsArg(u.name)})">${VRouterI18n.t('删除上游')}</button></div></details>`);
+    } else if(u.source === 'registered') {
+      actions.push(`<details class="catalog-actions"><summary>${VRouterI18n.t('更多操作')}</summary><div><button class="btn danger" onclick="app.unregisterService(${jsArg(u.id)},${jsArg(u.name)})">${VRouterI18n.t('注销')}</button></div></details>`);
+    } else if(['v-scheduler','model-hub'].includes(u.source)) actions.push(`<button class="btn" onclick="app.openWeightManagement()">${VRouterI18n.t('管理推理服务')}</button>`);
+    else actions.push(`<span class="hint">${VRouterI18n.t('由所属应用管理')}</span>`);
+    return actions.join('');
+  },
+  openWeightManagement() {options.select('model-hub');},
+  openSingleModelDialog() {
+    this.openUpstreamDialog();
+    this.singleModelAddition=true;
+    VRouterI18n.bind($('upstreamDialogTitle'),'textContent',()=>VRouterI18n.t('添加单个模型'));
+    VRouterI18n.bind(root.querySelector('label[for="ufTestModel"]'),'textContent',()=>VRouterI18n.t('模型 ID'));
+    $('ufAllowProbeFailure').checked=true;
+    $('ufTestModel').focus();
+  },
   renderModels() {
-    const models = this.state.models;
+    const groups=groupCatalog(this.state.upstreams,this.state.models,this.catalogGrouping,this.catalogQuery,label=>VRouterI18n.t(label));
+    if(!this.catalogInitialized && groups.length) { this.catalogOpen.add(groups[0].key);this.catalogInitialized=true; }
+    VRouterI18n.bind($('catalogCount'),'textContent',()=>`${groups.length} ${VRouterI18n.t('个来源')} · ${groups.reduce((sum,g)=>sum+g.count,0)} ${VRouterI18n.t('个模型')}`);
+    VRouterI18n.bind($('modelsTable'),'innerHTML',()=>groups.length ? groups.map(group=>`
+      <details class="catalog-group" data-group="${esc(group.key)}" ${this.catalogOpen.has(group.key)||this.catalogQuery ? 'open' : ''} ontoggle="app.rememberCatalogGroup(${jsArg(group.key)},this.open)">
+        <summary><span class="source-mark">${esc(VRouterI18n.t(group.name).slice(0,1).toUpperCase())}</span><span class="source-heading"><strong>${esc(VRouterI18n.t(group.name))}</strong><small>${group.upstreams.length===1 ? esc(group.upstreams[0].base_url || sourceLabel(group.upstreams[0].source)) : `${group.upstreams.length} ${VRouterI18n.t('个上游')}`}</small></span><span class="source-count">${group.count} ${VRouterI18n.t('个模型')}</span>${group.upstreams.length===1 ? this.upstreamStatusPill(group.upstreams[0]) : ''}</summary>
+        <div class="catalog-group-body">${group.upstreams.map(u=>`<section class="catalog-upstream"><div class="source-toolbar"><div><strong>${esc(u.name||u.id)}</strong><span class="pill">${esc(VRouterI18n.t(sourceLabel(u.source)))}</span><code>${esc(u.base_url||VRouterI18n.t('来源未提供地址'))}</code><small>${esc(u.protocol||'')} · ${u.routing?.direct ? VRouterI18n.t('直接放行') : `${VRouterI18n.t('路由权重')} ${u.routing?.weight||1} · ${VRouterI18n.t('并发上限')} ${u.routing?.max_inflight||VRouterI18n.t('不限')}`}</small></div><div class="source-actions">${this.upstreamCatalogActions(u)}</div></div>${u.catalogModels.length ? table([VRouterI18n.t('模型与能力'),VRouterI18n.t('类型'),VRouterI18n.t('位置'),VRouterI18n.t('上游'),VRouterI18n.t('资源预算'),VRouterI18n.t('操作')],this.modelCatalogRows(u.catalogModels)) : `<p class="empty">${VRouterI18n.t('尚未发现模型，可编辑上游或刷新模型列表。')}</p>`}</section>`).join('')}</div>
+      </details>`).join('') : `<div class="catalog-empty"><h3>${VRouterI18n.t(this.catalogQuery?'没有匹配的来源或模型':'先连接一个模型来源')}</h3><p>${VRouterI18n.t('一处配置，VOS 内应用按权限共享使用。')}</p><button class="btn primary" onclick="app.openUpstreamDialog()">${VRouterI18n.t('添加上游')}</button></div>`);
+  },
+  modelCatalogRows(models) {
     const admin = this.state.status?.is_admin === true;
-    VRouterI18n.bind($("modelsTable"), "innerHTML", () => models.length
-      ? table(
-          [VRouterI18n.t("模型 ID"), VRouterI18n.t("类型"), VRouterI18n.t("来源"), VRouterI18n.t("上游"), VRouterI18n.t("资源预算"), VRouterI18n.t("操作")],
-          models.map((m) => {
+    return models.map(m=>{
             const budget = this.budgetFor(m);
             const actions = [];
             if (!m.short && m.kind !== "service") {
-              actions.push(`<button class="btn" onclick="app.tryModel('${esc(m.qualified)}')">${VRouterI18n.t("测试")}</button>`);
+              actions.push(`<button class="btn" onclick="app.tryModel(${jsArg(m.qualified)})">${VRouterI18n.t("测试")}</button>`);
             }
             if (m.upstream_source === "api" && m.upstream_manageable !== false) {
-              actions.push(`<button class="btn" onclick="app.openModelDialog('${esc(m.qualified)}', '${esc(m.upstream_id)}')">${VRouterI18n.t("编辑元数据")}</button>`);
+              actions.push(`<button class="btn" onclick="app.openModelDialog(${jsArg(m.qualified)}, ${jsArg(m.upstream_id)})">${VRouterI18n.t("编辑元数据")}</button>`);
             }
             if (admin && !m.virtual && !m.upstream_direct && m.kind !== "service") {
               if (m.direct) {
-                actions.push(`<button class="btn" onclick="app.setModelDirect('${esc(m.upstream_id)}', '${esc(m.id)}', false)">${VRouterI18n.t("取消放行")}</button>`);
+                actions.push(`<button class="btn" onclick="app.setModelDirect(${jsArg(m.upstream_id)}, ${jsArg(m.id)}, false)">${VRouterI18n.t("取消放行")}</button>`);
               } else if (budget && budget.mode === "direct") {
-                actions.push(`<button class="btn" onclick="app.restoreBudget('${esc(m.qualified)}', '${esc(m.upstream_id)}')">${VRouterI18n.t("恢复默认")}</button>`);
+                actions.push(`<button class="btn" onclick="app.restoreBudget(${jsArg(m.qualified)}, ${jsArg(m.upstream_id)})">${VRouterI18n.t("恢复默认")}</button>`);
               } else {
-                actions.push(`<button class="btn" onclick="app.setModelDirect('${esc(m.upstream_id)}', '${esc(m.id)}', true)">${VRouterI18n.t("直接放行")}</button>`);
-                actions.push(`<button class="btn" onclick="app.openBudgetDialog('${esc(m.qualified)}', '${esc(m.upstream_id)}')">${VRouterI18n.t("校准预算")}</button>`);
+                actions.push(`<button class="btn" onclick="app.setModelDirect(${jsArg(m.upstream_id)}, ${jsArg(m.id)}, true)">${VRouterI18n.t("直接放行")}</button>`);
+                actions.push(`<button class="btn" onclick="app.openBudgetDialog(${jsArg(m.qualified)}, ${jsArg(m.upstream_id)})">${VRouterI18n.t("校准预算")}</button>`);
                 if (budget && budget.mode !== "automatic") {
-                  actions.push(`<button class="btn" onclick="app.restoreBudget('${esc(m.qualified)}', '${esc(m.upstream_id)}')">${VRouterI18n.t("恢复默认")}</button>`);
+                  actions.push(`<button class="btn" onclick="app.restoreBudget(${jsArg(m.qualified)}, ${jsArg(m.upstream_id)})">${VRouterI18n.t("恢复默认")}</button>`);
                 }
               }
             }
             return [
-              `<span class="mono">${esc(m.short ? m.id : m.qualified)}</span>${m.short ? ` <span class="pill kind">${VRouterI18n.t("短名")}</span>` : ""}`,
+              `<span class="mono model-identifier">${esc(m.short ? m.id : m.qualified)}</span><div class="model-capability-tags">${(m.capabilities || []).slice(0,4).map(c=>`<span class="capability-tag">${esc(VRouterI18n.t(CAPABILITIES.find(([id])=>id===c)?.[1] || c))}</span>`).join('')}</div>${m.short ? ` <span class="pill kind">${VRouterI18n.t("短名")}</span>` : ""}`,
               ({embedding:"Embedding",chat:VRouterI18n.t("对话"),unknown:VRouterI18n.t("由上游决定"),service:VRouterI18n.t("服务接口")})[m.kind] || esc(m.kind),
               `<span class="pill ${m.upstream_kind}">${kindLabel(m.upstream_kind)}</span>`,
               esc(m.upstream_name),
               this.budgetCell(m, budget),
-              actions.length ? `<div class="actions">${actions.join("")}</div>` : "",
+              actions.length ? `<div class="model-row-actions">${!m.short && m.kind !== 'service' ? actions.shift() : ''}${actions.length ? `<details class="catalog-actions" ${this.catalogActionOpen.has(m.qualified)?'open':''} ontoggle="app.rememberCatalogAction(${jsArg(m.qualified)},this.open)"><summary>${VRouterI18n.t('模型设置')}</summary><div>${actions.join('')}</div></details>` : ''}</div>` : "",
             ];
-          }),
-        )
-      : `<div class="empty">${this.state.status?.catalog_readiness?.ready === false ? VRouterI18n.t("模型目录尚未就绪。") : VRouterI18n.t("暂无模型") + "。" + VRouterI18n.t("请在模型仓库下载模型，或在上游页添加后端。")}</div>`);
+    });
   },
 
   budgetFor(model) {
@@ -568,7 +613,8 @@ const app = {
       this.toast(mode === "direct" ? VRouterI18n.t("该模型已直接放行，不再参与调度准入") : VRouterI18n.t("模型预算已校准"));
       await this.refresh();
     } catch (err) {
-      $("budgetError").textContent = err.message;
+      if(isSessionError(err)){recordDiagnostic("AUTH_REQUEST_REJECTED","gateway_request");this.showError("");return;}
+      $("budgetError").textContent = userErrorMessage(err);
     }
     return false;
   },
@@ -579,6 +625,7 @@ const app = {
       this.toast(direct ? VRouterI18n.t("该模型已直接放行，不再参与调度准入") : VRouterI18n.t("该模型已恢复调度准入"));
       await this.refresh();
     } catch (err) {
+      if(isSessionError(err)){recordDiagnostic("AUTH_REQUEST_REJECTED","gateway_request");this.showError("");return;}
       this.toast(VRouterI18n.t("操作失败：") + err.message);
     }
   },
@@ -596,6 +643,7 @@ const app = {
       await this.refresh();
       return true;
     } catch (err) {
+      if(isSessionError(err)){recordDiagnostic("AUTH_REQUEST_REJECTED","gateway_request");this.showError("");return;}
       this.toast(VRouterI18n.t("恢复失败：") + err.message);
       return false;
     }
@@ -639,7 +687,8 @@ const app = {
       this.toast(VRouterI18n.t("模型元数据已保存"));
       await this.refresh();
     } catch (err) {
-      $("modelEditError").textContent = err.message;
+      if(isSessionError(err)){recordDiagnostic("AUTH_REQUEST_REJECTED","gateway_request");this.showError("");return;}
+      $("modelEditError").textContent = userErrorMessage(err);
     }
     return false;
   },
@@ -682,9 +731,9 @@ const app = {
                   `<button class="btn" onclick="app.refreshUpstream('${esc(u.id)}')">${VRouterI18n.t("刷新")}</button>` +
                   `<button class="btn danger" onclick="app.deleteUpstream('${esc(u.id)}', '${esc(u.name)}')">${VRouterI18n.t("删除")}</button></div>`
                 : registered && editable
-                  ? `<div class="actions"><button class="btn danger" onclick="app.unregisterService('${esc(u.id)}', '${esc(u.name)}')">${VRouterI18n.t("注销")}</button></div><span class="muted" style="font-size:12px">${VRouterI18n.t("后端租约注册")}${u.scheduler?.mode === "direct" ? ` · ${VRouterI18n.t("直接放行")}` : ""}</span>`
+                  ? `<div class="actions"><button class="btn danger" onclick="app.unregisterService('${esc(u.id)}', '${esc(u.name)}')">${VRouterI18n.t("注销")}</button></div><span class="muted" style="font-size:12px">${VRouterI18n.t("服务心跳注册")}${u.scheduler?.mode === "direct" ? ` · ${VRouterI18n.t("直接放行")}` : ""}</span>`
                   : registered
-                    ? `<span class="muted" style="font-size:12px">${VRouterI18n.t("后端租约注册")}${u.scheduler?.mode === "direct" ? ` · ${VRouterI18n.t("直接放行")}` : ""}</span>`
+                    ? `<span class="muted" style="font-size:12px">${VRouterI18n.t("服务心跳注册")}${u.scheduler?.mode === "direct" ? ` · ${VRouterI18n.t("直接放行")}` : ""}</span>`
                   : u.source === "video-structure"
                     ? `<span class="muted" style="font-size:12px">${VRouterI18n.t("自动发现")} · ${VRouterI18n.t("只读")}</span>`
                     : u.source === "v-scheduler"
@@ -700,9 +749,9 @@ const app = {
   upstreamStatusPill(u) {
     const state = (u.status && u.status.state) || (u.healthy ? "healthy" : "discovery_failed");
     const meta = {
-      healthy: [VRouterI18n.t("健康"), "ok"],
+      healthy: [VRouterI18n.t(u.protocol === "pi" ? "目录就绪" : "健康"), "ok"],
       paused: [VRouterI18n.t("已暂停"), "warn"],
-      lease_expired: [VRouterI18n.t("租约过期"), "bad"],
+      lease_expired: [VRouterI18n.t("心跳中断"), "bad"],
       circuit_open: [VRouterI18n.t("熔断中"), "bad"],
       discovery_failed: [VRouterI18n.t("发现失败"), "bad"],
       auth_failed: [VRouterI18n.t("鉴权失败"), "bad"],
@@ -786,7 +835,7 @@ const app = {
       if (role === "rerank" && path !== "/rerank") return false;
       if (path === "/rerank" && ["generate", "embed", "embedding"].includes(role)) return false;
     }
-    const chatOnly = ["chat_completions", "ollama"].includes(u.protocol) || (!u.protocol && source === "model-hub");
+    const chatOnly = ["chat_completions", "ollama", "pi"].includes(u.protocol) || (!u.protocol && source === "model-hub");
     if (path === "/messages") {
       if (!chatOnly && u.protocol !== "anthropic") return false;
     } else if (u.protocol === "anthropic") {
@@ -854,7 +903,7 @@ const app = {
         weight: Number($("routingWeight").value), max_inflight: Number($("routingMax").value), disabled: $("routingDisabled").checked, direct: $("routingDirect").checked
       });
       $("routingDialog").close(); await this.refresh(); this.toast(VRouterI18n.t("调度配置已保存"));
-    } catch(err) { $("routingError").textContent = err.message; }
+    } catch(err) {if(isSessionError(err)){recordDiagnostic("AUTH_REQUEST_REJECTED","gateway_request");this.showError("");return;} $("routingError").textContent = userErrorMessage(err); }
     return false;
   },
 
@@ -876,6 +925,7 @@ const app = {
   // ---------- registration dialog ----------
   openRegistrationDialog() {
     $("registrationForm").reset();
+    $("regProviderNote").hidden=true;
     $("regProtocol").value = "openai";
     $("regVisibility").value = "public";
     $("regMode").value = "api";
@@ -961,6 +1011,7 @@ const app = {
     return $(id).matches('.metadata-choices') ? readChoices($(id)) : splitList($(id).value);
   },
   registrationPayload() {
+    validateProviderAddress($("regBaseURL").value);
     const p = {
       service_id: $("regServiceId").value.trim(),
       name: $("regName").value.trim(),
@@ -968,7 +1019,7 @@ const app = {
       protocol: $("regProtocol").value,
       base_url: $("regBaseURL").value.trim(),
       api_key: $("regAPIKey").value,
-      ttl_seconds: Number($("regTTL").value || 90),
+      heartbeat_timeout_seconds: Number($("regTTL").value || 90),
     };
     if (this.state.status?.is_admin && $("regScheduler").value === "direct") {
       p.scheduler = { mode: "direct" };
@@ -995,6 +1046,7 @@ const app = {
       this.setRegistrationModelChoices(result.ok ? result.models || [] : []);
       this.renderRegistrationResult(result);
     } catch (err) {
+      if(isSessionError(err)){recordDiagnostic("AUTH_REQUEST_REJECTED","gateway_request");this.showError("");return;}
       this.setRegistrationModelChoices([]);
       this.renderRegistrationResult({ ok: false, error: err.message });
     }
@@ -1020,7 +1072,8 @@ const app = {
       this.toast(`${VRouterI18n.t("已注册")} ${result.upstream?.id || VRouterI18n.t("模型服务")}`);
       await this.refresh();
     } catch (err) {
-      $("regError").textContent = err.message;
+      if(isSessionError(err)){recordDiagnostic("AUTH_REQUEST_REJECTED","gateway_request");this.showError("");return;}
+      $("regError").textContent = userErrorMessage(err);
     } finally {
       $("regSubmit").disabled = false;
     }
@@ -1033,6 +1086,7 @@ const app = {
       this.toast(VRouterI18n.t("已注销"));
       await this.refresh();
     } catch (err) {
+      if(isSessionError(err)){recordDiagnostic("AUTH_REQUEST_REJECTED","gateway_request");this.showError("");return;}
       this.toast(VRouterI18n.t("注销失败：") + err.message);
     }
   },
@@ -1127,12 +1181,16 @@ const app = {
   renderProviderPresets(select) {
     if (!select) return;
     select.innerHTML = `<option value="">${esc(VRouterI18n.t("自定义（手动填写）"))}</option>` +
-      PROVIDER_PRESETS.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("");
+      PROVIDER_PRESETS.filter(p=>select.id!=="regPreset"||!p.nativeOnly).map((p) => `<option value="${esc(p.id)}">${esc(p.name)}${p.nativeOnly ? ' · '+esc(VRouterI18n.t('原生 Provider')) : ''}</option>`).join("");
   },
   applyProviderPreset(preset, fields) {
     if (!preset) return;
     $(fields.name).value = preset.name;
     $(fields.base).value = preset.base;
+    $(fields.base).placeholder = preset.requiresGateway ? VRouterI18n.t('已授权的兼容网关地址') : preset.base;
+    const note = $(fields.name === 'ufName' ? 'ufProviderNote' : 'regProviderNote');
+    VRouterI18n.bind(note,'textContent',()=>VRouterI18n.t(preset.hint || '填写 Key 后测试并选择模型；模型版本和权限以上游实际返回为准。'));
+    note.hidden = false;
     $(fields.protocol).value = preset.protocol;
     $(fields.key).value = "";
     $(fields.key).placeholder = fields.keyPlaceholder || "sk-...";
@@ -1141,6 +1199,7 @@ const app = {
       $(fields.model).placeholder = preset.model || VRouterI18n.t("从上游模型列表选择");
     }
   },
+  changeUpstreamLocation(value) { $("ufKind").value=value; },
   applyUpstreamPreset() {
     const preset = PROVIDER_PRESETS.find((p) => p.id === $("ufPreset").value);
     if (!preset) return;
@@ -1151,8 +1210,18 @@ const app = {
       key: "ufAPIKey",
       model: "ufTestModel",
     });
+    $("ufKind").value="cloud";$("ufKindChoice").value="cloud";
+    $("ufNativeCredential").value="";
     this.setUpstreamModels([], { loaded: false });
+    $('ufNativeProvider').value=preset.dshIds?.[0]||'';
+    if(preset.nativeOnly){$('ufProtocol').value='pi';this.applyNativeProvider();}
     this.updateUpstreamProtocol();
+  },
+  applyNativeProvider(clearCredentials=false) {
+    const p=NATIVE_PROVIDERS.find(p=>p.id===$('ufNativeProvider').value);
+    if(p)$('ufBaseURL').value=p.base;
+    if(clearCredentials){$('ufAPIKey').value='';$('ufNativeCredential').value='';}
+    this.setUpstreamModels([],{loaded:false});this.renderProbeResult(null);
   },
   applyRegistrationProviderPreset() {
     const preset = PROVIDER_PRESETS.find((p) => p.id === $("regPreset").value);
@@ -1170,14 +1239,19 @@ const app = {
   },
 
   openUpstreamDialog(id, kind = "manual") {
+    this.singleModelAddition=false;
+    VRouterI18n.bind(root.querySelector('label[for="ufTestModel"]'),"textContent",()=>VRouterI18n.t("联通测试模型（可选）"));
     const dlg = $("upstreamDialog");
     $("ufError").textContent = "";
+    $('ufNativeProvider').innerHTML='<option value="">'+esc(VRouterI18n.t('选择原生 Provider'))+'</option>'+NATIVE_PROVIDERS.filter(p=>!['typesafe','qwen-token-plan-individual'].includes(p.id)).map(p=>`<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
+    $('ufNativeCredential').value='';$('ufNativeProvider').value='';
+    $("ufProviderNote").hidden=true;
     this.renderProbeResult(null);
     this.setUpstreamModels([], { loaded: false });
     if (id) {
       const u = this.state.upstreams.find((x) => x.id === id);
       if (!u) return;
-      VRouterI18n.bind($("upstreamDialogTitle"), "textContent", () => u.kind === "cloud" ? VRouterI18n.t("编辑云端算力 API") : VRouterI18n.t("编辑上游"));
+      VRouterI18n.bind($("upstreamDialogTitle"), "textContent", () => VRouterI18n.t("编辑上游"));
       $("ufId").value = u.id;
       $("ufKind").value = u.kind || "manual";
       $("ufPresetField").hidden = true;
@@ -1185,6 +1259,8 @@ const app = {
       $("ufName").value = u.name;
       $("ufBaseURL").value = u.base_url;
       $("ufProtocol").value = u.protocol || "openai";
+      $("ufNativeProvider").value=u.provider||"";
+      $("ufNativeCredential").placeholder=u.has_provider_credentials?VRouterI18n.t("已保存，留空保留原生凭据"):"{\"type\":\"api_key\",\"env\":{}}";
       $("ufVisibility").value = u.visibility === "private" ? "private" : "public";
       $("ufAPIKey").value = "";
       $("ufTestModel").value = "";
@@ -1221,19 +1297,20 @@ const app = {
       $("ufVisibility").value = "public";
       VRouterI18n.bind($("ufKeyHint"), "textContent", () => VRouterI18n.t("密钥保存在本机状态文件中，接口永不回显。"));
       if (kind === "cloud") {
-        VRouterI18n.bind($("upstreamDialogTitle"), "textContent", () => VRouterI18n.t("添加云端算力 API"));
+        VRouterI18n.bind($("upstreamDialogTitle"), "textContent", () => VRouterI18n.t("添加上游"));
         $("ufName").placeholder = "ICTrek AI";
         $("ufBaseURL").placeholder = "https://ai.ictrek.com/v1";
         $("ufAllowProbeFailure").checked = true;
         $("ufBaseHint").innerHTML = this.cloudHintHTML("com.ictrek.ai");
       } else {
-        VRouterI18n.bind($("upstreamDialogTitle"), "textContent", () => VRouterI18n.t("添加手动上游"));
+        VRouterI18n.bind($("upstreamDialogTitle"), "textContent", () => VRouterI18n.t("添加上游"));
         VRouterI18n.bind($("ufName"), "placeholder", () => VRouterI18n.t("例如 ICTrek AI / OpenAI / Anthropic"));
         $("ufBaseURL").placeholder = "https://api.example.com/v1";
         $("ufAllowProbeFailure").checked = false;
         VRouterI18n.bind($("ufBaseHint"), "textContent", () => VRouterI18n.t("可填 OpenAI 兼容 /v1、Anthropic API 地址；未写协议时默认 https，未写路径时默认 /v1。"));
       }
     }
+    $("ufKindChoice").value=$("ufKind").value;
     this.updateUpstreamProtocol();
     dlg.showModal();
     if (!id) {
@@ -1244,14 +1321,20 @@ const app = {
   },
 
   cloudHintHTML(prefix) {
-    return `${VRouterI18n.t("默认")} ICTrek ${VRouterI18n.t("云端算力地址为")} <span class="mono">https://ai.ictrek.com/v1</span>；<a href="https://ai.ictrek.com" target="_blank" rel="noreferrer">${VRouterI18n.t("去")} ai.ictrek.com ${VRouterI18n.t("注册")}/${VRouterI18n.t("购买")}</a>。${VRouterI18n.t("模型前缀按域名生成")}${prefix ? `，${VRouterI18n.t("当前为")} <span class="mono">${esc(prefix)}</span>` : ""}。`;
+    return `${VRouterI18n.t("填写自己的模型服务地址与凭据；模型前缀按域名生成。")}${prefix?` <span class="mono">${esc(prefix)}</span>`:''}`;
   },
 
   closeUpstreamDialog() {
+    $("ufNativeCredential").value="";
     $("upstreamDialog").close();
   },
 
-  updateUpstreamProtocol() {
+  updateUpstreamProtocol(fromUser=false) {
+    const native=$("ufProtocol").value==="pi";
+    $("ufNativeFields").hidden=!native;
+    if(native)VRouterI18n.bind($("ufBaseHint"),"textContent",()=>VRouterI18n.t("默认地址由原生目录按模型选择协议路径；修改地址可接入兼容的中转。区域与项目配置见原生凭据及 API 文档。"));
+    if(!native)VRouterI18n.bind($("ufBaseHint"),"innerHTML",()=>$("ufKind").value==="cloud"?this.cloudHintHTML(""):VRouterI18n.t("可填 OpenAI 兼容 /v1、Anthropic API 地址；未写协议时默认 https，未写路径时默认 /v1。"));
+    if(native&&fromUser)this.applyNativeProvider();
     const asyncTask = $("ufProtocol").value === "async_task";
     $("ufAsyncFields").hidden = !asyncTask;
     $("ufTestModel").closest(".field").hidden = asyncTask;
@@ -1261,19 +1344,30 @@ const app = {
   },
 
   upstreamPayload() {
+    validateProviderAddress($("ufBaseURL").value);
     const kind = $("ufKind").value || "manual";
-    const isCloud = kind === "cloud";
     const payload = {
       kind,
-      name: $("ufName").value.trim() || (isCloud ? "ICTrek AI" : ""),
-      base_url: $("ufBaseURL").value.trim() || (isCloud ? "https://ai.ictrek.com/v1" : ""),
+      name: $("ufName").value.trim(),
+      base_url: $("ufBaseURL").value.trim(),
       api_key: $("ufAPIKey").value,
       protocol: $("ufProtocol").value,
       visibility: $("ufVisibility").value,
       test_model: $("ufTestModel").value.trim(),
       allow_probe_failure: $("ufAllowProbeFailure").checked,
     };
-    if (this.modelChoicesLoaded && payload.protocol !== "async_task") {
+    if(payload.protocol==='pi') {
+      payload.provider=$('ufNativeProvider').value;
+      if(!payload.provider)throw new Error(VRouterI18n.t('选择原生 Provider'));
+      const raw=$('ufNativeCredential').value.trim();
+      if(raw){try {payload.provider_credentials=JSON.parse(raw);}catch {throw new Error(VRouterI18n.t('原生凭据必须为有效的 JSON 对象'));}}
+    }
+    if(this.singleModelAddition && payload.protocol!=="async_task") {
+      if(!payload.test_model)throw new Error(VRouterI18n.t('请填写模型 ID'));
+      const found=this.modelChoices.find(m=>m.id===payload.test_model);
+      payload.models=[found?{...found,id:payload.test_model}:{id:payload.test_model}];
+    }
+    if (!this.singleModelAddition && this.modelChoicesLoaded && payload.protocol !== "async_task") {
       payload.models = this.upstreamModelPayload();
     }
     if (payload.protocol === "async_task") {
@@ -1315,6 +1409,7 @@ const app = {
       if (result.ok) this.setUpstreamModels(result.model_details || result.models || [], { preserve: true });
       this.renderProbeResult(result);
     } catch (err) {
+      if(isSessionError(err)){recordDiagnostic("AUTH_REQUEST_REJECTED","gateway_request");this.showError("");return;}
       this.renderProbeResult({ ok: false, error: err.message });
     } finally {
       $("ufProbe").disabled = false;
@@ -1329,7 +1424,7 @@ const app = {
     el.className = "probe-result " + (result.ok ? "ok" : "bad");
     const models = result.models || [];
     VRouterI18n.bind(el, "innerHTML", () => result.ok
-      ? `<strong>${VRouterI18n.t("模型列表可用")}</strong><div class="hint mono">${VRouterI18n.t("前缀")} ${esc(result.model_prefix || "")} · ${esc(result.base_url || "")}</div><div class="hint">${models.length ? `${VRouterI18n.t("发现")} ${models.length} ${VRouterI18n.t("个模型")}：${esc(models.slice(0, 12).join(", "))}${models.length > 12 ? " …" : ""}` : VRouterI18n.t("模型列表为空")}</div>${result.test_ok ? `<div class="hint">${VRouterI18n.t("指定模型联通测试通过")}</div>` : result.test_error ? `<div class="hint">${VRouterI18n.t("指定模型测试失败")}：${esc(result.test_error)}</div>` : ""}`
+      ? `<strong>${VRouterI18n.t("模型列表可用")}</strong><div class="hint mono">${VRouterI18n.t("前缀")} ${esc(result.model_prefix || "")} · ${esc(result.base_url || "")}</div><div class="hint">${models.length ? `${VRouterI18n.t("发现")} ${models.length} ${VRouterI18n.t("个模型")}：${esc(models.slice(0, 12).join(", "))}${models.length > 12 ? " …" : ""}` : VRouterI18n.t("模型列表为空")}</div>${result.protocol === "pi" ? `<div class="hint">${VRouterI18n.t("原生目录不代表账号已获得模型权限；填写具体模型进行轻量调用验证。")}</div>` : ""}${result.test_ok ? `<div class="hint">${VRouterI18n.t("指定模型联通测试通过")}</div>` : result.test_error ? `<div class="hint">${VRouterI18n.t("指定模型测试失败")}：${esc(result.test_error)}</div>` : ""}`
       : `<strong>${VRouterI18n.t("模型列表测试未通过")}</strong><div class="hint">${esc(result.error || VRouterI18n.t("未知错误"))}</div>${result.test_ok ? `<div class="hint">${VRouterI18n.t("但指定模型联通测试通过")}；${VRouterI18n.t("保存时会把该模型加入列表")}。</div>` : result.test_error ? `<div class="hint">${VRouterI18n.t("指定模型测试也失败")}：${esc(result.test_error)}</div>` : ""}<div class="hint">${VRouterI18n.t("仍可勾选")}“${VRouterI18n.t("探测失败也允许保存")}”，${VRouterI18n.t("让运行时返回上游的具体错误")}。</div>`);
   },
 
@@ -1346,7 +1441,8 @@ const app = {
       this.toast(id ? VRouterI18n.t("上游已更新") : VRouterI18n.t("上游已添加"));
       await this.refresh();
     } catch (err) {
-      $("ufError").textContent = err.message;
+      if(isSessionError(err)){recordDiagnostic("AUTH_REQUEST_REJECTED","gateway_request");this.showError("");return;}
+      $("ufError").textContent = userErrorMessage(err);
     } finally {
       $("ufSubmit").disabled = false;
     }
@@ -1359,6 +1455,7 @@ const app = {
       this.toast(VRouterI18n.t("已刷新"));
       await this.refresh();
     } catch (err) {
+      if(isSessionError(err)){recordDiagnostic("AUTH_REQUEST_REJECTED","gateway_request");this.showError("");return;}
       this.toast(VRouterI18n.t("刷新失败：") + err.message);
     }
   },
@@ -1370,6 +1467,7 @@ const app = {
       this.toast(VRouterI18n.t("已删除"));
       await this.refresh();
     } catch (err) {
+      if(isSessionError(err)){recordDiagnostic("AUTH_REQUEST_REJECTED","gateway_request");this.showError("");return;}
       this.toast(VRouterI18n.t("删除失败：") + err.message);
     }
   },
@@ -1389,6 +1487,8 @@ const app = {
   // exactly what the running version serves.
   async renderApiDoc() {
     const container = $("apidocGroups");
+    const previousHTML=container.innerHTML;
+    clearTimeout(this.apiDocRetry);
     const request = this.apiDocRequest = (this.apiDocRequest || 0) + 1;
     const lang = VRouterI18n.locale === "en" ? "en" : "zh-CN";
 
@@ -1400,12 +1500,15 @@ const app = {
       doc = await this.api("GET", `/api/v1/apidoc?lang=${lang}`);
       if (request !== this.apiDocRequest) return;
     } catch (err) {
+      if(isSessionError(err)){recordDiagnostic("AUTH_REQUEST_REJECTED","api_docs_auth");if(request===this.apiDocRequest)VRouterI18n.bind(container,"innerHTML",()=>previousHTML);this.apiDocRetry=setTimeout(()=>{if(!this.disposed&&options.visible()&&this.state.tab==="apidoc")void this.renderApiDoc()},5000);return;}
       if (request !== this.apiDocRequest) return;
       VRouterI18n.bind(container, "innerHTML", () => `<div class="empty">${VRouterI18n.t("文档加载失败")}：${esc(VRouterI18n.t(err.sourceMessage || err.message))}</div>`);
       return;
     }
 
     const bases = doc.base_urls || {};
+    VRouterI18n.bind($("serviceHeartbeatGuide"),"textContent",()=>VRouterI18n.t("手动上游与单模型是持久配置，不会过期。主动发现服务不可用时自动移除；程序注册服务按 heartbeat_after_seconds 发送心跳，heartbeat_timeout_seconds 默认 90 秒，兼容 ttl_seconds。healthy=false 立即下线；携带完整注册快照的心跳可在短暂掉线或网关重启后自动恢复。目录下线不释放运行中的资源，仍需停止确认。"));
+    VRouterI18n.bind($("providerIntegrationGuide"),"textContent",()=>VRouterI18n.t("在模型与上游配置一次，VOS 内应用按权限共享使用。透明代理保留原有接口；原生 Provider 使用 pi-ai 处理厂商协议与鉴权，对外仍通过 v-scheduler 的对话、Responses 和 Messages 接口。原生凭据仅保存于应用私有目录，OAuth 需要已有授权凭据并可自动续期。应用注册也可提交 protocol=pi、provider 和 provider_credentials；心跳续租及调度流程保持不变。"));
     VRouterI18n.bind($("apidocIntro"), "innerHTML", () => table(
       [VRouterI18n.t("调用方"), VRouterI18n.t("地址")],
       [
@@ -1428,7 +1531,7 @@ const app = {
           <div class="ep-desc"><span class="mono">${esc(row.method)}</span></div>
           <div class="ep-desc">${esc(row.effect)}</div></div>`,
       )
-      .join("") + (doc.integration || []).map(row => `<div class="ep"><strong>${esc(row.title)}</strong><div class="ep-desc">${esc(row.note)}</div><pre class="ep-example" data-copy="${esc(row.example)}">${esc(row.example)}</pre><button class="btn" onclick="app.copyExample(this)">${VRouterI18n.t("复制示例")}</button></div>`).join("") + `<div class="hint" style="margin-top:6px">${VRouterI18n.t("用量按用户归集")}，${VRouterI18n.t("可在")}「${VRouterI18n.t("总览")} · ${VRouterI18n.t("按用户")}」${VRouterI18n.t("查看")}。${VRouterI18n.t("当前已登录用户共享上游管理权限与上游资源")}，${VRouterI18n.t("尚无个人")} Key ${VRouterI18n.t("或用户资源隔离")}。</div>`);
+      .join("") + (doc.integration || []).map(row => `<div class="ep"><strong>${esc(row.title)}</strong><div class="ep-desc">${esc(row.note)}</div><pre class="ep-example" data-copy="${esc(row.example)}">${esc(row.example)}</pre><button class="btn" onclick="app.copyExample(this)">${VRouterI18n.t("复制示例")}</button></div>`).join("") + `<div class="hint" style="margin-top:6px">${VRouterI18n.t("用量按用户归集")}，${VRouterI18n.t("可在")}「${VRouterI18n.t("总览")} · ${VRouterI18n.t("按用户")}」${VRouterI18n.t("查看")}。${VRouterI18n.t("上游按可见范围共享，修改与路由配置仅限所有者和管理员")}，${VRouterI18n.t("服务凭据使用独立")} Key ${VRouterI18n.t("身份与权限")}。</div>`);
 
     const authLabel = {
       public: VRouterI18n.t("无需鉴权"),
@@ -1465,7 +1568,7 @@ const app = {
       const doc = await this.api("GET", `/api/v1/openapi.json?lang=${lang}`);
       const url = URL.createObjectURL(new Blob([JSON.stringify(doc,null,2)],{type:"application/json"}));
       const a=document.createElement("a"); a.href=url; a.download="v-router-openapi.json"; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);
-    } catch(err) {this.toast(err.message);}
+    } catch(err) {if(isSessionError(err)){recordDiagnostic("AUTH_REQUEST_REJECTED","gateway_request");this.showError("");return;}this.toast(err.message);}
   },
 
   async copyExample(btn) {
@@ -1619,6 +1722,7 @@ const app = {
       VRouterI18n.bind($("pgMeta"), "textContent", () => `${endpoint.label} · ${model} · ${VRouterI18n.t("上游")} ${res.headers.get("X-VRouter-Upstream") || pinned || VRouterI18n.t("未知")}（${VRouterI18n.t("指定")}） · ${VRouterI18n.t("总耗时")} ${(total / 1000).toFixed(2)}s` +
         (firstToken !== null ? ` · ${VRouterI18n.t("首")} token ${(firstToken / 1000).toFixed(2)}s` : ""));
     } catch (err) {
+      if(isSessionError(err)){recordDiagnostic("AUTH_REQUEST_REJECTED","playground_auth");input.value=text;out.textContent=VRouterI18n.t("连接恢复后可重试，输入已保留。");return;}
       if (controller.signal.aborted) {
         out.textContent = answer || VRouterI18n.t("已停止生成");
         VRouterI18n.bind($("pgMeta"), "textContent", () => VRouterI18n.t("已停止生成"));
@@ -1664,6 +1768,7 @@ function stat(icon, num, label) {
 function kindLabel(kind) {
   return { registered: VRouterI18n.t("注册后端"), local: VRouterI18n.t("本地"), manual: VRouterI18n.t("手动"), cloud: VRouterI18n.t("云端") }[kind] || kind;
 }
+function jsArg(value) { return esc(JSON.stringify(value ?? '')); }
 function choiceMarkup(options, values = []) {
   const known = new Set(options.map(([id]) => id));
   const rows = [...options, ...values.filter(id => !known.has(id)).map(id => [id, id])];
@@ -1715,6 +1820,6 @@ const localeChanged = () => {
 };
 window.app = app;
 const started = app.start();
-return { started, updatePrivileges: () => app.renderUser(app.state.status), select: tab => app.switchTab(tab), updateLocale: () => { i18n.apply(); localeChanged(); }, dispose: () => { app.pgStop(); clearInterval(app.state.timer); if(window.app===app)delete window.app; } };
+return { started, updatePrivileges: () => app.renderUser(app.state.status), select: tab => app.switchTab(tab), updateLocale: () => { i18n.apply(); localeChanged(); }, dispose: () => { app.disposed=true;clearTimeout(app.apiDocRetry);app.pgStop(); clearInterval(app.state.timer); if(window.app===app)delete window.app; } };
 
 }

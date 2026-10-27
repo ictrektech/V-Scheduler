@@ -1961,3 +1961,112 @@ async fn ordinary_multipart_and_binary_response_keep_their_original_mime() {
     }));let listener=tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();let address=listener.local_addr().unwrap();let server=tokio::spawn(async move{axum::serve(listener,native).await.unwrap()});let root=temp();let g=gateway(&root,Router::new());let mut u=upstream("pass");u.kind="cloud".into();u.base_url=format!("http://{address}/v1");g.registry.lock().unwrap().put(u,vec![Model{endpoints:vec!["audio/transcriptions".into()],..model("pass")}]);
     let request=axum::http::Request::builder().method("POST").uri("/v1/audio/transcriptions").header("content-type","multipart/form-data; boundary=client-boundary-issue1").body(Body::from(issue_one_multipart("pass","file"))).unwrap();let response=proxy::handle(g,principal("alice"),request).await.unwrap();assert_eq!(response.headers()["content-type"],"application/octet-stream");assert_eq!(&axum::body::to_bytes(response.into_body(),1<<20).await.unwrap()[..],&[0u8,255,3]);server.abort();std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn native_provider_configuration_is_validated_and_credentials_are_scoped() {
+    let good=json!({"name":"Native","base_url":"https://api.deepseek.com","protocol":"pi","provider":"deepseek","provider_credentials":{"type":"api_key","key":"private-fixture"}});
+    let mut u=manage::normalize(&good).unwrap();
+    assert!(u.chat_only());
+    let mut row=model("model");registry::normalize_upstream_model(&mut row,&u);
+    assert!(registry::supports(&u,&row,"/responses"));
+    for (key,value) in [("provider",json!("unknown-provider")),("provider_credentials",json!("invalid")),("provider_credentials",json!({"type":"oauth","access":"x"}))] {
+        let mut bad=good.clone();bad[key]=value;assert!(manage::normalize(&bad).is_err());
+    }
+    u.owner="alice".into();u.id="native".into();u.source="api".into();
+    let root=temp();let mut registry=Registry::default();registry.put(u,vec![row]);
+    registry.persist(&root.join("state.json")).unwrap();
+    let restored=Registry::open(&root.join("state.json")).unwrap();
+    assert_eq!(restored.upstreams["native"].provider_credentials["key"],"private-fixture");
+    use std::os::unix::fs::PermissionsExt;
+    assert_eq!(std::fs::metadata(root.join("state.json")).unwrap().permissions().mode()&0o777,0o600);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires pinned pi-ai installation and V_SCHEDULER_PROVIDER_RUNTIME"]
+async fn native_provider_end_to_end_preserves_gateway_conversion_and_privacy() {
+    let listener=tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address=listener.local_addr().unwrap();
+    let server=tokio::spawn(async move {
+        axum::serve(listener,Router::new().route("/v1/chat/completions",post(|headers:HeaderMap,Json(body):Json<Value>|async move {
+            assert_eq!(headers["authorization"],"Bearer fixture-private-native-key");
+            assert!(!text(&body,"model").contains("manual/"));
+            (StatusCode::OK,[("content-type","text/event-stream")],"data: {\"id\":\"test\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"native rust bridge\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":3,\"total_tokens\":5}}\n\ndata: [DONE]\n\n")
+        }))).await.unwrap();
+    });
+    let root=temp();let g=gateway(&root,Router::new());
+    let mut u=upstream("native");u.protocol="pi".into();u.provider="deepseek".into();u.owner="alice".into();u.visibility="private".into();u.api_key="fixture-private-native-key".into();u.base_url=format!("http://{address}/v1");
+    let models=provider_runtime::models(&g,&u).await.unwrap();assert!(!models.is_empty());
+    let native=models[0].id.clone();g.registry.lock().unwrap().put(u,models);
+    for path in ["/v1/chat/completions","/v1/responses","/v1/messages"] {
+        for stream in [false,true] {
+            let body=if path.ends_with("responses"){json!({"model":format!("manual/{native}"),"input":"hello","stream":stream})}else{json!({"model":format!("manual/{native}"),"messages":[{"role":"user","content":"hello"}],"max_tokens":8,"stream":stream})};
+            let request=axum::http::Request::builder().method("POST").uri(path).header("content-type","application/json").body(Body::from(serde_json::to_vec(&body).unwrap())).unwrap();
+            let response=proxy::handle(g.clone(),principal("alice"),request).await.unwrap();assert_eq!(response.status(),200);
+            let bytes=axum::body::to_bytes(response.into_body(),1<<20).await.unwrap();let text=String::from_utf8_lossy(&bytes);
+            assert!(text.contains("native rust bridge"),"{text}");assert!(!text.contains("fixture-private-native-key"));
+        }
+    }
+    let request=axum::http::Request::builder().uri("/api/v1/upstreams").body(Body::empty()).unwrap();
+    let response=manage::handle(&g,&principal("alice"),request).await.unwrap();let bytes=axum::body::to_bytes(response.into_body(),1<<20).await.unwrap();
+    assert!(!String::from_utf8_lossy(&bytes).contains("fixture-private-native-key"));
+    assert!(g.registry.lock().unwrap().list_models(&principal("bob")).is_empty());
+    let request=axum::http::Request::builder().method("PUT").uri("/api/v1/upstreams/native").header("content-type","application/json").body(Body::from(json!({"name":"changed","base_url":"https://changed.example","kind":"cloud","protocol":"pi","provider":"deepseek"}).to_string())).unwrap();
+    let rejected=manage::handle(&g,&principal("alice"),request).await.err().unwrap();assert_eq!(rejected.status,400);
+    assert_eq!(g.registry.lock().unwrap().upstreams["native"].base_url,format!("http://{address}/v1"));
+    assert_eq!(g.usage.lock().unwrap().len(),6);assert_eq!(g.registry.lock().unwrap().inflight["native"],0);
+    let mut missing=upstream("missing-native-key");missing.protocol="pi".into();missing.provider="openai-codex".into();
+    let auth_error=provider_runtime::models(&g,&missing).await.err().unwrap();assert_eq!(auth_error.status,401);assert_eq!(auth_error.code.as_deref(),Some("PROVIDER_AUTH_REQUIRED"));
+    server.abort();std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn stale_services_leave_catalog_but_preserve_inflight_policy_and_manual_config() {
+    let mut r=Registry::default();let now=Utc::now();
+    for (id,source,healthy,deadline) in [("registered-a","registered",true,Some(now-chrono::Duration::seconds(1))),("vsub","v-sub",true,Some(now-chrono::Duration::seconds(1))),("discovered","image-studio",false,None),("manual","api",false,Some(now-chrono::Duration::seconds(1)))] {
+        let mut u=upstream(id);u.source=source.into();u.healthy=healthy;u.expires_at=deadline;
+        r.put(u,vec![model("echo")]);
+    }
+    r.inflight.insert("registered-a".into(),1);
+    r.routing.insert("registered-a".into(),registry::Routing{weight:7,..Default::default()});
+    r.resources.push(json!({"id":"active-reservation","state":"running"}));
+    r.prune_services(now);
+    for id in ["registered-a","vsub","discovered"] {assert!(!r.upstreams.contains_key(id));assert!(!r.models.contains_key(id));}
+    assert!(r.upstreams.contains_key("manual"));assert_eq!(r.inflight["registered-a"],1);assert_eq!(r.routing["registered-a"].weight,7);assert_eq!(r.resources[0]["state"],"running");
+    let mut manual=upstream("persistent");manual.expires_at=Some(now-chrono::Duration::days(1));assert!(manual.live(),"manually saved providers do not expire");
+}
+
+#[tokio::test]
+async fn service_heartbeat_removes_offline_entries_and_full_snapshot_restores_without_expiry_error() {
+    let root=temp();let g=gateway(&root,Router::new());let alice=principal("alice");
+    let snapshot=json!({"service_id":"heartbeat-fixture","base_url":"http://fixture/v1","protocol":"chat_completions","model":"echo","heartbeat_timeout_seconds":90,"visibility":"private"});
+    let req=|path:&str,value:Value|Request::builder().method("POST").uri(path).header("content-type","application/json").body(Body::from(value.to_string())).unwrap();
+    let _=manage::handle(&g,&alice,req("/api/v1/registrations",snapshot.clone())).await.unwrap();
+    let path="/api/v1/registrations/registered-heartbeat-fixture/heartbeat";
+    let response=manage::handle(&g,&alice,req(path,json!({"heartbeat_timeout_seconds":120}))).await.unwrap();
+    let value:Value=serde_json::from_slice(&axum::body::to_bytes(response.into_body(),65536).await.unwrap()).unwrap();assert_eq!(value["heartbeat_after_seconds"],40);
+    assert!(manage::handle(&g,&principal("bob"),req(path,json!({"healthy":false}))).await.is_err());
+    {g.registry.lock().unwrap().upstreams.get_mut("registered-heartbeat-fixture").unwrap().expires_at=Some(Utc::now()-chrono::Duration::seconds(1));}
+    let cleaner=discovery::heartbeats(g.clone());
+    tokio::time::sleep(Duration::from_millis(30)).await;
+    assert!(!g.registry.lock().unwrap().upstreams.contains_key("registered-heartbeat-fixture"));cleaner.abort();
+    assert!(manage::handle(&g,&principal("bob"),req(path,snapshot.clone())).await.is_err(),"offline service IDs cannot inherit another owner's routing policy");
+    let restored=Registry::open(&root.join("state.json")).unwrap();assert_eq!(restored.registration_owners["registered-heartbeat-fixture"],"alice");
+    let error=manage::handle(&g,&alice,req(path,json!({}))).await.err().unwrap();assert_eq!(error.code.as_deref(),Some("REGISTRATION_REQUIRED"));assert!(!error.message.contains("expired"));
+    {let mut r=g.registry.lock().unwrap();for _ in 0..3{r.result("registered-heartbeat-fixture",false);}}
+    let _=manage::handle(&g,&alice,req(path,snapshot)).await.unwrap();
+    assert!(!g.registry.lock().unwrap().breaker.contains_key("registered-heartbeat-fixture"));
+    assert_eq!(g.registry.lock().unwrap().list_models(&alice).len(),1);
+    let _=manage::handle(&g,&alice,req(path,json!({"healthy":false}))).await.unwrap();assert!(g.registry.lock().unwrap().list_models(&alice).is_empty());
+    let _=manage::handle(&g,&alice,req(path,json!({"healthy":false}))).await.unwrap();
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn unavailable_discovered_builtin_is_hidden_but_readiness_remains_retryable() {
+    let root=temp();let g=gateway(&root,Router::new());let mut u=upstream("v-scheduler/ollama-qa");u.source="v-scheduler".into();u.healthy=false;
+    {let mut r=g.registry.lock().unwrap();r.put(u.clone(),vec![model("echo")]);r.prune_services(Utc::now());assert!(!r.upstreams.contains_key(&u.id));}
+    assert_eq!(readiness::snapshot(&g)["backends"]["qa"],"unavailable");assert_eq!(g.local_model_readiness("v-scheduler/ollama-qa/echo").unwrap_err().code.as_deref(),Some("UPSTREAM_UNAVAILABLE"));
+    u.healthy=true;g.registry.lock().unwrap().put(u,vec![model("echo")]);assert_eq!(readiness::snapshot(&g)["backends"]["qa"],"ready");
+    std::fs::remove_dir_all(root).unwrap();
+}

@@ -555,3 +555,17 @@ AMD Rust 127 项、ARM Rust 129 项通过，各 1 项既有忽略。版本升级
 - 在最终安装版本重跑：11 次真实组件调用全部成功；同模型并发与跨模型切换仍复用三份许可、相同原生进程，最低可用内存 4090 MiB。完整 HybRAG 文件上传、解析与摘要、检索重排、流式 RAG 回答全部成功；该业务链路不新建许可，直接复用三份驻留，结束可用内存 4065 MiB。
 - 最终版本再次通过两轮实机 high/background 请求交换测试；较晚到达的高优先级任务均先于已排队后台任务完成。申请 `max_tokens:8` 的真实 QA 请求最终输出恰为 8 token，没有被扩为模型默认上限。结束后保留三个空闲模型、原生计算槽为零、suspect 为零；所有自有测试知识库/会话已删除。
 - 实机证据位于测试机 `~/dev/build/V-Scheduler/hybrag-207-20261023/` 下的 `managed72.log`、`rag72.log`、`priority72.log`、`final-installed.json`。本轮业务验收针对 207 HybRAG 与内置三后端；不声称其他应用已逐一完成真实业务重测。
+
+## Provider、模型工作台、心跳与认证恢复（2026-10-27）
+
+本轮保留原协议、权限、资源准入、host alias、端口、profile 和共享目录约定。模型与上游统一按来源展开；权重管理、试聊、模型元数据/能力/接口、放行、路由与预算设置仍可访问，旧页面 hash 仍兼容。
+
+- 229 同步本地源码后执行 Rust 全量测试：156 通过、0 失败、0 忽略。包括隔离 PostgreSQL 17 的恢复与身份围栏、真实 Ollama 只读能力发现、真实 Rust 网关经原生 SDK 访问隔离 HTTP 服务；Chat Completions、Responses、Messages 均覆盖流式与非流式。临时数据库使用独立容器及 tmpfs，不连接正式数据库。
+- Provider Node 测试 14 项通过：OpenAI、Responses、Anthropic、Gemini、Bedrock 签名与错误、OAuth 刷新持久化/复用、工具调用、取消和重复 Qwen catalog 合并。42 个 dsh provider ID 由 48 个去重配置预设覆盖；测试使用真实锁定 SDK 与隔离协议/凭据服务，不代表已验证所有供应商付费账户的权限与额度。
+- 前端 39 项通过，Vue/TypeScript 检查及 Vite 生产构建通过；保留既有大 chunk 提示。覆盖来源分组、空来源、能力的中英繁体搜索、认证/供应商错误边界、安全诊断缓存和刷新令牌恢复。
+- 由实际 Dockerfile 提取的 Debian/Node/SDK 运行层构建与无网络 catalog smoke 通过，确认 Node 依赖及 LICENSE 齐全；这是运行层验证，不等同于完整 VOS 镜像发布或安装包验收。
+- 编译后的实际界面验证：概览配置入口、来源/应用分组、带引号名称编辑、单模型保存仅提交选中 ID、原生 Provider 凭据设置、模型设置刷新后保留、桌面及 390px 窄屏、中英繁体切换、统一 API/应用接入指南。未修改正式应用配置。
+- 编译界面注入过期平台 JWT 和失败的 authorize/confirm，随后模拟平台 token 轮换：模型页面自动恢复，无原始错误横幅，浏览器控制台无 error。高级管理 → 诊断日志显示 VOS_JWT_EXPIRED 与 VOS_AUTH_REFRESHED，仅记录安全错误码、阶段、时间及次数，无 token、密钥、原始响应；支持复制和清空。单元测试另覆盖空闲 refresh_token 续期、并发合并、退出/用户切换围栏及供应商 401 不触发浏览器登录恢复。
+- 注册服务心跳超时/不可用时移出上游目录，带完整快照的心跳可自动恢复；静态手动上游不因旧到期字段消失。移出目录不释放仍在执行的资源许可，原停止证明与私有服务归属围栏保持。
+
+测试日志位于构建机 `~/dev/build/V-Scheduler/provider-ui-20261027/` 的 `backend-all-test.log`、`native-test.log`、`ui-test.log`、`ui-build.log` 与 `docker-runtime.log`。本轮未发布新版本，也未更改测试机已安装的 VOS 应用版本。

@@ -20,7 +20,7 @@
 
 V-Scheduler 统一安装包包含 V-Router 网关与调度控制器，提供一个界面和文档入口。模型目录、上游、自动发现、试聊、协议适配、用量和原有模型 API 由 Rust 网关统一提供；任务、许可、节点和资源统计由控制器管理。顶部登录身份使用随主题变化的文字颜色。安装后自动发现支持的应用与模型；界面“应用接入”说明本地、云端及 V-Voice 主动接入方式。API 与端口兼容说明见[统一应用说明](docs/unified-application.md)。 网关接口若返回 HTML 等无效 JSON，界面会提示检查服务与访问路径，不会将错误响应写入模型列表，切换语言仍可使用。
 
-模型管理已使用 Rust/Axum 与 Vue/TypeScript 合并，入口为「模型仓库」：本地模型、HF/ModelScope/Ollama 下载、选定权重文件与追加下载、更新、压缩包导入、下载任务、三类 Ollama 与外部推理服务卡片、别名和容器引用均在同一应用内。安装时选择原 Model Hub 共享目录即可接管，保留原模型文件、注册表和任务；三个预热开关默认关闭。Ollama 仍由 `modules/ollama` 构建，打包继续读取原飞书 `ollama_server` 列。
+模型管理已使用 Rust/Axum 与 Vue/TypeScript 合并，入口为「权重管理」：本地模型、HF/ModelScope/Ollama 下载、选定权重文件与追加下载、更新、压缩包导入、下载任务、三类 Ollama 与外部推理服务卡片、别名和容器引用均在同一应用内。安装时选择原 Model Hub 共享目录即可接管，保留原模型文件、注册表和任务；三个预热开关默认关闭。Ollama 仍由 `modules/ollama` 构建，打包继续读取原飞书 `ollama_server` 列。
 
 仓库下载请求携带应用 User-Agent，兼容 ModelScope 权重 CDN；下载失败时，任务提供 HTTP 状态、网络、磁盘空间或校验等安全错误码，保留已有模型与可续传文件。
 
@@ -332,3 +332,28 @@ v-YuE2 可通过固定 VOS 可信绑定取得独立 submitter 与实测 executor
 Auto 路由方式可选本地规则（默认）、请求类型、上下文大小、聊天模型分类器和 Jev/System One；前三种不运行额外模型。云端分类从已添加的上游模型选择，单独授权，不占本地 GPU 预算；界面与 API 参数见 [Auto 接入指南](docs/auto-routing.md#选择路由方式不必运行分类模型)。
 
 网关协议适配重建 multipart、二进制或 JSON 请求体时，会先移除客户端原来的 Content-Type，再发送与新 body 匹配的单一类型；覆盖 ML Server 文本/图片 embedding、离线 ASR 和 Image Studio 输入上传。普通透传请求及上游响应保留原 MIME，文件二进制不变；调用方无需修改标准 SDK 或 curl 表单请求。
+
+
+### 模型与上游工作区及原生 Provider
+
+首页「去配置上游模型」进入统一的「模型与上游」工作区；按上游或应用来源分组，支持按模型名、网址、能力搜索。来源展开后可修改连接、可见范围、路由权重、并发与放行，模型设置中保留元数据、能力、接口、预算校准和单模型放行。任务优先级仍由每次请求携带，不是模型优先级。「权重管理」保留下载、更新、选中文件、推理后端及原共享目录；`#upstreams` 旧入口转入统一工作区，`#model-hub`、所有 API、host alias 和端口保持不变。节点与 Auto 路由收于「高级管理」，关于和语言始终可见。
+
+一处配置后，VOS 内应用通过 `http://v-scheduler:8080/v1` 按原身份、可见范围和调度策略共享模型。厂商预设对照 dsh 去重补齐，同地址同鉴权的别名合并，独立地区或计费产品保留。自定义地址与已有上游配置不会被自动修改。
+
+新增可选 `protocol=pi`，复用 dsh 所用的 **pi-ai 1.1.0** provider 层。运行时在同一 Scheduler 容器的隔离 Node 子进程内执行，不增加容器或公开端口；Rust 仍先完成身份、路由、并发、资源许可与队列，随后转换原生 provider 的对话、工具调用、推理和流式结果。请求取消会终止子进程及其上游连接。旧 OpenAI/Anthropic/Ollama、Jev、图像/语音和异步业务适配继续使用原有路径，不强制迁移。
+
+原生凭据可用已有 API Key，或在高级连接配置中填写 provider 专属 `provider_credentials` JSON（含 `env` 或已授权 OAuth 凭据）。运行时自动刷新 OAuth，按所有者和连接凭据隔离，私有文件权限为 0600，管理 API 不回显；本版不提供网页登录授权向导。原生模式的模型来自 SDK 目录及其动态发现，目录不等于账号已授权；可选轻量调用验证权限。自定义模型 ID、远程图片 URL 或原样扩展参数请继续使用透明代理。完整字段、限制、provider 配置及例子见[统一接入指南](docs/application-integration.md#native-provider-runtime)。
+
+开发验证：远端同步源码后在 `frontend/` 执行 `npm test && npm run build`，在 `providers/` 执行 `npm ci --ignore-scripts && npm test`，在 `backend/` 执行 `cargo test --locked`。原生 Rust 全链路测试需设置 `V_SCHEDULER_PROVIDER_NODE` 为 Node 24 可执行文件、`V_SCHEDULER_PROVIDER_RUNTIME` 为 `providers/worker.mjs` 绝对路径，再运行 `cargo test --locked native_provider_end_to_end -- --ignored`。生产镜像已内置两者，不需要安装 App 外组件。
+
+
+### 服务心跳与自动移除
+
+手工添加的上游/单个模型为持久配置，没有心跳租约。主动发现的应用和内置推理后端按现有发现周期检查健康，不可用时从上游与模型目录移除，恢复后重新发现；权重管理仍可修复对应后端。应用注册使用 `heartbeat_timeout_seconds`（默认 90 秒，兼容旧 `ttl_seconds`），按响应的 `heartbeat_after_seconds` 发送心跳；中断后自动移除，`healthy:false` 可立即报告下线。心跳携带完整注册快照时，短暂掉线或 Scheduler 重启后自动恢复同一 `service_id`；只发简短心跳的旧客户端收到 `REGISTRATION_REQUIRED`/404 后按原契约重新注册。不存在留在界面等待用户处理的“租约到期”上游。目录下线不会释放仍在执行的资源预约，停止证明规则不变。详见统一接入指南的服务心跳流程。
+
+
+### 登录状态自动恢复与诊断日志
+
+VOS iframe 在平台登录仍有效时后台取得应用 OAuth 凭据，之后通过应用 `refresh_token` 续期，避免空闲后再次依赖已过期的平台 `authorize/confirm` JWT。并发请求共享一次刷新，401 最多重试一次；平台切换用户或退出时废弃旧凭据和未完成的授权，防止错用旧身份。凭据仅保存在内存，不写入浏览器日志或存储。
+
+认证过期、自动重试等技术事件集中在「高级管理 → 诊断日志」，不再把 `ExpiredSignature` 等原始异常弹到业务页面。短暂认证异常保留已加载内容并自动恢复；日志只保留当前浏览器会话的时间、阶段、安全错误码和次数（最多 200 条，可复制/清空），不含 token、密钥、URL 或原始响应。真正的权限不足、模型/服务配置错误仍按业务操作处理，不把上游 API Key 失败当作浏览器登录过期重试。

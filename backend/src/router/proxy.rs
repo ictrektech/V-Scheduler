@@ -347,6 +347,7 @@ fn record_owner(exchange: &Exchange, value: &Value) {
     }
 }
 pub(super) async fn handle(g: Arc<Gateway>, id: Identity, request: Request) -> Api<Response> {
+    g.registry.lock().unwrap().prune_services(Utc::now());
     handle_inner(g,id,request,false).await
 }
 // Only auto::jev can use this fixed-target internal call with an already verified
@@ -739,6 +740,17 @@ async fn handle_inner(g: Arc<Gateway>, id: Identity, request: Request, classifie
     if ["offline_asr", "image_studio", "async_task", "ml_server"].contains(&u.protocol.as_str()) {
         return super::adapters::forward(g, exchange, method, headers, suffix, rewritten, value)
             .await;
+    }
+    if u.protocol == "pi" {
+        if method != axum::http::Method::POST || actual_suffix != "/chat/completions" {
+            return Err(Failure::new(400,"native provider supports Chat Completions, Responses and Messages only"));
+        }
+        if let Some(lease)=exchange.lease.as_ref(){lease.begin();}
+        let response=lease::guard(exchange.lease.as_ref(),provider_runtime::response(&g,&u,"chat",value)).await?;
+        exchange.status=response.status().as_u16();
+        g.registry.lock().unwrap().result(&u.id,response.status().is_success());
+        if response.status().is_success(){if let Some(decision)=&auto_decision {auto::remember(&g,&id,&headers,decision);}}
+        return finish_response(exchange,response,conversion).await;
     }
     if asynchronous {
         exchange.async_job = jobs::prepare(&exchange, url.clone(), &headers)?;

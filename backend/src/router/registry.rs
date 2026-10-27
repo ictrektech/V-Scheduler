@@ -20,6 +20,8 @@ pub(super) struct Upstream {
     pub model_prefix: String,
     pub api_key: String,
     pub protocol: String,
+    pub provider: String,
+    pub provider_credentials: Value,
     pub visibility: String,
     pub owner: String,
     pub healthy: bool,
@@ -59,10 +61,10 @@ impl Upstream {
         id.admin || self.owner.is_empty() || self.owner == id.owner
     }
     pub fn live(&self) -> bool {
-        self.healthy && self.expires_at.is_none_or(|at| at > Utc::now())
+        self.healthy && (self.source=="api" || self.expires_at.is_none_or(|at| at > Utc::now()))
     }
     pub fn chat_only(&self) -> bool {
-        ["chat_completions", "ollama"].contains(&self.protocol.as_str())
+        ["chat_completions", "ollama", "pi"].contains(&self.protocol.as_str())
             || self.protocol.is_empty() && self.source == "model-hub"
     }
 }
@@ -108,6 +110,7 @@ impl Default for Routing {
 pub(super) struct Disk {
     pub auto: auto::Config,
     pub version: u32,
+    pub registration_owners: BTreeMap<String,String>,
     #[serde(deserialize_with = "null_default")]
     pub upstreams: Vec<Upstream>,
     #[serde(deserialize_with = "null_default")]
@@ -131,6 +134,8 @@ pub(super) struct Registry {
     pub breaker: BTreeMap<String, (u32, DateTime<Utc>)>,
     pub resources: Vec<Value>,
     pub services: BTreeMap<String, String>,
+    pub builtin_unavailable: std::collections::BTreeSet<String>,
+    pub registration_owners: BTreeMap<String,String>,
 }
 impl Registry {
     pub fn open(path: &std::path::Path) -> anyhow::Result<Self> {
@@ -141,6 +146,7 @@ impl Registry {
         };
         let mut result = Self {
             auto: disk.auto,
+            registration_owners: disk.registration_owners,
             models: disk.models,
             routing: disk.routing,
             model_routing: disk.model_routing,
@@ -148,7 +154,7 @@ impl Registry {
             ..Self::default()
         };
         for mut u in disk.upstreams {
-            if u.expires_at
+            if u.source=="api" || u.expires_at
                 .is_some_and(|at| at.timestamp() <= -62135596800)
             {
                 u.expires_at = None;
@@ -178,6 +184,7 @@ impl Registry {
             .collect();
         let disk = Disk {
             version: 2,
+            registration_owners: self.registration_owners.clone(),
             auto: self.auto.clone(),
             models: self
                 .models
@@ -206,7 +213,19 @@ impl Registry {
         std::fs::rename(temp, path)?;
         Ok(())
     }
+    /// Catalog liveness only: running exchanges, routing policy, reservations
+    /// and stop evidence are owned elsewhere and must survive service loss.
+    pub fn prune_services(&mut self, now: DateTime<Utc>) {
+        let gone=self.upstreams.values().filter(|u|u.source!="api" &&
+            (!u.healthy || u.expires_at.is_some_and(|at|at<=now))).map(|u|(u.id.clone(),u.source.clone())).collect::<Vec<_>>();
+        for (id,source) in gone {
+            if source=="v-scheduler" {self.builtin_unavailable.insert(id.clone());}
+            self.upstreams.remove(&id);self.models.remove(&id);
+        }
+    }
     pub fn put(&mut self, mut u: Upstream, mut models: Vec<Model>) {
+        if u.healthy {self.builtin_unavailable.remove(&u.id);}
+        if u.source=="registered" {self.registration_owners.insert(u.id.clone(),u.owner.clone());}
         if u.source != "registered" {
             self.breaker.remove(&u.id);
         }
@@ -238,7 +257,7 @@ impl Registry {
         let p = self.routing.get(&u.id).cloned().unwrap_or_default();
         let state = if p.disabled {
             "paused"
-        } else if u.expires_at.is_some_and(|at| at <= Utc::now()) {
+        } else if u.source!="api" && u.expires_at.is_some_and(|at| at <= Utc::now()) {
             "lease_expired"
         } else if let Some((n, until)) = self
             .breaker
@@ -289,6 +308,7 @@ impl Registry {
         self.acquire_from(requested, path, pinned, id, None)
     }
     pub fn acquire_from(&mut self, requested: &str, path: &str, pinned: &str, id: &Identity, selected_upstream: Option<&str>) -> Result<(Upstream, String), Failure> {
+        self.prune_services(Utc::now());
         let mut choices: Vec<(Upstream, String)> = vec![];
         let (mut found, mut live, mut compatible) = (false, false, false);
         for u in self.upstreams.values().filter(|u| u.visible(id)) {
@@ -622,7 +642,7 @@ pub(super) fn normalize_upstream_model(model: &mut Model, u: &Upstream) {
         if model.endpoints.is_empty() && model.kind == "embedding" {
             model.endpoints.push("embeddings".into());
         }
-        if model.endpoints.is_empty() && ["openai", "chat_completions", "anthropic", "ollama"].contains(&u.protocol.as_str()) {
+        if model.endpoints.is_empty() && ["openai", "chat_completions", "anthropic", "ollama", "pi"].contains(&u.protocol.as_str()) {
             // Unknown non-chat extensions must not become chat models implicitly.
             if model.capabilities.is_empty() || model.capabilities.iter().any(|c| ["chat", "completion", "completions", "generate", "generation", "tools", "thinking", "vision"].contains(&c.as_str())) {
                 model.endpoints.push(if u.protocol == "anthropic" { "messages" } else { "chat_completions" }.into());

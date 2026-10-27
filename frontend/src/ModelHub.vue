@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import {userErrorMessage,isSessionError} from './diagnostics.js'
 import {ref,computed,onMounted,onUnmounted,watch} from 'vue'
 import {messages} from './modelhub/messages'
 import {request as api,encode,fileSize,schedulerRequest} from './modelhub/client'
@@ -23,8 +24,8 @@ const aliasName=ref(''),aliasTarget=ref(''),containerId=ref(''),containerModel=r
 const repositoryModel=ref(''),servedModel=ref('')
 const serviceForm=ref({service_id:'',name:'',kind:'ollama',base_url:'',gateway_url:'',role:'generate'}),contract=ref(JSON.stringify({health_path:'/health',models_path:'/v1/models',running_models_path:'/v1/models',runtime_status_path:null,metrics_path:null,start_model_path:null,stop_model_path:null,model_action_status_path:null},null,2))
 let timer:ReturnType<typeof setInterval>|undefined,revision=0,disposed=false
-async function act(work:()=>Promise<void>){if(busy.value)return;busy.value=true;error.value='';notice.value='';try{await work()}catch(e){error.value=e instanceof Error?e.message:String(e)}finally{busy.value=false}}
-async function refreshModels(){models.value=await api('/api/v1/models?status=all');try{budgets.value=(await schedulerRequest('/model-budgets')).items||[]}catch{budgets.value=[]}}
+async function act(work:()=>Promise<void>){if(busy.value)return;busy.value=true;error.value='';notice.value='';try{await work()}catch(e){error.value=userErrorMessage(e)}finally{busy.value=false}}
+async function refreshModels(){models.value=await api('/api/v1/models?status=all');try{budgets.value=(await schedulerRequest('/model-budgets')).items||[]}catch(e){if(!isSessionError(e))budgets.value=[]}}
 function budgetKey(id:string){const name=(id||'').replace(/^ollama:\/\//,'');const leaf=name.split('/').pop()||'';return leaf.includes(':')?name:`${name}:latest`}
 function budgetsFor(model:any){const key=budgetKey(model.model_id);return budgets.value.filter((budget:any)=>budgetKey(budget.repository_model_id)===key)}
 function resourcesLabel(resources:any){if(!resources)return '—';return `${(resources.cpu_millicores/1000).toFixed(1)} vCPU · ${resources.memory_mib} MiB · ${resources.gpu_slots} GPU · ${resources.gpu_memory_mib} MiB`}
@@ -33,7 +34,7 @@ function openBudget(budget:any){budgetDraft.value={model_id:budget.model_id,mode
 async function saveBudget(){await act(async()=>{const draft=budgetDraft.value;if(draft.mode==='direct'){await schedulerRequest('/model-budgets/calibrate',{model_id:draft.model_id,mode:'direct'})}else{const resources=draft.resources,limits=draft.limits;if(resources.cpu_millicores<=0||resources.memory_mib<=0)throw Error(t('CPU 和内存预算必须大于 0'));if(resources.gpu_memory_mib>0&&resources.gpu_slots<=0)throw Error(t('设置显存预算时必须设置 GPU 槽位'));for(const field of limitFields){const value=Number(limits[field.key]);if(!Number.isInteger(value)||value<0||(field.key!=='options.num_gpu'&&value===0))throw Error(t('运行上限必须是正数'))}await schedulerRequest('/model-budgets/calibrate',{model_id:draft.model_id,mode:'calibrated',resources,limits})}budgetDraft.value=null;notice.value=t(draft.mode==='direct'?'该模型已直接放行，不再参与调度准入':'模型预算已校准');await refreshModels()})}
 async function restoreBudget(budget:any){if(!confirm(`${t('恢复默认预算')} ${budget.model_id}?`))return;await act(async()=>{await schedulerRequest('/model-budgets/restore',{model_id:budget.model_id});notice.value=t('已恢复默认预算');await refreshModels()})}
 async function refreshTasks(){tasks.value=await api('/api/v1/tasks')}
-async function refreshRuntime(){await refreshModels();const [builtins,registered]=await Promise.all([api('/api/v1/ollama/runtime'),api('/api/v1/inference-services')]);if(disposed)return;runtimes.value=builtins.runtimes;services.value=await Promise.all(registered.map(async(s:any)=>{try{return {...s,...await api(`/api/v1/inference-services/${encode(s.service_id)}`)}}catch{return {...s,healthy:false,error:t('服务不可达'),models:[]}}}))}
+async function refreshRuntime(){await refreshModels();const [builtins,registered]=await Promise.all([api('/api/v1/ollama/runtime'),api('/api/v1/inference-services')]);if(disposed)return;runtimes.value=builtins.runtimes;services.value=await Promise.all(registered.map(async(s:any)=>{try{return {...s,...await api(`/api/v1/inference-services/${encode(s.service_id)}`)}}catch(e){if(isSessionError(e))throw e;return {...s,healthy:false,error:t('服务不可达'),models:[]}}}))}
 async function refresh(){if(tab.value==='models')await refreshModels();else if(tab.value==='tasks')await refreshTasks();else if(tab.value==='runtime')await refreshRuntime();else if(tab.value==='references'){[aliases.value,bindings.value]=await Promise.all([api('/api/v1/aliases'),api('/api/v1/containers')])}}
 
 function invalidate(){revision++;listing.value=null;selected.value=[]}
@@ -50,7 +51,7 @@ async function syncModels(){await act(async()=>{const data=await api('/api/v1/mo
 async function taskAction(task:any,action:string){if(action==='delete'&&!confirm(t('确认删除任务记录（不会删除模型）')))return;await act(async()=>{await api(`/api/v1/tasks/${encode(task.task_id)}${action==='delete'?'':`/${action}`}`,action==='delete'?undefined:{},action==='delete'?'DELETE':'POST');await refreshTasks()})}
 async function clean(){await act(async()=>{const data=await api('/api/v1/models/cleanup',{});notice.value=`${t('清理完成')} · ${fileSize(data.freed_bytes)}`})}
 async function importArchive(){await act(async()=>{if(!archiveFile.value)throw Error(t('请选择压缩包'));const form=new FormData();form.set('archive',archiveFile.value);Object.entries({source:importSource.value,model_id:importId.value,remote_repo:remoteRepo.value,name:importName.value,version:importVersion.value,replace_existing:String(replaceExisting.value)}).forEach(([k,v])=>form.set(k,v));await api('/api/v1/models/import-archive',form);notice.value=t('导入成功');tab.value='models';await refreshModels()})}
-async function modelAction(service:any,model:string,start:boolean){if(!model)return;const key=`${service.service_id}/${model}`;if(actions.value.has(key))return;actions.value.add(key);try{const result=await api(`/api/v1/inference-services/${encode(service.service_id)}/models/${start?'start':'stop'}`,{model,mode:service.role,keep_alive:service.keep_alive||'-1m',confirm_timeout_seconds:8});notice.value=result.confirmed?t('操作已确认'):t('请求已接受，尚未确认完成');await refreshRuntime()}catch(e){error.value=e instanceof Error?e.message:String(e)}finally{actions.value.delete(key)}}
+async function modelAction(service:any,model:string,start:boolean){if(!model)return;const key=`${service.service_id}/${model}`;if(actions.value.has(key))return;actions.value.add(key);try{const result=await api(`/api/v1/inference-services/${encode(service.service_id)}/models/${start?'start':'stop'}`,{model,mode:service.role,keep_alive:service.keep_alive||'-1m',confirm_timeout_seconds:8});notice.value=result.confirmed?t('操作已确认'):t('请求已接受，尚未确认完成');await refreshRuntime()}catch(e){error.value=userErrorMessage(e)}finally{actions.value.delete(key)}}
 async function registerService(){await act(async()=>{await api('/api/v1/inference-services/register',{...serviceForm.value,...(repositoryModel.value?{metadata:{model_bindings:{[servedModel.value]:repositoryModel.value}}}:{}),gateway_url:serviceForm.value.gateway_url||null,...(serviceForm.value.kind==='ollama'?{}:{api_contract:JSON.parse(contract.value)})});notice.value=t('服务已注册');await refreshRuntime()})}
 async function deleteService(service:any){if(!confirm(`${t('删除服务注册')} ${service.name}?`))return;await act(async()=>{await api(`/api/v1/inference-services/${encode(service.service_id)}`,undefined,'DELETE');await refreshRuntime()})}
 async function createAlias(){await act(async()=>{await api('/api/v1/aliases',{alias:aliasName.value,target_model_id:aliasTarget.value});aliasName.value='';await refresh()})}
@@ -59,8 +60,8 @@ async function bind(){await act(async()=>{await api('/api/v1/containers/bind',{c
 async function unbind(id:string){await act(async()=>{await api('/api/v1/containers/unbind',{container_id:id},'DELETE');await refresh()})}
 async function copy(value:string){try{await navigator.clipboard.writeText(value);notice.value=t('已复制')}catch{error.value=t('复制失败')}}
 watch(()=>props.locale,()=>{notice.value=''})
-watch(tab,()=>{error.value='';refresh().catch(e=>{error.value=e.message})})
-onMounted(()=>{refresh().catch(e=>{error.value=e.message});timer=setInterval(()=>{if(!busy.value&&['tasks','runtime'].includes(tab.value))refresh().catch(()=>{})},3000)})
+watch(tab,()=>{error.value='';refresh().catch(e=>{error.value=userErrorMessage(e)})})
+onMounted(()=>{refresh().catch(e=>{error.value=userErrorMessage(e)});timer=setInterval(()=>{if(!busy.value&&['tasks','runtime'].includes(tab.value))refresh().catch(()=>{})},3000)})
 onUnmounted(()=>{disposed=true;clearInterval(timer)})
 </script>
 <template>

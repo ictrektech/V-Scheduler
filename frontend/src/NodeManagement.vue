@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import {isSessionError,userErrorMessage} from "./diagnostics.js"
 import {ref,onMounted,onUnmounted,computed} from 'vue'
 import Icon from './Icon.vue'
 import ApplicationIntegrations from './ApplicationIntegrations.vue'
@@ -16,7 +17,7 @@ const pending=computed(()=>data.value.nodes.filter((node:any)=>node.state==='pen
 const observed=computed(()=>props.nodes.filter(n=>n.modelinfer_source))
 const events:Record<string,string>={'enrollment.revoked':'撤销接入凭据','node.draining':'排空节点','node.resumed':'恢复接收','enrollment.created':'创建接入凭据','worker.pending':'节点申请接入','node.approved':'批准节点','node.budget.updated':'更新节点预算','node.revoked':'撤销节点','executor.pending':'执行器申请接入','executor.enabled':'批准执行器','executor.disabled':'停用执行器','identity.created':'创建服务凭据','identity.revoked':'撤销服务凭据','source.plan.updated':'更新节点预算规划'}
 const zero=()=>({cpu_millicores:0,memory_mib:0,gpu_slots:0,gpu_memory_mib:0})
-function failureText(e:unknown){const code=e instanceof Error?e.message:String(e);return props.t(failure[code]||'操作未完成，请刷新后重试。')+` (${code})`}
+function failureText(e:unknown){if(isSessionError(e))return userErrorMessage(e);const code=e instanceof Error?e.message:String(e);return props.t(failure[code]||'操作未完成，请刷新后重试。')+` (${code})`}
 async function refresh(){if(busy.value)return;try{data.value=await props.request('management');error.value=''}catch(e){error.value=failureText(e)}}
 async function action(fn:()=>Promise<void>){if(busy.value)return;busy.value=true;error.value='';try{await fn();emit('refresh')}catch(e){error.value=failureText(e)}finally{busy.value=false}await refresh()}
 function close(){dialog.value='';secret.value=null;nodeForm.value=null;executorForm.value=null;copied.value=false}

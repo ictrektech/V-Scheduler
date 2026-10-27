@@ -7,3 +7,5 @@
 /journal/
 
 ictrek.app/dist/
+
+/providers/node_modules/

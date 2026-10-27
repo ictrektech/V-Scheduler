@@ -11,6 +11,7 @@ mod jobs;
 mod lease;
 mod manage;
 mod proxy;
+mod provider_runtime;
 mod queue;
 mod residency;
 mod weights;

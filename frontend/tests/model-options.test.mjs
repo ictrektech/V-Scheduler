@@ -1,12 +1,13 @@
+import {DSH_PROVIDER_IDS} from '../src/gateway/provider-reference.js';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {CAPABILITIES, ENDPOINTS, PROVIDER_PRESETS, effectiveMetadata, systemOneRequest} from '../src/gateway/model-options.js';
+import {CAPABILITIES, ENDPOINTS, PROVIDER_PRESETS, effectiveMetadata, systemOneRequest, validateProviderAddress} from '../src/gateway/model-options.js';
 
 test('provider presets have unique identities and endpoints, and never invent model IDs', () => {
   assert.equal(new Set(PROVIDER_PRESETS.map(p => p.id)).size, PROVIDER_PRESETS.length);
-  assert.equal(new Set(PROVIDER_PRESETS.map(p => p.base)).size, PROVIDER_PRESETS.length);
+  assert.equal(new Set(PROVIDER_PRESETS.filter(p=>p.base).map(p => p.base)).size, PROVIDER_PRESETS.filter(p=>p.base).length);
   for (const p of PROVIDER_PRESETS) {
-    assert.equal(new URL(p.base).protocol, 'https:');
+    if(p.nativeOnly) assert.equal(p.base,''); else assert.equal(new URL(p.base).protocol, 'https:');
     assert.ok(['openai', 'chat_completions', 'anthropic', 'typesafe', 'ollama'].includes(p.protocol));
     assert.ok(!p.model || p.id === 'typesafe');
   }
@@ -37,4 +38,14 @@ test('Jev remains a native decision model, not an agent chat model', () => {
   assert.throws(()=>systemOneRequest('jev-latest','hello'),/state.*questions/);
   assert.throws(()=>systemOneRequest('jev-latest','{"state":"x","questions":[]}'),/state.*questions/);
   assert.throws(()=>systemOneRequest('jev-latest',JSON.stringify({...request,stream:true})),/流式/);
+});
+
+test('dsh comparison catalog is covered exactly once with aliases merged',()=>{
+ const ids=PROVIDER_PRESETS.flatMap(p=>p.dshIds||[]);
+ assert.equal(new Set(ids).size,ids.length);
+ assert.deepEqual([...ids].sort(),[...DSH_PROVIDER_IDS].sort());
+ assert.equal(PROVIDER_PRESETS.find(p=>p.id==='qwen-token-plan').dshIds.length,2);
+ assert.throws(()=>validateProviderAddress('https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1'),/替换/);
+ assert.throws(()=>validateProviderAddress(''),/地址/);
+ validateProviderAddress('https://example.invalid/v1');
 });

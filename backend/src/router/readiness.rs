@@ -41,7 +41,7 @@ impl Gateway {
             return Err(initializing());
         }
         let registry = self.registry.lock().unwrap();
-        if registry
+        if registry.builtin_unavailable.contains(&format!("v-scheduler/ollama-{role}")) || registry
             .upstreams
             .get(&format!("v-scheduler/ollama-{role}"))
             .is_some_and(|u| !u.live())
@@ -70,7 +70,7 @@ pub(super) fn snapshot(g: &Gateway) -> Value {
                 "initializing"
             } else if upstream.is_some_and(|u| u.live()) {
                 "ready"
-            } else if upstream.is_some() {
+            } else if upstream.is_some() || registry.builtin_unavailable.contains(&format!("v-scheduler/ollama-{role}")) {
                 "unavailable"
             } else {
                 "disabled"

@@ -1,11 +1,13 @@
 <script setup lang="ts">
+import DiagnosticLogs from './DiagnosticLogs.vue'
+import {isSessionError,recordDiagnostic} from './diagnostics.js'
 import AboutDialog from './AboutDialog.vue'
 import AutoRouting from './AutoRouting.vue'
 import {apiBases,authenticatedFetch,jsonResponse} from './http-client.js'
 import ModelHub from './ModelHub.vue'
 import GatewayWorkspace from './GatewayWorkspace.vue'
 import IntegrationGuide from './IntegrationGuide.vue'
-import {ref,computed,onMounted,onUnmounted,watch} from 'vue'
+import {ref,computed,onMounted,onUnmounted,watch,nextTick} from 'vue'
 import Icon from './Icon.vue'
 import {getVOSBearerToken,clearCachedVOSBearerToken} from './vos-auth'
 import logoUrl from '../../assets/icon.svg'
@@ -28,7 +30,7 @@ const appVersion=ref('')
 const errorRequestId=ref('')
 const vosEmbedded=window.parent!==window||location.pathname.startsWith('/app/com.ictrek.v-scheduler')
 const initialPage=location.hash.slice(1)
-const page=ref(['models','upstreams','playground','auto','api','resources','nodes','model-hub'].includes(initialPage)?initialPage:'overview'),docMode=ref('gateway'),credential=ref(''),connected=ref(false),busy=ref(false),error=ref(''),tasks=ref<Task[]>([]),nodes=ref<Node[]>([]),reservations=ref<Reservation[]>([]),filter=ref('all'),search=ref(''),selected=ref<Task|null>(null),deleting=ref<Task|null>(null),confirmPermit=ref<Reservation|null>(null),stopEvidence=ref(''),copied=ref(false)
+const page=ref(['models','upstreams','playground','auto','api','resources','nodes','model-hub','logs'].includes(initialPage)?initialPage:'overview'),docMode=ref('gateway'),credential=ref(''),connected=ref(false),busy=ref(false),error=ref(''),tasks=ref<Task[]>([]),nodes=ref<Node[]>([]),reservations=ref<Reservation[]>([]),filter=ref('all'),search=ref(''),selected=ref<Task|null>(null),deleting=ref<Task|null>(null),confirmPermit=ref<Reservation|null>(null),stopEvidence=ref(''),copied=ref(false)
 const pendingTasks=ref(new Set<string>())
 const appFilter=ref(''),nodeFilter=ref(''),taskPages=ref(1),taskCursor=ref<string|null>(null)
 const appOptions=computed(()=>[...new Set(tasks.value.map(task=>task.app_id))].sort())
@@ -40,9 +42,9 @@ const basePath=new URL('./',location.href.split('#')[0]).pathname
 const apiBase=apiBases(location.pathname).scheduler
 const managementApiUrl=new URL(apiBase,location.origin).href
 const gatewayPages=['overview','models','upstreams','playground']
-const gatewayTab=computed(()=>page.value==='api'?'apidoc':page.value)
+const gatewayTab=computed(()=>page.value==='api'?'apidoc':page.value==='upstreams'?'models':page.value)
 const gatewayVisible=computed(()=>gatewayPages.includes(page.value)||(page.value==='api'&&docMode.value==='gateway'))
-const pageTitle=computed(()=>(({overview:'模型与调用',models:'模型',upstreams:'上游',playground:'试聊',auto:'Auto 自动选型',api:'API 文档',resources:'资源与任务',nodes:'节点管理','model-hub':'模型仓库'} as Record<string,string>)[page.value]||page.value))
+const pageTitle=computed(()=>(({overview:'模型与调用',models:'模型与上游',upstreams:'模型与上游',playground:'试聊',auto:'Auto 自动选型',api:'API 文档',resources:'资源与任务',nodes:'节点管理','model-hub':'权重管理',logs:'诊断日志'} as Record<string,string>)[page.value]||page.value))
 const spec=ref<any>(null),operationKey=ref('GET /discovery'),exampleTab=ref('curl'),discoveryResult=ref<unknown>(null)
 const operations=computed(()=>Object.entries(spec.value?.paths||{}).flatMap(([path,methods])=>Object.entries(methods as any).filter(([method])=>['get','post','delete'].includes(method)).map(([method,op])=>({path,method,key:method.toUpperCase()+' '+path,...op as any}))))
 const operation=computed(()=>operations.value.find(op=>op.key===operationKey.value)||operations.value[0])
@@ -62,7 +64,7 @@ async function api(path:string,body?:unknown,method?:string,extra:Record<string,
  return (await jsonResponse(response))?.data
 }
 
-function showError(e:unknown){const failure=e as {code?:string;requestId?:string};errorRequestId.value=failure?.requestId||'';error.value=failure?.code&&errors[failure.code]?failure.code:(e instanceof Error?e.message:String(e)).replace(/^Error: /,'')}
+function showError(e:unknown){if(isSessionError(e)){recordDiagnostic("AUTH_REQUEST_REJECTED","scheduler_request");return}const failure=e as {code?:string;requestId?:string};errorRequestId.value=failure?.requestId||'';error.value=failure?.code&&errors[failure.code]?failure.code:(e instanceof Error?e.message:String(e)).replace(/^Error: /,'')}
 async function refresh(){
  if(!connected.value||busy.value)return
  busy.value=true
@@ -80,7 +82,7 @@ async function connect(){
  demo.value=false;error.value='';busy.value=true
  try{
   credential.value=await getVOSBearerToken()||''
-  if(!credential.value){error.value='VOS_LOGIN_REQUIRED';return}
+  if(!credential.value){error.value='';return}
   const state=await (await fetch(apiBase+'setup')).json();appVersion.value=state.data?.version||''
   if(state.data?.ready===false){await api('setup',{});await new Promise(resolve=>setTimeout(resolve,1000))}
   tasks.value=[];nodes.value=[];reservations.value=[];taskPages.value=1;taskCursor.value=null;connected.value=true
@@ -117,21 +119,23 @@ function nodeHealth(node:Node){return node.health_state||(node.managed===false?'
 const healthLabels:Record<string,string>={ready:'可调度',degraded:'降级',unavailable:'不可用',draining:'排空中',observing:'仅观察',revoked:'已撤销'}
 async function copy(value:string){try{await navigator.clipboard.writeText(value);copied.value=true;setTimeout(()=>copied.value=false,1500)}catch{error.value='COPY_UNAVAILABLE'}}
 async function tryDiscovery(){try{discoveryResult.value=await (await fetch(apiBase+'discovery')).json()}catch(e){showError(e)}}
-watch(page,value=>{location.hash=value;selected.value=null})
+watch(page,value=>{location.hash=value;selected.value=null;void nextTick(()=>window.scrollTo(0,0))})
 watch(locale,()=>{document.title=`V-Scheduler · ${t('模型路由与资源调度')}`},{immediate:true})
 let timer:ReturnType<typeof setInterval>
-onMounted(async()=>{await connect();timer=setInterval(refresh,2500);try{spec.value=await (await fetch(apiBase+'openapi.json')).json()}catch{if(!error.value)error.value='加载接口文档失败'}})
+onMounted(async()=>{await connect();timer=setInterval(()=>{if(!busy.value&&!connected.value&&!demo.value)void connect();else void refresh()},2500);try{spec.value=await (await fetch(apiBase+'openapi.json')).json()}catch{if(!error.value)error.value='加载接口文档失败'}})
 onUnmounted(()=>{clearInterval(timer);language.dispose()})
 </script>
 <template>
  <div class="shell">
-  <aside><div class="brand"><img :src="logoUrl" alt=""><div>V-Scheduler<small>{{t('模型路由与资源调度')}}</small></div></div><nav><button v-for="item in [{id:'overview',label:'模型与调用'},{id:'models',label:'模型'},{id:'upstreams',label:'上游'},{id:'playground',label:'试聊'},{id:'auto',label:'Auto 自动选型'}]" :key="item.id" :class="{current:page===item.id}" @click="page=item.id"><Icon name="server"/>{{t(item.label)}}</button><button :class="{current:page==='model-hub'}" @click="page='model-hub'"><Icon name="server"/>{{t('模型仓库')}}</button><button :class="{current:page==='resources'}" @click="page='resources'"><Icon name="queue"/>{{t('资源与任务')}}</button><button :class="{current:page==='nodes'}" @click="page='nodes'"><Icon name="server"/>{{t('节点管理')}}</button><button :class="{current:page==='api'}" @click="page='api'"><Icon name="book"/>{{t('API 文档')}}</button></nav><div class="aside-note"><span class="connection-dot" :class="{on:connected}"></span>{{t(error==='FORBIDDEN'?'调度管理需管理员身份':demo?'演示模式':connected?'已连接':'调度未连接')}}<small>{{t('按能力分配')}}<br>{{t('确认停止后释放')}}</small><small v-if="appVersion">v{{appVersion}}</small></div></aside>
+  <aside><div class="brand"><img :src="logoUrl" alt=""><div>V-Scheduler<small>{{t('模型路由与资源调度')}}</small></div></div><nav aria-label="主导航"><button v-for="item in [{id:'overview',label:'模型与调用'},{id:'models',label:'模型与上游'},{id:'playground',label:'试聊'},{id:'model-hub',label:'权重管理'},{id:'resources',label:'资源与任务'}]" :key="item.id" :class="{current:page===item.id||(item.id==='models'&&page==='upstreams')}" @click="page=item.id"><Icon :name="item.id==='resources'?'queue':'server'"/>{{t(item.label)}}</button><details class="advanced-nav" :open="['auto','nodes','logs'].includes(page)"><summary>{{t('高级管理')}}</summary><button :class="{current:page==='auto'}" @click="page='auto'"><Icon name="server"/>{{t('Auto 自动选型')}}</button><button :class="{current:page==='nodes'}" @click="page='nodes'"><Icon name="server"/>{{t('节点管理')}}</button><button :class="{current:page==='logs'}" @click="page='logs'"><Icon name="book"/>{{t('诊断日志')}}</button></details><button :class="{current:page==='api'}" @click="page='api'"><Icon name="book"/>{{t('API 文档')}}</button></nav><div class="aside-note"><span class="connection-dot" :class="{on:connected}"></span>{{t(error==='FORBIDDEN'?'调度管理需管理员身份':demo?'演示模式':connected?'已连接':'调度未连接')}}<small>{{t('按能力分配')}}<br>{{t('确认停止后释放')}}</small><small v-if="appVersion">v{{appVersion}}</small></div></aside>
   <main>
    <header><div><h1>{{t(pageTitle)}}</h1><p>{{t(page==='api'?'接口标准、认证方式与可复制的请求示例。':page==='nodes'?'登记、审批与管理执行节点和服务权限。':page==='resources'?'查看执行资源、预约与排队任务。':'统一管理模型、上游和调用；本地计算经过资源准入。')}}</p></div><div class="header-actions"><label class="locale-control"><Icon name="globe"/><select v-model="preference" :aria-label="t('界面语言')" @change="language.setPreference(preference)"><option value="auto">{{t('跟随 VOS')}}</option><option value="zh-CN">简体中文</option><option value="en">English</option><option value="zh-TW">繁體中文</option></select></label><AboutDialog :t="t"/></div></header>
    <div v-if="error&&(page==='resources'||page==='nodes')" class="error" role="alert">{{t(errors[error]||error)}}<code v-if="errors[error]">{{error}}</code><code v-if="errorRequestId">{{errorRequestId}}</code></div>
+   <section v-if="page==='overview'" class="overview-entry" :aria-label="t('模型接入与调用')"><div class="overview-entry-tabs"><span aria-current="page">{{t('调用概览')}}</span><button class="configure-models" @click="page='models'"><Icon name="server"/>{{t('去配置上游模型')}}<Icon name="arrow"/></button></div><p>{{t('先连接模型来源，再试聊或接入应用。模型、上游和调度设置集中管理。')}}</p></section>
    <section v-if="page==='overview'&&connected" class="unified-summary panel"><button class="quiet" @click="page='resources'">{{t('就绪节点')}} {{nodes.filter(n=>nodeHealth(n)==='ready').length}} / {{nodes.length}}</button><button class="quiet" @click="page='resources'">{{t('正在执行')}} {{active}}</button><button class="quiet" @click="page='resources'">{{t('等待队列')}} {{queued}}</button><span>{{t('外部云模型不占本地资源预约')}}</span></section>
    <div v-if="page==='api'" class="documentation-tabs"><button :class="{current:docMode==='gateway'}" @click="docMode='gateway'">{{t('模型与网关 API')}}</button><button :class="{current:docMode==='scheduler'}" @click="docMode='scheduler'">{{t('调度管理 API')}}</button><button :class="{current:docMode==='model-hub'}" @click="docMode='model-hub'">{{t('模型管理 API')}}</button><button :class="{current:docMode==='guide'}" @click="docMode='guide'">{{t('应用接入')}}</button></div>
    <AutoRouting v-if="page==='auto'" :t="t"/>
+   <DiagnosticLogs v-if="page==='logs'" :t="t" :locale="locale"/>
    <ModelHub v-if="page==='model-hub'" :locale="locale" :t="t"/>
    <ModelHub v-if="page==='api'&&docMode==='model-hub'" :locale="locale" :t="t" docs-only/>
    <NodeManagement v-if="page==='nodes'&&connected" :request="api" :nodes="nodes" :api-url="managementApiUrl" :t="t" :locale="locale" @refresh="refresh"/>
@@ -139,7 +143,7 @@ onUnmounted(()=>{clearInterval(timer);language.dispose()})
    <IntegrationGuide v-if="page==='api'&&docMode==='guide'" :t="t"/>
    <GatewayWorkspace v-show="gatewayVisible" :tab="gatewayTab" :locale="locale" :visible="gatewayVisible" :administrator="connected&&!demo&&nodes.length>0" @select="page=$event"/>
    <template v-if="page==='resources'">
-    <section v-if="!connected&&!demo&&error" class="login"><div class="login-mark"><Icon name="shield"/></div><h2>{{t('连接 VOS')}}</h2><p>{{t('使用当前 VOS 管理员身份连接，首次使用自动准备 PGV 数据库。')}}</p><button :disabled="busy" @click="connect">{{t('重试连接')}}</button></section>
+    <section v-if="!connected&&!demo" class="login"><div class="login-mark"><Icon name="shield"/></div><h2>{{t('连接 VOS')}}</h2><p>{{t('使用当前 VOS 管理员身份连接，首次使用自动准备 PGV 数据库。')}}</p><button :disabled="busy" @click="connect">{{t('重试连接')}}</button></section>
 
     <div v-if="demo" class="demo-banner"><div><strong>{{t('演示模式')}}</strong><span>{{t('样例数据；操作只影响当前演示，不会执行计算或修改真实任务。')}}</span></div><button class="quiet" @click="logout">{{t('连接真实调度器')}}</button></div>
     <template v-if="connected||demo">
@@ -165,4 +169,8 @@ onUnmounted(()=>{clearInterval(timer);language.dispose()})
 <style scoped>
 .table-toolbar{flex-wrap:wrap}.table-toolbar .search{flex:1;min-width:220px}.task-list-footer{display:flex;align-items:center;gap:14px;flex-wrap:wrap}.task-list-footer>span{flex:1;min-width:180px}
 .unified-summary{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:16px;margin-bottom:20px}.unified-summary>span{margin-left:auto;color:#64748b;font-size:12px}.documentation-tabs{display:flex;gap:8px;margin-bottom:20px}.documentation-tabs button{background:transparent;color:#64748b}.documentation-tabs button.current{background:#e7effc;color:#265cc2}
+</style>
+
+<style scoped>
+.overview-entry{margin-bottom:24px;padding:24px;border:1px solid #dce6e9;border-radius:16px;background:#fff}.overview-entry-tabs{display:flex;align-items:center;gap:16px;flex-wrap:wrap}.overview-entry-tabs>span{font-size:16px;font-weight:600;color:#435669}.configure-models{display:flex;align-items:center;gap:12px;padding:12px 16px;font-size:16px;border-radius:8px;background:#087e8b;color:#fff}.overview-entry p{font-size:14px;line-height:20px;color:#64748b;margin:16px 0 0}.advanced-nav{margin:8px 12px}.advanced-nav summary{cursor:pointer;padding:12px 16px;color:#a9bacb;font-size:14px}.advanced-nav button{width:100%;padding-left:24px}.advanced-nav summary:focus-visible{outline:2px solid #21beb8;outline-offset:2px;border-radius:8px}.configure-models:hover{background:#076c77}.configure-models:active{transform:translateY(1px)}.configure-models:focus-visible{outline:3px solid #58b8c0;outline-offset:4px}@media(max-width:700px){.overview-entry{padding:16px}aside nav{flex-wrap:wrap}.advanced-nav{margin:0}.advanced-nav[open]{flex-basis:100%}.overview-entry-tabs>span{flex:1}}
 </style>

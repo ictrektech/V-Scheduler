@@ -34,6 +34,12 @@ curl -i "$GATEWAY/v1/chat/completions" -H "Authorization: Bearer $VOS_TOKEN" -H 
   <pre>{{autoExamples}}</pre>
   <p>{{t('X-VScheduler-Auto-Policy 支持 balanced/fast/quality/economy；X-VScheduler-Auto-Local-Only=true 只能收紧策略。响应头 X-VScheduler-Auto-Model 与 X-VScheduler-Auto-Decision-ID 标识实际选型。工具续轮须使用同一 X-VScheduler-Session-ID，失效返回 409，不静默换模型。')}}</p>
   <p><a href="https://github.com/ictrektech/V-Scheduler/blob/main/docs/auto-routing.md" target="_blank" rel="noopener">{{t('Auto 配置与 API 完整指南')}}</a></p>
+  <h3>{{t('模型与上游')}}</h3>
+  <p>{{t('一处配置，VOS 内应用按权限共享使用。')}}</p>
+  <p>{{t('从首页「去配置上游模型」进入统一工作区，按上游或应用来源分组。来源网址、编辑、放行和路由在来源卡片中，能力、接口和预算在模型设置中；下载和更新位于权重管理。手动添加上游或单个模型为持久配置，不需要心跳。')}}</p>
+  <h3>{{t('原生 Provider')}}</h3>
+  <p>{{t('protocol=pi 复用 pi-ai 1.1.0 处理厂商协议与鉴权；provider 选择原生供应商，provider_credentials 为仅写入的私有凭据，可填写区域、项目及已授权 OAuth 凭据。原生模式对外仍提供 Chat Completions、Responses 和 Messages，不增加容器或端口。旧透明代理、Ollama、Jev 和业务适配保留；目录外模型与供应商扩展仍可使用原有协议。')}}</p>
+  <pre>{"name":"DeepSeek Native","kind":"cloud","base_url":"https://api.deepseek.com","protocol":"pi","provider":"deepseek","api_key":"&lt;provider-key&gt;","visibility":"private"}</pre>
   <h3>{{t('Provider 与模型能力')}}</h3>
   <p>{{t('上游页面可选厂商预设或自定义中转地址，测试后勾选要导入的模型。模型能力和接口使用复选框；普通聊天上游缺失声明时默认 chat / completion 与 chat_completions，Anthropic 默认 messages。显式接口优先，图片、语音、向量和决策模型不会自动声明为聊天；tools 和 vision 必须按真实能力勾选。')}}</p>
   <p>{{t('Ollama 模型通过 /api/show 自动读取 completion、vision、tools、thinking、embedding、decision 等实际能力，内置实例与手动添加的实例使用同一逻辑。旧版 OpenAI 兼容配置通过 /api/version 识别；读取失败保留已有信息。手动修改后刷新不会覆盖，点击「重新识别上游能力」可恢复自动识别。')}}</p>
@@ -42,10 +48,14 @@ curl -i "$GATEWAY/v1/chat/completions" -H "Authorization: Bearer $VOS_TOKEN" -H 
   <p><code>POST http://v-scheduler:8080/v1/systemone</code> · <code>http://{{locationHost}}:22888/v1/systemone</code></p>
   <p>{{t('局域网端口以安装配置为准。同域入口为 /api/com.ictrek.v-scheduler/v1/systemone；鉴权沿用本人 VOS token 或网关 Key，受限应用凭据保留原白名单。供应商密钥保存在网关，请求仅重写模型 ID，保留 state、questions、assets、功能头及原生 answers、概率、置信度和 usage；不支持 SSE。')}}</p>
   <h3>{{t('模型注册 API 与自动能力识别')}}</h3>
-  <p>{{t('POST /api/v1/registrations 支持 ollama、typesafe 及现有协议。Ollama 可省略 models 自动发现，也可用 model 或 models 指定子集；两种方式均读取 /api/show，自动识别 vision、tools、thinking、embedding、rerank、decision。能力与接口覆盖顺序为自动识别、顶层 capabilities/endpoints、models 内逐模型声明、model_capabilities/model_endpoints 映射；后者优先，声明能力而未声明接口时重新推断接口，避免专用模型误带聊天接口。普通聊天无声明默认 Chat Completions；Jev 为 decision/systemone。心跳只续租；模型或能力变更时使用相同 service_id 重新注册。')}}</p>
+  <p>{{t('POST /api/v1/registrations 支持 ollama、typesafe 及现有协议。Ollama 可省略 models 自动发现，也可用 model 或 models 指定子集；两种方式均读取 /api/show，自动识别 vision、tools、thinking、embedding、rerank、decision。能力与接口覆盖顺序为自动识别、顶层 capabilities/endpoints、models 内逐模型声明、model_capabilities/model_endpoints 映射；后者优先，声明能力而未声明接口时重新推断接口，避免专用模型误带聊天接口。普通聊天无声明默认 Chat Completions；Jev 为 decision/systemone。心跳维护服务在线状态，失联后自动移除，完整注册快照心跳支持自动恢复；模型或能力变更时使用相同 service_id 重新注册。')}}</p>
   <p>{{t('能力和接口数组省略或为空时保留自动识别或默认值；注册只声明模型，不自动授予资源预算、执行器审批或强制放行权限。')}}</p>
-  <pre>{"service_id":"my-ollama","protocol":"ollama","base_url":"http://my-ollama:11434/v1","models":[{"id":"qwen3.5:2b"},{"id":"bge-m3:latest"}],"ttl_seconds":90}</pre>
+  <pre>{"service_id":"my-ollama","protocol":"ollama","base_url":"http://my-ollama:11434/v1","models":[{"id":"qwen3.5:2b"},{"id":"bge-m3:latest"}],"heartbeat_timeout_seconds":90}</pre>
   <p><code>POST http://v-scheduler:8080/api/v1/registrations</code> · <code>POST /api/com.ictrek.v-scheduler/api/v1/registrations</code></p>
+  <h3>{{t('服务心跳与自动移除')}}</h3>
+  <p>{{t('手动上游与单模型是持久配置，不会过期。主动发现服务不可用时自动移除；程序注册服务按 heartbeat_after_seconds 发送心跳，heartbeat_timeout_seconds 默认 90 秒，兼容 ttl_seconds。healthy=false 立即下线；携带完整注册快照的心跳可在短暂掉线或网关重启后自动恢复。目录下线不释放运行中的资源，仍需停止确认。')}}</p>
+  <p><code>POST /api/v1/registrations/{id}/heartbeat</code></p>
+  <pre>{"service_id":"my-worker","base_url":"http://my-worker:8000/v1","protocol":"chat_completions","model":"my-model","heartbeat_timeout_seconds":90,"healthy":true}</pre>
   <h3>{{t('应用和模型自动发现')}}</h3>
   <p>{{t('安装支持的应用后，网关会按发现间隔读取其可用模型与服务。内置三个 Ollama 由本应用直接接入；其他应用支持 Image Studio、V-Voice、V-Music、ML Server 和视频结构化服务。')}}</p>
   <p>{{t('V-Voice 就绪后会主动接入调度器，自动绑定已校准的执行器与模型映射。外部云端服务可在上游页面配置。')}}</p>
@@ -89,6 +99,8 @@ curl -i "$GATEWAY/v1/chat/completions" -H "Authorization: Bearer $VOS_TOKEN" -H 
   <p>{{t('通过推理服务的 metadata.model_bindings 将后端模型名称关联到仓库模型 ID。状态页统一显示权重、网关路由、后端健康与调度绑定，并说明不可调用原因；配置就绪不代表当前资源一定可用。')}}</p>
   <p><code>GET /api/v1/model-lifecycle</code> · <code>{"metadata":{"model_bindings":{"served-name":"hf://org/repo"}}}</code></p>
   <p>{{t('这些接口属于网关：容器内使用 http://v-scheduler:8080，宿主机使用上表的网关映射端口。驻留设置和完整接入状态需要管理员身份。')}}</p>
+  <h3>{{t('诊断日志')}}</h3>
+  <p>{{t('认证过期和请求重试在后台自动恢复，主界面保留已加载内容；技术事件在「高级管理 → 诊断日志」查看。应用使用 VOS 桥接刷新凭据，日志只保存当前浏览器会话的安全事件码，不保存 token、密钥或原始响应。')}}</p>
   <h3>{{t('开发文档')}}</h3>
   <p><a href="https://github.com/ictrektech/V-Scheduler/blob/main/docs/application-integration.md" target="_blank" rel="noopener">{{t('应用接入指南')}}</a> · <a href="https://github.com/ictrektech/V-Scheduler/blob/main/docs/integration-standard.md" target="_blank" rel="noopener">{{t('公开 API 与接入标准')}}</a> · <a href="https://github.com/ictrektech/V-Scheduler/blob/main/docs/unified-application.md" target="_blank" rel="noopener">{{t('统一应用说明')}}</a></p>
  </article>
