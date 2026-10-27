@@ -636,3 +636,5 @@ V-YuE2 0.0.5 [发布工作流](https://github.com/ictrektech/v-YuE2/actions/runs
 原始证据保存在各测试机 `~/dev/build/V-Scheduler/business-20261027/client-tests/`，包括 `business-results.json`、独立功能结果、调度采样、恢复与清理审计；本地脱敏汇总位于 `~/dev/build/V-Scheduler/business-20261027/{192,229,232}/`。历史失败记录保留，以最新对应版本及原配置复测为准。
 
 最终三机审计：原模型放行设置已恢复，原生计算槽为零、队列为空、suspect 为零，四个原生执行应用心跳新鲜，无活动应用执行，测试驻留许可已全部释放。232 最终检测到 Harness 0.1.12，已补跑该正式安装版本的普通与非空 SSE 调用及权限隔离，结果通过。
+
+V-Sub 后续完整 [CI 40463130778](https://github.com/ictrektech/V-Sub/actions/runs/40463130778) 成功，覆盖 i18n、四组 TypeScript 类型检查、全部配置/字幕/引擎/崩溃等测试以及 renderer + main 编译；远端完整崩溃回归 23 个套件通过。测试修正仅涉及既有断言和汇总标签，不改变 0.0.15 已发布运行时代码。
