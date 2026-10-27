@@ -583,3 +583,16 @@ AMD Rust 127 项、ARM Rust 129 项通过，各 1 项既有忽略。版本升级
 - 中英文 VAI 使用指南原位更新 V-Scheduler 章节，替换原各 10 张截图，另各增 Provider/诊断日志 2 张，全部来自 0.0.79 已安装界面。截图中配置表单未保存，也未触发下载/计算；所有原文块保留，图片 token 和新增章节完成回读核对。其他应用的版本基线未冒称本轮重新验证。
 
 本轮完整证据在 `~/dev/build/V-Scheduler/provider-release-20261027/`：各机 `verification.json`、`auth-browser-evidence.json`、`live-test.log`，本机包验证、CI 日志与 `feishu/` 更新日志、双语截图。真实付费账户接入验收针对 DeepSeek；其他 Provider 的协议/签名/OAuth 路径使用隔离测试，不宣称所有供应商账号均已实测。
+
+
+## V-Voice 新版本绑定地址回归（2026-10-27，0.0.80）
+
+根因是按枚举版本选择调度地址，新版 0.0.30 落入旧 `v-router` 分支。207 的真实现场为 V-Voice 0.0.30 / L4T、Scheduler 0.0.77；Voice 已接受 revision 2，待下发 revision 3 使用错误旧地址并被返回 422。
+
+- 红绿回归：未修复代码在 0.0.30 上失败；修复后 0.0.30、0.0.31、0.1.0、1.0.0 保持正式 `v-scheduler` 地址、身份、模型与资源映射。显式版本校准限制仍拒绝未批准版本，错误版本仍拒绝。ARM 后端完整 159 项通过，包含隔离 PostgreSQL 和真实 Ollama 元数据测试，0 忽略；本次未修改前端。
+- 正式发布：Actions 40445641209 的 release/appstore 均成功；安装包 SHA-256 `0868032c7f4bfe5e0f2eb71341a6d2f053c1103070d7ec5e8f2b8acc76898f61`，包结构、版本与占位符检查通过。ARM 镜像 digest `cff9a881e700ca60419a19eb832996ebefa31283358781098ebc8610960b8199`，AMD digest `85609415b3ac04fac7e3fce23684fcbcb967e76a7deb310cb54b0abcaad75551`。
+- 192 / 207 / 229 / 232 均通过 VOS 正式升级至 0.0.80，依次保留 l4t / l4t / thor-spark / amd profile 与公共模型目录；安装运行镜像 digest 与发布值逐机一致。V-Voice 未重装、未降级，207 保持 0.0.30，其余保持当时安装的 0.0.29。
+- 四机各完成 SenseVoice 直连 API 和统一网关 ASR，共 8 次真实请求，均 HTTP 200 且识别合成短句关键词正确；观察到实际调度许可，测试后卸载本次加载模型并确认许可释放。207 自动接受正式地址 revision 4；错误旧地址仍返回 422 且不改变已接受 revision。
+- 192 / 229 / 232 的 Image Studio、脱敏、V-Sub 均完成当前完整绑定的原 revision 幂等 POST 回验，未更换应用身份或手改令牌；232 的 V-YuE2 同项通过。229 的 V-YuE2 没有获批模型和有效绑定，未把它冒称为业务调用通过；本轮不新增模型审批。其他应用现有兼容地址继续保留，这些绑定回验不等同重新测试它们所有业务功能。
+
+原始证据：测试机 `~/dev/build/V-Scheduler/voice-binding-20261027/` 下的 `verification.json`、`after80.log` 和完整测试日志；VOS 升级任务及目录对比保存在 `provider-release-20261027/app-upgrades/`。
