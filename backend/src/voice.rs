@@ -17,6 +17,22 @@ const APP: &str = "com.ictrek.v-voice";
 const ORIGIN: &str = "http://v-voice-backend:7070";
 const UPSTREAM: &str = "http://v-voice-backend:7070/v1";
 const URL: &str = "http://v-router:8080/scheduler/api/v1";
+const CANONICAL_URL: &str = "http://v-scheduler:8080/scheduler/api/v1";
+
+fn binding_controller_url(contract: &Value) -> anyhow::Result<&'static str> {
+    if contract["capabilities"].as_array().is_some_and(|items| items.iter().any(|v|v=="canonical-v-scheduler-v1")) {
+        return Ok(CANONICAL_URL);
+    }
+    // Only the pre-0.0.22 wire contract used the compatibility alias. New
+    // versions keep the canonical address without extending an allowlist.
+    let Some(version)=contract.get("_application_version") else {return Ok(URL)};
+    let version=version.as_str().context("invalid installed V-Voice version")?;
+    let core=version.split(['-','+']).next().unwrap_or("");
+    let parts=core.split('.').map(str::parse::<u64>).collect::<Result<Vec<_>,_>>()?;
+    ensure!(parts.len()==3,"invalid installed V-Voice version");
+    Ok(if (parts[0],parts[1],parts[2]) >= (0,0,22) {CANONICAL_URL}else{URL})
+}
+
 
 #[derive(Default)]
 struct Overlays {
@@ -502,10 +518,7 @@ fn build_for_node(
             );
         }
     }
-    // 0.0.22 仅改变安装地址，复用经核验的 0.0.21 原生镜像。
-    let controller_url = if ["0.0.22", "0.0.23", "0.0.24", "0.0.25", "0.0.26", "0.0.27", "0.0.28", "0.0.29"].contains(&contract["_application_version"].as_str().unwrap_or("")) {
-        "http://v-scheduler:8080/scheduler/api/v1"
-    } else { URL };
+    let controller_url = binding_controller_url(contract)?;
     let mut state = json!({"credential_epoch":epoch,"binding":{"protocol_version":1,"binding_revision":1,"app_id":APP,"url":controller_url,"token":token,"executor_token":executor_token,"upstream_url":UPSTREAM,"models":models,"gateway_executors":gateway_executors,"secondary_models":secondary_models},
         "principals":[{"token":token,"role":"submitter","app_id":APP,"permit_executors":gateway_ids},{"token":gateway_token,"role":"submitter","app_id":"v-scheduler.voice-gateway"}],
         "executors":executors,"adapters":adapters,
@@ -841,6 +854,32 @@ mod tests {
         assert_eq!(latest["executors"], after["executors"]);
         contract["_application_version"] = json!("0.0.28");
         assert_eq!(build(&runtime, &contract, &approvals, Some(&latest)).unwrap(), latest);
+    }
+
+    #[test]
+    fn future_voice_versions_keep_the_canonical_binding_without_reapproving_resources() {
+        let (runtime, mut contract, approvals) = fixtures();
+        contract["_application_version"] = json!("0.0.29");
+        let baseline = build(&runtime, &contract, &approvals, None).unwrap();
+        for version in ["0.0.30", "0.0.31", "0.1.0", "1.0.0"] {
+            contract["_application_version"] = json!(version);
+            let next = build(&runtime, &contract, &approvals, Some(&baseline)).unwrap();
+            assert_eq!(next["binding"]["url"], "http://v-scheduler:8080/scheduler/api/v1", "new version {version} must not fall back to a legacy address");
+            assert_eq!(next, baseline, "an application version alone must not change approved resources or identity");
+        }
+    }
+
+    #[test]
+    fn address_compatibility_does_not_grant_uncalibrated_versions() {
+        let (runtime, mut contract, mut approvals)=fixtures();
+        approvals["approvals"][0]["application_versions"]=json!(["0.0.29"]);
+        contract["_application_version"]=json!("0.0.30");
+        assert_eq!(binding_controller_url(&contract).unwrap(),CANONICAL_URL);
+        assert!(build(&runtime,&contract,&approvals,None).is_err());
+        contract["_application_version"]=json!("invalid");
+        assert!(binding_controller_url(&contract).is_err());
+        contract["capabilities"]=json!(["canonical-v-scheduler-v1"]);
+        assert_eq!(binding_controller_url(&contract).unwrap(),CANONICAL_URL);
     }
 
     #[test]
