@@ -621,7 +621,7 @@ AMD Rust 127 项、ARM Rust 129 项通过，各 1 项既有忽略。版本升级
 | ChatCut | 0.0.30 | 通过 | 通过 | 通过 | 普通请求及 SSE 非空内容，复用驻留预算，空闲卸载释放 |
 | Harness | 192/229: 0.1.11；232: 0.1.12 | 通过 | 通过 | 通过 | VOS 用户代理、模型发现、普通及 SSE 非空内容；无效凭据 401、越权管理 403 |
 | V-Sub | 0.0.15 | 通过，保留 auto | 通过，保留 gpu-only | 通过，保留 cpu-only | 原设置下直连/网关 ASR、输入及参数拒绝、业务取消、调度停止与原生退出证明、worker generation 恢复后再次识别 |
-| V-YuE2 | 229/232: 0.0.5 | 未安装 | 未批准模型，未声称生成通过 | 通过，两轮 | 原生 10 秒音乐生成、有效非静音浮点 WAV、生成后立即读取音频、许可与原生进程退出 |
+| V-YuE2 | 229/232: 0.0.5 | 未安装 | 后续 0.0.82 补齐并通过，见下文 | 通过，两轮 | 原生 10 秒音乐生成、有效非静音浮点 WAV、生成后立即读取音频、许可与原生进程退出 |
 
 192 的完整 HybRAG 流程在其他构建进程退出后连续两轮通过，最低可用内存约 2100 / 2303 MiB；未降低 1 GiB 系统预留或更改原 ML Server 预加载设置。临时 QA 使用现有 qwen3.5:0.8b CPU 路径，其余组件沿用既有模型；用户默认模型不变，临时模型配置、测试知识库及会话已删除。这不是对所有模型、所有并发负载的性能保证。
 
@@ -648,4 +648,12 @@ V-Sub 后续完整 [CI 40463130778](https://github.com/ictrektech/V-Sub/actions/
 
 200 ms 采样得到 cgroup 峰值约 1084 MiB、整机 MemAvailable 最大下降 6485 MiB，两者保守相加为 7569 MiB（可能重叠），CPU 峰值约 1351 millicores。批准预算为 2000 millicores、10240 MiB 统一内存；`gpu_memory_mib: 0`，不再独立重复计入同一 GPU 统一内存。只覆盖该实测模型/引擎/参数和上述边界。
 
-新增 ARM 回归在补入审批前为红例，补入后 10 项应用绑定测试通过，覆盖实际架构/profile/hardware/runtime 匹配、统一内存不重复预算、版本变化保留绑定、未测参数和硬件不匹配拒绝。测量与私有原始证据位于229 `~/dev/build/v-YuE2/calibration-229-20261027/`；正式安装应用复测和发行结果另记。
+新增 ARM 回归在补入审批前为红例，补入后 10 项应用绑定测试通过，覆盖实际架构/profile/hardware/runtime 匹配、统一内存不重复预算、版本变化保留绑定、未测参数和硬件不匹配拒绝。测量与私有原始证据位于229 `~/dev/build/v-YuE2/calibration-229-20261027/`；正式安装验收已完成：
+
+- [0.0.82 发布工作流](https://github.com/ictrektech/V-Scheduler/actions/runs/40467626219) 的 Release / App Store 均成功；包 SHA-256 `e7ac69fd6af8d4fc73a2352a59c337b404eddcfe4b2556ee44fce274a23a6c2f`。ARM / AMD 镜像 digest 为 `89664b545c82e100fcb732c26db423b06be91c56e3e141de9e7d0dd8bf64df61` / `d85b2dd275e6294b57bf9fcdccfa44fe6c9e9adcedbe6b68390f7fb8ea0da409`，均已发布并回读飞书；ARM、AMD 应用绑定回归各 10 项通过。
+- 229 经 VOS 正式升级至 Scheduler 0.0.82，保留 `thor-spark`、公共目录和节点原预算/基线。v-YuE2 保持 0.0.5。校验安装镜像及其内置 Thor 审批后删除本轮临时 `/config/app-approvals.json`，后续测试完全使用发行版内置校准。三份共享权重均逐文件核对 pinned SHA-256。
+- 正式应用经 V-Scheduler 实际生成两次：10 秒约耗时 10.48 秒，120 秒 / 32 步 / 64 KiB 最大请求约耗时 110.07 秒；得到约 9.9987 / 119.9987 秒的有效非静音 float WAV，样本全部有限，音频读取成功。观察到真实调度许可，目标直通关闭。自有歌曲、任务和输出均删除。
+- 正式容器保留原 8 CPU 上限，最大输入复测观测 CPU 峰值约 1204 millicores，cgroup 峰值约 3205 MiB、整机可用内存下降 4115 MiB，保守合计 7320 MiB，未超出 2 vCPU / 10 GiB 审批，CPU throttling 为零。此项补验正式配额下的实际执行，不依赖隔离容器的 4 CPU 上限。
+- 最终自动绑定已接受 revision 4、批准模型数 1，应用心跳新鲜；原生进程与 lease journal 均不存在，无活动计算、排队或 suspect，放行设置恢复。临时校准容器已删除、接入已注销、执行器已禁用、服务身份已吊销，全部 8 份探测许可释放；不保留可调用的校准控制入口。
+
+最终证据：229 `~/dev/build/v-YuE2/calibration-229-20261027/{acceptance-final,builtin-proof,model-proof,cleanup-proof}.json`，以及 `business-20261027/client-tests/{yue2-functional,yue2-max-functional,yue2-max-production-measurement,final-audit}.json`。
