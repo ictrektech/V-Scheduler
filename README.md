@@ -8,6 +8,8 @@
 
 [HybRAG 后台网关身份](docs/hybrag-gateway-identity.md) 使用同 VOS 可信交接和独立推理凭据；不使用 Scheduler submitter token 代替网关 key，不授予管理权限。新 Voice 输入边界见其接入文档。
 
+Orin / L4T 的 V-Voice `0.0.30` 新增 Qwen3-ASR 0.6B 独立实测审批：单次 20 秒、16 kHz、1 MiB、无热词，预约 4500m CPU、5 GiB 统一内存和一个 GPU 槽。仅匹配已测运行配置，不批准 1.7B、联合声纹或其他设备，详见 [Voice 接入](docs/v-voice-auto-binding.md)。
+
 [Music / Desensitize / Image Studio 可信绑定](docs/application-auto-binding.md) 按实测运行设置、模型参数和输入限额接入调度；清单包含 Thor MusicGen-small / SD-Turbo、AMD MusicGen-small，以及 AMD / Thor / L4T Desensitize NER/OCR 的独立实测预算。各模型仅在完整运行设置与输入范围匹配时接入，具体真实业务验收见文档。
 
 校准的 Ollama 请求在未显式提供 `options.num_predict` 时，沿用本次 `max_tokens`，不会扩成模型批准上限。

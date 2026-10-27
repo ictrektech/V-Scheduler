@@ -103,6 +103,19 @@ Paraformer。`0.0.22` 仅迁移安装地址，复用已核验的 `0.0.21` 六个
 
 ## 原生模型输入边界
 
+### 207 Orin Qwen3-ASR 0.6B（2026-10-27）
+
+新增 `orin-qwen3-asr-06b-bounded-v1`，仅匹配 V-Voice `0.0.30`、aarch64 Orin 统一内存、
+CUDA、`cpu_models=["paraformer-zh"]`、线程 4、推理并发 2。独立预约 4500m CPU、
+5120 MiB RAM、GPU 槽 1，不重复计独立显存。输入为 20 秒、16 kHz、1 MiB，热词为 0。
+不批准 Qwen3-ASR 1.7B、翻译或联合声纹，也不复用 SenseVoice 的预算。
+
+真实隔离容器完成 5 秒及两轮 20 秒原生识别，采样 cgroup 峰值 3191 MiB、宿主可用内存
+下降 3799 MiB；预约增加超过 25% 的余量。正常退出和模型加载后取消均确认容器停止再
+释放真实许可。证据编号 `voice-tc207-qwen3-asr-20261027`，输入范围、运行时哈希和许可
+编号保存在校准清单中。此记录需要 V-Voice 同时支持 Qwen3 的 Go/Python 输入校验；
+旧版应用仅下载了模型时，不能把文件就绪当成推理已获准。
+
 新清单增加 192 Orin / CUDA 与 232 RTX 5880 宿主 / CPU provider 的原生 Kokoro、SenseVoice 实测记录，其他模型或组合不能借用这些记录。
 
 新记录要求 discovery 声明 `input_limits_version=1`，并为每个就绪且获批准的模型下发 `binding.model_limits`。旧客户端没有该能力时不匹配这些新记录；原有 Thor 兼容记录保留既有行为。新客户端在直接 API 与网关认领路径实际模型装载前校验边界。
