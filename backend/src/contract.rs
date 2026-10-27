@@ -6,6 +6,19 @@ use axum::{
 };
 use serde_json::{Value, json};
 use uuid::Uuid;
+pub async fn confirm_application_binding(mut response: reqwest::Response, revision: &Value) -> anyhow::Result<()> {
+    anyhow::ensure!(response.status().is_success(), "application binding pending acceptance");
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response.chunk().await? {
+        anyhow::ensure!(bytes.len().saturating_add(chunk.len()) <= 262144, "application binding receipt exceeds bound");
+        bytes.extend_from_slice(&chunk);
+    }
+    let receipt: Value = serde_json::from_slice(&bytes)?;
+    let receipt = receipt.get("data").unwrap_or(&receipt);
+    let expected = revision.as_u64().filter(|revision| *revision > 0);
+    anyhow::ensure!(expected.is_some() && receipt["configured"] == true && receipt["binding_revision"].as_u64() == expected, "application binding pending acceptance");
+    Ok(())
+}
 pub fn code(status: StatusCode) -> &'static str {
     match status.as_u16() {
         400 | 422 => "INVALID_REQUEST",
@@ -45,6 +58,20 @@ pub fn failure(status: StatusCode, code: &str, message: &str, legacy_detail: boo
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn binding_receipt_requires_the_current_revision_and_configuration() {
+        fn response(status: u16, body: Value) -> reqwest::Response {
+            axum::http::Response::builder().status(status).body(body.to_string()).unwrap().into()
+        }
+        for body in [json!({}), json!({"configured":false,"binding_revision":4}), json!({"configured":true,"binding_revision":3}), json!({"configured":true,"binding_revision":"4"}), json!({"data":{"configured":false,"binding_revision":4}})] {
+            assert!(confirm_application_binding(response(200, body), &json!(4)).await.is_err(), "HTTP success alone must not mark an application ready");
+        }
+        for body in [json!({"configured":true,"binding_revision":4}), json!({"data":{"configured":true,"binding_revision":4}})] {
+            assert!(confirm_application_binding(response(200, body), &json!(4)).await.is_ok());
+        }
+        assert!(confirm_application_binding(response(422, json!({"configured":true,"binding_revision":4})), &json!(4)).await.is_err());
+        assert!(confirm_application_binding(response(200, json!({"configured":true})), &Value::Null).await.is_err());
+    }
     #[test]
     fn matches_shared_status_contract() {
         let spec: Value =

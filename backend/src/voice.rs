@@ -756,10 +756,8 @@ async fn reconcile(path: &Path, runtime: &Runtime, db: &PgPool) -> anyhow::Resul
         .json(&state["binding"])
         .send()
         .await?;
-    ensure!(
-        response.status().is_success(),
-        "application binding temporarily rejected"
-    );
+    crate::contract::confirm_application_binding(response, &state["binding"]["binding_revision"])
+        .await.context("application binding temporarily rejected")?;
     Ok(())
 }
 

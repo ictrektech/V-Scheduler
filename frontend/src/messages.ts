@@ -269,6 +269,7 @@ export const messages:Record<string,[string,string]>={
 "应用和模型自动发现":["Application and model discovery", "應用和模型自動發現"],
 "安装支持的应用后，网关会按发现间隔读取其可用模型与服务。当前支持 Model Hub、Image Studio、V-Voice、V-Music、ML Server 和视频结构化服务。":["The gateway discovers available models and services from supported installed apps at the configured interval: Model Hub, Image Studio, V-Voice, V-Music, ML Server, and Video Structure.", "安裝支援的應用後，閘道會依發現間隔讀取其可用模型與服務。目前支援 Model Hub、Image Studio、V-Voice、V-Music、ML Server 和影片結構化服務。"],
 "V-Voice 就绪后会主动接入调度器，自动绑定已校准的执行器与模型映射。外部云端服务可在上游页面配置。":["Once ready, V-Voice connects to the scheduler and automatically binds calibrated executors and model mappings. Configure external cloud services on the Upstreams page.", "V-Voice 就緒後會主動接入調度器，自動綁定已校準的執行器與模型映射。外部雲端服務可在上游頁面設定。"],
+"自动绑定必须收到 configured=true 且 binding_revision 与当前下发版本一致的回执；HTTP 200 或绑定文件存在不代表已接入。应用升级或重启后自动重试，原身份和资源校准继续核验。":["Automatic binding requires configured=true and a binding_revision matching the current offer. HTTP 200 or an existing binding file alone does not confirm integration. Upgrades and restarts retry automatically while preserving identity and checking calibrated resources.", "自動繫結必須收到 configured=true 且 binding_revision 與目前下發版本一致的回執；HTTP 200 或繫結檔案存在不代表已接入。應用升級或重新啟動後自動重試，原身分和資源校準繼續核驗。"],
 "统一应用说明":["Unified application guide", "統一應用說明"],
 '执行器':['Executor','執行器'],
 "加载更早任务":["Load older tasks", "載入更早任務"],

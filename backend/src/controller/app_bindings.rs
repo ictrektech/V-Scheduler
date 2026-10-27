@@ -661,10 +661,7 @@ async fn reconcile(
             .json(&state["binding"])
             .send()
             .await?;
-        ensure!(
-            response.status().is_success(),
-            "application binding pending acceptance"
-        );
+        crate::contract::confirm_application_binding(response, &state["binding"]["binding_revision"]).await?;
     }
     Ok(())
 }
@@ -740,6 +737,31 @@ pub(super) fn start(shared: SharedApp, configuration: PathBuf) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn application_version_changes_preserve_the_measured_contract() {
+        let capacity = Resources { cpu_millicores: 8000, memory_mib: 16000, ..Default::default() };
+        for app in APPLICATIONS.iter().copied().filter(|app| app.slug != "v-music") {
+            let profile = if app.slug == "desensitize" { "thor-spark" } else { "thor" };
+            let task_type = if app.asynchronous { "image.generate" } else { "model.infer" };
+            let list = if app.asynchronous { "async_models" } else { "sync_models" };
+            let mut contract = json!({"protocol_version":1,"app_id":app.id,"executor_base_url":app.origin,"upstream_url":upstream(app),"binding_endpoint":"/api/v1/scheduler/binding","execution_settings":{"runtime":"fixture"}});
+            contract[list] = json!([{"id":"fixture-model","task_type":task_type}]);
+            let approvals = json!({"protocol_version":1,"credential_epoch":1,"approvals":[{"app_id":app.id,"architecture":std::env::consts::ARCH,"profile":profile,"hardware":[],"execution_settings":contract["execution_settings"],"model_id":"fixture-model","task_type":task_type,"resources":{"cpu_millicores":1000,"memory_mib":1024},"evidence":{"id":"unit-only","peak_memory_mib":512,"confirmed_stopped":true},"max_input_bytes":8192,"model_limits":{"input_bytes":8192,"duration_seconds":1,"steps":1,"prompt_characters":100,"lyrics_characters":100},"model_parameters":{"backend":"fixture"}}]});
+            let first = build(app,"node",&capacity,&Resources::default(),profile,&json!({}),&contract,&approvals,None).unwrap();
+            assert!(!first["binding"]["models"].as_object().unwrap().is_empty());
+            for version in ["0.0.99", "0.1.0", "1.0.0"] {
+                contract["application_version"] = json!(version);
+                contract["_application_version"] = json!(version);
+                assert!(declaration(app, &json!({"version":version,"scheduler":contract})).is_ok());
+                let next = build(app,"node",&capacity,&Resources::default(),profile,&json!({}),&contract,&approvals,Some(&first)).unwrap();
+                assert_eq!(next, first, "{} version {} changed its identity, address or budget", app.slug, version);
+            }
+            contract["execution_settings"]["runtime"] = json!("uncalibrated");
+            let changed = build(app,"node",&capacity,&Resources::default(),profile,&json!({}),&contract,&approvals,Some(&first)).unwrap();
+            assert!(changed["binding"]["models"].as_object().unwrap().is_empty(), "a version upgrade must not authorize changed execution settings");
+        }
+    }
 
     #[test]
     fn fixed_image_threads_do_not_pin_approval_to_host_core_count() {

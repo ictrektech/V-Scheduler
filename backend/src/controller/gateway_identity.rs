@@ -141,21 +141,15 @@ async fn reconcile(configuration: &Path, client: &reqwest::Client) -> anyhow::Re
     // Activate the new digest before handing the key to its sole fixed owner.
     // A lost callback response is retried with the same persisted revision/key.
     save_private(&gateway, &snapshot(&binding, true)?)?;
-    let acknowledgement = bounded_json(
+    let response =
         client
             .post(format!("{ORIGIN}{ENDPOINT}"))
             .bearer_auth(token.trim())
             .json(&binding)
             .send()
-            .await?,
-    )
-    .await?;
-    let acknowledgement = acknowledgement.get("data").unwrap_or(&acknowledgement);
-    ensure!(
-        acknowledgement["configured"] == true
-            && acknowledgement["binding_revision"] == binding["binding_revision"],
-        "HybRAG gateway identity pending acceptance"
-    );
+            .await?;
+    crate::contract::confirm_application_binding(response, &binding["binding_revision"])
+        .await.context("HybRAG gateway identity pending acceptance")?;
     Ok(())
 }
 pub(super) fn start(configuration: PathBuf) {

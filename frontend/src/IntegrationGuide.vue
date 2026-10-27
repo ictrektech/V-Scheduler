@@ -59,6 +59,7 @@ curl -i "$GATEWAY/v1/chat/completions" -H "Authorization: Bearer $VOS_TOKEN" -H 
   <h3>{{t('应用和模型自动发现')}}</h3>
   <p>{{t('安装支持的应用后，网关会按发现间隔读取其可用模型与服务。内置三个 Ollama 由本应用直接接入；其他应用支持 Image Studio、V-Voice、V-Music、ML Server 和视频结构化服务。')}}</p>
   <p>{{t('V-Voice 就绪后会主动接入调度器，自动绑定已校准的执行器与模型映射。外部云端服务可在上游页面配置。')}}</p>
+  <p>{{t('自动绑定必须收到 configured=true 且 binding_revision 与当前下发版本一致的回执；HTTP 200 或绑定文件存在不代表已接入。应用升级或重启后自动重试，原身份和资源校准继续核验。')}}</p>
   <p>{{t('V-Voice 0.0.27 保留 ONNX、声纹与 audio.cpp GGUF，移除四个 PyTorch 原生音乐模型；绑定以实际就绪模型和匹配审批为准。')}}</p>
   <h3>{{t('节点、应用、预算与停止的统一流程')}}</h3>
   <p>{{t('节点遥测由 VOS App 内置组件自动上报；应用登记已批准的执行器并定时心跳，停止请求经原生退出及权重卸载核验后释放预约。')}}</p>

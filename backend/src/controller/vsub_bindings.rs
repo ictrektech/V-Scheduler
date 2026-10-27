@@ -324,20 +324,15 @@ async fn reconcile(
         .as_object()
         .is_some_and(|m| !m.is_empty())
     {
-        let acknowledgement = bounded_json(
+        let response =
             client
                 .post(format!("{ORIGIN}/api/v1/scheduler/binding"))
                 .bearer_auth(context.trim())
                 .json(&state["binding"])
                 .send()
-                .await?,
-        )
-        .await?;
-        ensure!(
-            acknowledgement["configured"] == true
-                && acknowledgement["binding_revision"] == state["binding"]["binding_revision"],
-            "private broker binding pending acceptance"
-        );
+                .await?;
+        crate::contract::confirm_application_binding(response, &state["binding"]["binding_revision"])
+            .await.context("private broker binding pending acceptance")?;
     }
     Ok(())
 }
@@ -449,6 +444,11 @@ mod tests {
         assert_eq!(next["binding"]["url"], CONTROLLER);
         assert_eq!(next["binding"]["token"], first["binding"]["token"]);
         assert_eq!(next["binding"]["binding_revision"], 2);
+        for version in ["0.0.99", "0.1.0", "1.0.0"] {
+            discovery["version"] = json!(version);
+            let repeated = build("local", &cap, &Resources::default(), &json!({"gpus":[]}), "l4t", &discovery, &approvals, Some(&next)).unwrap();
+            assert_eq!(repeated, next, "a package version change must not churn an unchanged worker contract");
+        }
     }
 
     #[test]
