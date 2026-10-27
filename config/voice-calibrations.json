@@ -789,6 +789,74 @@
         },
         "subjective_audio_quality_assessed": false
       }
+    },
+    {
+      "id": "orin-qwen3-asr-06b-bounded-v1",
+      "architecture": "aarch64",
+      "hardware": [
+        {
+          "name": "Orin (nvgpu)",
+          "memory_type": "unified"
+        }
+      ],
+      "provider": "cuda",
+      "cpu_models": [
+        "paraformer-zh"
+      ],
+      "num_threads": 4,
+      "max_concurrent_inference": 2,
+      "application_versions": [
+        "0.0.30"
+      ],
+      "input_limits_version": 1,
+      "resources": {
+        "cpu_millicores": 4500,
+        "memory_mib": 5120,
+        "gpu_slots": 1,
+        "gpu_memory_mib": 0
+      },
+      "max_input_bytes": 1048576,
+      "limits": {
+        "n": 1,
+        "batch_count": 1
+      },
+      "sync_models": [
+        "qwen3-asr-0.6b"
+      ],
+      "async_models": [],
+      "secondary_models": {},
+      "model_limits": {
+        "qwen3-asr-0.6b": {
+          "duration_seconds": 20,
+          "sample_rate": 16000,
+          "hotwords_characters": 0,
+          "input_bytes": 1048576
+        }
+      },
+      "calibration": {
+        "evidence_id": "voice-tc207-qwen3-asr-20261027",
+        "image_id": "sha256:4f08c7e417009bd1d1f40a484ba63aefa464239940dba96cfc87c717c2653d9b",
+        "runtime_source_sha256": "c904ebe4eb564f5f8929085614fff8ef7dcf94eaeb03e7fbb2319d2595e2ca0d",
+        "sherpa_onnx_version": "1.13.8+cuda12.cudnn9.onnxruntime1.18.1",
+        "peak_memory_mib": 3799,
+        "cgroup_peak_mib": 3191,
+        "memory_method": "Maximum of sampled cgroup memory.current and host MemAvailable decrease in the same unified pool; 5120 MiB reservation exceeds the 3799 MiB observed peak by over 25 percent. Normal worker used a real 6144 MiB outer permit and container limit; loaded-model cancellation used a real 5120 MiB permit and container limit. Sample interval 0.5 seconds.",
+        "cpu_ceiling": 4.5,
+        "observed_concurrency": 1,
+        "native_and_container_exit_confirmed": true,
+        "active_cancel_confirmed_stopped": true,
+        "real_permits_released": true,
+        "permit_ids": [
+          "111ec87e-ad3e-4c2e-9a25-c01b09535722",
+          "1d7a032d-a620-4fc9-8a2f-64941c055f42"
+        ],
+        "cases": [
+          "native CUDA Qwen3-ASR 0.6B, 5-second 16kHz mono speech",
+          "two independent native model loads and 20-second transcriptions",
+          "cancel after actual native recognizer load, confirmed container exit before permit release"
+        ],
+        "input_scope": "Single-model transcription only; no hotwords, translation or speaker combination. Does not approve Qwen3-ASR 1.7B or other hardware/runtime settings."
+      }
     }
   ]
 }
