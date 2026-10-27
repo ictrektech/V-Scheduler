@@ -18,7 +18,7 @@ export function groupCatalog(upstreams, models, mode = 'upstream', query = '', t
   const needle = query.trim().toLocaleLowerCase();
   const groups = new Map();
   for (const u of entries.values()) {
-    const matchesSource = [u.name, u.base_url, u.id, sourceLabel(u.source),translate(sourceLabel(u.source))].join(' ').toLocaleLowerCase().includes(needle);
+    const matchesSource = [u.name, translate(u.name || u.id), u.base_url, u.id, sourceLabel(u.source),translate(sourceLabel(u.source))].join(' ').toLocaleLowerCase().includes(needle);
     const rows = !needle || matchesSource ? u.catalogModels : u.catalogModels.filter(m =>
       [m.id, m.qualified, m.kind, ...(m.capabilities || []).flatMap(c=>[c,capabilityLabels[c]||'',translate(capabilityLabels[c]||c)])].join(' ').toLocaleLowerCase().includes(needle));
     if (needle && !matchesSource && !rows.length) continue;

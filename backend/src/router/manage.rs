@@ -98,9 +98,11 @@ fn model_view(r: &Registry, m: &Model, id: &Identity) -> Value {
     v
 }
 fn model_views(r: &Registry, id: &Identity) -> Vec<Value> {
-    let mut rows = r
-        .list_models(id)
-        .iter()
+    // Management needs every source's own model/settings. Only inference discovery
+    // collapses identical qualified IDs into one routable catalog entry.
+    let mut rows = r.upstreams.values()
+        .filter(|u| u.live() && u.visible(id))
+        .flat_map(|u| r.models.get(&u.id).into_iter().flatten())
         .map(|m| model_view(r, m, id))
         .collect::<Vec<_>>();
     rows.extend(business_views(r).1);

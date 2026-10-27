@@ -2070,3 +2070,19 @@ fn unavailable_discovered_builtin_is_hidden_but_readiness_remains_retryable() {
     u.healthy=true;g.registry.lock().unwrap().put(u,vec![model("echo")]);assert_eq!(readiness::snapshot(&g)["backends"]["qa"],"ready");
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[tokio::test]
+async fn management_catalog_keeps_each_upstream_while_inference_deduplicates() {
+    let root=temp();let g=gateway(&root,Router::new());
+    {let mut r=g.registry.lock().unwrap();for key in ["primary","backup"] {let mut u=upstream(key);u.owner="alice".into();u.visibility="private".into();r.put(u,vec![model("same-model")]);}}
+    let request=||axum::http::Request::builder().uri("/api/v1/models").body(Body::empty()).unwrap();
+    let response=manage::handle(&g,&principal("alice"),request()).await.unwrap();
+    let body:Value=serde_json::from_slice(&axum::body::to_bytes(response.into_body(),1<<20).await.unwrap()).unwrap();
+    assert_eq!(body["models"].as_array().unwrap().len(),2);
+    assert!(body["models"].as_array().unwrap().iter().any(|m|m["upstream_id"]=="backup"));
+    assert_eq!(g.registry.lock().unwrap().list_models(&principal("alice")).len(),1);
+    let response=manage::handle(&g,&principal("bob"),request()).await.unwrap();
+    let body:Value=serde_json::from_slice(&axum::body::to_bytes(response.into_body(),1<<20).await.unwrap()).unwrap();
+    assert!(body["models"].as_array().unwrap().is_empty());
+    std::fs::remove_dir_all(root).unwrap();
+}
