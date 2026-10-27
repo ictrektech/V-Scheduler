@@ -1,4 +1,15 @@
 export const messages:Record<string,[string,string]>={
+"未知":["Unknown", "未知"],
+"请选择":["Select a model", "請選擇"],
+"时间":["Time", "時間"],
+"事件":["Event", "事件"],
+"个文件":["files", "個檔案"],
+"READY 仅表示所选范围完成":["READY covers the selected files only", "READY 僅表示所選範圍完成"],
+"暂无本地模型":["No local models", "尚無本機模型"],
+"保存":["Save", "儲存"],
+"跨节点合计，按各节点独立核算":["Totals across nodes; each node is accounted separately", "跨節點合計，各節點獨立核算"],
+"主导航":["Main navigation", "主導覽"],
+
 "服务心跳与自动移除":["Service heartbeats and automatic removal", "服務心跳與自動移除"],
 "从首页「去配置上游模型」进入统一工作区，按上游或应用来源分组。来源网址、编辑、放行和路由在来源卡片中，能力、接口和预算在模型设置中；下载和更新位于权重管理。手动添加上游或单个模型为持久配置，不需要心跳。":["Open Configure providers & models from the overview. Group by provider or source application. Source cards contain URLs, editing, admission and routing; model settings contain capabilities, endpoints and budgets. Downloads and updates are in Model weights. Manual providers and single models are persistent and need no heartbeats.", "從首頁「設定上游模型」進入統一工作區，依上游或應用來源分組。來源卡片提供網址、編輯、放行與路由，模型設定提供能力、介面與預算；下載與更新位於權重管理。手動新增上游或單模型為持久設定，不需心跳。"],
 "protocol=pi 复用 pi-ai 1.1.0 处理厂商协议与鉴权；provider 选择原生供应商，provider_credentials 为仅写入的私有凭据，可填写区域、项目及已授权 OAuth 凭据。原生模式对外仍提供 Chat Completions、Responses 和 Messages，不增加容器或端口。旧透明代理、Ollama、Jev 和业务适配保留；目录外模型与供应商扩展仍可使用原有协议。":["protocol=pi uses pi-ai 1.1.0 for native vendor protocols and auth. provider selects the vendor; write-only provider_credentials holds region, project and authorized OAuth credentials. Native mode serves Chat Completions, Responses and Messages through existing URLs without extra containers or ports. Transparent proxy, Ollama, Jev and application adapters remain available for custom models and vendor extensions.", "protocol=pi 使用 pi-ai 1.1.0 處理廠商協定與驗證；provider 選擇原生廠商，provider_credentials 為僅寫入的私有憑據，可設定區域、專案與已授權 OAuth 憑據。原生模式沿用 Chat Completions、Responses 與 Messages，不增加容器或連接埠。保留透明代理、Ollama、Jev 與業務適配；目錄外模型與廠商擴充可沿用原協定。"],

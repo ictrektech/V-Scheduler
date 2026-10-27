@@ -18,3 +18,16 @@ test('built-in video source names translate completely and remain searchable',()
   assert.equal(i18n.t("Team's private provider"),"Team's private provider");
  } finally {globalThis.document=oldDoc;globalThis.NodeFilter=oldFilter;}
 });
+
+test('static application labels have English and Traditional Chinese entries',async()=>{
+ const {messages}=await import('../src/messages.ts');const fs=await import('node:fs/promises');
+ const root=new URL('../src/',import.meta.url);const missing=[];
+ for(const name of (await fs.readdir(root)).filter(n=>n.endsWith('.vue')&&n!=='ModelHub.vue')){
+  // ModelHub owns a separate translated dictionary and fallback chain.
+  const source=await fs.readFile(new URL(name,root),'utf8');
+  for(const match of source.matchAll(/\bt\((["'])(.*?)\1\)/g)){
+   if(/\p{Script=Han}/u.test(match[2])&&!messages[match[2]]?.every(v=>typeof v==='string'&&v.length))missing.push(name+': '+match[2]);
+  }
+ }
+ assert.deepEqual(missing,[]);
+});
