@@ -68,7 +68,7 @@ VOS 本机资源采集内置于应用，无需应用开发者部署独立 Agent�
 | Ollama Rerank 原生管理 `/api/*` | `v-scheduler-ollama-rerank:11434` | — | `<vos-host>:12436` |
 | Ollama Rerank 推理 `/v1/rerank`、指标 `/metrics` | `v-scheduler-ollama-rerank:11535` | — | `<vos-host>:12537` |
 
-新应用和已有应用后续适配均推荐使用正式名称 `v-scheduler`，通过端口区分三个入口；其他统一容器名称全部为兼容别名，现有配置继续可用。旧客户端自动绑定沿用已核验的兼容地址；支持 `canonical-v-scheduler-v1` 的 HybRAG / V-Sub 先确认能力再迁移正式地址，保留原凭据并递增 revision。V-Voice 0.0.22 使用正式地址且复用 0.0.21 原生镜像。其他固定绑定仍按各自可信契约交接，不直接修改私钥或绕过来源校验。别名在 Docker `vos_default` 网络中解析；同一行的别名指向同一个容器，不会启动额外容器。Scheduler、Router、模型仓库和界面共用统一容器，三个 Ollama 各为独立容器。新客户端不要只配置 `v-router`：若仍安装旧独立 Router，该兼容名可能解析到旧容器。`host.docker.internal` 是统一容器用于访问宿主机映射端口的 `host-gateway` 别名，不是服务入口。单个 Ollama 入口不替代统一网关的模型命名和调度策略。
+新应用和已有应用后续适配均推荐使用正式名称 `v-scheduler`，通过端口区分三个入口；其他统一容器名称全部为兼容别名，现有配置继续可用。旧客户端自动绑定沿用已核验的兼容地址；支持 `canonical-v-scheduler-v1` 的 HybRAG / V-Sub 先确认能力再迁移正式地址，保留原凭据并递增 revision。V-Voice 从 0.0.22 起使用正式地址，后续版本（包括 0.0.30）不回退旧地址；模型资源仍独立核对实际运行设置与校准，不因地址兼容自动放宽预算。其他固定绑定仍按各自可信契约交接，不直接修改私钥或绕过来源校验。别名在 Docker `vos_default` 网络中解析；同一行的别名指向同一个容器，不会启动额外容器。Scheduler、Router、模型仓库和界面共用统一容器，三个 Ollama 各为独立容器。新客户端不要只配置 `v-router`：若仍安装旧独立 Router，该兼容名可能解析到旧容器。`host.docker.internal` 是统一容器用于访问宿主机映射端口的 `host-gateway` 别名，不是服务入口。单个 Ollama 入口不替代统一网关的模型命名和调度策略。
 
 
 | 凭据 | 用途 | 不能替代 |
