@@ -1040,22 +1040,26 @@ mod tests {
         );
     }
     #[test]
-    #[cfg(target_arch = "x86_64")]
     fn published_yue_measurement_matches_only_its_hardware_and_runtime() {
         let app = APPLICATIONS.iter().find(|a| a.slug == "v-yue2").copied().unwrap();
         let approvals: Value = serde_json::from_str(include_str!("../../../config/app-calibrations.json")).unwrap();
-        let measured = approvals["approvals"].as_array().unwrap().iter().find(|v| v["app_id"] == app.id).unwrap();
+        let profile = if cfg!(target_arch = "aarch64") { "thor-spark" } else { "amd" };
+        let measured = approvals["approvals"].as_array().unwrap().iter().find(|v| v["app_id"] == app.id && v["architecture"] == std::env::consts::ARCH && v["profile"] == profile).unwrap();
         let report = json!({"gpus": measured["hardware"]});
         let contract = json!({"protocol_version":1,"app_id":app.id,"executor_base_url":app.origin,"upstream_url":app.origin,"binding_endpoint":"/api/v1/scheduler/binding","execution_settings":measured["execution_settings"],"sync_models":[{"id":"yue2-q8","task_type":"model.infer"}]});
         let capacity = Resources { cpu_millicores: 16000, memory_mib: 65536, gpu_slots: 1, gpu_memory_mib: 49152 };
         let baseline = Resources::default();
-        let state = build(app, "local", &capacity, &baseline, "amd", &report, &contract, &approvals, None).unwrap();
+        let state = build(app, "local", &capacity, &baseline, profile, &report, &contract, &approvals, None).unwrap();
         assert_eq!(state["executors"].as_array().unwrap().len(), 1);
         assert_eq!(state["executors"][0]["resources"], measured["resources"]);
+        if cfg!(target_arch = "aarch64") {
+            assert_eq!(measured["hardware"][0]["memory_type"], "unified");
+            assert_eq!(measured["resources"]["gpu_memory_mib"], 0);
+        }
         let mut changed = contract.clone();
         changed["execution_settings"]["native_parent_guard"] = json!("missing");
-        assert!(build(app, "local", &capacity, &baseline, "amd", &report, &changed, &approvals, None).unwrap()["executors"].as_array().unwrap().is_empty());
-        assert!(build(app, "local", &capacity, &baseline, "amd", &json!({"gpus":[]}), &contract, &approvals, None).unwrap()["executors"].as_array().unwrap().is_empty());
+        assert!(build(app, "local", &capacity, &baseline, profile, &report, &changed, &approvals, None).unwrap()["executors"].as_array().unwrap().is_empty());
+        assert!(build(app, "local", &capacity, &baseline, profile, &json!({"gpus":[]}), &contract, &approvals, None).unwrap()["executors"].as_array().unwrap().is_empty());
     }
     #[test]
     fn yue_native_binding_uses_one_identity_and_only_measured_complete_bounds() {

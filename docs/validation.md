@@ -638,3 +638,14 @@ V-YuE2 0.0.5 [发布工作流](https://github.com/ictrektech/v-YuE2/actions/runs
 最终三机审计：原模型放行设置已恢复，原生计算槽为零、队列为空、suspect 为零，四个原生执行应用心跳新鲜，无活动应用执行，测试驻留许可已全部释放。232 最终检测到 Harness 0.1.12，已补跑该正式安装版本的普通与非空 SSE 调用及权限隔离，结果通过。
 
 V-Sub 后续完整 [CI 40463130778](https://github.com/ictrektech/V-Sub/actions/runs/40463130778) 成功，覆盖 i18n、四组 TypeScript 类型检查、全部配置/字幕/引擎/崩溃等测试以及 renderer + main 编译；远端完整崩溃回归 23 个套件通过。测试修正仅涉及既有断言和汇总标签，不改变 0.0.15 已发布运行时代码。
+
+
+## 229 Thor / v-YuE2 Q8 校准补齐（2026-10-27）
+
+原 229 安装的是 Q5 组合；本轮通过正式应用的共享模型下载流程补齐 Q8，保留已有 Q5 和其他权重。实测组合为 Q8 backbone、F32 VAE、companion v9，固定发布原生引擎 SHA-256 `9195b5bcd5f1cce873ea9730dc08c281a167a1a01393f85d4b7e45cf9f46052d`，硬件为 NVIDIA Thor / aarch64 / unified，VOS profile 为 `thor-spark`。既有模型许可确认沿用，不代用户作新确认。
+
+隔离校准仍由正式 Controller 准入，使用独立执行器、服务身份与数据目录，原生镜像与正式 0.0.5 相同。4 CPU / 12 GiB 校准上限没有触发 CPU throttling 或 OOM；没有扩大原节点 4.5 vCPU / 20 GiB 预算。CUDA0 自检、10 秒 8 步生成和 120 秒 32 步、1024 prompt / 4096 lyric Unicode 字符、64 KiB 请求均通过；输出为非静音、有限样本的 float WAV，时长约 9.9987 / 119.9987 秒。排队占用期间不启动原生引擎，应用取消与 Scheduler stop nonce 均等待进程退出、卸载后释放许可。
+
+200 ms 采样得到 cgroup 峰值约 1084 MiB、整机 MemAvailable 最大下降 6485 MiB，两者保守相加为 7569 MiB（可能重叠），CPU 峰值约 1351 millicores。批准预算为 2000 millicores、10240 MiB 统一内存；`gpu_memory_mib: 0`，不再独立重复计入同一 GPU 统一内存。只覆盖该实测模型/引擎/参数和上述边界。
+
+新增 ARM 回归在补入审批前为红例，补入后 10 项应用绑定测试通过，覆盖实际架构/profile/hardware/runtime 匹配、统一内存不重复预算、版本变化保留绑定、未测参数和硬件不匹配拒绝。测量与私有原始证据位于229 `~/dev/build/v-YuE2/calibration-229-20261027/`；正式安装应用复测和发行结果另记。
