@@ -45,7 +45,7 @@
 | 同域前端 | `/api/com.ictrek.v-scheduler/v1` | `/api/com.ictrek.v-scheduler/scheduler/api/v1` |
 | 局域网服务 | `http://<vos-host>:22888/v1` | `http://<vos-host>:22888/scheduler/api/v1` |
 
-下文 `/tasks`、`/permits`、`/executors` 等短路径均相对于调度 API base。网关 `/api/v1/*` 保留模型与上游管理含义。 普通已验证用户可通过网关 `GET /api/v1/models` 读取 `{models:[...]}` 能力目录，包含 `qualified`、`upstream_id`、`capabilities`、`endpoints`，按当前身份过滤可见性；`GET /v1/models` 是仅含模型 ID 的 OpenAI 兼容列表。控制器 `38120/api/v1/models` 不存在，不能用来发现模型。旧网关别名和旧同域路径为已有客户端保留兼容；控制器直连地址是上表中的正式调度入口。
+下文 `/tasks`、`/permits`、`/executors` 等短路径均相对于调度 API base。网关 `/api/v1/*` 保留模型与上游管理含义。 普通已验证用户可通过网关 `GET /api/v1/models` 读取 `{models:[...]}` 能力目录，包含 `qualified`、`upstream_id`、`capabilities`、`endpoints`，按当前身份过滤可见性；`GET /v1/models` 是仅含模型 ID 的 OpenAI 兼容列表。控制器 `38120/api/v1/models` 不存在，不能用来发现模型。 管理目录按 `qualified + upstream_id` 区分模型实例，每个来源保留自己的设置；`/v1/models` 仍按完整 qualified ID 去重。不同前缀下的同名原生模型不会合并。旧网关别名和旧同域路径为已有客户端保留兼容；控制器直连地址是上表中的正式调度入口。
 
 VOS 本机资源采集内置于应用，无需应用开发者部署独立 Agent；外部节点通过所属 VOS 应用发现和管理，复用其已有监控；Scheduler 预算规划不直接授予执行权限，远端调度控制待验证，见[VOS 节点管理](node-management.md)。用户无需 SSH 或另装 Agent。自动发现模型不等于批准计算，仍需实际峰值预算与执行器授权。
 
