@@ -427,7 +427,7 @@
                   },
                   "provider": {
                     "type": "string",
-                    "description": "Native pi-ai provider ID; required for protocol=pi."
+                    "description": "pi-ai native provider ID for protocol=pi; optional Models.dev provider ID for metadata enrichment with existing compatible protocols."
                   },
                   "provider_credentials": {
                     "type": "object",
@@ -549,7 +549,7 @@
                   },
                   "provider": {
                     "type": "string",
-                    "description": "Native pi-ai provider ID; required for protocol=pi."
+                    "description": "pi-ai native provider ID for protocol=pi; optional Models.dev provider ID for metadata enrichment with existing compatible protocols."
                   },
                   "provider_credentials": {
                     "type": "object",
@@ -880,7 +880,7 @@
                   },
                   "provider": {
                     "type": "string",
-                    "description": "Native pi-ai provider ID; required for protocol=pi."
+                    "description": "pi-ai native provider ID for protocol=pi; optional Models.dev provider ID for metadata enrichment with existing compatible protocols."
                   },
                   "provider_credentials": {
                     "type": "object",
@@ -1043,7 +1043,7 @@
                   },
                   "provider": {
                     "type": "string",
-                    "description": "Native pi-ai provider ID; required for protocol=pi."
+                    "description": "pi-ai native provider ID for protocol=pi; optional Models.dev provider ID for metadata enrichment with existing compatible protocols."
                   },
                   "provider_credentials": {
                     "type": "object",
@@ -1161,7 +1161,7 @@
                   },
                   "provider": {
                     "type": "string",
-                    "description": "Native pi-ai provider ID; required for protocol=pi."
+                    "description": "pi-ai native provider ID for protocol=pi; optional Models.dev provider ID for metadata enrichment with existing compatible protocols."
                   },
                   "provider_credentials": {
                     "type": "object",
@@ -12058,6 +12058,60 @@
             "description": "Invalid configuration or request"
           }
         }
+      }
+    },
+    "/api/v1/provider-catalog": {
+      "get": {
+        "summary": "Models.dev provider catalog",
+        "description": "Metadata only; existing transports, native pi-ai credentials and configurations remain unchanged. Catalog presence is not proof of authorization.",
+        "tags": [
+          "Management"
+        ],
+        "responses": {
+          "200": {
+            "description": "Metadata"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/provider-catalog/{provider}": {
+      "get": {
+        "summary": "Models.dev provider catalog",
+        "description": "Metadata only; existing transports, native pi-ai credentials and configurations remain unchanged. Catalog presence is not proof of authorization.",
+        "tags": [
+          "Management"
+        ],
+        "responses": {
+          "200": {
+            "description": "Metadata"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
       }
     }
   },

@@ -1,0 +1,9 @@
+{
+  "source": "Models.dev",
+  "format": "catalog-v2",
+  "retrieved_at": "2026-10-28",
+  "snapshot_url": "https://github.com/anomalyco/opencode/blob/dev/packages/core/src/models-dev/snapshot.txt",
+  "sha256": "5d5740c70071aa628d1efe317f6885faf1f20b32a9fcb502553f57cce15cf9f1",
+  "providers": 230,
+  "models": 8787
+}

@@ -646,56 +646,50 @@ curl http://v-scheduler:8080/api/v1/registrations \
 
 配置后 VOS 内应用仍调用 `http://v-scheduler:8080/v1`；私有上游仅所有者与管理员可见可用，共享上游对允许的调用者开放，修改与路由设置由所有者或管理员管理。本机/自建与云服务描述服务位置、模型前缀和资源责任，不等同于放行开关；实际内网计算来源仍按原策略准入。路由权重与并发在上游设置中调整，单模型放行和预算在模型设置中调整，任务优先级随请求提交。
 
-### Provider 配置去重
+### Models.dev 目录与现有运行时
 
-预设覆盖本次对照的 dsh 42 个 provider ID；Qwen Token Plan International / Individual 使用相同服务与鉴权，合并为一个配置。原有供应商及自定义连接保留，不重复迁移。地区、产品或计费端点不同的配置分别保留：
+供应商预设统一读取 `GET /api/v1/provider-catalog`，单个供应商的模型元数据由 `GET /api/v1/provider-catalog/{provider}` 提供。目录随包提供离线快照，优先恢复上次有效缓存，每 6 小时更新 Models.dev；网络不可达、超限或数据无效时保留旧目录，仅记录日志。`V_SCHEDULER_MODELS_DEV_URL` 可指定元数据源。SDK/npm 名称是数据，不会从目录动态安装或执行代码。
 
-| 配置组 | 补充的 provider |
-| --- | --- |
-| API 服务与网关 | Ant Ling、Baseten、Azure OpenAI v1、Cloudflare Workers AI、Meta、Vercel AI Gateway |
-| Coding 与地区服务 | Kimi Coding、MiniMax International、Moonshot International、Qwen Token Plan International/Individual 与 China、MiMo Token Plan CN/AMS/SGP、Z.ai Coding International 与 China |
-| 原生协议或鉴权 | Amazon Bedrock、Google Vertex AI、OpenAI Codex、GitHub Copilot、Radius、Cloudflare AI Gateway |
+**Models.dev 管目录与能力；pi-ai 保留原生协议、OAuth、订阅凭据和特殊鉴权；现有透明代理处理兼容协议。** 不逐家新增 Rust 供应商适配器。地区、产品和鉴权不同的连接分别保留，真正的别名合并为同一预设；两个上游的同名模型仍独立管理。既有配置、模型 ID、私有凭据、共享目录、host alias 和端口不变。
 
-原生选择器来自固定依赖 `@earendil-works/pi-ai@1.1.0` 的 provider 目录。Google Gemini 等已有配置可选择原生协议；已有 OpenAI-compatible 地址继续可用。Jev/System One 继续使用 `typesafe` 原生决策接口，Ollama 的 embedding/rerank 和其他专用模型仍由原有协议识别，不受 pi-ai 的聊天目录范围限制。
+### API 配置
 
-### API 配置与鉴权
-
-`POST /api/v1/upstreams`、探测、编辑及 `POST /api/v1/registrations` 新增以下可选字段；使用同一现有管理身份，注册续租和调度绑定不变：
+上游添加、探测、编辑与应用注册沿用现有契约：
 
 | 字段 | 说明 |
 | --- | --- |
-| `protocol` | `pi` 启用原生 provider；旧协议保持原义 |
-| `provider` | pi-ai provider ID，例如 `deepseek`、`google`、`amazon-bedrock` |
-| `api_key` | 普通服务密钥，原字段；编辑留空保留 |
-| `provider_credentials` | 仅写入的私有 JSON，支持 `type=api_key` 或 `type=oauth`；编辑省略/null 保留；切换 provider/地址需重新提供凭据 |
-| `base_url` | 原生目录默认服务地址，或显式中转地址；预设默认地址由目录按模型选择协议路径，修改后作为显式地址覆盖 |
+| `protocol` | SDK 原生连接用 `pi`；普通兼容连接继续使用 `openai`、`chat_completions` 或 `anthropic`；Ollama、Jev 及业务协议保持原义 |
+| `provider` | `pi` 模式使用现有 pi-ai Provider ID；兼容模式可选填 Models.dev ID，作为模型能力的元数据来源 |
+| `api_key` | 原有服务密钥；编辑留空保留，不回显 |
+| `provider_credentials` | 仅供原生 SDK 模式的私有 JSON：`api_key` 或已授权的 `oauth`；省略/null 保留原凭据，切换目标须显式重填 |
+| `base_url` | 界面原生 SDK 预设保留原有默认地址，兼容模式使用供应商兼容 API URL；显式自定义地址不迁移 |
+| 模型及能力字段 | 沿用 `models`、`model_capabilities`、`model_endpoints`；手工设置和上游明确声明优先 |
 
-普通 Key 例子（管理请求需带原有 VOS 管理身份）：
+普通兼容供应商例子：
 
 ```json
 {
-  "name": "DeepSeek Native",
+  "name": "DeepInfra",
   "kind": "cloud",
-  "base_url": "https://api.deepseek.com",
-  "protocol": "pi",
-  "provider": "deepseek",
+  "base_url": "https://api.deepinfra.com/v1/openai",
+  "protocol": "chat_completions",
+  "provider": "deepinfra",
   "api_key": "<provider-key>",
   "visibility": "private"
 }
 ```
 
-区域与项目配置使用 `provider_credentials.env`。Bedrock 可使用 `api_key` 的 bearer token，或 `{"type":"api_key","env":{"AWS_ACCESS_KEY_ID":"...","AWS_SECRET_ACCESS_KEY":"...","AWS_REGION":"us-east-1"}}`；临时凭据可增加 `AWS_SESSION_TOKEN`。Vertex 可填写自己的 API Key 与 `GOOGLE_CLOUD_PROJECT`、`GOOGLE_CLOUD_LOCATION`。Azure 使用资源地址及 SDK 所需的 Azure 配置。Cloudflare 使用 `CLOUDFLARE_ACCOUNT_ID`、`CLOUDFLARE_GATEWAY_ID` 和对应权限的令牌。参数均为每个连接独立配置，不继承宿主机或其他上游的凭据；不允许通过此接口指定任意本地凭据文件、shell 命令或代理环境。
+原生 SDK 例子：`{"name":"DeepSeek Native","kind":"cloud","protocol":"pi","provider":"deepseek","base_url":"https://api.deepseek.com","api_key":"<provider-key>"}`。OAuth 继续使用已授权的 `{"type":"oauth","access":"...","refresh":"...","expires":<Unix毫秒>,...}`；pi-ai 执行供应商刷新，原来的私有缓存、凭据作用域和 0600 权限保留。初次授权仍由供应商支持的客户端完成，应用不新增登录向导。Bedrock/Vertex/Azure/Cloudflare 的区域、项目和账号配置沿用原 `provider_credentials.env`，不继承其他连接的凭据。
 
-OAuth provider 使用已完成供应商授权的 `{"type":"oauth","access":"...","refresh":"...","expires":<Unix毫秒>,...}`，额外账号字段沿用供应商返回值。运行时自动刷新并串行保存旋转后的 token；初次网页登录授权需在供应商支持的客户端完成，本版没有内置登录向导。管理员读取上游时只得到 `has_provider_credentials`，不会获得原 JSON。切换地址或 provider 不会将已有原生凭据转发给新目标，需显式重新填写。
+原生模式继续通过同镜像内的隔离 Node 子进程执行 pi-ai，不增加容器或公开端口；Rust 网关仍统一身份、路由、资源许可、队列与停止确认。取消请求继续终止子进程及上游连接。运行时版本固定，不跟随目录自动升级 SDK。
 
-### 接口与能力边界
+### 能力与验证边界
 
-原生模式对外接受 Chat Completions；现有桥接继续提供 Responses 和 Anthropic Messages，流式/非流式、工具调用、data URL 图片和推理内容共用此边界。SDK 目录的能力用于发现，目录存在不代表账号已获模型权限；「测试模型」会发送一次轻量真实请求。供应商错误转换为统一错误结构，401/429 等状态保留；未知错误不会回传供应商包含密钥的原文，流式开始后的错误通过 SSE 返回。网关不自行重试生成；OpenAI/Anthropic 禁用 SDK 自动重试，Bedrock 限制为一次尝试，其他原生 SDK 沿用其协议实现。单次原生操作有 120 秒取消期限。
+上游明确返回的元数据及 `metadata_override=true` 优先。没有声明时，所选 Models.dev 供应商可补充已知聊天模型的有限能力；原生 SDK 中的模型也可从目录补充能力，但调用仍由原 SDK 负责。兼容服务仅在 `/models` 明确不支持（404/405/501）时使用目录回退，401/403 和网络失败不会被目录隐藏。目录就绪不等于账号已授权；可选的 `test_model` 才发送轻量实际请求。
 
-原生模式明确拒绝不能保真的扩展字段、多个候选 `n>1` 和远程图片 URL；后者可使用 base64 data URL。目录外模型、原样供应商扩展、embedding/rerank、图像/音视频、Jev 决策和异步任务继续用已有透明/业务协议，不会因为引入运行时而丢失入口。首次进程启动有 SDK 加载开销，运行时异常返回可重试服务错误，不改变其他协议可用性。
+新增供应商优先复用已有兼容协议；目前没有现成运行时的专用协议不会伪装成已支持，界面要求显式提供兼容网关。目录包含的图像/决策类型也不自动变成聊天模型。Ollama 的 embedding/rerank、Jev、图像/语音与异步业务适配继续使用既有入口。
 
-实现参考：[dsh provider construction](https://github.com/deepseek-ai/deepseek-harness/blob/main/packages/llm/llm-pi-ai/src/provider.ts)、[pi-ai provider/auth API](https://github.com/earendil-works/pi/tree/main/packages/ai)。两者提供厂商适配；V-Scheduler 继续负责统一身份、资源预算、优先级排队、停止证明与调度许可。
-
+开发验证以已有协议和 SDK 的模拟 HTTP 测试覆盖工具、图片、流式/非流式、取消、OAuth 旋转和错误脱敏，另对有授权凭据的代表性服务做真实调用；无需逐家收集 API Key，也不会把整个目录称为已逐家实测。参见 [Models.dev](https://github.com/anomalyco/models.dev) 与 [pi-ai](https://github.com/earendil-works/pi/tree/main/packages/ai)。
 
 ### 服务心跳、下线与恢复
 

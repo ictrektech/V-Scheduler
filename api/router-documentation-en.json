@@ -445,6 +445,22 @@
           "summary": "Auto candidate catalog",
           "desc": "Administrator lists physical model instances and decision classifiers.",
           "example": "curl -fsS http://v-scheduler:8080/api/v1/auto-routing/candidates -H \"Authorization: Bearer $VOS_TOKEN\""
+        },
+        {
+          "auth": "manage",
+          "method": "GET",
+          "path": "/api/v1/provider-catalog",
+          "summary": "Models.dev provider catalog",
+          "desc": "Deduplicated provider IDs, names, base URLs, environment fields and catalog revision. Uses the bundle/last valid cache offline. Metadata does not authorize accounts or execute SDK code.",
+          "example": "curl http://v-scheduler:8080/api/v1/provider-catalog -H \"Authorization: Bearer <vos-token>\""
+        },
+        {
+          "auth": "manage",
+          "method": "GET",
+          "path": "/api/v1/provider-catalog/{provider}",
+          "summary": "Provider model and capability metadata",
+          "desc": "Model IDs, finite capabilities, API endpoints, context limits, prices and status. Existing upstreams, models and manual overrides are never overwritten.",
+          "example": "curl http://v-scheduler:8080/api/v1/provider-catalog/deepinfra -H \"Authorization: Bearer <vos-token>\""
         }
       ],
       "id": "manage",
@@ -1615,6 +1631,11 @@
       "example": "curl -N -X POST 'http://<vos-host>:22888/v1/audio/streaming/transcriptions?model=v-voice/zipformer-zh-streaming&format=pcm' \\\n  -H \"Authorization: Bearer $VOS_TOKEN\" -H 'Transfer-Encoding: chunked' --data-binary @audio.pcm\n\ncurl 'http://<vos-host>:22888/v1/audio/speakers?model=v-voice/speaker-campplus-zh-en' -H \"Authorization: Bearer $VOS_TOKEN\"\ncurl 'http://<vos-host>:22888/v1/audio/speakers/identify' -H \"Authorization: Bearer $VOS_TOKEN\" -F model=v-voice/speaker-campplus-zh-en -F file=@sample.wav",
       "note": "Streaming requires a model declaring the streaming capability. Bodies are forwarded end to end without an overall timeout; connections occupy one concurrency slot. WebSocket: GET /v1/audio/streaming/ws?model=... (binary PCM upstream, partial/final downstream). Register/delete speakers in V-Voice; V-Router exposes only listing, identify and verify. See docs/v-voice-hotwords.md for the protocol and Python WebSocket examples.",
       "title": "V-Voice streaming ASR and speaker integration"
+    },
+    {
+      "title": "Models.dev catalog and pi-ai runtime",
+      "note": "Models.dev supplies provider/model metadata. Existing protocol=pi keeps the pinned pi-ai runtime for native protocols, OAuth and special auth. Other compatible providers reuse existing OpenAI/Anthropic proxy protocols; unsupported dedicated APIs require an explicit compatible gateway. The catalog does not authorize accounts or claim every provider was live-tested. Existing configuration, private credentials, ports, shared weights and scheduling remain intact.",
+      "example": "{\n  \"name\": \"DeepInfra\",\n  \"kind\": \"cloud\",\n  \"provider\": \"deepinfra\",\n  \"protocol\": \"chat_completions\",\n  \"base_url\": \"https://api.deepinfra.com/v1/openai\",\n  \"api_key\": \"<provider-key>\"\n}"
     }
   ],
   "key_required": false,

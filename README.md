@@ -365,3 +365,12 @@ VOS iframe 在平台登录仍有效时后台取得应用 OAuth 凭据，之后�
 V-Voice 自动绑定按 0.0.22 的地址契约边界选择正式 `v-scheduler` 地址，新版本不会回退到旧别名；显式 `canonical-v-scheduler-v1` 能力声明优先。地址兼容与模型版本校准分别核验，不因版本变新自动授予预算，原有身份和停止证明保持。
 
 自动接入会核对应用回执中的 `configured=true` 与当前 `binding_revision`，不再只以 HTTP 200 判断成功。旧回执、未配置和无效响应继续重试；应用版本号变化不改变已验证的地址、身份和预算，执行设置变化仍须匹配校准。
+
+
+### Models.dev 目录与现有调用层
+
+供应商预设统一来自 Models.dev，内置离线快照并每 6 小时更新；来源、日期和哈希见 [metadata README](providers/models-dev/README.md)。网络不可达或数据无效时保留现有目录。`GET /api/v1/provider-catalog` 与 `GET /api/v1/provider-catalog/{provider}` 为管理页面和应用提供供应商及能力元数据。
+
+调用层保留已验证的实现：现有 `protocol=pi` 继续使用固定版本 pi-ai 处理原生厂商协议、OAuth 与特殊鉴权；新增 OpenAI/Anthropic 兼容供应商复用现有透明代理，不逐家重写 Rust 适配器。界面区分原生 Provider 与兼容协议；需要专用协议、尚无现有实现的条目明确要求兼容网关。SDK 原生地址与既有配置保持不变。目录条目不代表账号已授权或每个供应商已实测；无需逐家提供 API Key 才能启用目录。
+
+上游主动返回的能力及手工覆盖优先；缺少声明时，可由所选 Models.dev 供应商补充已知聊天模型能力。兼容服务没有 `/models` 接口（404/405/501）时可使用其目录模型，不把真实 401/403 鉴权失败隐藏成成功。Ollama、Jev、权重管理、资源调度、端口和共享目录保留原行为。

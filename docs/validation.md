@@ -657,3 +657,12 @@ V-Sub 后续完整 [CI 40463130778](https://github.com/ictrektech/V-Sub/actions/
 - 最终自动绑定已接受 revision 4、批准模型数 1，应用心跳新鲜；原生进程与 lease journal 均不存在，无活动计算、排队或 suspect，放行设置恢复。临时校准容器已删除、接入已注销、执行器已禁用、服务身份已吊销，全部 8 份探测许可释放；不保留可调用的校准控制入口。
 
 最终证据：229 `~/dev/build/v-YuE2/calibration-229-20261027/{acceptance-final,builtin-proof,model-proof,cleanup-proof}.json`，以及 `business-20261027/client-tests/{yue2-functional,yue2-max-functional,yue2-max-production-measurement,final-audit}.json`。
+
+
+## Models.dev 目录与保留 pi-ai 调用层（2026-10-28）
+
+采用 Models.dev 元数据目录、原有 pi-ai 1.1.0 调用层及既有兼容代理。未启用实验 Rust 供应商鉴权实现，未改变已有供应商 ID、SDK URL 默认值、私有凭据边界、OAuth 刷新或订阅登录流程。目录内 230 家供应商、8787 个模型表示公开元数据覆盖，不代表这些账号、模型均可调用；42 个原生 SDK 供应商仍按现有运行时能力提供。SDK/npm 字段只作数据，不安装或执行远程代码。
+
+229 ARM 后端回归 166 项、232 AMD 后端回归 164 项通过，各有 3 项既有专项测试默认忽略；额外执行原生网关 E2E 通过，覆盖普通及流式协议、身份隔离和私有凭据。SDK 固定协议测试 14 项、前端 41 项及生产构建通过。新增目录管理路由权限、404/405/501 模型发现回退边界、401 不回退、注册元数据补充和显式能力优先均有测试。目录更新失败保留可用元数据，离线使用内置快照。
+
+使用现有获准凭据经保留的 pi-ai 对 DeepSeek 和 MiMo 各进行普通、流式真实调用，四项均返回 HTTP 200 并验证完成内容。其他供应商以共享协议、鉴权及隔离回归为验证范围，不声称逐家完成真实调用；不要求逐家提供密钥。本记录针对源码验证，不表示新的 VOS 包已发布或测试机已升级。

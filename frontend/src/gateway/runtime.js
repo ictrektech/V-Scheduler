@@ -4,7 +4,7 @@ import {apiError,browserIdentityFailure} from '../http-client.js';
 import {recordDiagnostic,isSessionError,userErrorMessage} from '../diagnostics.js';
 import { createGatewayI18n } from './locale.js';
 import { playgroundStreamEvent } from './playground-stream.js';
-import { CAPABILITIES, ENDPOINTS, PROVIDER_PRESETS, effectiveMetadata, systemOneRequest, validateProviderAddress } from './model-options.js';
+import { CAPABILITIES, ENDPOINTS, PROVIDER_PRESETS, replaceProviderCatalog, effectiveMetadata, systemOneRequest, validateProviderAddress } from './model-options.js';
 export function mountGateway(root, options) {
 const i18n = createGatewayI18n(root, options.locale);
 const VRouterI18n = i18n;
@@ -171,12 +171,17 @@ const app = {
 
   async refresh() {
     try {
-      const [status, models, upstreams, usage] = await Promise.all([
+      const [status, models, upstreams, usage, providerCatalog] = await Promise.all([
         this.api("GET", "/api/v1/status"),
         this.api("GET", "/api/v1/models"),
         this.api("GET", "/api/v1/upstreams"),
         this.api("GET", "/api/v1/usage?period=" + encodeURIComponent(this.state.usagePeriod)),
+        this.providerCatalogPromise ||= this.api("GET", "/api/v1/provider-catalog").catch(()=>null),
       ]);
+      if(providerCatalog?.providers&&this.providerCatalogRevision!==providerCatalog.revision){
+        replaceProviderCatalog(providerCatalog.providers);this.providerCatalogRevision=providerCatalog.revision;
+        for(const id of ['ufPreset','regPreset']){const select=$(id),value=select.value;this.renderProviderPresets(select);select.value=value;}
+      }
       const admin = status.is_admin === true;
       this.state = {
         ...this.state,
@@ -749,7 +754,7 @@ const app = {
   upstreamStatusPill(u) {
     const state = (u.status && u.status.state) || (u.healthy ? "healthy" : "discovery_failed");
     const meta = {
-      healthy: [VRouterI18n.t(u.protocol === "pi" ? "目录就绪" : "健康"), "ok"],
+      healthy: [VRouterI18n.t(u.protocol === "pi" || u.provider ? "目录就绪" : "健康"), "ok"],
       paused: [VRouterI18n.t("已暂停"), "warn"],
       lease_expired: [VRouterI18n.t("心跳中断"), "bad"],
       circuit_open: [VRouterI18n.t("熔断中"), "bad"],
@@ -1181,7 +1186,7 @@ const app = {
   renderProviderPresets(select) {
     if (!select) return;
     select.innerHTML = `<option value="">${esc(VRouterI18n.t("自定义（手动填写）"))}</option>` +
-      PROVIDER_PRESETS.filter(p=>select.id!=="regPreset"||!p.nativeOnly).map((p) => `<option value="${esc(p.id)}">${esc(p.name)}${p.nativeOnly ? ' · '+esc(VRouterI18n.t('原生 Provider')) : ''}</option>`).join("");
+      PROVIDER_PRESETS.filter(p=>select.id!=="regPreset"||p.registrationProtocol||p.protocol!=="pi").map((p) => `<option value="${esc(p.id)}">${esc(p.name)}${p.nativeOnly ? ' · '+esc(VRouterI18n.t('原生 Provider')) : ''}</option>`).join("");
   },
   applyProviderPreset(preset, fields) {
     if (!preset) return;
@@ -1192,6 +1197,8 @@ const app = {
     VRouterI18n.bind(note,'textContent',()=>VRouterI18n.t(preset.hint || '填写 Key 后测试并选择模型；模型版本和权限以上游实际返回为准。'));
     note.hidden = false;
     $(fields.protocol).value = preset.protocol;
+    if(fields.protocol==='ufProtocol')this.catalogProviderId=preset.catalogId||'';
+    if(fields.protocol==='regProtocol'&&preset.protocol==='pi')$(fields.protocol).value='chat_completions';
     $(fields.key).value = "";
     $(fields.key).placeholder = fields.keyPlaceholder || "sk-...";
     if (fields.model) {
@@ -1202,7 +1209,7 @@ const app = {
   changeUpstreamLocation(value) { $("ufKind").value=value; },
   applyUpstreamPreset() {
     const preset = PROVIDER_PRESETS.find((p) => p.id === $("ufPreset").value);
-    if (!preset) return;
+    if (!preset) {this.catalogProviderId='';return;}
     this.applyProviderPreset(preset, {
       name: "ufName",
       base: "ufBaseURL",
@@ -1224,7 +1231,8 @@ const app = {
     this.setUpstreamModels([],{loaded:false});this.renderProbeResult(null);
   },
   applyRegistrationProviderPreset() {
-    const preset = PROVIDER_PRESETS.find((p) => p.id === $("regPreset").value);
+    const selected = PROVIDER_PRESETS.find((p) => p.id === $("regPreset").value);
+    const preset=selected?.protocol==='pi'?{...selected,protocol:selected.registrationProtocol,base:selected.registrationBase}:selected;
     if (!preset) return;
     this.applyProviderPreset(preset, {
       name: "regName",
@@ -1239,6 +1247,7 @@ const app = {
   },
 
   openUpstreamDialog(id, kind = "manual") {
+    this.catalogProviderId='';
     this.singleModelAddition=false;
     VRouterI18n.bind(root.querySelector('label[for="ufTestModel"]'),"textContent",()=>VRouterI18n.t("联通测试模型（可选）"));
     const dlg = $("upstreamDialog");
@@ -1252,6 +1261,7 @@ const app = {
       const u = this.state.upstreams.find((x) => x.id === id);
       if (!u) return;
       VRouterI18n.bind($("upstreamDialogTitle"), "textContent", () => VRouterI18n.t("编辑上游"));
+      this.catalogProviderId=u.protocol==='pi'?'':u.provider||'';
       $("ufId").value = u.id;
       $("ufKind").value = u.kind || "manual";
       $("ufPresetField").hidden = true;
@@ -1259,6 +1269,7 @@ const app = {
       $("ufName").value = u.name;
       $("ufBaseURL").value = u.base_url;
       $("ufProtocol").value = u.protocol || "openai";
+      if(u.provider&&!NATIVE_PROVIDERS.some(p=>p.id===u.provider))$("ufNativeProvider").add(new Option(u.provider,u.provider));
       $("ufNativeProvider").value=u.provider||"";
       $("ufNativeCredential").placeholder=u.has_provider_credentials?VRouterI18n.t("已保存，留空保留原生凭据"):"{\"type\":\"api_key\",\"env\":{}}";
       $("ufVisibility").value = u.visibility === "private" ? "private" : "public";
@@ -1353,6 +1364,7 @@ const app = {
       api_key: $("ufAPIKey").value,
       protocol: $("ufProtocol").value,
       visibility: $("ufVisibility").value,
+      provider: this.catalogProviderId||'',
       test_model: $("ufTestModel").value.trim(),
       allow_probe_failure: $("ufAllowProbeFailure").checked,
     };
@@ -1508,7 +1520,7 @@ const app = {
 
     const bases = doc.base_urls || {};
     VRouterI18n.bind($("serviceHeartbeatGuide"),"textContent",()=>VRouterI18n.t("手动上游与单模型是持久配置，不会过期。主动发现服务不可用时自动移除；程序注册服务按 heartbeat_after_seconds 发送心跳，heartbeat_timeout_seconds 默认 90 秒，兼容 ttl_seconds。healthy=false 立即下线；携带完整注册快照的心跳可在短暂掉线或网关重启后自动恢复。目录下线不释放运行中的资源，仍需停止确认。"));
-    VRouterI18n.bind($("providerIntegrationGuide"),"textContent",()=>VRouterI18n.t("在模型与上游配置一次，VOS 内应用按权限共享使用。透明代理保留原有接口；原生 Provider 使用 pi-ai 处理厂商协议与鉴权，对外仍通过 v-scheduler 的对话、Responses 和 Messages 接口。原生凭据仅保存于应用私有目录，OAuth 需要已有授权凭据并可自动续期。应用注册也可提交 protocol=pi、provider 和 provider_credentials；心跳续租及调度流程保持不变。"));
+    VRouterI18n.bind($("providerIntegrationGuide"),"textContent",()=>VRouterI18n.t("供应商目录来自 Models.dev，原生调用继续使用 pi-ai，其他兼容供应商复用现有代理；目录可离线使用，不代表账号已授权。")+" "+VRouterI18n.t("在模型与上游配置一次，VOS 内应用按权限共享使用。透明代理保留原有接口；原生 Provider 使用 pi-ai 处理厂商协议与鉴权，对外仍通过 v-scheduler 的对话、Responses 和 Messages 接口。原生凭据仅保存于应用私有目录，OAuth 需要已有授权凭据并可自动续期。应用注册也可提交 protocol=pi、provider 和 provider_credentials；心跳续租及调度流程保持不变。"));
     VRouterI18n.bind($("apidocIntro"), "innerHTML", () => table(
       [VRouterI18n.t("调用方"), VRouterI18n.t("地址")],
       [

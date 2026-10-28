@@ -1,4 +1,5 @@
 export const messages:Record<string,[string,string]>={
+"供应商目录来自 Models.dev，原生调用继续使用 pi-ai，其他兼容供应商复用现有代理；目录可离线使用，不代表账号已授权。":["The provider catalog comes from Models.dev. Native calls keep pi-ai; other compatible providers reuse existing proxy protocols. The catalog works offline and does not grant account access.", "供應商目錄來自 Models.dev，原生呼叫繼續使用 pi-ai，其他相容供應商沿用現有代理；目錄可離線使用，不代表帳號已授權。"],
 "未知":["Unknown", "未知"],
 "请选择":["Select a model", "請選擇"],
 "时间":["Time", "時間"],

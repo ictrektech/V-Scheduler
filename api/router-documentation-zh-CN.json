@@ -445,6 +445,22 @@
           "summary": "Auto 候选目录",
           "desc": "管理员读取全部真实模型及实例，用于勾选候选和 Jev 分类器。",
           "example": "curl -fsS http://v-scheduler:8080/api/v1/auto-routing/candidates -H \"Authorization: Bearer $VOS_TOKEN\""
+        },
+        {
+          "auth": "manage",
+          "method": "GET",
+          "path": "/api/v1/provider-catalog",
+          "summary": "Models.dev 供应商目录",
+          "desc": "返回去重的供应商 ID、名称、默认地址、所需环境字段及目录修订。网络不可用时保留随包或上次有效缓存；目录不代表账号已授权，SDK 元数据不执行代码。",
+          "example": "curl http://v-scheduler:8080/api/v1/provider-catalog -H \"Authorization: Bearer <vos-token>\""
+        },
+        {
+          "auth": "manage",
+          "method": "GET",
+          "path": "/api/v1/provider-catalog/{provider}",
+          "summary": "供应商模型与能力元数据",
+          "desc": "返回模型 ID、有限能力、接口、上下文限制、价格及状态；不会改写已保存的上游、模型和手工覆盖。",
+          "example": "curl http://v-scheduler:8080/api/v1/provider-catalog/deepinfra -H \"Authorization: Bearer <vos-token>\""
         }
       ],
       "id": "manage",
@@ -1615,6 +1631,11 @@
       "example": "curl -N -X POST 'http://<vos-host>:22888/v1/audio/streaming/transcriptions?model=v-voice/zipformer-zh-streaming&format=pcm' \\\n  -H \"Authorization: Bearer $VOS_TOKEN\" -H 'Transfer-Encoding: chunked' --data-binary @audio.pcm\n\ncurl 'http://<vos-host>:22888/v1/audio/speakers?model=v-voice/speaker-campplus-zh-en' -H \"Authorization: Bearer $VOS_TOKEN\"\ncurl 'http://<vos-host>:22888/v1/audio/speakers/identify' -H \"Authorization: Bearer $VOS_TOKEN\" -F model=v-voice/speaker-campplus-zh-en -F file=@sample.wav",
       "note": "流式接口仅服务声明 streaming capability 的模型，请求体边到边透传、无整体超时，连接期间占用一个并发槽；WebSocket 实时通道为 GET /v1/audio/streaming/ws?model=...（二进制 PCM 上行、partial/final 下行）。声纹注册/删除在 V-Voice 管理面完成，经 V-Router 只做列表、identify 与 verify；详细协议和 Python WebSocket 示例见 docs/v-voice-hotwords.md。",
       "title": "V-Voice 流式识别与声纹接入"
+    },
+    {
+      "title": "Models.dev 目录与 pi-ai 运行时",
+      "note": "Models.dev 提供供应商与模型元数据；protocol=pi 保留固定版本 pi-ai，负责原生协议、OAuth 与特殊鉴权。其他兼容供应商复用现有 OpenAI/Anthropic 代理；尚无现成实现的专用协议需提供明确的兼容网关。目录不代表账号授权或全部供应商已实测。现有配置、凭据、端口、共享权重和调度保留。",
+      "example": "{\n  \"name\": \"DeepInfra\",\n  \"kind\": \"cloud\",\n  \"provider\": \"deepinfra\",\n  \"protocol\": \"chat_completions\",\n  \"base_url\": \"https://api.deepinfra.com/v1/openai\",\n  \"api_key\": \"<provider-key>\"\n}"
     }
   ],
   "key_required": false,

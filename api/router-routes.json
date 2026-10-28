@@ -1821,5 +1821,23 @@
     "summary": "Auto 候选目录",
     "desc": "管理员读取全部真实模型及实例，用于勾选候选和 Jev 分类器。",
     "example": "curl -fsS http://v-scheduler:8080/api/v1/auto-routing/candidates -H \"Authorization: Bearer $VOS_TOKEN\""
+  },
+  {
+    "auth": "manage",
+    "group": "manage",
+    "method": "GET",
+    "path": "/api/v1/provider-catalog",
+    "summary": "Models.dev 供应商目录",
+    "desc": "返回去重的供应商 ID、名称、默认地址、所需环境字段及目录修订。网络不可用时保留随包或上次有效缓存；目录不代表账号已授权，SDK 元数据不执行代码。",
+    "example": "curl http://v-scheduler:8080/api/v1/provider-catalog -H \"Authorization: Bearer <vos-token>\""
+  },
+  {
+    "auth": "manage",
+    "group": "manage",
+    "method": "GET",
+    "path": "/api/v1/provider-catalog/{provider}",
+    "summary": "供应商模型与能力元数据",
+    "desc": "返回模型 ID、有限能力、接口、上下文限制、价格及状态；不会改写已保存的上游、模型和手工覆盖。",
+    "example": "curl http://v-scheduler:8080/api/v1/provider-catalog/deepinfra -H \"Authorization: Bearer <vos-token>\""
   }
 ]

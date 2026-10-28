@@ -1,5 +1,6 @@
 "use strict";
 export const VRouterMessages = {
+"供应商目录来自 Models.dev，原生调用继续使用 pi-ai，其他兼容供应商复用现有代理；目录可离线使用，不代表账号已授权。":{"en": "The provider catalog comes from Models.dev. Native calls keep pi-ai; other compatible providers reuse existing proxy protocols. The catalog works offline and does not grant account access.", "zh-TW": "供應商目錄來自 Models.dev，原生呼叫繼續使用 pi-ai，其他相容供應商沿用現有代理；目錄可離線使用，不代表帳號已授權。"},
 "视频结构化 · 场景检测": {"en":"Video structure · Scene detection","zh-TW":"影片結構化 · 場景偵測"},
 "视频结构化 · 结构化与描述": {"en":"Video structure · Analysis and description","zh-TW":"影片結構化 · 結構化與描述"},
 "场景检测": {"en":"Scene detection","zh-TW":"場景偵測"},

@@ -85,5 +85,6 @@ pub(super) async fn models(g:&Gateway,u:&Upstream)->Api<Vec<Model>> {
     let response=response(g,u,"models",json!({})).await?;
     if !response.status().is_success(){return Err(upstream_failure(response.status().as_u16(),"native provider discovery failed; verify credentials and configuration"));}
     let value=read_json(response,4<<20).await?;
-    serde_json::from_value(value["models"].clone()).map_err(|_|Failure::new(502,"invalid native provider catalog"))
+    let mut rows:Vec<Model>=serde_json::from_value(value["models"].clone()).map_err(|_|Failure::new(502,"invalid native provider catalog"))?;
+    models_dev::enrich_native(g,u,&mut rows);Ok(rows)
 }

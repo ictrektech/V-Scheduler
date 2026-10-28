@@ -500,6 +500,7 @@ pub(super) async fn models(g: &Gateway, u: &Upstream) -> Api<Vec<Model>> {
         .await
         .map_err(|_| Failure::new(502, "upstream models endpoint unavailable"))?;
         if !response.status().is_success() {
+            if [404,405,501].contains(&response.status().as_u16()) {let rows=models_dev::fallback_models(g,u);if !rows.is_empty(){eprintln!("provider models endpoint unsupported; Models.dev metadata retained without account verification");return Ok(rows);}}
             return Err(Failure::new(
                 502,
                 format!(
@@ -533,6 +534,7 @@ pub(super) async fn models(g: &Gateway, u: &Upstream) -> Api<Vec<Model>> {
                 owned_by: text(v, "owned_by").into(),
                 metadata_override: false,
             };
+            if model.capabilities.is_empty()&&model.endpoints.is_empty(){models_dev::enrich_model(g,u,&mut model);}
             registry::normalize_upstream_model(&mut model, u);
             result.push(model);
         }
@@ -657,6 +659,8 @@ pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) ->
         }
     }
     let id = &scoped_identity;
+    if method=="GET" {if let Some(provider)=path.strip_prefix("/api/v1/provider-catalog/"){let value=g.models_dev.snapshot().detail(provider).ok_or_else(||Failure::new(404,"provider not found"))?;return Ok(Json(value).into_response());}}
+    if path=="/api/v1/provider-catalog"&&method=="GET" {return Ok(Json(g.models_dev.snapshot().summary()).into_response());}
     if path=="/api/v1/inference-queue" && method=="GET" {
         if id.owner.is_empty() && !id.admin {return Err(Failure::new(401,"queue inspection requires a verified identity"));}
         return Ok(Json(g.queue.lock().unwrap().snapshot(id)).into_response());
@@ -1101,6 +1105,9 @@ async fn register(g: &Gateway, id: &Identity, p: Value) -> Api<Response> {
     for m in &mut models {
         if m.id.is_empty() {
             return Err(Failure::new(400, "registered model id is required"));
+        }
+        if m.capabilities.is_empty() && m.endpoints.is_empty() {
+            models_dev::enrich_model(g, &u, m);
         }
         // Explicit declarations override discovery, with per-model maps last.
         // A capability override without endpoints must infer a fresh interface.

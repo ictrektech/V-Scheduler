@@ -271,6 +271,7 @@ pub(super) fn temp() -> PathBuf {
 pub(super) fn gateway(root: &Path, controller: Router) -> Arc<Gateway> {
     Arc::new(Gateway {
         registry: Mutex::new(Registry::default()),
+        models_dev: Default::default(),
         auto_runtime: Default::default(),
         queue: Mutex::new(Default::default()),
         residency: residency::Residency::disabled(),
@@ -2084,5 +2085,43 @@ async fn management_catalog_keeps_each_upstream_while_inference_deduplicates() {
     let response=manage::handle(&g,&principal("bob"),request()).await.unwrap();
     let body:Value=serde_json::from_slice(&axum::body::to_bytes(response.into_body(),1<<20).await.unwrap()).unwrap();
     assert!(body["models"].as_array().unwrap().is_empty());
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
+async fn models_dev_catalog_uses_real_management_routes_and_keeps_sdk_metadata_boundaries(){
+ let root=temp();let g=gateway(&root,Router::new());
+ for path in ["/api/v1/provider-catalog","/api/v1/provider-catalog/deepinfra"]{assert_eq!(route(path,"GET").unwrap()["auth"],"manage");assert_eq!(dispatch(g.clone(),Request::builder().uri(path).body(Body::empty()).unwrap()).await.err().unwrap().status,401);let response=manage::handle(&g,&principal("alice"),Request::builder().uri(path).body(Body::empty()).unwrap()).await.unwrap();assert_eq!(response.status(),200);}
+ let fixture=models_dev::Catalog::parse(br#"{"deepinfra":{"env":["API_KEY"],"models":{"chat":{"type":"chat","capabilities":{"tools":{"supported":false},"reasoning":{"supported":true}},"api":{"chat-completions":{"base_url":"https://example.invalid/v1"}}},"image":{"type":"image","api":{"images":{"base_url":"https://example.invalid/v1"}}}}}}"#).unwrap();*g.models_dev.value.write().unwrap()=Arc::new(fixture);
+ let mut u=upstream("fixture");u.provider="deepinfra".into();u.protocol="chat_completions".into();let rows=models_dev::fallback_models(&g,&u);assert_eq!(rows.len(),1);assert_eq!(rows[0].id,"chat");assert!(!rows[0].capabilities.contains(&"tools".into()));let mut manual=rows[0].clone();manual.capabilities=vec!["tools".into()];manual.metadata_override=true;models_dev::enrich_model(&g,&u,&mut manual);assert_eq!(manual.capabilities,vec!["tools"]);
+ std::fs::remove_dir_all(root).unwrap();
+}
+#[tokio::test]
+async fn compatible_models_api_falls_back_only_when_unsupported_and_honors_real_metadata(){
+ let app=Router::new().route("/unsupported/models",axum::routing::get(||async{StatusCode::NOT_FOUND})).route("/denied/models",axum::routing::get(||async{StatusCode::UNAUTHORIZED})).route("/explicit/models",axum::routing::get(||async{Json(json!({"data":[{"id":"fixture","kind":"embedding","capabilities":["embedding"],"endpoints":["embeddings"]}]}))}));let listener=tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();let addr=listener.local_addr().unwrap();let task=tokio::spawn(async move{axum::serve(listener,app).await.unwrap()});let root=temp();let g=gateway(&root,Router::new());let catalog=models_dev::Catalog::parse(br#"{"fixture-provider":{"models":{"fixture":{"api":{"chat-completions":{"base_url":"https://fixture.invalid/v1"}},"capabilities":{"tools":{"supported":true}}}}}}"#).unwrap();*g.models_dev.value.write().unwrap()=Arc::new(catalog);let mut u=upstream("fixture");u.provider="fixture-provider".into();u.protocol="chat_completions".into();u.base_url=format!("http://{addr}/unsupported");assert!(!manage::models(&g,&u).await.unwrap().is_empty());u.base_url=format!("http://{addr}/denied");assert!(manage::models(&g,&u).await.is_err());u.base_url=format!("http://{addr}/explicit");let rows=manage::models(&g,&u).await.unwrap();assert_eq!(rows[0].capabilities,vec!["embedding"]);assert_eq!(rows[0].endpoints,vec!["embeddings"]);task.abort();std::fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
+async fn registered_provider_metadata_is_optional_and_explicit_capabilities_win() {
+    let root = temp();
+    let g = gateway(&root, Router::new());
+    let catalog = models_dev::Catalog::parse(br#"{"fixture-provider":{"models":{"fixture":{"api":{"chat-completions":{"base_url":"https://fixture.invalid/v1"}},"capabilities":{"tools":{"supported":true}}}}}}"#).unwrap();
+    *g.models_dev.value.write().unwrap() = Arc::new(catalog);
+    for (service, declared) in [("catalog-default", false), ("explicit-embedding", true)] {
+        let mut value = json!({"service_id":service,"provider":"fixture-provider","protocol":"chat_completions","base_url":"https://fixture.invalid/v1","models":[{"id":"fixture"}]});
+        if declared {
+            value["models"][0]["capabilities"] = json!(["embedding"]);
+            value["models"][0]["endpoints"] = json!(["embeddings"]);
+        }
+        let req = Request::builder().method("POST").uri("/api/v1/registrations").header("content-type", "application/json").body(Body::from(value.to_string())).unwrap();
+        manage::handle(&g, &principal("alice"), req).await.unwrap();
+    }
+    let r = g.registry.lock().unwrap();
+    let defaults = r.models.get("registered-catalog-default").unwrap();
+    assert!(defaults[0].capabilities.contains(&"tools".into()));
+    let explicit = r.models.get("registered-explicit-embedding").unwrap();
+    assert_eq!(explicit[0].capabilities, vec!["embedding"]);
+    assert_eq!(explicit[0].endpoints, vec!["embeddings"]);
+    drop(r);
     std::fs::remove_dir_all(root).unwrap();
 }

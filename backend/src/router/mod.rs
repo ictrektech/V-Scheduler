@@ -12,6 +12,7 @@ mod lease;
 mod manage;
 mod proxy;
 mod provider_runtime;
+mod models_dev;
 mod queue;
 mod residency;
 mod weights;
@@ -127,6 +128,7 @@ type Api<T> = Result<T, Failure>;
 static MANAGED_GATEWAY: std::sync::OnceLock<std::sync::Weak<Gateway>> = std::sync::OnceLock::new();
 struct Gateway {
     registry: Mutex<Registry>,
+    models_dev: models_dev::Store,
     auto_runtime: auto::Runtime,
     queue: Mutex<queue::Queue>,
     residency: residency::Residency,
@@ -266,6 +268,7 @@ pub(crate) async fn start(
     let state_path = PathBuf::from(env("V_ROUTER_STATE_PATH", "/gateway-data/state.json"));
     let state = Arc::new(Gateway {
         registry: Mutex::new(Registry::open(&state_path)?),
+        models_dev: models_dev::Store::open(&state_path),
         auto_runtime: Default::default(),
         queue: Mutex::new(Default::default()),
         residency: residency::Residency::open(&state_path)?,
@@ -295,6 +298,7 @@ pub(crate) async fn start(
     let router = Router::new().fallback(handle).with_state(state.clone());
     let socket = tokio::net::TcpListener::bind(&listen).await?;
     let mut background = discovery::start(state.clone());
+    background.push(models_dev::start(state.clone()));
     background.push(residency::start(state.clone()));
     eprintln!("V-Scheduler Rust router listening on {listen}");
     Ok(Some(Runtime {
