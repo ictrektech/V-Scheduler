@@ -25,7 +25,7 @@ ARG CARGO_OFFLINE=false
 RUN if [ "$CARGO_OFFLINE" = true ]; then cargo build --release --locked --offline; else cargo build --release --locked; fi
 
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl bzip2 xz-utils libstdc++6 && rm -rf /var/lib/apt/lists/*
+RUN apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update && apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install -y --no-install-recommends ca-certificates curl bzip2 xz-utils libstdc++6 && rm -rf /var/lib/apt/lists/*
 COPY --from=providers /usr/local/bin/node /usr/local/bin/node
 COPY --from=providers /usr/local/LICENSE /opt/v-scheduler/providers/NODE-LICENSE
 COPY --from=providers /build/providers /opt/v-scheduler/providers
