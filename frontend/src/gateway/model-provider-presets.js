@@ -21,6 +21,7 @@ function presets(providers){
   if(used.has(native.id)||['typesafe','qwen-token-plan-individual'].includes(native.id)||native.id==='ant-ling'&&providers.some(p=>p.id==='bailing'))continue;
   result.push({...native,catalogId:'',protocol:'pi',nativeOnly:true,dshIds:[native.id]});
  }
+ result.push({id:'openai-decisions',name:'OpenAI Decisions',base:'https://api.openai.com/v1',protocol:'openai_decisions',model:'gpt-6-luna'});
  result.push({id:'typesafe',name:'TypeSafe / Jev',base:'https://api.typesafe.ai/v1',protocol:'typesafe',model:'jev-latest'});
  // Models.dev already owns the Ollama Cloud identity when present.
  return result.sort((a,b)=>a.name.localeCompare(b.name));

@@ -11808,6 +11808,62 @@
         }
       }
     },
+    "/v1/decisions": {
+      "post": {
+        "summary": "OpenAI Decisions",
+        "description": "通过已注册的 OpenAI Decisions 上游透传原生决策请求及 answers 数组。使用带前缀的模型 ID。此接口不支持流式响应。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "model",
+                  "input",
+                  "questions"
+                ],
+                "properties": {
+                  "model": {
+                    "type": "string"
+                  },
+                  "input": {
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array"
+                      }
+                    ]
+                  },
+                  "questions": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Native OpenAI Decisions JSON response"
+          },
+          "default": {
+            "description": "Gateway rejection or original upstream error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/v1/systemone": {
       "post": {
         "description": "TypeSafe / Jev 原生结构化决策转发。请求保留 state、questions、assets 等原生字段，仅重写已选模型 ID；供应商密钥由网关保存。返回 answers、概率、置信度及 usage，不转换为聊天文本。支持 TypeSafe 及提供 systemone 接口的 Ollama 模型，不支持 SSE。",

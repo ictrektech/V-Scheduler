@@ -37,6 +37,7 @@ const PG_ENDPOINTS = [
   { id: "completions", path: "/completions", label: "Text Completions", stream: true },
   { id: "embeddings", path: "/embeddings", label: "Embeddings", stream: false },
   { id: "videos", path: "/videos/generations", label: "Video Generations", stream: false },
+  { id: "decisions", path: "/decisions", label: "OpenAI Decisions", stream: false },
   { id: "systemone", path: "/systemone", label: "System One (Jev)", stream: false },
 ];
 
@@ -797,7 +798,7 @@ const app = {
     const isEmbedding = endpoint?.id === "embeddings";
     $("pgStream").disabled = !endpoint?.stream;
     $("pgStream").checked = !!endpoint?.stream && $("pgStream").checked;
-    VRouterI18n.bind($("pgInput"), "placeholder", () => endpoint?.id === 'systemone' ? '{"state":"A billing issue", "questions":{"billing":{"type":"noul","instructions":"Is this about billing?"}}}' : isEmbedding ? VRouterI18n.t("输入要向量化的文本，Enter 发送") : VRouterI18n.t("输入消息，Enter 发送，Shift+Enter 换行"));
+    VRouterI18n.bind($("pgInput"), "placeholder", () => endpoint?.id === 'decisions' ? '{"input":"A billing issue","questions":[{"name":"billing","type":"predicate","instructions":"Is this about billing?"}]}' : endpoint?.id === 'systemone' ? '{"state":"A billing issue", "questions":{"billing":{"type":"noul","instructions":"Is this about billing?"}}}' : isEmbedding ? VRouterI18n.t("输入要向量化的文本，Enter 发送") : VRouterI18n.t("输入消息，Enter 发送，Shift+Enter 换行"));
   },
   playgroundModelRank(value) {
     const endpoints = this.playgroundEndpointsForValue(value);
@@ -833,6 +834,9 @@ const app = {
     return out;
   },
   upstreamSupportsEndpoint(u, model, path) {
+    if (path === '/decisions' || u.protocol === 'openai_decisions') {
+      return u.protocol === 'openai_decisions' && ['/decisions', '/systemone'].includes(path);
+    }
     if (u.protocol === 'typesafe' && path !== '/systemone') return false;
     const source = u.source || (u.kind === "local" ? "model-hub" : "");
     if (["model-hub", "v-scheduler"].includes(source)) {
@@ -952,7 +956,7 @@ const app = {
     if (single && !readChoices($("regEndpoints")).length) this.applyRegistrationPreset();
   },
   updateRegistrationProtocol() {
-    if ($("regProtocol").value === "typesafe") {
+    if (["typesafe", "openai_decisions"].includes($("regProtocol").value)) {
       $("regCapabilityPreset").value = "decision";
       this.applyRegistrationPreset();
     } else if ($("regProtocol").value === "offline_asr") {
@@ -989,7 +993,7 @@ const app = {
       audio_translation: { endpoints: "audio/translations", caps: "translation", kind: "unknown" },
       tts: { endpoints: "audio/speech", caps: "tts", kind: "unknown" },
       moderation: { endpoints: "moderations", caps: "moderation", kind: "unknown" },
-      decision: { endpoints: "systemone", caps: "decision", kind: "unknown" },
+      decision: { endpoints: $("regProtocol").value === "openai_decisions" ? "systemone,decisions" : "systemone", caps: "decision", kind: "unknown" },
     };
     const p = presets[preset] || presets.chat;
     setChoices($("regEndpoints"), ENDPOINTS, splitList(p.endpoints));
@@ -1750,6 +1754,13 @@ const app = {
     }
   },
   playgroundRequestBody(endpoint, model, text, stream) {
+    if (endpoint === 'decisions') {
+      const input = JSON.parse(text);
+      if (!input || typeof input !== 'object' || Array.isArray(input) || input.input == null || !Array.isArray(input.questions)) {
+        throw new Error('OpenAI Decisions requires input and questions');
+      }
+      return { ...input, model };
+    }
     if (endpoint === 'systemone') return systemOneRequest(model, text);
     if (endpoint === "responses") return { model, stream, input: text, store: false };
     if (endpoint === "messages") return { model, stream, max_tokens: 1024, messages: [{ role: "user", content: text }] };
@@ -1759,7 +1770,7 @@ const app = {
     return { model, stream, messages: [{ role: "user", content: text }] };
   },
   playgroundText(endpoint, data) {
-    if (endpoint === 'systemone') return JSON.stringify(data, null, 2);
+    if (['systemone', 'decisions'].includes(endpoint)) return JSON.stringify(data, null, 2);
     if (endpoint === "responses") return data.output_text || data.output?.flatMap(o => o.content || []).map(c => c.text || "").join("") || JSON.stringify(data);
     if (endpoint === "messages") return data.content?.map(c => c.text || "").join("") || JSON.stringify(data);
     if (endpoint === "completions") return data.choices?.[0]?.text ?? JSON.stringify(data);

@@ -11808,6 +11808,62 @@
         }
       }
     },
+    "/v1/decisions": {
+      "post": {
+        "summary": "OpenAI Decisions",
+        "description": "Forwards OpenAI Decisions requests and native answers arrays through a registered OpenAI Decisions upstream. Use the qualified model ID. Streaming is unsupported.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "model",
+                  "input",
+                  "questions"
+                ],
+                "properties": {
+                  "model": {
+                    "type": "string"
+                  },
+                  "input": {
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "array"
+                      }
+                    ]
+                  },
+                  "questions": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Native OpenAI Decisions JSON response"
+          },
+          "default": {
+            "description": "Gateway rejection or original upstream error"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/v1/systemone": {
       "post": {
         "description": "Proxies the native TypeSafe System One request, preserving state, questions and assets while rewriting the selected model ID. Provider credentials remain server-side. Returns native answers, probabilities, confidence and usage without a chat conversion. Supports TypeSafe and Ollama models exposing the systemone endpoint; SSE is not supported.",

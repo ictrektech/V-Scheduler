@@ -1530,8 +1530,16 @@
     },
     {
       "id": "typesafe",
-      "title": "TypeSafe / Jev",
+      "title": "System One / OpenAI Decisions",
       "endpoints": [
+        {
+          "auth": "inference",
+          "desc": "使用 OpenAI 原生 input 和 questions 格式，返回原生 answers 数组。",
+          "group": "typesafe",
+          "method": "POST",
+          "path": "/v1/decisions",
+          "summary": "OpenAI Decisions"
+        },
         {
           "auth": "inference",
           "desc": "TypeSafe / Jev 原生结构化决策转发。请求保留 state、questions、assets 等原生字段，仅重写已选模型 ID；供应商密钥由网关保存。返回 answers、概率、置信度及 usage，不转换为聊天文本。仅 typesafe 协议支持，不支持 SSE。",

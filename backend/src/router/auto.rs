@@ -499,7 +499,15 @@ async fn classify_model(
     let (task, complexity, confidence) = if config.classifier == "llm" {
         (text(&llm_result,"task"),text(&llm_result,"complexity"),llm_result["confidence"].as_f64())
     } else {
-        (text(&result["answers"]["task"],"choice"),text(&result["answers"]["complexity"],"choice"),result["answers"]["complexity"]["confidence"].as_f64())
+        (text(&result["answers"]["task"],"choice"),text(&result["answers"]["complexity"],"choice"),if upstream.protocol == "openai_decisions" {
+            let scores = &result["answers"];
+            scores["task"]["confidence"].as_f64()
+                .zip(scores["complexity"]["confidence"].as_f64())
+                .filter(|(a, b)| (0.0..=1.0).contains(a) && (0.0..=1.0).contains(b))
+                .map(|(a,b)| a.min(b))
+        } else {
+            result["answers"]["complexity"]["confidence"].as_f64()
+        })
     };
     if !valid_task(task) || !["simple", "standard", "complex"].contains(&complexity) {
         return Err(error(502, "invalid classifier choices"));
@@ -512,6 +520,7 @@ async fn classify_model(
         task: task.into(),
         complexity: complexity.into(),
         source: match (config.classifier.as_str(),external(&upstream)) {
+            (_,_) if upstream.protocol == "openai_decisions" => "openai_decisions",
             ("llm",true)=>"cloud_llm",("llm",false)=>"local_llm",(_,true)=>"jev",(_,false)=>"local_systemone"
         }.into(),
         confidence,

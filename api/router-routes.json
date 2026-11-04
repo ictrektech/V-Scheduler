@@ -1779,12 +1779,20 @@
   {"method": "GET", "path": "/api/v1/model-lifecycle", "auth": "manage", "group": "management", "summary": "模型权重与服务接入状态", "desc": "模型权重与服务接入状态", "example": ""},
   {
     "auth": "inference",
-    "desc": "TypeSafe / Jev 原生结构化决策转发。请求保留 state、questions、assets 等原生字段，仅重写已选模型 ID；供应商密钥由网关保存。返回 answers、概率、置信度及 usage，不转换为聊天文本。仅 typesafe 协议支持，不支持 SSE。",
+    "desc": "TypeSafe / Jev 原生结构化决策转发。请求保留 state、questions、assets 等原生字段，仅重写已选模型 ID；供应商密钥由网关保存。返回 answers、概率、置信度及 usage，不转换为聊天文本。typesafe 原生透传，openai_decisions 支持文本 choice 转换，不支持 SSE。",
     "example": "curl http://v-scheduler:8080/v1/systemone -H \"Content-Type: application/json\" -d '{\"model\":\"ai.typesafe.api/jev-latest\",\"state\":\"I was charged twice\",\"questions\":{\"billing\":{\"type\":\"noul\",\"instructions\":\"Is this about billing?\"}}}'",
     "group": "typesafe",
     "method": "POST",
     "path": "/v1/systemone",
     "summary": "Jev / System One 结构化决策"
+  },
+  {
+    "auth": "inference",
+    "group": "typesafe",
+    "method": "POST",
+    "path": "/v1/decisions",
+    "summary": "OpenAI Decisions 原生决策",
+    "desc": "OpenAI Decisions 原生请求与响应，使用已注册的决策模型。支持 choice、predicate 和 score。"
   },
   {
     "auth": "manage",

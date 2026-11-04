@@ -690,3 +690,91 @@ async fn auto_cloud_chat_classifier_uses_registered_key_json_sse_and_safe_fallba
     malformed.store(true,Ordering::SeqCst);let d=auto::resolve(&g,&principal("alice"),&body("Hello"),&HeaderMap::new()).await.unwrap();let c=json!(d.classification);assert_eq!(c["source"],"rules");assert_eq!(c["fallback"],true);
     server.abort();std::fs::remove_dir_all(root).unwrap();
 }
+
+#[tokio::test]
+async fn openai_decisions_routes_native_requests_and_converts_auto_answers() {
+    let root = temp();
+    let server = Router::new().route("/v1/decisions", post(
+        |headers: HeaderMap, Json(request): Json<Value>| async move {
+            assert_eq!(headers["authorization"], "Bearer fixture-decisions-key");
+            assert_eq!(request["model"], "gpt-6-luna");
+            let questions = request["questions"].as_array().unwrap();
+            if questions.len() == 1 {
+                return Json(json!({"answers":[{"name":"native","type":"predicate","probability":0.9}]}));
+            }
+            assert!(request["input"].as_str().unwrap().contains("debug"));
+            assert!(questions.iter().any(|q| q["name"] == "task" && q["choices"]
+                .as_array().unwrap().iter().any(|c| c["value"] == "code")));
+            let task_confidence = if request["input"].as_str().unwrap().contains("uncertain") { 0.4 } else { 0.91 };
+            Json(json!({"answers":[
+                {"name":"complexity","type":"choice","choice":"complex","confidence":0.98},
+                {"name":"task","type":"choice","choice":"code","confidence":task_confidence}
+            ],"usage":{"input_tokens":34,"output_tokens":0}}))
+        }
+    ));
+    let listener = tokio::net::TcpListener::bind("127.0.0.2:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move { axum::serve(listener, server).await.unwrap() });
+    let g = gateway(&root, Router::new());
+    let mut config = setup(&g);
+    let mut upstream = upstream("decisions");
+    upstream.protocol = "openai_decisions".into();
+    upstream.kind = "cloud".into();
+    upstream.base_url = format!("http://{addr}/v1");
+    upstream.api_key = "fixture-decisions-key".into();
+    g.registry.lock().unwrap().put(upstream, vec![model("gpt-6-luna")]);
+    config["classifier"] = json!("systemone");
+    config["allow_cloud_classifier"] = json!(true);
+    config["jev_model"] = json!("manual/gpt-6-luna");
+    config["jev_upstream_id"] = json!("decisions");
+    auto::configure(&g, &admin(), config).unwrap();
+    let id = principal("alice");
+    let headers = HeaderMap::new();
+    let d = auto::resolve(&g, &id, &body("debug"), &headers).await.unwrap();
+    let classification = json!(d.classification);
+    assert_eq!(classification["source"], "openai_decisions");
+    assert_eq!(classification["task"], "code");
+    assert_eq!(classification["complexity"], "complex");
+    assert_eq!(classification["confidence"], 0.91);
+    let d = auto::resolve(&g, &id, &body("debug uncertain"), &headers).await.unwrap();
+    assert_eq!(json!(d.classification)["fallback"], true);
+    let request = Request::builder().method("POST").uri("/v1/decisions")
+        .header("content-type", "application/json")
+        .body(Body::from(json!({"model":"manual/gpt-6-luna","input":"ping","questions":[
+            {"name":"native","type":"predicate","instructions":"Is this ping?"}
+        ]}).to_string())).unwrap();
+    let response = proxy::classifier(g.clone(), id, request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(response.into_body(), 65536).await.unwrap();
+    assert_eq!(serde_json::from_slice::<Value>(&bytes).unwrap()["answers"][0]["type"], "predicate");
+    server.abort();
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires an authorized OpenAI API key"]
+async fn openai_decisions_live_auto() {
+    let root = temp();
+    let g = gateway(&root, Router::new());
+    let mut config = setup(&g);
+    let mut upstream = upstream("decisions");
+    upstream.protocol = "openai_decisions".into();
+    upstream.kind = "cloud".into();
+    upstream.base_url = "https://api.openai.com/v1".into();
+    upstream.api_key = std::env::var("OPENAI_API_KEY").expect("OpenAI API key required");
+    g.registry.lock().unwrap().put(upstream, vec![model("gpt-6-luna")]);
+    config["classifier"] = json!("systemone");
+    config["allow_cloud_classifier"] = json!(true);
+    config["classifier_timeout_ms"] = json!(15000);
+    config["jev_model"] = json!("manual/gpt-6-luna");
+    config["jev_upstream_id"] = json!("decisions");
+    auto::configure(&g, &admin(), config).unwrap();
+    let decision = auto::resolve(&g, &principal("alice"), &body(
+        "Debug this Rust deadlock involving lock inversion between multiple worker threads and propose a correct lock ordering."
+    ), &HeaderMap::new()).await.unwrap();
+    let classification = json!(decision.classification);
+    std::fs::remove_dir_all(root).unwrap();
+    assert_eq!(classification["source"], "openai_decisions", "{classification}");
+    assert_eq!(classification["task"], "code");
+    assert_eq!(classification["complexity"], "complex");
+}

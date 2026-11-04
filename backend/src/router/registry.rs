@@ -431,6 +431,9 @@ impl Registry {
     }
 }
 pub(super) fn supports(u: &Upstream, m: &Model, path: &str) -> bool {
+    if path == "/decisions" || u.protocol == "openai_decisions" {
+        return u.protocol == "openai_decisions" && ["/decisions", "/systemone"].contains(&path);
+    }
     if u.protocol == "typesafe" && path != "/systemone" { return false; }
     if ["v-scheduler", "model-hub"].contains(&u.source.as_str()) {
         if u.role == "rerank" && path != "/rerank" {
@@ -567,7 +570,7 @@ pub(super) fn normalize_model(model: &mut Model) {
             "audio/music/generations" => "text-to-music",
             "moderations" => "moderation",
             "rerank" => "rerank",
-            "systemone" => "decision",
+            "systemone" | "decisions" => "decision",
             "ml/predictions" => "vision",
             "ml/video/structure" | "ml/video/structure/tasks" => "video_structure",
             _ => "",
@@ -615,7 +618,11 @@ pub(super) fn normalize_model(model: &mut Model) {
 /// Publish useful, conservative defaults for catalogs without metadata. Never
 /// advertise tools, vision or native Responses support merely from a provider name.
 pub(super) fn normalize_upstream_model(model: &mut Model, u: &Upstream) {
-    if u.protocol == "typesafe" || model.capabilities.iter().any(|c|c=="decision") {
+    if u.protocol == "openai_decisions" {
+        model.endpoints = vec!["decisions".into(), "systemone".into()];
+        model.capabilities = vec!["decision".into()];
+        model.kind = "unknown".into();
+    } else if u.protocol == "typesafe" || model.capabilities.iter().any(|c|c=="decision") {
         model.endpoints = vec!["systemone".into()];
         if u.protocol == "typesafe" { model.capabilities = vec!["decision".into()]; }
         model.kind = "unknown".into();

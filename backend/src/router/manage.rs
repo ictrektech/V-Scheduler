@@ -147,6 +147,7 @@ pub(super) fn normalize(value: &Value) -> Api<Upstream> {
         "chat_completions",
         "anthropic",
         "typesafe",
+        "openai_decisions",
         "ollama",
         "pi",
         "offline_asr",
@@ -188,7 +189,7 @@ pub(super) fn normalize(value: &Value) -> Api<Upstream> {
     }
     if matches!(
         protocol.as_str(),
-        "openai" | "chat_completions" | "anthropic" | "typesafe" | "ollama"
+        "openai" | "chat_completions" | "anthropic" | "typesafe" | "openai_decisions" | "ollama"
     ) && parsed.path() == "/"
     {
         base.push_str("/v1");
@@ -517,7 +518,7 @@ pub(super) async fn models(g: &Gateway, u: &Upstream) -> Api<Vec<Model>> {
             .ok_or_else(|| Failure::new(502, "upstream did not return a model list"))?;
         for v in rows {
             let native = v.as_str().unwrap_or_else(|| if u.protocol == "typesafe" { text(v, "name") } else { text(v, "id") });
-            if native.is_empty() {
+            if native.is_empty() || (u.protocol == "openai_decisions" && native != "gpt-6-luna") {
                 continue;
             }
             let mut model = Model {
@@ -610,7 +611,9 @@ async fn probe_model(g: &Gateway, u: &Upstream, model: &str) -> Api<()> {
         if !response.status().is_success(){return Err(provider_runtime::upstream_failure(response.status().as_u16(),"native provider model test failed"));}
         read_json(response,1<<20).await?;return Ok(());
     }
-    let suffix = if u.protocol == "typesafe" {
+    let suffix = if u.protocol == "openai_decisions" {
+        "/decisions"
+    } else if u.protocol == "typesafe" {
         "/systemone"
     } else if u.protocol == "anthropic" {
         "/messages"
@@ -626,7 +629,12 @@ async fn probe_model(g: &Gateway, u: &Upstream, model: &str) -> Api<()> {
         None,
     )
     .timeout(Duration::from_secs(10))
-    .json(&if u.protocol == "typesafe" {
+    .json(&if u.protocol == "openai_decisions" {
+        json!({"model":model,"input":"This is a connection check.","questions":[
+            {"name":"connected","type":"choice","instructions":"What is this message?",
+             "choices":[{"value":"check","description":"Connection check"},{"value":"other","description":"Other"}]}
+        ]})
+    } else if u.protocol == "typesafe" {
         json!({"model":model,"state":"Connection check","questions":{"connected":{"type":"noul","instructions":"Is this a connection check?"}}})
     } else { json!({"model":model,"max_tokens":1,"messages":[{"role":"user","content":"ping"}]}) })
     .send()
@@ -637,6 +645,13 @@ async fn probe_model(g: &Gateway, u: &Upstream, model: &str) -> Api<()> {
             502,
             format!("model test returned HTTP {}", response.status().as_u16()),
         ));
+    }
+    if u.protocol == "openai_decisions" {
+        let value = read_json(response, 64 << 10).await?;
+        let answer = super::openai_decisions::systemone_response(value)?;
+        if answer["answers"]["connected"]["choice"] != "check" {
+            return Err(Failure::new(502, "OpenAI Decisions connection check returned an invalid choice"));
+        }
     }
     Ok(())
 }

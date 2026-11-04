@@ -1530,8 +1530,16 @@
     },
     {
       "id": "typesafe",
-      "title": "TypeSafe / Jev",
+      "title": "System One / OpenAI Decisions",
       "endpoints": [
+        {
+          "auth": "inference",
+          "desc": "Forwards OpenAI input and questions. Returns the native answers array.",
+          "group": "typesafe",
+          "method": "POST",
+          "path": "/v1/decisions",
+          "summary": "OpenAI Decisions"
+        },
         {
           "auth": "inference",
           "desc": "Proxies the native TypeSafe System One request, preserving state, questions and assets while rewriting the selected model ID. Provider credentials remain server-side. Returns native answers, probabilities, confidence and usage without a chat conversion. Requires typesafe protocol; SSE is not supported.",

@@ -156,6 +156,35 @@ curl -i "$GATEWAY/v1/chat/completions" \
 
 配置真实目录中的 `jev_model`、`jev_upstream_id`，启用 `allow_cloud_classifier=true`。默认建议 1000 毫秒，跨境网络可在有界范围内调整；本次实测使用 5000 毫秒。云端回答开关与云端分类开关独立。网关复用已保存的上游 Key，Auto 配置不复制 Key；本地限定请求不会调用云端分类器。决策来源显示 `jev`。
 
+#### OpenAI Decisions
+
+在「模型与上游」添加云端上游，选择 **OpenAI Decisions**，Base URL 填 `https://api.openai.com/v1`，使用有 Decisions API 权限的 OpenAI API Key。模型选择 `gpt-6-luna`，也可手动填写。模型目录显示 `decision`（决策）能力和 `decisions`、`systemone` 两个接口。
+
+在 Auto 选择「System One 本地／云端分类器」，选该上游的模型实例并开启「允许云端分类」。配置 API 使用 `classifier=systemone`，在 `jev_model` 和 `jev_upstream_id` 填已注册的模型完整 ID 和实例 ID，再设置 `allow_cloud_classifier=true`。可先将 `classifier_timeout_ms` 设为 5000，再按实际网络延迟调整。Auto 通过一次原生请求提交任务类型和复杂度两个 `choice` 问题，按名称读取结果，取两项置信度的最小值。缺失、拒答、无效选项、置信度低于 0.7 或调用超时会回退本地规则。成功时分类来源显示 `openai_decisions`。Local-Only 请求跳过云端分类。
+
+可直接调用网关 `POST /v1/decisions`，传入已注册的模型完整 ID、OpenAI 格式的 `input` 和 `questions` 数组，取得原生 `answers` 数组。使用 `POST /v1/systemone` 访问同一个 OpenAI 模型时，网关转换文本 `choice` 请求并按名称返回 `answers` 对象。原生 `predicate`、`score` 或图像输入请用 `/v1/decisions`。两种入口均为非流式。
+
+```json
+{
+  "model": "<已注册的 OpenAI Decisions 模型完整 ID>",
+  "input": "请排查这段程序里的线程死锁",
+  "questions": [
+    {
+      "name": "task",
+      "type": "choice",
+      "instructions": "判断任务类型",
+      "choices": [
+        {"value": "code", "description": "代码和调试"},
+        {"value": "general", "description": "普通问答"}
+      ]
+    }
+  ]
+}
+```
+
+[OpenAI Decisions 官方接口](https://developers.openai.com/api/docs/guides/decisions)
+
+
 分类仅判断 task 与 complexity，不能指定 URL 或授予权限。最多截取最近 5 条消息建立独立分类视图，超过 16000 UTF-8 字节回退规则，原回答输入不变。分类请求不携带用户的调度控制头，不递归 Auto；全局最多 2 个并发分类。失败、超时、忙碌、无权限或 complexity confidence <0.7 时回退规则，并冷却 30 秒。该阈值是起始配置，不代表回答正确率。
 
 **测试选型会实际运行可选分类器**：本地模型消耗本地算力；云端模型会发送分类文本并可能计费。测试不会运行回答模型。统计独立记录分类请求 token，并在回答的 `auto_routing.classification` 中关联决策；尚不提供账单总额保证。云端 Jev 经 OpenRouter 的真实分类、异常回退、超时恢复和本地回答 JSON/SSE 已验证。

@@ -10,6 +10,7 @@ mod discovery;
 mod jobs;
 mod lease;
 mod manage;
+mod openai_decisions;
 mod proxy;
 mod provider_runtime;
 mod models_dev;

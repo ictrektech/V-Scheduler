@@ -8,8 +8,8 @@ test('provider presets have unique identities and endpoints, and never invent mo
   assert.equal(new Set(PROVIDER_PRESETS.map(p => p.id)).size, PROVIDER_PRESETS.length);
   for (const p of PROVIDER_PRESETS) {
     if(p.base&&!p.base.includes('${')){const url=new URL(p.base.replace(/\$\{[^}]+\}/g,'example'));assert.ok(['https:','http:'].includes(url.protocol));if(url.protocol==='http:')assert.ok(['127.0.0.1','localhost'].includes(url.hostname));}
-    assert.ok(['openai', 'chat_completions', 'anthropic', 'typesafe', 'ollama', 'pi'].includes(p.protocol));
-    assert.ok(!p.model || p.id === 'typesafe');
+    assert.ok(['openai', 'chat_completions', 'anthropic', 'typesafe', 'openai_decisions', 'ollama', 'pi'].includes(p.protocol));
+    assert.ok(!p.model || p.id === 'typesafe' || (p.id === 'openai-decisions' && p.model === 'gpt-6-luna'));
   }
   for (const options of [CAPABILITIES, ENDPOINTS]) assert.equal(new Set(options.map(([id]) => id)).size, options.length);
 });
@@ -27,6 +27,7 @@ test('specialized models and explicit endpoint restrictions are preserved', () =
     assert.deepEqual(model.endpoints, [endpoint]);
     assert.ok(!model.capabilities.includes('chat'));
   }
+  assert.deepEqual(effectiveMetadata({}, 'openai_decisions'), {kind:'unknown', capabilities:['decision'], endpoints:['decisions','systemone']});
   assert.deepEqual(effectiveMetadata({endpoints:['responses']}).endpoints,['responses']);
   assert.deepEqual(effectiveMetadata({capabilities:['vendor-extension']}).capabilities,['vendor-extension']);
   assert.deepEqual(effectiveMetadata({capabilities:['vendor-extension']}).endpoints,[]);

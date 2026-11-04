@@ -8,13 +8,13 @@ export const CAPABILITIES = [
   ['asr', '语音识别'], ['tts', '语音合成'], ['translation', '翻译'],
   ['moderation', '内容审核'], ['face_recognition', '人脸识别'],
   ['person_reid', '行人重识别'], ['ocr', '文字识别'],
-  ['video_structure', '视频结构化'], ['decision', '结构化决策（Jev）'],
+  ['video_structure', '视频结构化'], ['decision', '结构化决策'],
 ];
 export const ENDPOINTS = [
   'chat_completions', 'responses', 'messages', 'completions', 'embeddings', 'rerank',
   'images/generations', 'images/edits', 'images/variations', 'videos/generations',
   'audio/transcriptions', 'audio/translations', 'audio/speech', 'moderations',
-  'ml/predictions', 'ml/video/structure', 'systemone',
+  'ml/predictions', 'ml/video/structure', 'systemone', 'decisions',
 ].map(id => [id, id]);
 
 export {PROVIDER_PRESETS,replaceProviderCatalog} from './model-provider-presets.js';
@@ -25,6 +25,7 @@ export function validateProviderAddress(value) {
 }
 
 export function effectiveMetadata(model = {}, protocol = 'openai') {
+  if (protocol === 'openai_decisions') return {kind: 'unknown', capabilities: ['decision'], endpoints: ['decisions', 'systemone']};
   if (protocol === 'typesafe') return {kind: 'unknown', capabilities: ['decision'], endpoints: ['systemone']};
   const capabilities = [...new Set(model.capabilities || [])];
   const endpoints = [...new Set(model.endpoints || [])];
@@ -49,7 +50,7 @@ export function effectiveMetadata(model = {}, protocol = 'openai') {
     messages: 'completion', completions: 'completion', embeddings: 'embedding', rerank: 'rerank',
     'images/generations': 'image_generation', 'images/edits': 'image_edit', 'images/variations': 'image_variation',
     'videos/generations': 'video_generation', 'audio/transcriptions': 'asr', 'audio/translations': 'translation',
-    'audio/speech': 'tts', moderations: 'moderation', systemone: 'decision',
+    'audio/speech': 'tts', moderations: 'moderation', systemone: 'decision', decisions: 'decision',
   };
   for (const ep of endpoints) if (capByEndpoint[ep] && !capabilities.includes(capByEndpoint[ep])) capabilities.push(capByEndpoint[ep]);
   if (endpoints.some(ep => ['chat_completions', 'chat/completions', 'messages', 'responses', 'completions'].includes(ep))) {

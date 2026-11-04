@@ -459,8 +459,8 @@ async fn handle_inner(g: Arc<Gateway>, id: Identity, request: Request, classifie
             (Some(buffer), bytes, vec![], value, model)
         }
     };
-    if path == "/v1/systemone" && value["stream"] == true {
-        return Err(Failure::new(400, "TypeSafe System One does not support streaming"));
+    if ["/v1/systemone", "/v1/decisions"].contains(&path.as_str()) && value["stream"] == true {
+        return Err(Failure::new(400, "Decision endpoints do not support streaming"));
     }
     let mut auto_decision = None;
     let requested = if requested == "auto" {
@@ -540,6 +540,7 @@ async fn handle_inner(g: Arc<Gateway>, id: Identity, request: Request, classifie
                 "moderations",
                 "rerank",
                 "systemone",
+                "decisions",
                 "ml",
             ]
             .contains(&family)
@@ -696,7 +697,10 @@ async fn handle_inner(g: Arc<Gateway>, id: Identity, request: Request, classifie
         if let Some(slot)=exchange.lease.as_mut().and_then(|lease|lease.request_slot.take()) {exchange._slot=Some(slot);}
     }
     exchange.bridge_request = bridge::context(&value);
-    let actual_suffix = if conversion.is_empty() {
+    let adapt_decisions = u.protocol == "openai_decisions" && suffix == "/systemone";
+    let actual_suffix = if adapt_decisions {
+        "/decisions"
+    } else if conversion.is_empty() {
         suffix.as_str()
     } else {
         "/chat/completions"
@@ -707,6 +711,9 @@ async fn handle_inner(g: Arc<Gateway>, id: Identity, request: Request, classifie
     } else if value.is_object() && (!bytes.is_empty() || !native.is_empty()) {
         if !native.is_empty() {
             value["model"] = json!(native);
+        }
+        if adapt_decisions {
+            value = super::openai_decisions::request(&value)?;
         }
         rewritten = serde_json::to_vec(&value).unwrap();
     }
@@ -799,6 +806,24 @@ async fn handle_inner(g: Arc<Gateway>, id: Identity, request: Request, classifie
         }
     };
     if response.status().is_success() { if let Some(decision)=&auto_decision {auto::remember(&g,&id,&headers,decision);} }
+    if adapt_decisions && response.status().is_success() {
+        exchange.status = response.status().as_u16();
+        let result = lease::guard(exchange.lease.as_ref(), async {
+            let value = read_json(response, 64 << 10).await?;
+            super::openai_decisions::systemone_response(value)
+        }).await;
+        if let Err(error) = &result {
+            exchange.status = error.status.as_u16();
+        }
+        complete_lease(&mut exchange, "synchronous_response_completed").await;
+        let result = result?;
+        exchange.usage = result["usage"].clone();
+        let mut out = axum::Json(result).into_response();
+        if let Ok(value) = u.id.parse() {
+            out.headers_mut().insert("x-vrouter-upstream", value);
+        }
+        return Ok(out);
+    }
     finish_response(exchange, response, conversion).await
 }
 pub(super) async fn finish_response(

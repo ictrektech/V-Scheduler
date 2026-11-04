@@ -76,7 +76,7 @@ export const VRouterMessages = {
 "人脸识别":{"en": "Face recognition", "zh-TW": "人臉辨識"},
 "行人重识别":{"en": "Person re-identification", "zh-TW": "行人重識別"},
 "文字识别":{"en": "OCR", "zh-TW": "文字辨識"},
-"结构化决策（Jev）":{"en": "Typed decisions (Jev)", "zh-TW": "結構化決策（Jev）"},
+"结构化决策":{"en": "Typed decisions", "zh-TW": "結構化決策"},
 "TypeSafe / Jev（System One 决策）":{"en": "TypeSafe / Jev (System One decisions)", "zh-TW": "TypeSafe / Jev（System One 決策）"},
 "从上游模型列表选择":{"en": "Select from upstream models", "zh-TW": "從上游模型清單選擇"},
 "选择实际支持的能力；未声明时按接口和协议补全默认能力，不自动声明工具或图片能力。":{"en": "Select actual capabilities. Missing metadata uses conservative protocol/endpoint defaults; tools and vision require explicit declaration.", "zh-TW": "選擇實際支援能力；未聲明時依介面與協定補上預設能力，不自動聲明工具或圖片能力。"},
