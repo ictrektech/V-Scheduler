@@ -63,6 +63,13 @@ impl Upstream {
     pub fn live(&self) -> bool {
         self.healthy && (self.source=="api" || self.expires_at.is_none_or(|at| at > Utc::now()))
     }
+    pub fn converts_chat_endpoint(&self, path: &str) -> bool {
+        match path {
+            "/messages" => self.chat_only() || self.protocol == "openai",
+            "/responses" => self.chat_only(),
+            _ => false,
+        }
+    }
     pub fn chat_only(&self) -> bool {
         ["chat_completions", "ollama", "pi"].contains(&self.protocol.as_str())
             || self.protocol.is_empty() && self.source == "model-hub"
@@ -456,6 +463,9 @@ pub(super) fn supports(u: &Upstream, m: &Model, path: &str) -> bool {
         if u.role == "generate" && path == "/embeddings" {
             return false;
         }
+    }
+    if path == "/messages" && u.protocol == "openai" {
+        return supports(u, m, "/chat/completions");
     }
     if path == "/messages"
         && !(u.chat_only() || ["anthropic", "offline_asr"].contains(&u.protocol.as_str()))

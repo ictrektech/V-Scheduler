@@ -831,12 +831,20 @@ async fn rust_gateway_handles_native_chat_conversion_and_sse_against_a_real_http
     let mut u = upstream("fixture");
     u.base_url = format!("http://127.0.0.1:{port}/v1");
     g.registry.lock().unwrap().put(u, vec![model("echo")]);
-    for path in ["/v1/chat/completions", "/v1/responses", "/v1/messages"] {
+    for (path, requested_model, protocol) in [
+        ("/v1/chat/completions", "manual/echo", "chat_completions"),
+        ("/v1/responses", "manual/echo", "chat_completions"),
+        ("/v1/messages", "manual/echo", "chat_completions"),
+        ("/v1/messages", "manual/echo", "openai"),
+        ("/v1/messages", "auto", "chat_completions"),
+        ("/v1/messages", "auto", "openai"),
+    ] {
+        g.registry.lock().unwrap().upstreams.get_mut("fixture").unwrap().protocol = protocol.into();
         for stream in [false, true] {
             let body = if path.ends_with("responses") {
                 json!({"model":"manual/echo","input":"hello","stream":stream})
             } else {
-                json!({"model":"manual/echo","messages":[{"role":"user","content":"hello"}],"max_tokens":8,"stream":stream})
+                json!({"model":requested_model,"messages":[{"role":"user","content":"hello"}],"max_tokens":8,"stream":stream})
             };
             let request = axum::http::Request::builder()
                 .method("POST")
@@ -848,14 +856,29 @@ async fn rust_gateway_handles_native_chat_conversion_and_sse_against_a_real_http
                 .await
                 .unwrap();
             assert_eq!(response.status(), 200);
+            if requested_model == "auto" {
+                assert_eq!(response.headers()["x-vscheduler-auto-model"], "manual/echo");
+            }
             let bytes = axum::body::to_bytes(response.into_body(), 1 << 20)
                 .await
                 .unwrap();
             assert!(String::from_utf8_lossy(&bytes).contains("rust echo"));
+            if requested_model == "auto" {
+                if stream {
+                    let events = String::from_utf8_lossy(&bytes);
+                    for event in ["message_start", "content_block_delta", "message_stop"] {
+                        assert!(events.contains(&format!("event: {event}")));
+                    }
+                } else {
+                    let message: Value = serde_json::from_slice(&bytes).unwrap();
+                    assert_eq!(message["type"], "message");
+                    assert_eq!(message["content"][0]["text"], "rust echo");
+                }
+            }
         }
     }
     assert_eq!(g.registry.lock().unwrap().inflight["fixture"], 0);
-    assert_eq!(g.usage.lock().unwrap().len(), 6);
+    assert_eq!(g.usage.lock().unwrap().len(), 12);
     server.abort();
     std::fs::remove_dir_all(root).unwrap();
 }

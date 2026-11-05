@@ -190,7 +190,7 @@
   },
   {
     "auth": "inference",
-    "desc": "Anthropic 原生上游直接转发；chat_completions 上游由 Rust 进程内转换文本、图片输入与 function tools，支持 SSE。无状态转换不支持服务端工具、缓存或 thinking；图片和工具能力仍由模型决定。支持 x-api-key 网关身份。",
+    "desc": "支持指定模型或 model=auto。原生 Anthropic 上游直接转发。支持 Chat Completions 的 openai、chat_completions 等上游可转换文本、图片输入和函数工具，支持 SSE。Auto Messages 使用可转换字段，转换模式不支持 thinking、提示缓存或服务端工具。图片与工具能力取决于实际模型。支持 x-api-key 网关身份。",
     "example": "",
     "group": "anthropic",
     "method": "POST",

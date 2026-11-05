@@ -382,3 +382,5 @@ Auto 是始终可发现的虚拟聊天模型：应用从 `/v1/models` 获取 `au
 Auto 卡片提供「配置候选与策略」入口，作为内置路由显示，不再显示普通上游的发现状态或服务地址。管理客户端可读取 Auto 模型条目的 configuration_url/candidates_url，通过 GET/PUT `/api/v1/auto-routing` 配置同一份策略；OpenAI Decisions 在「结构化决策分类器（OpenAI Decisions／System One）」中选用，API classifier 仍为 systemone。
 
 发布时可设置 `SCHEDULER_IMAGE_TAG_SUFFIX=auto87` 再运行原有 `build_image.sh --sheet ...`，生成 `arm_YYYYMMDD_auto87` / `amd_YYYYMMDD_auto87` 独立标签，避免 VOS 拉取同名日期标签时覆盖刚构建镜像的引用；Feishu 仍由脚本记录完整标签。
+
+Auto 支持 Anthropic Messages（`POST /v1/messages`），可选原生 Anthropic 或由网关转换到 Chat Completions 的候选模型。普通和流式请求示例见应用内「API 文档 → 应用接入」。

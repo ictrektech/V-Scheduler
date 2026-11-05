@@ -461,11 +461,15 @@ async fn handle_inner(g: Arc<Gateway>, id: Identity, request: Request, classifie
     }
     let mut auto_decision = None;
     let requested = if requested == "auto" {
-        if classifier || path != "/v1/chat/completions" { return Err(Failure::new(400,"Auto supports Chat Completions only")); }
+        let endpoint = match (classifier, method.as_str(), path.as_str()) {
+            (false, "POST", "/v1/chat/completions") => "/chat/completions",
+            (false, "POST", "/v1/messages") => "/messages",
+            _ => return Err(Failure::new(400, "Auto supports Chat Completions and Messages")),
+        };
         // A nested classifier uses a normal inference slot. Do not hold the
         // answering slot while waiting, which could deadlock at full capacity.
         slot.take();
-        let decision = auto::resolve(&g,&id,&value,&headers).await?;
+        let decision = auto::resolve_for(&g, &id, &value, &headers, endpoint).await?;
         if decision.resolved_model.is_empty() {return Err(Failure::new(503,"no eligible Auto candidate; inspect test routing"));}
         slot=Some(g.slots.clone().try_acquire_owned().map_err(|_|Failure::new(429,"gateway request capacity exhausted"))?);
         if value.get("max_tokens").is_none() && value.get("max_completion_tokens").is_none() {value["max_tokens"]=json!(1024);}
@@ -585,7 +589,7 @@ async fn handle_inner(g: Arc<Gateway>, id: Identity, request: Request, classifie
     check_owner(&g, &u, &path, &id)?;
     let approval = lease::approval(&g, &u, &native, method.as_str(), &suffix, is_websocket)?;
     let asynchronous = jobs::creation(&u, &suffix, &value, method.as_str());
-    let conversion = if u.chat_only() && ["/responses", "/messages"].contains(&suffix.as_str()) {
+    let conversion = if u.converts_chat_endpoint(&suffix) {
         suffix.trim_start_matches('/')
     } else {
         ""

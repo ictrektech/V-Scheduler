@@ -5,6 +5,14 @@ const endpoints=ref<any[]>([])
 const locationHost=location.hostname||'<vos-host>'
 onMounted(async()=>{try{endpoints.value=(await request('/api/v1/integration')).endpoints}catch{}})
 defineProps<{t:(value:string)=>string}>()
+const anthropicExamples=`GATEWAY=http://v-scheduler:8080
+# x-api-key: V-Scheduler gateway key
+# AUTO: JSON response
+curl -fsS "$GATEWAY/v1/messages" -H "x-api-key: $GATEWAY_KEY" -H 'anthropic-version: 2023-06-01' -H 'Content-Type: application/json' -d '{"model":"auto","max_tokens":64,"messages":[{"role":"user","content":"Say hello."}]}'
+# AUTO: streaming
+curl -fsSN "$GATEWAY/v1/messages" -H "x-api-key: $GATEWAY_KEY" -H 'anthropic-version: 2023-06-01' -H 'Content-Type: application/json' -d '{"model":"auto","max_tokens":64,"stream":true,"messages":[{"role":"user","content":"Say hello."}]}'
+# Explicit model: use its qualified ID from /api/v1/models
+curl -fsS "$GATEWAY/v1/messages" -H "x-api-key: $GATEWAY_KEY" -H 'anthropic-version: 2023-06-01' -H 'Content-Type: application/json' -d '{"model":"com.deepseek.api/deepseek-flash","max_tokens":64,"messages":[{"role":"user","content":"Say hello."}]}'`
 const autoExamples=`# GATEWAY: http://v-scheduler:8080
 # VOS_TOKEN: VOS administrator token / gateway administrator key
 curl -fsS "$GATEWAY/api/v1/auto-routing/candidates" -H "Authorization: Bearer $VOS_TOKEN"
@@ -25,6 +33,10 @@ curl -i "$GATEWAY/v1/chat/completions" -H "Authorization: Bearer $VOS_TOKEN" -H 
   <p>{{t('正式别名由当前 V-Scheduler 安装声明；兼容别名仅供旧客户端使用。新应用优先使用正式别名；与旧 V-Router 共存时不要向兼容别名发送私有凭据。所有别名均指向现有容器，不新增服务。')}}</p>
   <h3>{{t('本地与云端模型')}}</h3>
   <p>{{t('本地和纳管远端模型先取得资源许可；云端供应商模型不占本地资源预约。资源忙时遵守重试提示，不能绕过网关直接启动同一次计算。')}}</p>
+  <h3>Anthropic Messages</h3>
+  <p>{{t('使用网关 Key 设置 GATEWAY_KEY。局域网调用时，GATEWAY 填上表的网关宿主机地址。支持 Auto 与指定模型，只有 OpenAI 兼容 Chat Completions 的上游可选「仅 Chat Completions」协议，由网关转换请求和流式响应。')}}</p>
+  <p>{{t('Auto 的 Messages 请求使用可转换的字段。thinking、提示缓存和服务端工具请使用支持这些能力的原生模型。指定模型示例中的 ID 以本机模型目录为准。')}}</p>
+  <pre>{{anthropicExamples}}</pre>
   <h3>{{t('Auto 自动选型')}}</h3>
   <p>{{t('Auto 是始终可发现的模型。默认按均衡策略自动选择可用聊天模型；本地调用继续经过资源准入。')}}</p>
   <p>{{t('不勾选候选时使用自动候选池；勾选后仅使用指定模型，并按配置的能力档位筛选。规则无需额外模型。')}}</p>

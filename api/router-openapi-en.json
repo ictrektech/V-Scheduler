@@ -7275,7 +7275,7 @@
         "x-gateway-auth": "manage"
       },
       "post": {
-        "description": "Anthropic-native upstreams are forwarded directly. For chat_completions upstreams, Go converts text, image input and function tools, including SSE. Stateless conversion does not support server-side tools, caching or thinking; model capabilities determine image/tool support. x-api-key is supported for gateway identity.",
+        "description": "Use an explicit model or model=auto. Native Anthropic upstreams receive Messages requests directly. Chat Completions capable OpenAI upstreams receive converted text, image input and function tools, with SSE support. Auto Messages accepts convertible fields. Conversion does not support thinking, prompt caching or server-side tools. Image and tool support depends on the model. The gateway accepts x-api-key.",
         "parameters": [
           {
             "description": "Pins an upstream ID without fallback; requires identity and native model names. Otherwise matches model, protocol and health, selecting by in-flight requests/weight. Ties use smooth weighted rotation within the current model/interface. Returns 429 if all candidates are full. A prefix limits source; short names span sources, including cloud. Required for resource APIs.",

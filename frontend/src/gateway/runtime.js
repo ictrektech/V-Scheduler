@@ -821,7 +821,7 @@ const app = {
   playgroundCandidates(value, endpoint) {
     if (!value || !endpoint) return [];
     const rows = this.state.models.filter(m => !m.short && m.qualified === value);
-    if (rows.some(m => m.virtual)) return endpoint.path === '/chat/completions' ? [{id:'auto',name:'Auto'}] : [];
+    if (rows.some(m => m.virtual)) return rows.some(m => m.endpoints?.includes(endpoint.id === 'chat' ? 'chat_completions' : endpoint.id)) ? [{id:'auto',name:'Auto'}] : [];
     const seen = new Set();
     const out = [];
     for (const row of rows) {
@@ -849,6 +849,7 @@ const app = {
     }
     const chatOnly = ["chat_completions", "ollama", "pi"].includes(u.protocol) || (!u.protocol && source === "model-hub");
     if (path === "/messages") {
+      if (u.protocol === "openai") return this.upstreamSupportsEndpoint(u, model, "/chat/completions");
       if (!chatOnly && u.protocol !== "anthropic") return false;
     } else if (u.protocol === "anthropic") {
       return false;

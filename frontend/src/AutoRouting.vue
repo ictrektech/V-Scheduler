@@ -13,7 +13,7 @@ const decision=ref<any>(null),output=ref(''),stream=ref(false),localOnly=ref(fal
 const requestText=ref(JSON.stringify({model:'auto',messages:[{role:'user',content:'请总结这段文字：模型路由根据任务需求选择模型，本地计算仍需资源许可。'}],max_tokens:256},null,2))
 let abort:AbortController|undefined
 const dirty=computed(()=>!!config.value&&JSON.stringify(config.value)!==saved.value)
-const rows=computed(()=>catalog.value.filter(m=>m.endpoints?.includes('chat_completions')&&!m.virtual&&`${m.qualified} ${m.upstream_name}`.toLowerCase().includes(search.value.toLowerCase())))
+const rows=computed(()=>catalog.value.filter(m=>m.endpoints?.some((e:string)=>e==='chat_completions'||e==='messages')&&!m.virtual&&`${m.qualified} ${m.upstream_name}`.toLowerCase().includes(search.value.toLowerCase())))
 const modelClassifier=computed(()=>['jev','systemone','llm'].includes(config.value?.classifier||''))
 const classifiers=computed(()=>catalog.value.filter(m=>!m.virtual&&m.endpoints?.includes(config.value?.classifier==='llm'?'chat_completions':'systemone')))
 const taskTypes=['general','code','translation','summary','reasoning']

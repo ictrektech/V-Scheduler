@@ -157,7 +157,7 @@ pub(super) fn configure(g: &Gateway, id: &Identity, payload: Value) -> Api<Value
             u.visible(id)
                 && r.models.get(&u.id).is_some_and(|ms| {
                     ms.iter().any(|m| {
-                        m.qualified == c.model && registry::supports(u, m, "/chat/completions")
+                        m.qualified == c.model && supports_chat(u, m)
                     })
                 })
         });
@@ -169,7 +169,7 @@ pub(super) fn configure(g: &Gateway, id: &Identity, payload: Value) -> Api<Value
         if c.model == "auto" || (!known && !retained) {
             return Err(error(
                 422,
-                "Auto candidate must identify a discovered chat model and upstream",
+                "Auto candidate must identify a discovered Chat Completions or Messages model and upstream",
             ));
         }
     }
@@ -254,19 +254,22 @@ fn available(r: &Registry, u: &Upstream, id: &Identity) -> bool {
 pub(super) fn advertised(_r: &Registry, _id: &Identity) -> bool {
     true
 }
+fn supports_chat(u: &Upstream, m: &Model) -> bool {
+    registry::supports(u, m, "/chat/completions") || registry::supports(u, m, "/messages")
+}
 fn candidate_pool(r: &Registry, config: &Config) -> Vec<Candidate> {
     if !config.candidates.is_empty() {
         return config.candidates.clone();
     }
     r.upstreams.values().flat_map(|u| {
         r.models.get(&u.id).into_iter().flatten().filter_map(|m| {
-            (m.qualified != "auto" && registry::supports(u, m, "/chat/completions"))
+            (m.qualified != "auto" && supports_chat(u, m))
                 .then(|| Candidate { model: m.qualified.clone(), upstream_id: u.id.clone(), ..Candidate::default() })
         })
     }).collect()
 }
 pub(super) fn model_view() -> Value {
-    json!({"id":"auto","qualified":"auto","kind":"chat","capabilities":["chat","completion"],"endpoints":["chat_completions"],"owned_by":"v-scheduler","upstream_name":"Auto","upstream_kind":"virtual","upstream_source":"auto","model_prefix":"auto","virtual":true,"configuration_url":"/api/v1/auto-routing","candidates_url":"/api/v1/auto-routing/candidates"})
+    json!({"id":"auto","qualified":"auto","kind":"chat","capabilities":["chat","completion"],"endpoints":["chat_completions","messages"],"owned_by":"v-scheduler","upstream_name":"Auto","upstream_kind":"virtual","upstream_source":"auto","model_prefix":"auto","virtual":true,"configuration_url":"/api/v1/auto-routing","candidates_url":"/api/v1/auto-routing/candidates"})
 }
 
 #[derive(Clone, Serialize)]
@@ -536,10 +539,33 @@ pub(super) async fn resolve(
     body: &Value,
     headers: &HeaderMap,
 ) -> Api<Decision> {
+    resolve_for(g, id, body, headers, "/chat/completions").await
+}
+
+pub(super) async fn resolve_for(
+    g: &Arc<Gateway>,
+    id: &Identity,
+    request: &Value,
+    headers: &HeaderMap,
+    endpoint: &str,
+) -> Api<Decision> {
     if headers.contains_key("x-vrouter-upstream") {
         return Err(error(400, "Auto cannot be combined with a pinned upstream"));
     }
+    // Use the existing bridge to interpret Messages blocks for selection.
+    // Dispatch still receives the original request for native Messages upstreams.
+    let normalized;
+    let body = if endpoint == "/messages" {
+        if !request["messages"].as_array().is_some_and(|messages| !messages.is_empty()) {
+            return Err(error(422, "Auto requires nonempty messages"));
+        }
+        normalized = bridge::request(request, "messages")?;
+        &normalized
+    } else {
+        request
+    };
     let (input, output, images) = requirements(body)?;
+    let request_bytes = serde_json::to_vec(request).unwrap().len();
     let mut config = g.registry.lock().unwrap().auto.clone();
     let automatic_pool = config.candidates.is_empty();
     config.candidates = candidate_pool(&g.registry.lock().unwrap(), &config);
@@ -559,7 +585,11 @@ pub(super) async fn resolve(
         return Err(error(422, "Auto local-only must be true or false"));
     }
     let session = session_key(id, headers)?;
-    let tool_continuation = body["messages"]
+    let messages_tool_result = endpoint == "/messages"
+        && request["messages"].as_array().and_then(|messages| messages.last())
+            .and_then(|message| message["content"].as_array())
+            .is_some_and(|blocks| blocks.iter().any(|block| block["type"] == "tool_result"));
+    let tool_continuation = messages_tool_result || body["messages"]
         .as_array()
         .and_then(|m| m.last())
         .is_some_and(|m| m["role"] == "tool");
@@ -644,7 +674,7 @@ pub(super) async fn resolve(
             "upstream_unavailable"
         } else if (!config.allow_cloud || local_only == "true") && external(u) {
             "cloud_disallowed"
-        } else if !registry::supports(u, m, "/chat/completions") {
+        } else if !registry::supports(u, m, endpoint) {
             "endpoint_unsupported"
         } else if images > 0 && (!caps("vision") || c.image_tokens.is_none()) {
             "vision_budget_or_capability_missing"
@@ -680,7 +710,7 @@ pub(super) async fn resolve(
             reports.push(json!({"model":c.model,"upstream_id":c.upstream_id,"eligible":false,"reason":reason}));
             continue;
         }
-        let approval = lease::approval(g, u, &m.id, "POST", "/chat/completions", false);
+        let approval = lease::approval(g, u, &m.id, "POST", endpoint, false);
         // A verified native weight size is a tie-breaker for the unconfigured
         // pool, never a guessed quality tier or a substitute for admission.
         let native_bytes = approval.as_ref().ok().and_then(|a| a.as_ref())
@@ -688,12 +718,16 @@ pub(super) async fn resolve(
             .filter(|n| *n > 0).unwrap_or(u64::MAX);
         let approved = match approval {
             Ok(Some(a)) => {
-                let mut input = body.clone();
+                let mut input = if endpoint == "/messages" && !u.converts_chat_endpoint(endpoint) {
+                    request.clone()
+                } else {
+                    body.clone()
+                };
                 if input.get("max_tokens").is_none() && input.get("max_completion_tokens").is_none()
                 {
                     input["max_tokens"] = json!(output);
                 }
-                lease::validate(&a, u, &mut input, serde_json::to_vec(body).unwrap().len()).is_ok()
+                lease::validate(&a, u, &mut input, request_bytes).is_ok()
             }
             Ok(None) => true,
             Err(_) => false,

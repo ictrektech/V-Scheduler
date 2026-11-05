@@ -247,7 +247,7 @@
       "endpoints": [
         {
           "auth": "inference",
-          "desc": "Anthropic-native upstreams are forwarded directly. For chat_completions upstreams, Rust converts text, image input and function tools, including SSE. Stateless conversion does not support server-side tools, caching or thinking; model capabilities determine image/tool support. x-api-key is supported for gateway identity.",
+          "desc": "Use an explicit model or model=auto. Native Anthropic upstreams receive Messages requests directly. Chat Completions capable OpenAI upstreams receive converted text, image input and function tools, with SSE support. Auto Messages accepts convertible fields. Conversion does not support thinking, prompt caching or server-side tools. Image and tool support depends on the model. The gateway accepts x-api-key.",
           "method": "POST",
           "path": "/v1/messages",
           "summary": "Anthropic Messages"
