@@ -849,7 +849,6 @@ const app = {
     }
     const chatOnly = ["chat_completions", "ollama", "pi"].includes(u.protocol) || (!u.protocol && source === "model-hub");
     if (path === "/messages") {
-      if (u.protocol === "openai") return this.upstreamSupportsEndpoint(u, model, "/chat/completions");
       if (!chatOnly && u.protocol !== "anthropic") return false;
     } else if (u.protocol === "anthropic") {
       return false;
