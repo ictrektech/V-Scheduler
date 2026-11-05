@@ -472,6 +472,9 @@ pub(super) fn supports(u: &Upstream, m: &Model, path: &str) -> bool {
     {
         return false;
     }
+    if path == "/chat/completions" && u.protocol == "anthropic" {
+        return supports(u, m, "/messages");
+    }
     if path != "/messages" && u.protocol == "anthropic" {
         return false;
     }

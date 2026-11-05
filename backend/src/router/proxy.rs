@@ -593,10 +593,15 @@ async fn handle_inner(g: Arc<Gateway>, id: Identity, request: Request, classifie
         && (u.chat_only() || (pinned.is_empty() && method == "POST"))
     {
         suffix.trim_start_matches('/')
+    } else if u.protocol == "anthropic" && suffix == "/chat/completions" && method == "POST" {
+        "chat"
     } else {
         ""
     };
-    if !conversion.is_empty() {
+    if conversion == "chat" {
+        exchange.bridge_request = json!({"include_usage":value["stream_options"]["include_usage"]});
+        value = anthropic_bridge::request(&value)?;
+    } else if !conversion.is_empty() {
         value = bridge::request(&value, conversion)?;
     }
     if let Some(approval) = &approval {
@@ -699,10 +704,14 @@ async fn handle_inner(g: Arc<Gateway>, id: Identity, request: Request, classifie
         );
         if let Some(slot)=exchange.lease.as_mut().and_then(|lease|lease.request_slot.take()) {exchange._slot=Some(slot);}
     }
-    exchange.bridge_request = bridge::context(&value);
+    if conversion != "chat" {
+        exchange.bridge_request = bridge::context(&value);
+    }
     let adapt_decisions = u.protocol == "openai_decisions" && suffix == "/systemone";
     let actual_suffix = if adapt_decisions {
         "/decisions"
+    } else if conversion == "chat" {
+        "/messages"
     } else if conversion.is_empty() {
         suffix.as_str()
     } else {
@@ -898,6 +907,13 @@ pub(super) async fn finish_response(
         complete_lease(&mut exchange,"synchronous_response_completed").await;
         let mut chat: Value = serde_json::from_slice(&bytes)
             .map_err(|_| Failure::new(502, "upstream returned invalid chat JSON"))?;
+        if conversion == "chat" {
+            let chat = anthropic_bridge::response(&chat, &exchange.native)?;
+            exchange.usage = chat["usage"].clone();
+            let mut out = axum::Json(chat).into_response();
+            out.headers_mut().extend(headers);
+            return Ok(out);
+        }
         bridge::validate_response(&chat)?;
         chat["model"] = json!(exchange.native);
         exchange.usage = chat["usage"].clone();

@@ -1,6 +1,6 @@
 # Auto 自动选模型
 
-Auto 在现有网关内选择真实模型，再走原有实例并发、队列、输入预算和资源许可。不下载模型，不改变管理员已批准的 direct/cloud/permit 策略。显式模型调用不变。支持 `/v1/chat/completions` 和 `/v1/messages`（JSON、函数工具和 SSE）。Messages 可路由到原生 Anthropic 上游，也可由网关转换后发往 Chat Completions 上游。Auto 的 Messages 请求使用可转换的字段。
+Auto 在现有网关内选择真实模型，再走原有实例并发、队列、输入预算和资源许可。不下载模型，不改变管理员已批准的 direct/cloud/permit 策略。显式模型调用不变。支持 `/v1/chat/completions` 和 `/v1/messages`（JSON、函数工具和 SSE）。OpenAI Chat Completions 与 Anthropic Messages 客户端都可使用 OpenAI 或 Anthropic 聊天上游，网关负责转换请求、JSON 响应和 SSE。跨协议请求使用可转换的字段。
 
 ## 界面配置
 

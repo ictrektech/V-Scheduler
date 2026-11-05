@@ -883,6 +883,70 @@ async fn rust_gateway_handles_native_chat_conversion_and_sse_against_a_real_http
     std::fs::remove_dir_all(root).unwrap();
 }
 #[tokio::test]
+async fn native_anthropic_upstream_serves_chat_completions_for_named_models_and_auto() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let app = Router::new().route("/v1/messages", post(|headers: HeaderMap, Json(body): Json<Value>| async move {
+        assert_eq!(headers["anthropic-version"], "2023-06-01");
+        assert_eq!(body["model"], "echo");
+        assert_eq!(body["max_tokens"], 8);
+        assert!(body.get("stream_options").is_none());
+        if body["stream"] != true {
+            return Json(json!({"type":"message","id":"msg_fixture","content":[{"type":"text","text":"native answer"}],
+                "stop_reason":"end_turn","usage":{"input_tokens":2,"output_tokens":3}})).into_response();
+        }
+        let events = [
+            json!({"type":"message_start","message":{"id":"msg_fixture","usage":{"input_tokens":2}}}),
+            json!({"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}),
+            json!({"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"native answer"}}),
+            json!({"type":"content_block_stop","index":0}),
+            json!({"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":3}}),
+            json!({"type":"message_stop"}),
+        ];
+        let body = events.iter().map(|event| format!("data: {event}\n\n")).collect::<String>();
+        ([( "content-type", "text/event-stream")], body).into_response()
+    }));
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let root = temp();
+    let g = gateway(&root, Router::new());
+    let mut u = upstream("fixture");
+    u.protocol = "anthropic".into();
+    u.base_url = format!("http://127.0.0.1:{port}/v1");
+    let mut entry = model("echo");
+    entry.endpoints = vec!["messages".into()];
+    g.registry.lock().unwrap().put(u, vec![entry]);
+    for model in ["manual/echo", "auto"] {
+        for stream in [false, true] {
+            let mut body = json!({"model":model,"messages":[{"role":"user","content":"hello"}],"max_tokens":8,"stream":stream});
+            if stream {
+                body["stream_options"] = json!({"include_usage":true});
+            }
+            let request = axum::http::Request::builder().method("POST").uri("/v1/chat/completions")
+                .header("content-type", "application/json").body(Body::from(body.to_string())).unwrap();
+            let response = proxy::handle(g.clone(), principal("alice"), request).await.unwrap();
+            assert_eq!(response.status(), 200);
+            if model == "auto" {
+                assert_eq!(response.headers()["x-vscheduler-auto-model"], "manual/echo");
+            }
+            let bytes = axum::body::to_bytes(response.into_body(), 1 << 20).await.unwrap();
+            if stream {
+                let events = std::str::from_utf8(&bytes).unwrap();
+                assert!(events.contains("native answer") && events.contains("chat.completion.chunk"));
+                assert!(events.contains("\"finish_reason\":\"stop\"") && events.contains("\"total_tokens\":5"));
+                assert!(events.ends_with("data: [DONE]\n\n"));
+            } else {
+                let result: Value = serde_json::from_slice(&bytes).unwrap();
+                assert_eq!(result["choices"][0]["message"]["content"], "native answer");
+                assert_eq!(result["choices"][0]["finish_reason"], "stop");
+                assert_eq!(result["usage"]["total_tokens"], 5);
+            }
+        }
+    }
+    server.abort();
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
 async fn permits_are_released_on_terminal_sse_but_not_on_truncation_or_client_cancel() {
     let releases = Arc::new(Mutex::new(Vec::<Value>::new()));
     let recorded = releases.clone();

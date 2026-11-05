@@ -1,5 +1,5 @@
 use super::*;
-fn fields(v: &Value, allowed: &str) -> Api<()> {
+pub(super) fn fields(v: &Value, allowed: &str) -> Api<()> {
     let object = v
         .as_object()
         .ok_or_else(|| Failure::new(400, "expected an object"))?;
@@ -420,6 +420,104 @@ impl Stream {
                 serde_json::from_str::<Value>(text(&tool["function"], "arguments")).is_ok()
             })
     }
+    fn chat_chunk(&self, choices: Value, usage: Option<&Value>) -> Vec<u8> {
+        let mut chunk = json!({"id":self.id,"object":"chat.completion.chunk","created":self.created,
+            "model":self.model,"choices":choices});
+        if let Some(usage) = usage {
+            chunk["usage"] = usage.clone();
+        } else if self.request["include_usage"] == true {
+            chunk["usage"] = Value::Null;
+        }
+        format!("data: {chunk}\n\n").into_bytes()
+    }
+
+    fn anthropic_chunk(&mut self, event: &Value) -> Api<Vec<u8>> {
+        let invalid = || Failure::new(502, "invalid upstream Anthropic stream event");
+        let kind = text(event, "type");
+        let index = event["index"].as_u64().unwrap_or(u64::MAX) as usize;
+        let delta = match kind {
+            "ping" => return Ok(vec![]),
+            "message_start" if !self.started => {
+                let message = &event["message"];
+                self.id = message["id"].as_str().ok_or_else(invalid)?.into();
+                self.usage = message["usage"].clone();
+                self.started = true;
+                json!({"role":"assistant","content":""})
+            }
+            _ if !self.started => return Err(invalid()),
+            "content_block_start" => {
+                let block = &event["content_block"];
+                match text(block, "type") {
+                    "text" => json!({"content":block["text"].as_str().ok_or_else(invalid)?}),
+                    "thinking" | "redacted_thinking" => return Ok(vec![]),
+                    "tool_use" if block["id"].is_string() && block["name"].is_string() && block["input"].is_object() => {
+                        let tool = self.next_index;
+                        self.next_index += 1;
+                        let arguments = if block["input"].as_object().is_some_and(|o| o.is_empty()) {
+                            String::new()
+                        } else {
+                            block["input"].to_string()
+                        };
+                        self.tool_order.insert(index, tool);
+                        self.tools.insert(tool, json!({"function":{"arguments":arguments}}));
+                        json!({"tool_calls":[{"index":tool,"id":block["id"],"type":"function",
+                            "function":{"name":block["name"],"arguments":arguments}}]})
+                    }
+                    _ => return Err(invalid()),
+                }
+            }
+            "content_block_delta" => {
+                let delta = &event["delta"];
+                match text(delta, "type") {
+                    "text_delta" => json!({"content":delta["text"].as_str().ok_or_else(invalid)?}),
+                    "thinking_delta" | "signature_delta" => return Ok(vec![]),
+                    "input_json_delta" => {
+                        let tool = *self.tool_order.get(&index).ok_or_else(invalid)?;
+                        let part = delta["partial_json"].as_str().ok_or_else(invalid)?;
+                        let args = &mut self.tools.get_mut(&tool).ok_or_else(invalid)?["function"]["arguments"];
+                        let old = args.as_str().ok_or_else(invalid)?;
+                        *args = json!(format!("{old}{part}"));
+                        json!({"tool_calls":[{"index":tool,"function":{"arguments":part}}]})
+                    }
+                    _ => return Err(invalid()),
+                }
+            }
+            "content_block_stop" => {
+                let Some(tool) = self.tool_order.remove(&index) else { return Ok(vec![]) };
+                let args = &mut self.tools.get_mut(&tool).ok_or_else(invalid)?["function"]["arguments"];
+                if args != "" { return Ok(vec![]) }
+                *args = json!("{}");
+                json!({"tool_calls":[{"index":tool,"function":{"arguments":"{}"}}]})
+            }
+            "message_delta" => {
+                if let Some(usage) = event["usage"].as_object() {
+                    for (key, value) in usage {
+                        self.usage[key] = value.clone();
+                    }
+                }
+                if let Some(reason) = event["delta"]["stop_reason"].as_str() {
+                    self.finish_reason = anthropic_bridge::finish_reason(reason).ok_or_else(invalid)?.into();
+                }
+                return Ok(vec![]);
+            }
+            "message_stop" if !self.finish_reason.is_empty() && self.tool_order.is_empty()
+                && self.tools.values().all(|tool| {
+                    serde_json::from_str::<serde_json::Map<String, Value>>(text(&tool["function"], "arguments")).is_ok()
+                }) => {
+                let mut output = self.chat_chunk(json!([{"index":0,"delta":{},"finish_reason":self.finish_reason}]), None);
+                self.usage = anthropic_bridge::usage(&self.usage);
+                if self.request["include_usage"] == true {
+                    output.extend(self.chat_chunk(json!([]), Some(&self.usage)));
+                }
+                output.extend_from_slice(b"data: [DONE]\n\n");
+                self.terminal = true;
+                return Ok(output);
+            }
+            _ => return Err(invalid()),
+        };
+        Ok(self.chat_chunk(json!([{"index":0,"delta":delta,"finish_reason":null}]), None))
+    }
+
     pub fn feed(&mut self, bytes: &[u8]) -> Api<Vec<u8>> {
         if self.terminal || self.failed {
             return Ok(if self.protocol.is_empty() {
@@ -454,6 +552,24 @@ impl Stream {
             }
             let frame = std::mem::take(&mut self.data);
             if frame.is_empty() {
+                continue;
+            }
+            if self.protocol == "chat" {
+                self.output_bytes = self.output_bytes.saturating_add(frame.len());
+                let translated = if self.output_bytes > 32 << 20 {
+                    Err(Failure::new(502, "upstream chat stream exceeds 32 MiB"))
+                } else {
+                    serde_json::from_slice(&frame)
+                        .map_err(|_| Failure::new(502, "invalid upstream SSE JSON"))
+                        .and_then(|chunk| self.anthropic_chunk(&chunk))
+                };
+                match translated {
+                    Ok(events) => output.extend(events),
+                    Err(_) => output.extend(self.fail()),
+                }
+                if self.terminal || self.failed {
+                    break;
+                }
                 continue;
             }
             if frame == b"[DONE]" {
@@ -607,6 +723,10 @@ impl Stream {
             }
         }
         if self.terminal || self.failed {
+            return output;
+        }
+        if self.protocol == "chat" {
+            output.extend(self.fail());
             return output;
         }
         self.terminal = self.native_finish();

@@ -12,7 +12,9 @@ curl -fsS "$GATEWAY/v1/messages" -H "x-api-key: $GATEWAY_KEY" -H 'anthropic-vers
 # AUTO: streaming
 curl -fsSN "$GATEWAY/v1/messages" -H "x-api-key: $GATEWAY_KEY" -H 'anthropic-version: 2023-06-01' -H 'Content-Type: application/json' -d '{"model":"auto","max_tokens":64,"stream":true,"messages":[{"role":"user","content":"Say hello."}]}'
 # Explicit model: use its qualified ID from /api/v1/models
-curl -fsS "$GATEWAY/v1/messages" -H "x-api-key: $GATEWAY_KEY" -H 'anthropic-version: 2023-06-01' -H 'Content-Type: application/json' -d '{"model":"com.deepseek.api/deepseek-flash","max_tokens":64,"messages":[{"role":"user","content":"Say hello."}]}'`
+curl -fsS "$GATEWAY/v1/messages" -H "x-api-key: $GATEWAY_KEY" -H 'anthropic-version: 2023-06-01' -H 'Content-Type: application/json' -d '{"model":"com.deepseek.api/deepseek-flash","max_tokens":64,"messages":[{"role":"user","content":"Say hello."}]}'
+# The same model ID via OpenAI Chat Completions
+curl -fsS "$GATEWAY/v1/chat/completions" -H "Authorization: Bearer $GATEWAY_KEY" -H 'Content-Type: application/json' -d '{"model":"com.deepseek.api/deepseek-flash","max_tokens":64,"messages":[{"role":"user","content":"Say hello."}]}'`
 const autoExamples=`# GATEWAY: http://v-scheduler:8080
 # VOS_TOKEN: VOS administrator token / gateway administrator key
 curl -fsS "$GATEWAY/api/v1/auto-routing/candidates" -H "Authorization: Bearer $VOS_TOKEN"
@@ -34,7 +36,7 @@ curl -i "$GATEWAY/v1/chat/completions" -H "Authorization: Bearer $VOS_TOKEN" -H 
   <h3>{{t('本地与云端模型')}}</h3>
   <p>{{t('本地和纳管远端模型先取得资源许可；云端供应商模型不占本地资源预约。资源忙时遵守重试提示，不能绕过网关直接启动同一次计算。')}}</p>
   <h3>Anthropic Messages</h3>
-  <p>{{t('使用网关 Key 设置 GATEWAY_KEY。局域网调用时，GATEWAY 填上表的网关宿主机地址。支持 Auto 与指定模型，只有 OpenAI 兼容 Chat Completions 的上游可选「仅 Chat Completions」协议，由网关转换请求和流式响应。')}}</p>
+  <p>{{t('使用网关 Key 设置 GATEWAY_KEY。局域网调用时，GATEWAY 填上表的网关宿主机地址。同一个聊天模型 ID（包括 Auto）可以通过 Chat Completions 或 Anthropic Messages 调用。网关按上游协议转换请求、普通响应和流式输出。')}}</p>
   <p>{{t('Auto 的 Messages 请求使用可转换的字段。thinking、提示缓存和服务端工具请使用支持这些能力的原生模型。指定模型示例中的 ID 以本机模型目录为准。')}}</p>
   <pre>{{anthropicExamples}}</pre>
   <h3>{{t('Auto 自动选型')}}</h3>

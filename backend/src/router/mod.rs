@@ -5,6 +5,7 @@ mod auto;
 #[cfg(test)]
 mod auto_tests;
 mod auth;
+mod anthropic_bridge;
 mod bridge;
 mod discovery;
 mod jobs;

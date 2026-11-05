@@ -564,6 +564,8 @@ pub(super) async fn resolve_for(
     } else {
         request
     };
+    let anthropic_request = (endpoint == "/chat/completions")
+        .then(|| anthropic_bridge::request(request));
     let (input, output, images) = requirements(body)?;
     let request_bytes = serde_json::to_vec(request).unwrap().len();
     let mut config = g.registry.lock().unwrap().auto.clone();
@@ -676,6 +678,8 @@ pub(super) async fn resolve_for(
             "cloud_disallowed"
         } else if !registry::supports(u, m, endpoint) {
             "endpoint_unsupported"
+        } else if u.protocol == "anthropic" && anthropic_request.as_ref().is_some_and(Result::is_err) {
+            "request_conversion_unsupported"
         } else if images > 0 && (!caps("vision") || c.image_tokens.is_none()) {
             "vision_budget_or_capability_missing"
         } else if body["tools"].as_array().is_some_and(|v| !v.is_empty()) && !caps("tools") {
@@ -720,6 +724,8 @@ pub(super) async fn resolve_for(
             Ok(Some(a)) => {
                 let mut input = if endpoint == "/messages" && !u.converts_chat_endpoint(endpoint) {
                     request.clone()
+                } else if let ("anthropic", Some(Ok(input))) = (u.protocol.as_str(), &anthropic_request) {
+                    input.clone()
                 } else {
                     body.clone()
                 };

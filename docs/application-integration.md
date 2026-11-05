@@ -580,7 +580,7 @@ GPU 槽位是调度并发计数，不是独立显存。统一内存预算只计�
 
 ## Provider 与模型能力声明
 
-使用「模型与上游」页面选择 provider 预设并填入自己的服务凭据，测试后勾选要导入的模型。供应商和模型 ID 分开管理；支持修改中转 Base URL。不会因选择供应商就承诺所有模型都支持工具、图片、Responses 或 Messages。使用 OpenAI-compatible Chat Completions 的供应商可选 `chat_completions` 协议，网关提供已有的 Responses / Messages 转换；原生 OpenAI、Anthropic 保持原协议。不要把需要独立签名或 OAuth 的供应商当作普通 Bearer API。
+使用「模型与上游」页面选择 provider 预设并填入自己的服务凭据，测试后勾选要导入的模型。供应商和模型 ID 分开管理；支持修改中转 Base URL。不会因选择供应商就承诺所有模型都支持工具、图片、Responses 或 Messages。按上游实际协议配置连接。普通客户端可以用同一个聊天模型 ID 调用网关的 `/v1/chat/completions` 和 `/v1/messages`。网关将请求、JSON 响应和 SSE 转换为对应格式。不要把需要独立签名或 OAuth 的供应商当作普通 Bearer API。
 
 模型能力和支持接口均为有限选项复选框，适用于模型元数据、上游逐模型配置和单模型注册。普通聊天协议缺失声明时补全 `capabilities=["chat","completion"]`、`endpoints=["chat_completions"]`；Anthropic 默认 `messages`。旧持久化模型在读入时同样补全，Harness 可从 `GET /api/v1/models` 获取明确接口。显式接口优先；Embedding、Rerank、图像、语音和决策能力按各自接口保留，不默认声明聊天。仅有实际图片输入能力才勾选 `vision`，支持工具调用才勾选 `tools`。已有未知扩展标记保留，界面不提供任意字符串新增入口。
 
@@ -625,6 +625,24 @@ curl http://v-scheduler:8080/api/v1/registrations \
 不传 `models` 即发现上游模型列表；仅传 `model` 可注册单模型。需要修正时可添加 `model_capabilities: {"模型原生ID":["vision","completion"]}` 与 `model_endpoints: {"模型原生ID":["chat_completions"]}`；`rerank` 对应 `/v1/rerank`，`embedding` 对应 `/v1/embeddings`，不能因是多模态模型就虚报其他能力。调用 `POST /api/v1/registrations/{upstream_id}/heartbeat` 按返回的 heartbeat_after_seconds 续租；重注册沿用同一 service_id、身份和可见范围，过期后重新注册。注册和推理沿用统一鉴权；注册模型不等于自动获得本地预算、执行器审批或强制放行权限，资源调度仍按前文统一流程执行。
 
 能力数组省略或为空表示保留自动识别/默认值。核心能力值为 `chat`、`completion`、`vision`、`tools`、`thinking`、`embedding`、`image_embedding`、`rerank`、`image_generation`、`image_edit`、`image_variation`、`video_generation`、`asr`、`tts`、`translation`、`moderation`、`face_recognition`、`person_reid`、`ocr`、`video_structure`、`decision`；已有上游扩展标记仍保留。声明能力不增加上游实际功能。
+
+## OpenAI 与 Anthropic 聊天客户端
+
+模型 ID 从 `GET /v1/models` 读取。同一个 ID 可用于两个接口，`auto` 也可以替换下例中的 ID。下面的密钥是 V-Scheduler 网关密钥。
+
+```bash
+GATEWAY=http://v-scheduler:8080
+MODEL=com.deepseek.api/deepseek-flash
+curl -fsSN "$GATEWAY/v1/messages" \
+  -H "x-api-key: $GATEWAY_KEY" -H 'anthropic-version: 2023-06-01' \
+  -H 'Content-Type: application/json' \
+  -d "{\"model\":\"$MODEL\",\"max_tokens\":64,\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"Say hello.\"}]}"
+curl -fsS "$GATEWAY/v1/chat/completions" \
+  -H "Authorization: Bearer $GATEWAY_KEY" -H 'Content-Type: application/json' \
+  -d "{\"model\":\"$MODEL\",\"max_tokens\":64,\"messages\":[{\"role\":\"user\",\"content\":\"Say hello.\"}]}"
+```
+
+Messages 示例去掉 `"stream":true` 即返回 JSON。工具和图像输入取决于模型能力。跨协议请求请使用网关可转换的字段。
 
 ## Auto 自动选模型
 
