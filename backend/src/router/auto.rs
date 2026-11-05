@@ -622,7 +622,7 @@ pub(super) async fn resolve(
         ));
     }
     let mut reports = vec![];
-    let mut choices: Vec<(&Candidate, f64, u64, bool)> = vec![];
+    let mut choices: Vec<(&Candidate, f64, u64, bool, u64)> = vec![];
     let minimum = tier(&classification.complexity);
     for c in &config.candidates {
         let Some(u) = r.upstreams.get(&c.upstream_id).filter(|u| u.visible(id)) else {
@@ -681,6 +681,11 @@ pub(super) async fn resolve(
             continue;
         }
         let approval = lease::approval(g, u, &m.id, "POST", "/chat/completions", false);
+        // A verified native weight size is a tie-breaker for the unconfigured
+        // pool, never a guessed quality tier or a substitute for admission.
+        let native_bytes = approval.as_ref().ok().and_then(|a| a.as_ref())
+            .and_then(|a| a.policy["native_model_size_bytes"].as_u64())
+            .filter(|n| *n > 0).unwrap_or(u64::MAX);
         let approved = match approval {
             Ok(Some(a)) => {
                 let mut input = body.clone();
@@ -707,8 +712,8 @@ pub(super) async fn resolve(
             (Some(a), Some(b)) => (estimate as f64 * a + output as f64 * b) / 1000000.0,
             _ => f64::INFINITY,
         };
-        reports.push(json!({"model":c.model,"upstream_id":c.upstream_id,"eligible":true,"reason":"eligible","resident":resident,"inflight":load,"estimated_start_ms":wait,"estimated_cost":if cost.is_finite(){Some(cost)}else{None},"tier":c.tier}));
-        choices.push((c, cost, wait, resident));
+        reports.push(json!({"model":c.model,"upstream_id":c.upstream_id,"eligible":true,"reason":"eligible","resident":resident,"inflight":load,"estimated_start_ms":wait,"estimated_cost":if cost.is_finite(){Some(cost)}else{None},"native_model_size_bytes":if native_bytes==u64::MAX {None}else{Some(native_bytes)},"tier":c.tier}));
+        choices.push((c, cost, wait, resident, native_bytes));
     }
     choices.sort_by(|a, b| {
         let a_t = tier(&a.0.tier);
@@ -724,6 +729,7 @@ pub(super) async fn resolve(
                     .then(a.1.total_cmp(&b.1))
             }
         }
+        .then_with(|| if automatic_pool { a.4.cmp(&b.4) } else { std::cmp::Ordering::Equal })
         .then(a.0.model.cmp(&b.0.model))
         .then(a.0.upstream_id.cmp(&b.0.upstream_id))
     });

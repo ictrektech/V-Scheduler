@@ -28,6 +28,7 @@ curl -i "$GATEWAY/v1/chat/completions" -H "Authorization: Bearer $VOS_TOKEN" -H 
   <h3>{{t('Auto 自动选型')}}</h3>
   <p>{{t('Auto 是始终可发现的模型。默认按均衡策略自动选择可用聊天模型；本地调用继续经过资源准入。')}}</p>
   <p>{{t('不勾选候选时使用自动候选池；勾选后仅使用指定模型，并按配置的能力档位筛选。规则无需额外模型。')}}</p>
+  <p>{{t('自动候选排序相同时，优先使用已核验权重占用较小的模型；手工候选设置不变。')}}</p>
   <p>{{t('管理员在 Auto 页面勾选候选模型，或用 GET/PUT /api/v1/auto-routing 设置同一份配置。候选绑定 model 和 upstream_id；PUT 完整替换，revision 从最新 GET 读取，冲突返回 409。')}}</p>
   <pre>POST /v1/chat/completions
 {"model":"auto","messages":[{"role":"user","content":"Hello"}]}</pre>

@@ -811,3 +811,28 @@ async fn auto_is_discoverable_and_routes_without_enable_or_candidate_setup() {
     assert!(result.resolved_model.is_empty());
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[tokio::test]
+async fn default_auto_uses_verified_weight_size_before_alphabetical_ties() {
+    let root = temp();
+    let g = gateway(&root, Router::new());
+    setup(&g);
+    let binding = json!({"url":"http://v-scheduler:38120/api/v1","token":"auto-fixture-scoped-submitter-token-1234567890","require_model_policy":true,"models":{
+        "s/small":{"mode":"permit","executor_id":"small-executor","native_model_size_bytes":1024,"completion":"synchronous","max_input_bytes":4096,"limits":{"max_tokens":1024}},
+        "l/large":{"mode":"permit","executor_id":"large-executor","native_model_size_bytes":8192,"completion":"synchronous","max_input_bytes":4096,"limits":{"max_tokens":1024}}
+    }});
+    use std::os::unix::fs::PermissionsExt;
+    let path = root.join("scheduler.local.json");
+    std::fs::write(&path, binding.to_string()).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+    let result = auto::resolve(&g, &principal("alice"), &body("hello"), &HeaderMap::new()).await.unwrap();
+    assert_eq!(result.resolved_model, "manual/small");
+    assert!(result.candidates.iter().any(|c| c["native_model_size_bytes"] == 1024));
+    // An explicitly configured pool keeps its original ordering and tiers.
+    let mut config = setup(&g);
+    config["candidates"] = json!([candidate("small", "s", "standard"),candidate("large", "l", "standard")]);
+    auto::configure(&g, &admin(), config).unwrap();
+    let result = auto::resolve(&g, &principal("alice"), &body("hello"), &HeaderMap::new()).await.unwrap();
+    assert_eq!(result.resolved_model, "manual/large");
+    std::fs::remove_dir_all(root).unwrap();
+}

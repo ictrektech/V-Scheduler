@@ -758,4 +758,5 @@ export const messages:Record<string,[string,string]>={
 "此供应商使用特殊鉴权或原生协议。请填写已授权的 OpenAI 或 Anthropic 兼容网关地址及其密钥；此预设不提供供应商原生登录、签名或自动续期。":["This provider uses specialized authentication or a native protocol. Enter an authorized OpenAI- or Anthropic-compatible gateway URL and key. This preset does not implement native sign-in, signing or automatic token refresh.", "此供應商使用特殊鑑權或原生協定。請填寫已授權的 OpenAI 或 Anthropic 相容閘道位址與金鑰；本預設不提供供應商原生登入、簽章或自動續期。"],
 "Auto 是始终可发现的模型。默认按均衡策略自动选择可用聊天模型；本地调用继续经过资源准入。":["Auto is always discoverable. By default it balances available chat models; local calls still require resource admission.","Auto 是始終可發現的模型。預設以均衡策略自動選擇可用聊天模型；本機呼叫仍須資源准入。"],
 "不勾选候选时使用自动候选池；勾选后仅使用指定模型，并按配置的能力档位筛选。规则无需额外模型。":["Leave candidates empty for automatic selection. Selecting candidates restricts routing to those models and their configured quality tiers. Rules require no extra model.","未勾選時使用自動候選池；勾選後僅使用指定模型，依設定的能力檔位篩選。規則無需額外模型。"],
+"自动候选排序相同时，优先使用已核验权重占用较小的模型；手工候选设置不变。":["When automatic candidates tie, prefer the smaller verified native weight footprint. Explicit candidate settings are unchanged.","自動候選排序相同時，優先使用已核驗權重占用較小的模型；手動候選設定不變。"],
 }
