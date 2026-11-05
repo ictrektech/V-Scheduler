@@ -207,7 +207,7 @@ latest_image() {
   column="$(find_component_column_letter "$token" "$sheet_id" "$component")" || return 1
   tag="$(find_latest_tag "$token" "$sheet_id" "$column")" || return 1
   [[ -n "$tag" ]] || return 1
-  [[ "$tag" =~ ^${tag_prefix}_[0-9]{8}$ ]] || die "invalid profile image tag"
+  [[ "$tag" =~ ^${tag_prefix}_[0-9]{8}(_[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63})?$ ]] || die "invalid profile image tag"
   repository_response="$(get_range_values "$token" "${sheet_id}!${column}2:${column}2")"
   actual_repository="$(printf '%s' "$repository_response" | python3 -c '
 import json,sys

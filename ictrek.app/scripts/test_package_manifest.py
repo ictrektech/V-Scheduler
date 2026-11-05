@@ -33,6 +33,14 @@ class PackageManifestValidationTests(unittest.TestCase):
                 input=self.validator, text=True, capture_output=True,
             )
 
+    def test_profile_image_tags_accept_release_suffix_without_cross_profile_or_paths(self):
+        script = (self.root / 'scripts/package.sh').read_text()
+        check = next(line.strip() for line in script.splitlines() if 'invalid profile image tag' in line)
+        for tag, valid in [('arm_20261105', True), ('arm_20261105_auto88', True), ('arm_20261105_fix-auto-ui', True), ('amd_20261105_auto88', False), ('arm_20261105_../bad', False), ('arm_20261105_', False)]:
+            with self.subTest(tag=tag):
+                result = subprocess.run(['bash', '-c', 'die() { exit 9; }; tag_prefix=arm; tag="$1"; ' + check, 'bash', tag], capture_output=True, text=True)
+                self.assertEqual(result.returncode == 0, valid)
+
     def test_mutable_dated_images_are_refreshed_for_every_profile(self):
         compose = yaml.safe_load((self.root / 'src/docker-compose.yml').read_text())
         # All architecture/profile variants inherit their own service anchor.
