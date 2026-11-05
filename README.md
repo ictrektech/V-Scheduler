@@ -384,3 +384,5 @@ Auto 卡片提供「配置候选与策略」入口，作为内置路由显示，
 发布时可设置 `SCHEDULER_IMAGE_TAG_SUFFIX=auto87` 再运行原有 `build_image.sh --sheet ...`，生成 `arm_YYYYMMDD_auto87` / `amd_YYYYMMDD_auto87` 独立标签，避免 VOS 拉取同名日期标签时覆盖刚构建镜像的引用；Feishu 仍由脚本记录完整标签。
 
 Auto 支持 Anthropic Messages（`POST /v1/messages`），可选原生 Anthropic 或由网关转换到 Chat Completions 的候选模型。普通和流式请求示例见应用内「API 文档 → 应用接入」。
+
+Auto 选用 Ollama 时默认关闭隐式思考，让输出 token 用于正文。OpenAI Chat Completions 客户端可显式传入 `reasoning_effort` 以使用模型支持的思考模式。

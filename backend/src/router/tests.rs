@@ -883,6 +883,58 @@ async fn rust_gateway_handles_native_chat_conversion_and_sse_against_a_real_http
     std::fs::remove_dir_all(root).unwrap();
 }
 #[tokio::test]
+async fn auto_ollama_reserves_output_for_answers_unless_client_requests_thinking() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let app = Router::new().route("/v1/chat/completions", post(|Json(body): Json<Value>| async move {
+        let effort = body["reasoning_effort"].as_str();
+        let content = match effort {
+            Some("none") => "visible answer",
+            Some("high") => "explicit thinking preserved",
+            _ if body["think"] == true => "explicit native thinking preserved",
+            _ if body["reasoning"]["effort"] == "high" => "explicit nested thinking preserved",
+            _ if body["model"] == "echo" => "",
+            _ => "other model",
+        };
+        assert_eq!(body["max_tokens"], 64);
+        let stop = if content.is_empty() { "length" } else { "stop" };
+        if body["stream"] == true {
+            let event = json!({"choices":[{"delta":{"content":content},"finish_reason":stop}]});
+            return ([("content-type","text/event-stream")],format!("data: {event}\n\ndata: [DONE]\n\n")).into_response();
+        }
+        Json(json!({"id":"fixture","choices":[{"message":{"role":"assistant","content":content},
+            "finish_reason":stop}],"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}})).into_response()
+    }));
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let root = temp();
+    let g = gateway(&root, Router::new());
+    let mut u = upstream("fixture");
+    u.protocol = "ollama".into();
+    u.base_url = format!("http://127.0.0.1:{port}/v1");
+    g.registry.lock().unwrap().put(u, vec![model("echo")]);
+    for (path, options, expected) in [
+        ("/v1/chat/completions", json!({}), "visible answer"),
+        ("/v1/messages", json!({}), "visible answer"),
+        ("/v1/chat/completions", json!({"reasoning_effort":"high"}), "explicit thinking preserved"),
+        ("/v1/chat/completions", json!({"think":true}), "explicit native thinking preserved"),
+        ("/v1/chat/completions", json!({"reasoning":{"effort":"high"}}), "explicit nested thinking preserved"),
+    ] {
+        for stream in [false, true] {
+            let mut body = json!({"model":"auto","messages":[{"role":"user","content":"Hello!"}],"max_tokens":64,"stream":stream});
+            body.as_object_mut().unwrap().extend(options.as_object().unwrap().clone());
+            let request = axum::http::Request::builder().method("POST").uri(path)
+                .header("content-type", "application/json").body(Body::from(body.to_string())).unwrap();
+            let response = proxy::handle(g.clone(), principal("alice"), request).await.unwrap();
+            assert_eq!(response.status(), 200);
+            let bytes = axum::body::to_bytes(response.into_body(), 1 << 20).await.unwrap();
+            assert!(String::from_utf8_lossy(&bytes).contains(expected), "{path} stream={stream}");
+        }
+    }
+    server.abort();
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
 async fn native_anthropic_upstream_serves_chat_completions_for_named_models_and_auto() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();

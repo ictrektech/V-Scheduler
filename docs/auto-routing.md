@@ -2,6 +2,8 @@
 
 Auto 在现有网关内选择真实模型，再走原有实例并发、队列、输入预算和资源许可。不下载模型，不改变管理员已批准的 direct/cloud/permit 策略。显式模型调用不变。支持 `/v1/chat/completions` 和 `/v1/messages`（JSON、函数工具和 SSE）。OpenAI Chat Completions 与 Anthropic Messages 客户端都可使用 OpenAI 或 Anthropic 聊天上游，网关负责转换请求、JSON 响应和 SSE。跨协议请求使用可转换的字段。
 
+Auto 选用 Ollama 时，Chat Completions 和 Messages 默认关闭隐式思考，让输出预算用于正文。Chat Completions 客户端可显式传入 `reasoning_effort` 使用模型支持的思考模式。
+
 ## 界面配置
 
 使用 VOS 管理员或网关管理员 Key 打开「Auto 自动选型」。在候选目录勾选模型，每条记录绑定 **qualified model + upstream_id**；同名模型的不同实例分别勾选。已选但暂时离线的条目保留，可移除，恢复发现后再次参与选型。普通调用者不能修改配置，也不能通过 Auto 使用别人的私有模型。

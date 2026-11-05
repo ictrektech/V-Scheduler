@@ -604,6 +604,14 @@ async fn handle_inner(g: Arc<Gateway>, id: Identity, request: Request, classifie
     } else if !conversion.is_empty() {
         value = bridge::request(&value, conversion)?;
     }
+    // Ollama can spend the entire output budget on implicit thinking before writing an answer.
+    // Apply the same default after Messages conversion and honor explicit OpenAI/Ollama controls.
+    if auto_decision.is_some()
+        && u.protocol == "ollama"
+        && ["think", "reasoning", "reasoning_effort"].iter().all(|key| value[*key].is_null())
+    {
+        value["reasoning_effort"] = json!("none");
+    }
     if let Some(approval) = &approval {
         if u.source == "v-scheduler" && !value.is_object() {
             return Err(Failure::new(422, "built-in Ollama inference requires JSON"));
