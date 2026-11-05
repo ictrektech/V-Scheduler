@@ -660,7 +660,7 @@ async fn business_services_are_visible_in_management_without_becoming_models() {
     }
     for (path, field, count) in [
         ("/api/v1/upstreams", "upstreams", 2),
-        ("/api/v1/models", "models", 9),
+        ("/api/v1/models", "models", 10),
     ] {
         let request = axum::http::Request::builder()
             .uri(path)
@@ -1435,9 +1435,9 @@ async fn startup_catalog_is_retryable_instead_of_empty_or_missing() {
     let g = gateway(&root, Router::new());
     g.initial_discovery.lock().unwrap().insert("qa".into());
     let request = Request::builder().uri("/v1/models").body(Body::empty()).unwrap();
-    let error = proxy::handle(g.clone(), principal("alice"), request).await.err();
-    assert_eq!(error.map(|e| e.status), Some(StatusCode::SERVICE_UNAVAILABLE),
-        "an initial discovery window must not look like a ready empty catalog");
+    let response = proxy::handle(g.clone(), principal("alice"), request).await.unwrap();
+    let value: Value = serde_json::from_slice(&axum::body::to_bytes(response.into_body(), 65536).await.unwrap()).unwrap();
+    assert_eq!(value["data"][0]["id"], "auto", "the virtual model is discoverable while real models initialize");
     let request = Request::builder().method("POST").uri("/v1/chat/completions")
         .header("content-type", "application/json")
         .body(Body::from(r#"{"model":"v-scheduler/ollama-qa/starting","messages":[{"role":"user","content":"hello"}]}"#)).unwrap();
@@ -1463,7 +1463,7 @@ async fn local_startup_does_not_hide_discovered_cloud_models() {
     let response = proxy::handle(g.clone(), principal("alice"), request).await.unwrap();
     assert_eq!(response.status(), 200);
     let value: Value = serde_json::from_slice(&axum::body::to_bytes(response.into_body(), 65536).await.unwrap()).unwrap();
-    assert_eq!(value["data"].as_array().unwrap().len(), 1);
+    assert_eq!(value["data"].as_array().unwrap().len(), 2);
     assert_eq!(readiness::response(&g).status(), 503);
     assert!(g.local_model_readiness("manual/echo").is_ok());
     g.initial_discovery.lock().unwrap().clear();
@@ -2079,12 +2079,13 @@ async fn management_catalog_keeps_each_upstream_while_inference_deduplicates() {
     let request=||axum::http::Request::builder().uri("/api/v1/models").body(Body::empty()).unwrap();
     let response=manage::handle(&g,&principal("alice"),request()).await.unwrap();
     let body:Value=serde_json::from_slice(&axum::body::to_bytes(response.into_body(),1<<20).await.unwrap()).unwrap();
-    assert_eq!(body["models"].as_array().unwrap().len(),2);
+    assert_eq!(body["models"].as_array().unwrap().len(),3);
     assert!(body["models"].as_array().unwrap().iter().any(|m|m["upstream_id"]=="backup"));
     assert_eq!(g.registry.lock().unwrap().list_models(&principal("alice")).len(),1);
     let response=manage::handle(&g,&principal("bob"),request()).await.unwrap();
     let body:Value=serde_json::from_slice(&axum::body::to_bytes(response.into_body(),1<<20).await.unwrap()).unwrap();
-    assert!(body["models"].as_array().unwrap().is_empty());
+    assert_eq!(body["models"].as_array().unwrap().len(),1);
+    assert_eq!(body["models"][0]["id"],"auto");
     std::fs::remove_dir_all(root).unwrap();
 }
 

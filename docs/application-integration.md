@@ -628,6 +628,8 @@ curl http://v-scheduler:8080/api/v1/registrations \
 
 ## Auto 自动选模型
 
+`auto` 是始终在 `/v1/models` 返回的虚拟聊天模型，无需管理员开启开关。默认使用 balanced 策略和本地 rules；候选留空时自动从调用者可见的聊天模型中选型。手工勾选后只使用指定候选并执行其档位约束。旧 `enabled=false` 不再阻止发现或调用；无可用候选返回 503，不隐藏 Auto。云端许可和资源准入继续生效。
+
 管理员在「Auto 自动选型」勾选候选，也可通过网关 `GET /api/v1/auto-routing/candidates` 获取模型实例，`GET /api/v1/auto-routing` 获取配置和 revision，然后 `PUT /api/v1/auto-routing` 完整替换候选与策略。两种方式保存同一份持久配置。客户端使用 `POST /v1/chat/completions`、`model=auto`；`POST /api/v1/auto-routing/test` 仅测试选型。默认本地规则可离线运行，Jev 为需单独同意发送分类内容的可选分类器。模型调用继续遵守权限、能力、上下文与调度准入。
 
 完整字段、复制即用的 cURL、Jev 配置、候选档位、流式、会话及错误处理见 [Auto 接入指南](auto-routing.md)。

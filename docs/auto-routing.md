@@ -6,7 +6,7 @@ Auto 在现有网关内选择真实模型，再走原有实例并发、队列、
 
 使用 VOS 管理员或网关管理员 Key 打开「Auto 自动选型」。在候选目录勾选模型，每条记录绑定 **qualified model + upstream_id**；同名模型的不同实例分别勾选。已选但暂时离线的条目保留，可移除，恢复发现后再次参与选型。普通调用者不能修改配置，也不能通过 Auto 使用别人的私有模型。
 
-启用 Auto 前至少选择一个候选。每个候选默认 `standard` 档位；根据实际任务评测设置 `simple`、`standard`、`complex`，不能单凭模型名字或参数量设置质量。复杂任务要求 complex，无合格模型时明确失败。可填写任务范围（空为全部）：`general,code,translation,summary,reasoning`。
+Auto 始终出现在 `/v1/models` 中，无需开启开关。默认策略为 `balanced`，分类使用本地 `rules`；候选留空时，自动使用调用者可见且可用的聊天模型，默认沿用 32768/4096 token 的保守输入输出配置，未知质量不作为硬性档位限制。自动候选不会绕过云端许可（默认关闭）、能力过滤或资源准入；没有合格候选时实际调用返回 503，Auto 仍可被发现。勾选候选后只使用指定候选，并执行以下档位约束。每个候选默认 `standard` 档位；根据实际任务评测设置 `simple`、`standard`、`complex`，不能单凭模型名字或参数量设置质量。复杂任务要求 complex，无合格模型时明确失败。可填写任务范围（空为全部）：`general,code,translation,summary,reasoning`。
 
 配置真实服务的上下文和最大输出限制。Auto 使用 UTF-8 字节数加消息开销作为保守文本 token 上界；因此可能提前排除实际能装下的输入。支持图片还需要真实 `vision` 能力及管理员填写的每张图片 token 预算；该预算应覆盖后端允许的图片处理上限。工具、并行工具、结构化输出分别要求 `tools`、`parallel_tools`、`structured_output` 能力；未知不默认为支持。自动生成的通用元数据不证明这些特性可用。
 
@@ -101,7 +101,7 @@ curl -fsS -X PUT "$GATEWAY/api/v1/auto-routing" \
   --data-binary @auto-config.json
 ```
 
-**PUT 完整替换配置**，未勾选的候选不再参与；省略字段恢复默认。`revision` 必须来自最新 GET，成功后递增，冲突返回 409。启用时空候选、未知候选、重复模型实例、错误字段或类型返回 422；禁用且空候选合法。暂时离线的原有候选可保留；新候选必须已发现且支持聊天。配置保存在原网关状态文件，重启后保留，更新失败不会替换内存中的有效配置。
+**PUT 完整替换配置**，未勾选的候选不再参与；省略字段恢复默认。`revision` 必须来自最新 GET，成功后递增，冲突返回 409。空候选表示自动候选池。`enabled` 为旧客户端兼容字段，读取和保存时均返回 true，不再控制模型发现或调用；旧配置中的 false 也不会禁用 Auto。未知候选、重复模型实例、错误字段或类型返回 422。暂时离线的原有候选可保留；新候选必须已发现且支持聊天。配置保存在原网关状态文件，重启后保留，更新失败不会替换内存中的有效配置。
 
 ## 测试选型和真实推理
 
@@ -122,7 +122,7 @@ curl -i "$GATEWAY/v1/chat/completions" \
   -d '{"model":"auto","messages":[{"role":"user","content":"总结这段文字：……"}],"max_tokens":256,"stream":false}'
 ```
 
-测试成功返回 `resolved_model`、`upstream_id`、`classification`、`candidates`、`reason`、`revision` 和决策 `id`。无合格候选时测试返回 200、空 `resolved_model` 和过滤原因，实际调用返回 503；禁用返回 404。`candidates` 不包含该调用者不可见的私有模型。
+测试成功返回 `resolved_model`、`upstream_id`、`classification`、`candidates`、`reason`、`revision` 和决策 `id`。无合格候选时测试返回 200、空 `resolved_model` 和过滤原因，实际调用返回 503。`candidates` 不包含该调用者不可见的私有模型。
 
 实际响应头 `X-VScheduler-Auto-Model` 是选择的 qualified ID，`X-VScheduler-Auto-Decision-ID` 可与统计中 `auto_routing` 记录关联。响应体保留上游模型名和正常 Chat/SSE 协议，不改写成决策 JSON。缺少输出上限时注入 `max_tokens=1024`；同时设置两种输出上限或 `n!=1` 会被拒绝。实际输入仍受后端预算校验。
 

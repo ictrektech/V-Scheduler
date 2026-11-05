@@ -370,9 +370,6 @@ async fn handle_inner(g: Arc<Gateway>, id: Identity, request: Request, classifie
         return Ok(axum::Json(json!({"available":detect&&structure,"services":{"scene_detect":detect,"structure":structure}})).into_response());
     }
     if path == "/v1/models" && pinned.is_empty() {
-        if g.catalog_initializing() && g.registry.lock().unwrap().list_models(&id).is_empty() {
-            return Err(super::readiness::initializing());
-        }
         let r=g.registry.lock().unwrap();
         let mut models=r.list_models(&id).iter().map(|m|json!({"id":m.qualified,"object":"model","created":0,"owned_by":m.owned_by})).collect::<Vec<_>>();
         if auto::advertised(&r,&id) {models.push(json!({"id":"auto","object":"model","created":0,"owned_by":"v-scheduler"}));}

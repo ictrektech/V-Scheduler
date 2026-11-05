@@ -45,7 +45,6 @@ fn auto_configuration_is_admin_only_validated_atomic_and_persistent() {
     assert_eq!(restored.auto.candidates.len(), 2);
     assert!(restored.auto.enabled);
     for mut invalid in [
-        json!({"revision":1,"enabled":true,"candidates":[]}),
         json!({"revision":1,"policy":"anything"}),
         json!({"revision":1,"enabled":true,"classifier":"jev"}),
         json!({"revision":1,"unknown":true}),
@@ -777,4 +776,38 @@ async fn openai_decisions_live_auto() {
     assert_eq!(classification["source"], "openai_decisions", "{classification}");
     assert_eq!(classification["task"], "code");
     assert_eq!(classification["complexity"], "complex");
+}
+
+#[tokio::test]
+async fn auto_is_discoverable_and_routes_without_enable_or_candidate_setup() {
+    let root = temp();
+    let g = gateway(&root, Router::new());
+    let user = principal("alice");
+    assert!(auto::advertised(&g.registry.lock().unwrap(), &user));
+    setup(&g);
+    // Persisted disabled configurations from older releases must also work.
+    g.registry.lock().unwrap().auto.enabled = false;
+    let result = auto::resolve(&g, &user, &body("分析并发死锁"), &HeaderMap::new()).await.unwrap();
+    assert!(!result.resolved_model.is_empty());
+    assert_eq!(result.policy, "balanced");
+    {
+        let mut r = g.registry.lock().unwrap();
+        for u in r.upstreams.values_mut() { u.visibility = "private".into(); u.owner = "bob".into(); }
+    }
+    let result = auto::resolve(&g, &user, &body("hello"), &HeaderMap::new()).await.unwrap();
+    assert!(result.resolved_model.is_empty());
+    assert!(result.candidates.is_empty(), "private candidates must not leak in reports");
+    {
+        let mut r = g.registry.lock().unwrap();
+        for u in r.upstreams.values_mut() { u.visibility = "public".into(); u.kind = "cloud".into(); }
+    }
+    let result = auto::resolve(&g, &user, &body("hello"), &HeaderMap::new()).await.unwrap();
+    assert!(result.resolved_model.is_empty(), "automatic selection must respect cloud consent");
+    let saved = auto::configure(&g, &admin(), json!({"enabled":false,"candidates":[]})).unwrap();
+    assert_eq!(saved["enabled"], true);
+    g.registry.lock().unwrap().upstreams.clear();
+    assert!(auto::advertised(&g.registry.lock().unwrap(), &user));
+    let result = auto::resolve(&g, &user, &body("hello"), &HeaderMap::new()).await.unwrap();
+    assert!(result.resolved_model.is_empty());
+    std::fs::remove_dir_all(root).unwrap();
 }

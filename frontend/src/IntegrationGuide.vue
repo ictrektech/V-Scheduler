@@ -26,8 +26,11 @@ curl -i "$GATEWAY/v1/chat/completions" -H "Authorization: Bearer $VOS_TOKEN" -H 
   <h3>{{t('本地与云端模型')}}</h3>
   <p>{{t('本地和纳管远端模型先取得资源许可；云端供应商模型不占本地资源预约。资源忙时遵守重试提示，不能绕过网关直接启动同一次计算。')}}</p>
   <h3>{{t('Auto 自动选型')}}</h3>
+  <p>{{t('Auto 是始终可发现的模型。默认按均衡策略自动选择可用聊天模型；本地调用继续经过资源准入。')}}</p>
+  <p>{{t('不勾选候选时使用自动候选池；勾选后仅使用指定模型，并按配置的能力档位筛选。规则无需额外模型。')}}</p>
   <p>{{t('管理员在 Auto 页面勾选候选模型，或用 GET/PUT /api/v1/auto-routing 设置同一份配置。候选绑定 model 和 upstream_id；PUT 完整替换，revision 从最新 GET 读取，冲突返回 409。')}}</p>
-  <p>{{t('默认本地规则无需额外模型。按实际能力设置 simple/standard/complex 档位；复杂请求没有 complex 候选时失败。客户端使用 model=auto，目前仅支持 Chat Completions；本地计算继续经过资源准入。')}}</p>
+  <pre>POST /v1/chat/completions
+{"model":"auto","messages":[{"role":"user","content":"Hello"}]}</pre>
   <p>{{t('测试选型不运行回答模型；启用 Jev 时可能产生分类费用。实际调用会运行选中模型。')}}</p>
   <p>{{t('Auto 路由方式可选 rules、request_type、context_size、llm、systemone/jev。前三种无需分类模型；请求类型用 X-VScheduler-Auto-Task 与 request_type_tiers，长度策略用 context_simple_max_tokens/context_standard_max_tokens。聊天分类 llm 从现有 Chat Completions 上游选择，沿用 jev_model/jev_upstream_id，云端须单独许可；所有方式共用候选白名单与资源准入。')}}</p>
   <p>{{t('选择已发现的 systemone 决策模型，设置 classifier=systemone（兼容 jev）、jev_model 和 jev_upstream_id。本地 Ollama 模型无需云端许可，经过资源准入，分类后卸载再调用回答模型；Local-Only 允许本地分类。云端 Jev 可通过 TypeSafe 或 OpenRouter /api/v1 接入，须另开 allow_cloud_classifier=true；失败回退规则。')}}</p>

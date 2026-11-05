@@ -55,7 +55,7 @@ pub(super) struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            enabled: false,
+            enabled: true,
             policy: "balanced".into(),
             allow_cloud: false,
             candidates: vec![],
@@ -125,9 +125,8 @@ pub(super) fn configure(g: &Gateway, id: &Identity, payload: Value) -> Api<Value
             "invalid Auto policy, classifier, timeout or candidate count",
         ));
     }
-    if config.enabled && config.candidates.is_empty() {
-        return Err(error(422, "select at least one Auto candidate"));
-    }
+    // Retain the legacy field on the wire, but Auto is always a callable model.
+    config.enabled = true;
     let mut r = g.registry.lock().unwrap();
     if config.revision != r.auto.revision {
         return Err(error(
@@ -211,7 +210,9 @@ pub(super) fn configuration(g: &Gateway, id: &Identity) -> Api<Value> {
     if !id.admin {
         return Err(error(403, "Auto configuration requires an administrator"));
     }
-    Ok(json!(g.registry.lock().unwrap().auto))
+    let mut config = g.registry.lock().unwrap().auto.clone();
+    config.enabled = true;
+    Ok(json!(config))
 }
 fn external(u: &Upstream) -> bool {
     if u.kind == "cloud" {
@@ -249,19 +250,20 @@ fn available(r: &Registry, u: &Upstream, id: &Identity) -> bool {
             .get(&u.id)
             .is_some_and(|(_, until)| *until > Utc::now())
 }
-pub(super) fn advertised(r: &Registry, id: &Identity) -> bool {
-    r.auto.enabled
-        && r.auto.candidates.iter().any(|c| {
-            r.upstreams.get(&c.upstream_id).is_some_and(|u| {
-                available(r, u, id)
-                    && (r.auto.allow_cloud || !external(u))
-                    && r.models.get(&u.id).is_some_and(|ms| {
-                        ms.iter().any(|m| {
-                            m.qualified == c.model && registry::supports(u, m, "/chat/completions")
-                        })
-                    })
-            })
+// Discovery describes the virtual model, not the momentary health of its pool.
+pub(super) fn advertised(_r: &Registry, _id: &Identity) -> bool {
+    true
+}
+fn candidate_pool(r: &Registry, config: &Config) -> Vec<Candidate> {
+    if !config.candidates.is_empty() {
+        return config.candidates.clone();
+    }
+    r.upstreams.values().flat_map(|u| {
+        r.models.get(&u.id).into_iter().flatten().filter_map(|m| {
+            (m.qualified != "auto" && registry::supports(u, m, "/chat/completions"))
+                .then(|| Candidate { model: m.qualified.clone(), upstream_id: u.id.clone(), ..Candidate::default() })
         })
+    }).collect()
 }
 pub(super) fn model_view() -> Value {
     json!({"id":"auto","qualified":"auto","kind":"chat","capabilities":["chat","completion"],"endpoints":["chat_completions"],"owned_by":"v-scheduler","upstream_name":"Auto","upstream_kind":"virtual","upstream_source":"auto","model_prefix":"auto","virtual":true})
@@ -538,10 +540,9 @@ pub(super) async fn resolve(
         return Err(error(400, "Auto cannot be combined with a pinned upstream"));
     }
     let (input, output, images) = requirements(body)?;
-    let config = g.registry.lock().unwrap().auto.clone();
-    if !config.enabled {
-        return Err(error(404, "Auto is disabled"));
-    }
+    let mut config = g.registry.lock().unwrap().auto.clone();
+    let automatic_pool = config.candidates.is_empty();
+    config.candidates = candidate_pool(&g.registry.lock().unwrap(), &config);
     let selected_policy = headers
         .get("x-vscheduler-auto-policy")
         .map(|s| s.to_str().unwrap_or(""))
@@ -662,7 +663,7 @@ pub(super) async fn resolve(
         } else if estimate.saturating_add(output) > c.context_tokens as u64 || output > c.max_output_tokens as u64
         {
             "context_or_output_limit"
-        } else if tier(&c.tier) < minimum {
+        } else if !automatic_pool && tier(&c.tier) < minimum {
             "quality_tier_below_requirement"
         } else if !c.tasks.is_empty() && !c.tasks.contains(&classification.task) {
             "task_not_supported"
