@@ -318,6 +318,11 @@ if [[ -z "${SCHEDULER_RUST_BUILD_IMAGE:-}" ]]; then
 fi
 DATE="$(TZ=Asia/Shanghai date +%Y%m%d)"
 TAG="${profile}_${DATE}"
+# Release-specific tags avoid a running VOS pull resetting a mutable daily tag.
+if [[ -n "${SCHEDULER_IMAGE_TAG_SUFFIX:-}" ]]; then
+  [[ "$SCHEDULER_IMAGE_TAG_SUFFIX" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$ ]] || die 'invalid SCHEDULER_IMAGE_TAG_SUFFIX'
+  TAG="${TAG}_${SCHEDULER_IMAGE_TAG_SUFFIX}"
+fi
 IMAGE="${REPOSITORY}:${TAG}"
 BUILD_DIR="${HOME}/dev/build/V-Scheduler/images/${profile}"
 if [[ "$dry_run" == true ]]; then
