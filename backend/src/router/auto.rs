@@ -266,7 +266,7 @@ fn candidate_pool(r: &Registry, config: &Config) -> Vec<Candidate> {
     }).collect()
 }
 pub(super) fn model_view() -> Value {
-    json!({"id":"auto","qualified":"auto","kind":"chat","capabilities":["chat","completion"],"endpoints":["chat_completions"],"owned_by":"v-scheduler","upstream_name":"Auto","upstream_kind":"virtual","upstream_source":"auto","model_prefix":"auto","virtual":true})
+    json!({"id":"auto","qualified":"auto","kind":"chat","capabilities":["chat","completion"],"endpoints":["chat_completions"],"owned_by":"v-scheduler","upstream_name":"Auto","upstream_kind":"virtual","upstream_source":"auto","model_prefix":"auto","virtual":true,"configuration_url":"/api/v1/auto-routing","candidates_url":"/api/v1/auto-routing/candidates"})
 }
 
 #[derive(Clone, Serialize)]

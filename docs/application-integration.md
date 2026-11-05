@@ -742,3 +742,5 @@ curl http://v-scheduler:8080/api/v1/registrations \
 已执行的跨应用业务矩阵与发布证据见 [验证记录](validation.md)。
 
 自动候选池的排序指标相同时，使用已核验绑定中的原生权重大小优先选择占用较小的模型，未知大小后置；不根据模型名称猜测规模，不改变手工候选的排序或能力档位，也不绕过实际资源准入。
+
+Auto 候选和策略可通过管理员 `GET/PUT /api/v1/auto-routing` 配置；模型条目的 `configuration_url`、`candidates_url` 指向配置与候选目录。空候选表示自动候选池，PUT 必须带最新 revision。OpenAI Decisions 与 Jev 的结构化分类统一用 `classifier=systemone`，分类模型使用 jev_model/jev_upstream_id，云端分类单独许可。详见 [Auto 配置 API](auto-routing.md#从模型卡片或-api-配置-auto)。

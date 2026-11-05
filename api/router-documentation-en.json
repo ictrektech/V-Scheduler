@@ -427,7 +427,7 @@
           "method": "PUT",
           "path": "/api/v1/auto-routing",
           "summary": "Set Auto routing",
-          "desc": "Administrator replaces the complete configuration using the current revision. Candidates bind qualified model and upstream_id.",
+          "desc": "Administrators replace the full Auto configuration using the latest GET revision; conflicts return 409. candidates=[] selects the automatic pool; explicit candidates bind qualified model and upstream_id. policy accepts balanced/fast/quality/economy; defaults are balanced and rules. OpenAI Decisions and Jev use classifier=systemone with jev_model, jev_upstream_id and classifier_timeout_ms. Cloud classification needs allow_cloud_classifier=true; answer-model allow_cloud is independent. enabled is retained for legacy clients, always true, and does not control discovery.",
           "example": "curl -fsS http://v-scheduler:8080/api/v1/auto-routing -H \"Authorization: Bearer $VOS_TOKEN\" -X PUT -H \"Content-Type: application/json\" --data-binary @auto-config.json"
         },
         {

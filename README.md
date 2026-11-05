@@ -378,3 +378,5 @@ V-Voice 自动绑定按 0.0.22 的地址契约边界选择正式 `v-scheduler` �
 Auto 是始终可发现的虚拟聊天模型：应用从 `/v1/models` 获取 `auto` 后，直接向 `/v1/chat/completions` 传入 `model: "auto"`。默认采用均衡策略和本地规则，空候选配置自动使用可见聊天模型；指定候选后保留其能力档位限制。云端许可和资源准入保持生效，无可用候选返回 503，不会隐藏 Auto。旧 `enabled` 字段不再作为开关。详见 [Auto 路由](docs/auto-routing.md)。
 
 自动候选池的排序指标相同时，使用已核验绑定中的原生权重大小优先选择占用较小的模型，未知大小后置；不根据模型名称猜测规模，不改变手工候选的排序或能力档位，也不绕过实际资源准入。
+
+Auto 卡片提供「配置候选与策略」入口，作为内置路由显示，不再显示普通上游的发现状态或服务地址。管理客户端可读取 Auto 模型条目的 configuration_url/candidates_url，通过 GET/PUT `/api/v1/auto-routing` 配置同一份策略；OpenAI Decisions 在「结构化决策分类器（OpenAI Decisions／System One）」中选用，API classifier 仍为 systemone。

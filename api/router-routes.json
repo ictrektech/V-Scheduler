@@ -1809,7 +1809,7 @@
     "method": "PUT",
     "path": "/api/v1/auto-routing",
     "summary": "设置 Auto 候选与策略",
-    "desc": "管理员完整替换配置，revision 乐观锁；候选绑定 model 和 upstream_id，空列表不允许启用。",
+    "desc": "管理员完整替换 Auto 配置，必须携带最新 GET 返回的 revision，冲突返回 409。candidates=[] 表示自动候选池；指定候选使用 qualified model 与 upstream_id。policy 支持 balanced/fast/quality/economy；默认 balanced 与 rules。OpenAI Decisions 和 Jev 均可用 classifier=systemone，配置 jev_model、jev_upstream_id、classifier_timeout_ms；云端分类需 allow_cloud_classifier=true，回答模型的 allow_cloud 独立控制。enabled 仅兼容旧客户端，恒为 true，不控制模型发现。",
     "example": "curl -fsS http://v-scheduler:8080/api/v1/auto-routing -H \"Authorization: Bearer $VOS_TOKEN\" -X PUT -H \"Content-Type: application/json\" --data-binary @auto-config.json"
   },
   {

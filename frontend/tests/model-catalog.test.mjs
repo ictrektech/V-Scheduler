@@ -27,3 +27,12 @@ test('capability and source searches match both IDs and visible localized labels
  assert.equal(groupCatalog(sources,models,'upstream','image',translate)[0].count,1);
  assert.equal(groupCatalog(sources,models,'upstream','external',translate)[0].count,1);
 });
+
+test('Auto has its own virtual group and never inherits missing-upstream health',()=>{
+ const auto={id:'auto',qualified:'auto',virtual:true,upstream_source:'auto',upstream_name:'Auto'};
+ const groups=groupCatalog([], [auto,{id:'shortcut',qualified:'shortcut'}]);
+ const source=groups.find(g=>g.key==='upstream:virtual:auto').upstreams[0];
+ assert.equal(source.virtual,true);assert.equal(source.source,'auto');
+ assert.deepEqual(source.catalogModels,[auto]);
+ assert.equal(groups.length,2);
+});

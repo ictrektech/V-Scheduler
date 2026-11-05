@@ -759,4 +759,10 @@ export const messages:Record<string,[string,string]>={
 "Auto 是始终可发现的模型。默认按均衡策略自动选择可用聊天模型；本地调用继续经过资源准入。":["Auto is always discoverable. By default it balances available chat models; local calls still require resource admission.","Auto 是始終可發現的模型。預設以均衡策略自動選擇可用聊天模型；本機呼叫仍須資源准入。"],
 "不勾选候选时使用自动候选池；勾选后仅使用指定模型，并按配置的能力档位筛选。规则无需额外模型。":["Leave candidates empty for automatic selection. Selecting candidates restricts routing to those models and their configured quality tiers. Rules require no extra model.","未勾選時使用自動候選池；勾選後僅使用指定模型，依設定的能力檔位篩選。規則無需額外模型。"],
 "自动候选排序相同时，优先使用已核验权重占用较小的模型；手工候选设置不变。":["When automatic candidates tie, prefer the smaller verified native weight footprint. Explicit candidate settings are unchanged.","自動候選排序相同時，優先使用已核驗權重占用較小的模型；手動候選設定不變。"],
+"内置路由":["Built-in routing", "內建路由"],
+"虚拟模型":["Virtual model", "虛擬模型"],
+"配置候选与策略":["Configure candidates & policy", "設定候選與策略"],
+"Auto 根据候选模型与策略选型，无需独立服务地址。候选留空时自动选择；指定后仅使用已选模型。":["Auto routes using candidates and policy, with no separate service URL. Empty candidates select automatically; explicit candidates restrict the pool.", "Auto 依候選模型與策略選型，無需獨立服務位址。候選留空時自動選擇；指定後僅使用已選模型。"],
+"结构化决策分类器（OpenAI Decisions／System One）":["Structured decision classifier (OpenAI Decisions / System One)", "結構化決策分類器（OpenAI Decisions／System One）"],
+"OpenAI Decisions 使用原生 Decisions 接口，Jev 使用 System One 接口。先添加对应上游，再在下方选择分类模型；云端分类需要单独许可。":["OpenAI Decisions uses the native Decisions API; Jev uses System One. Add the provider, then select its classifier model below. Cloud classification requires separate consent.", "OpenAI Decisions 使用原生 Decisions 介面，Jev 使用 System One 介面。先新增對應上游，再於下方選擇分類模型；雲端分類需要單獨許可。"],
 }

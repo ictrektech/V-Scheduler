@@ -4,15 +4,16 @@ const capabilityLabels=Object.fromEntries(CAPABILITIES);
 export function sourceLabel(source) {
   return ({api: '外部上游', registered: '主动注册', 'v-scheduler': 'V-Scheduler',
     'v-voice': 'V-Voice', 'image-studio': 'Image Studio', 'ml-server': 'ML Server',
-    'v-sub': 'V-Sub', 'video-structure': '视频结构化', 'model-hub': 'Model Hub'})[source] || source || '其他来源';
+    auto: '内置路由', 'v-sub': 'V-Sub', 'video-structure': '视频结构化', 'model-hub': 'Model Hub'})[source] || source || '其他来源';
 }
 
 export function groupCatalog(upstreams, models, mode = 'upstream', query = '', translate = label=>label) {
   const entries = new Map(upstreams.map(u => [u.id, {...u, catalogModels: []}]));
   for (const m of models) {
-    const id = m.upstream_id || 'catalog-aliases';
+    const auto = m.virtual === true && m.upstream_source === 'auto';
+    const id = auto ? 'virtual:auto' : m.upstream_id || 'catalog-aliases';
     if (!entries.has(id)) entries.set(id, {id, name: m.upstream_name || '快捷模型',
-      source: m.upstream_source || 'aliases', base_url: m.upstream_url || '', manageable: false, catalogModels: []});
+      source: m.upstream_source || 'aliases', base_url: m.upstream_url || '', manageable: false, virtual: auto, catalogModels: []});
     entries.get(id).catalogModels.push(m);
   }
   const needle = query.trim().toLocaleLowerCase();

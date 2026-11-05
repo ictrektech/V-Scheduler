@@ -198,3 +198,18 @@ curl -i "$GATEWAY/v1/chat/completions" \
 首期不路由 embedding、rerank、图片/视频/音频生成、异步任务或带供应商持久会话资源的 API；向量索引必须固定 embedding 模型。尚无在线 bandit、自学习质量评分、TTFT 预测和自动质量重试，档位与价格来自管理员配置，候选效果须通过实际业务样本验证。
 
 自动候选池的排序指标相同时，使用已核验绑定中的原生权重大小优先选择占用较小的模型，未知大小后置；不根据模型名称猜测规模，不改变手工候选的排序或能力档位，也不绕过实际资源准入。
+
+## 从模型卡片或 API 配置 Auto
+
+「模型与上游」中的 Auto 是内置虚拟路由，不进行独立上游发现；卡片的「配置候选与策略」打开「高级管理 → Auto 自动选型」。`GET /api/v1/models` 中的 Auto 条目提供 `configuration_url` 与 `candidates_url`，供管理客户端定位配置接口。修改配置须使用管理员身份。
+
+保留完整现有配置，只切回默认自动候选与均衡规则策略：
+
+```bash
+GATEWAY=http://v-scheduler:8080
+curl -fsS "$GATEWAY/api/v1/auto-routing" -H "Authorization: Bearer $VOS_TOKEN" > auto-current.json
+jq '.candidates=[] | .policy="balanced" | .classifier="rules"' auto-current.json > auto-config.json
+curl -fsS -X PUT "$GATEWAY/api/v1/auto-routing" -H "Authorization: Bearer $VOS_TOKEN" -H 'Content-Type: application/json' --data-binary @auto-config.json
+```
+
+限定模型时，从 `GET /api/v1/auto-routing/candidates` 获取真实 `qualified` 和 `upstream_id`，写入 `candidates`；同名模型的不同上游实例可以分别配置。OpenAI Decisions 在界面选择「结构化决策分类器（OpenAI Decisions／System One）」，API 仍使用 `classifier=systemone`，不新增不兼容的枚举值：设置 `jev_model` 为已发现的完整决策模型 ID、`jev_upstream_id` 为对应实例 ID，云端分类另设 `allow_cloud_classifier=true`。Jev 同样支持 `systemone`，原 `classifier=jev` 保持兼容。回答候选与分类模型分别配置；分类模型不会自动成为回答候选。

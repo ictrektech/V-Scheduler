@@ -836,3 +836,21 @@ async fn default_auto_uses_verified_weight_size_before_alphabetical_ties() {
     assert_eq!(result.resolved_model, "manual/large");
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[tokio::test]
+async fn auto_management_api_accepts_automatic_pool_and_enforces_revision() {
+    let root = temp();
+    let g = gateway(&root, Router::new());
+    let request = |method: &str, value: Value| Request::builder().method(method).uri("/api/v1/auto-routing").header("content-type","application/json").body(Body::from(value.to_string())).unwrap();
+    let response = manage::handle(&g, &admin(), request("GET", Value::Null)).await.unwrap();
+    let mut config: Value = serde_json::from_slice(&axum::body::to_bytes(response.into_body(),65536).await.unwrap()).unwrap();
+    config["policy"] = json!("fast");
+    config["candidates"] = json!([]);
+    let response = manage::handle(&g, &admin(), request("PUT", config.clone())).await.unwrap();
+    let saved: Value = serde_json::from_slice(&axum::body::to_bytes(response.into_body(),65536).await.unwrap()).unwrap();
+    assert_eq!(saved["policy"], "fast");assert_eq!(saved["candidates"],json!([]));
+    assert_eq!(manage::handle(&g, &admin(), request("PUT", config)).await.err().unwrap().status,409);
+    assert_eq!(auto::model_view()["configuration_url"],"/api/v1/auto-routing");
+    assert_eq!(auto::model_view()["candidates_url"],"/api/v1/auto-routing/candidates");
+    std::fs::remove_dir_all(root).unwrap();
+}

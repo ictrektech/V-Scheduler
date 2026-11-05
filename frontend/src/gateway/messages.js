@@ -646,4 +646,10 @@ export const VRouterMessages = {
 "填写 Cloudflare Account ID，使用具备 Workers AI 权限的 API Token；若模型列表接口不可用，可添加单个模型。":{"en": "Enter your Cloudflare Account ID and a token with Workers AI permissions. Add a single model if the model-list endpoint is unavailable.", "zh-TW": "填寫 Cloudflare Account ID，使用具備 Workers AI 權限的 API Token；若模型清單介面不可用，可新增單一模型。"},
 "使用 Kimi Coding 专用 Key；模型、账号权限及 Coding Plan 限制由供应商决定。":{"en": "Use a Kimi Coding key. Models, account access and Coding Plan restrictions are controlled by the provider.", "zh-TW": "使用 Kimi Coding 專用 Key；模型、帳號權限與 Coding Plan 限制由供應商決定。"},
 "此供应商使用特殊鉴权或原生协议。请填写已授权的 OpenAI 或 Anthropic 兼容网关地址及其密钥；此预设不提供供应商原生登录、签名或自动续期。":{"en": "This provider uses specialized authentication or a native protocol. Enter an authorized OpenAI- or Anthropic-compatible gateway URL and key. This preset does not implement native sign-in, signing or automatic token refresh.", "zh-TW": "此供應商使用特殊鑑權或原生協定。請填寫已授權的 OpenAI 或 Anthropic 相容閘道位址與金鑰；本預設不提供供應商原生登入、簽章或自動續期。"},
+"内置路由":{"en": "Built-in routing", "zh-TW": "內建路由"},
+"虚拟模型":{"en": "Virtual model", "zh-TW": "虛擬模型"},
+"配置候选与策略":{"en": "Configure candidates & policy", "zh-TW": "設定候選與策略"},
+"Auto 根据候选模型与策略选型，无需独立服务地址。候选留空时自动选择；指定后仅使用已选模型。":{"en": "Auto routes using candidates and policy, with no separate service URL. Empty candidates select automatically; explicit candidates restrict the pool.", "zh-TW": "Auto 依候選模型與策略選型，無需獨立服務位址。候選留空時自動選擇；指定後僅使用已選模型。"},
+"结构化决策分类器（OpenAI Decisions／System One）":{"en": "Structured decision classifier (OpenAI Decisions / System One)", "zh-TW": "結構化決策分類器（OpenAI Decisions／System One）"},
+"OpenAI Decisions 使用原生 Decisions 接口，Jev 使用 System One 接口。先添加对应上游，再在下方选择分类模型；云端分类需要单独许可。":{"en": "OpenAI Decisions uses the native Decisions API; Jev uses System One. Add the provider, then select its classifier model below. Cloud classification requires separate consent.", "zh-TW": "OpenAI Decisions 使用原生 Decisions 介面，Jev 使用 System One 介面。先新增對應上游，再於下方選擇分類模型；雲端分類需要單獨許可。"},
 };
