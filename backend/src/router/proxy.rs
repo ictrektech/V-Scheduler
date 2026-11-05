@@ -589,7 +589,9 @@ async fn handle_inner(g: Arc<Gateway>, id: Identity, request: Request, classifie
     check_owner(&g, &u, &path, &id)?;
     let approval = lease::approval(&g, &u, &native, method.as_str(), &suffix, is_websocket)?;
     let asynchronous = jobs::creation(&u, &suffix, &value, method.as_str());
-    let conversion = if u.converts_chat_endpoint(&suffix) {
+    let conversion = if u.converts_chat_endpoint(&suffix)
+        && (u.chat_only() || (pinned.is_empty() && method == "POST"))
+    {
         suffix.trim_start_matches('/')
     } else {
         ""
