@@ -91,6 +91,41 @@ async fn model_visibility_changes_are_independent_and_survive_refresh() {
     std::fs::remove_dir_all(root).unwrap();
 }
 
+#[tokio::test]
+async fn model_catalog_names_keep_legacy_ids_routable() {
+    let root = temp();
+    let g = gateway(&root, Router::new());
+    let user = principal("alice");
+    let entries = [
+        ("domain", "https://api.example.com/v1", "com.example.api", "api.example.com"),
+        ("ipv4", "http://192.0.2.20:8000/v1", "20.2.0.192", "192.0.2.20"),
+    ];
+    for (id, url, prefix, _) in entries {
+        let mut u = upstream(id);
+        u.kind = "cloud".into();
+        u.base_url = url.into();
+        u.model_prefix = prefix.into();
+        g.registry.lock().unwrap().put(u, vec![model("echo")]);
+    }
+    let get = |path| Request::builder().uri(path).body(Body::empty()).unwrap();
+    let openai = proxy::handle(g.clone(), user.clone(), get("/v1/models")).await.unwrap();
+    let management = manage::handle(&g, &user, get("/api/v1/models")).await.unwrap();
+    let openai: Value = serde_json::from_slice(&axum::body::to_bytes(openai.into_body(), 1<<20).await.unwrap()).unwrap();
+    let management: Value = serde_json::from_slice(&axum::body::to_bytes(management.into_body(), 1<<20).await.unwrap()).unwrap();
+    for (id, _, prefix, host) in entries {
+        let qualified = format!("{prefix}/echo");
+        let display = format!("{host}/echo");
+        let wire = openai["data"].as_array().unwrap().iter().find(|row| row["id"] == qualified).unwrap();
+        let row = management["models"].as_array().unwrap().iter().find(|row| row["upstream_id"] == id).unwrap();
+        assert_eq!(wire["name"], display);
+        assert_eq!(row["name"], display);
+        assert_eq!(row["qualified"], qualified);
+        let (upstream, native) = g.registry.lock().unwrap().acquire(&qualified, "/chat/completions", "", &user).unwrap();
+        assert_eq!((upstream.id.as_str(), native.as_str()), (id, "echo"));
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}
+
 #[test]
 fn provider_metadata_defaults_are_conservative_and_persisted() {
     let root = temp();

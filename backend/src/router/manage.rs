@@ -81,6 +81,7 @@ fn upstream_views(r: &Registry, id: &Identity) -> Vec<Value> {
 fn model_view(r: &Registry, m: &Model, id: &Identity) -> Value {
     let mut v = json!(m);
     let u = &r.upstreams[&m.upstream_id];
+    v["name"] = json!(m.display_name(u, id));
     v["short"] = json!(false);
     v["upstream_name"] = json!(u.name);
     v["upstream_kind"] = json!(u.kind);

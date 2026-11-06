@@ -92,6 +92,20 @@ pub(super) struct Model {
     pub visibility: Option<String>,
 }
 impl Model {
+    pub fn display_name(&self, upstream: &Upstream, identity: &Identity) -> String {
+        if upstream.kind == "cloud" && upstream.visible(identity) {
+            if let Ok(url) = reqwest::Url::parse(&upstream.base_url) {
+                if let Some(host) = url.host_str() {
+                    let legacy = host.trim_start_matches("www.").rsplit('.').collect::<Vec<_>>().join(".");
+                    if upstream.prefix() == legacy && self.qualified == format!("{legacy}/{}", self.id) {
+                        return format!("{host}/{}", self.id);
+                    }
+                }
+            }
+        }
+        self.qualified.clone()
+    }
+
     pub fn visible(&self, upstream: &Upstream, identity: &Identity) -> bool {
         match self.visibility.as_deref() {
             Some("public") => true,

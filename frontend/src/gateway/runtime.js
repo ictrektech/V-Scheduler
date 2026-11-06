@@ -480,7 +480,7 @@ const app = {
               }
             }
             return [
-              `<span class="mono model-identifier">${esc(m.short ? m.id : m.qualified)}</span><div class="model-capability-tags">${(m.capabilities || []).slice(0,4).map(c=>`<span class="capability-tag">${esc(VRouterI18n.t(CAPABILITIES.find(([id])=>id===c)?.[1] || c))}</span>`).join('')}</div>${m.short ? ` <span class="pill kind">${VRouterI18n.t("短名")}</span>` : ""}`,
+              `<span class="mono model-identifier">${esc(m.short ? m.id : (m.name || m.qualified))}</span><div class="model-capability-tags">${(m.capabilities || []).slice(0,4).map(c=>`<span class="capability-tag">${esc(VRouterI18n.t(CAPABILITIES.find(([id])=>id===c)?.[1] || c))}</span>`).join('')}</div>${m.short ? ` <span class="pill kind">${VRouterI18n.t("短名")}</span>` : ""}`,
               ({embedding:"Embedding",chat:VRouterI18n.t("对话"),unknown:VRouterI18n.t("由上游决定"),service:VRouterI18n.t("服务接口")})[m.kind] || esc(m.kind),
               `<span class="pill ${m.upstream_kind}">${kindLabel(m.upstream_kind)}</span>`,
               esc(VRouterI18n.t(m.upstream_name)),
@@ -562,7 +562,7 @@ const app = {
       section.append(title, pre, copy);
       output.append(section);
     }
-    $("modelCallName").textContent = [qualified, upstream?.name || model.upstream_name].filter(Boolean).join(" · ");
+    $("modelCallName").textContent = [model.name || qualified, upstream?.name || model.upstream_name].filter(Boolean).join(" · ");
     $("modelCallLAN").textContent = lanBaseURL(bases);
     $("modelCallDeclared").textContent = !methods.length ? (model.endpoints || []).join(" · ") : "";
     VRouterI18n.bind($("modelCallHint"), "textContent", () => VRouterI18n.t(pinned
@@ -865,7 +865,7 @@ const app = {
     const usable = this.state.models
       .filter((m) => !m.short && m.kind !== "service" && this.playgroundEndpointsForModel(m).length)
       .sort((a, b) => this.playgroundModelRank(a.qualified) - this.playgroundModelRank(b.qualified) || a.qualified.localeCompare(b.qualified));
-    VRouterI18n.bind($("pgModel"), "innerHTML", () => usable.map(m => `<option value="${esc(m.qualified)}">${esc(m.qualified)}</option>`).join("") || `<option value="">（${VRouterI18n.t("无可用模型")}）</option>`);
+    VRouterI18n.bind($("pgModel"), "innerHTML", () => usable.map(m => `<option value="${esc(m.qualified)}">${esc(m.name || m.qualified)}</option>`).join("") || `<option value="">（${VRouterI18n.t("无可用模型")}）</option>`);
     if ([...$("pgModel").options].some(o => o.value === previous)) $("pgModel").value = previous;
     this.renderPlaygroundEndpoints();
   },
