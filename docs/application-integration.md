@@ -82,6 +82,41 @@ VOS 本机资源采集内置于应用，无需应用开发者部署独立 Agent�
 
 不同应用使用各自的服务身份；私钥不进入浏览器、discovery、共享模型目录或日志。无效 Bearer 返回 401，不能填写任意占位 Key。注册 `scheduler` 策略需要管理员权限；普通身份提交该字段返回 403。私有模型由注册请求的真实身份决定 owner；系统级管理员注册器不能代替另一个用户创建其私有身份。后台可信交接见 [HybRAG 身份参考](hybrag-gateway-identity.md)。
 
+## DeepSeek Flash 的私有与公开调用
+
+在「模型与上游」打开已添加模型的设置，选择公开、私有或继承上游。修改由模型所属上游的所有者或管理员操作。单模型设置覆盖上游默认值，同一上游其他模型继续使用自己的设置。接口为 `PATCH /api/v1/models`，使用 VOS Bearer，提交 `{"upstream_id":"deepseek","model":"com.deepseek.api/deepseek-flash","visibility":"private"}`。设为 `"public"` 切换公开，`null` 恢复继承。用实际目录返回的 `upstream_id` 与 `qualified` 替换示例。
+
+容器内使用 `http://v-scheduler:8080`。局域网使用宿主机映射端口，默认 `22888`。VOS 同源客户端可用 `/api/com.ictrek.v-scheduler`。私有调用使用当前登录账号的 VOS access token，应用可由 VOS 登录桥接或 fastpath 获取。公开模型在网关未要求强制鉴权时可直接调用；启用强制鉴权时，公开调用也传 VOS access token 或网关 Key。上游 DeepSeek Key 由网关保存。
+
+```bash
+GATEWAY=http://v-scheduler:8080
+MODEL=com.deepseek.api/deepseek-flash
+BODY='{"model":"'$MODEL'","messages":[{"role":"user","content":"Say hello."}],"max_tokens":128}'
+
+# Private, as the owner or a VOS administrator
+curl -fsS "$GATEWAY/v1/chat/completions" -H "Authorization: Bearer $VOS_TOKEN" -H 'Content-Type: application/json' -d "$BODY"
+curl -fsS "$GATEWAY/v1/messages" -H "x-api-key: $VOS_TOKEN" -H 'anthropic-version: 2023-06-01' -H 'Content-Type: application/json' -d "$BODY"
+
+# Public, with optional gateway authentication
+curl -fsS "$GATEWAY/v1/chat/completions" -H 'Content-Type: application/json' -d "$BODY"
+curl -fsS "$GATEWAY/v1/messages" -H 'anthropic-version: 2023-06-01' -H 'Content-Type: application/json' -d "$BODY"
+```
+
+### 计算节点注册与资源查询
+
+下列接口属于调度 API，容器直连 `http://v-scheduler:38120/api/v1`，或通过网关 `http://v-scheduler:8080/scheduler/api/v1`。安装的 VOS App 负责启动受控组件、保管凭据与定时采样。
+
+| 接口 | 凭据和数据 |
+|---|---|
+| `POST /enrollments` | 管理员提交 `node_id` 并签发一次性邀请 |
+| `POST /workers/register` | 邀请 Bearer，提交 `protocol_version:1`、`node_id`、`display_name`、`instance_id`、`boot_id`、`session_id`、本地生成的 `worker_token` |
+| `POST /nodes/{id}/approve` | 管理员按当前版本批准容量、驻留基线和安全保留 |
+| `POST /workers/{id}/executors` | 该节点 worker Bearer，提交 `{"executors":[...]}`，其中 `resources` 为单次计算预算，`upstream_urls` 为可达的推理地址；管理员通过 `POST /executors/{id}` 审核启用 |
+| `POST /workers/{id}/heartbeat` | 该节点 worker Bearer，提交 `session_id` 和含 `observed_at` 的实际采样 `report` |
+| `GET /workers/{id}/resources` | 该节点 worker Bearer 或管理员。返回 `capacities`、`resident_baseline`、`reserved`、`remaining_budget`、`effective_safety_reserve` 和新鲜的 `report` |
+
+`remaining_budget` 是批准容量扣除驻留基线和未释放预约的余额。实测余量看 `report.memory_available_mib` 和独立显存的 `report.gpus[].free_mib`；统一内存共用主机内存。遥测失效时 `telemetry_fresh=false` 且 `report=null`。实际准入还检查安全保留、节点状态及排队顺序。模型可发现性通过单独的网关模型注册接口设置。完整请求样例见应用内「API 文档 → 应用接入」。
+
 <a id="managed-inference"></a>
 ## 一个推理实例的完整接入流程
 

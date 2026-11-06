@@ -6,15 +6,16 @@ fn view(r: &Registry, u: &Upstream, id: &Identity) -> Value {
     v["provider_credentials"] = Value::Null;
     v["has_provider_credentials"] = json!(!u.provider_credentials.is_null());
     v["has_key"] = json!(!u.api_key.is_empty());
-    v["model_ids"] = json!(
+    let visible_models =
         r.models
             .get(&u.id)
             .into_iter()
             .flatten()
+            .filter(|m| m.visible(u, id))
             .map(|m| m.id.clone())
-            .collect::<Vec<_>>()
-    );
-    v["models"] = json!(r.models.get(&u.id).map_or(0, Vec::len));
+            .collect::<Vec<_>>();
+    v["models"] = json!(visible_models.len());
+    v["model_ids"] = json!(visible_models);
     v["routing"] = json!(r.routing.get(&u.id).cloned().unwrap_or_default());
     v["inflight"] = json!(r.inflight.get(&u.id).copied().unwrap_or(0));
     v["status"] = r.status(u);
@@ -94,15 +95,17 @@ fn model_view(r: &Registry, m: &Model, id: &Identity) -> Value {
         .get(&format!("{}/{}", m.upstream_id, m.id))
         .is_some_and(|policy| policy.direct));
     v["model_prefix"] = json!(u.prefix());
-    v["upstream_url"] = json!(u.base_url);
+    v["upstream_url"] = if u.visible(id) { json!(u.base_url) } else { Value::Null };
+    v["visibility_manageable"] = json!(id.admin || (!u.owner.is_empty() && u.owner == id.owner));
+    v["effective_visibility"] = json!(m.visibility.as_deref().unwrap_or(&u.visibility));
     v
 }
 fn model_views(r: &Registry, id: &Identity) -> Vec<Value> {
     // Management needs every source's own model/settings. Only inference discovery
     // collapses identical qualified IDs into one routable catalog entry.
     let mut rows = r.upstreams.values()
-        .filter(|u| u.live() && u.visible(id))
-        .flat_map(|u| r.models.get(&u.id).into_iter().flatten())
+        .filter(|u| u.live())
+        .flat_map(|u| r.models.get(&u.id).into_iter().flatten().filter(move |m| m.visible(u, id)))
         .map(|m| model_view(r, m, id))
         .collect::<Vec<_>>();
     rows.extend(business_views(r).1);
@@ -326,6 +329,15 @@ pub(super) fn select_models(payload: &Value, probed: Vec<Model>) -> Api<Vec<Mode
     Ok(result)
 }
 fn update_model(g: &Arc<Gateway>, id: &Identity, payload: Value) -> Api<Response> {
+    let visibility = match payload.get("visibility") {
+        None => None,
+        Some(Value::Null) => Some(None),
+        Some(v) if matches!(v.as_str(), Some("public" | "private")) => Some(v.as_str().map(str::to_owned)),
+        _ => return Err(Failure::new(400, "visibility must be public, private or null")),
+    };
+    if visibility.is_some() && text(&payload, "upstream_id").is_empty() {
+        return Err(Failure::new(400, "upstream_id is required for visibility changes"));
+    }
     if payload.get("metadata_override").is_some_and(|v| !v.is_boolean()) {
         return Err(Failure::new(400, "metadata_override must be a boolean"));
     }
@@ -387,6 +399,9 @@ fn update_model(g: &Arc<Gateway>, id: &Identity, payload: Value) -> Api<Response
             "upstream is managed by its owner or an administrator",
         ));
     }
+    if visibility.is_some() && !id.admin && (u.owner.is_empty() || u.owner != id.owner) {
+        return Err(Failure::new(403, "only the owner or an administrator can change model visibility"));
+    }
     if payload.get("owned_by").is_some_and(|v| !v.is_null()) {
         model.owned_by = text(&payload, "owned_by").trim().into();
     }
@@ -401,18 +416,25 @@ fn update_model(g: &Arc<Gateway>, id: &Identity, payload: Value) -> Api<Response
     {
         model.kind.clear();
     }
-    model.metadata_override = payload["metadata_override"].as_bool().unwrap_or(true);
+    if let Some(visibility) = visibility {
+        model.visibility = visibility;
+    }
+    if payload.get("visibility").is_none() || payload.as_object().is_some_and(|v| {
+        ["metadata_override", "kind", "capabilities", "endpoints", "owned_by"].iter().any(|key| v.contains_key(*key))
+    }) {
+        model.metadata_override = payload["metadata_override"].as_bool().unwrap_or(true);
+    }
     registry::normalize_upstream_model(&mut model, u);
     if !explicit.is_empty() {
         model.kind = explicit;
     }
-    if let Some(rows) = r.models.get_mut(&upstream_id) {
-        if let Some(slot) = rows.iter_mut().find(|m| m.qualified == qualified) {
-            *slot = model.clone();
-        }
+    let rows = r.models.get_mut(&upstream_id).expect("model source exists");
+    let index = rows.iter().position(|m| m.qualified == qualified).expect("model exists");
+    let previous = std::mem::replace(&mut rows[index], model.clone());
+    if r.persist(&g.state_path).is_err() {
+        r.models.get_mut(&upstream_id).expect("model source exists")[index] = previous;
+        return Err(Failure::new(500, "cannot persist model metadata"));
     }
-    r.persist(&g.state_path)
-        .map_err(|_| Failure::new(500, "cannot persist model metadata"))?;
     Ok(Json(json!({"model": model_view(&r, &model, id)})).into_response())
 }
 
@@ -534,6 +556,7 @@ pub(super) async fn models(g: &Gateway, u: &Upstream) -> Api<Vec<Model>> {
                 endpoints: strings(&v["endpoints"]),
                 owned_by: text(v, "owned_by").into(),
                 metadata_override: false,
+                visibility: None,
             };
             if model.capabilities.is_empty()&&model.endpoints.is_empty(){models_dev::enrich_model(g,u,&mut model);}
             registry::normalize_upstream_model(&mut model, u);

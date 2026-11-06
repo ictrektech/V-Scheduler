@@ -5,6 +5,41 @@ const endpoints=ref<any[]>([])
 const locationHost=location.hostname||'<vos-host>'
 onMounted(async()=>{try{endpoints.value=(await request('/api/v1/integration')).endpoints}catch{}})
 defineProps<{t:(value:string)=>string}>()
+const guide = ref<HTMLElement>()
+const contents = [
+  ['addresses','接入地址'], ['deepseek','DeepSeek Flash 调用'], ['auto','Auto 自动选型'],
+  ['providers','模型与上游'], ['register','模型注册 API 与自动能力识别'],
+  ['nodes','节点注册与资源查询'], ['lifecycle','节点、应用、预算与停止的统一流程'],
+  ['controls','计算启动与停止 API'], ['queue','推理等待队列'],
+  ['residency','模型驻留与卸载'], ['diagnostics','诊断日志'],
+]
+function jump(id: string) {
+  const section = guide.value?.querySelector<HTMLElement>(`#integration-${id}`)
+  section?.focus({preventScroll:true})
+  section?.scrollIntoView({block:'start'})
+}
+const deepseekSetup = `GATEWAY=http://v-scheduler:8080
+MODEL=com.deepseek.api/deepseek-flash
+BODY='{"model":"'$MODEL'","messages":[{"role":"user","content":"Say hello."}],"max_tokens":128}'
+# Check the VOS identity and model ID (private or authenticated public access).
+curl -fsS "$GATEWAY/api/v1/auth/me" -H "Authorization: Bearer $VOS_TOKEN"
+curl -fsS "$GATEWAY/v1/models" -H "Authorization: Bearer $VOS_TOKEN"`
+const deepseekPrivate = `# OpenAI
+curl -fsS "$GATEWAY/v1/chat/completions" -H "Authorization: Bearer $VOS_TOKEN" -H 'Content-Type: application/json' -d "$BODY"
+# Anthropic
+curl -fsS "$GATEWAY/v1/messages" -H "x-api-key: $VOS_TOKEN" -H 'anthropic-version: 2023-06-01' -H 'Content-Type: application/json' -d "$BODY"`
+const deepseekPublic = `# OpenAI
+curl -fsS "$GATEWAY/v1/chat/completions" -H 'Content-Type: application/json' -d "$BODY"
+# Anthropic
+curl -fsS "$GATEWAY/v1/messages" -H 'anthropic-version: 2023-06-01' -H 'Content-Type: application/json' -d "$BODY"`
+const nodeCommands = `SCHEDULER=http://v-scheduler:38120/api/v1
+NODE=compute-a
+curl -fsS "$SCHEDULER/enrollments" -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' -d '{"node_id":"compute-a"}'
+curl -fsS "$SCHEDULER/workers/register" -H "Authorization: Bearer $ENROLLMENT_TOKEN" -H 'Content-Type: application/json' --data-binary @registration.json
+curl -fsS "$SCHEDULER/workers/$NODE/executors" -H "Authorization: Bearer $WORKER_TOKEN" -H 'Content-Type: application/json' --data-binary @executors.json
+curl -fsS "$SCHEDULER/workers/$NODE/heartbeat" -H "Authorization: Bearer $WORKER_TOKEN" -H 'Content-Type: application/json' --data-binary @heartbeat.json
+curl -fsS "$SCHEDULER/workers/$NODE/resources" -H "Authorization: Bearer $WORKER_TOKEN"`
+const executorExample = JSON.stringify({executors:[{id:'demo-infer',node_id:'compute-a',app_id:'demo-app',contract_version:'1',task_type:'model.infer',resources:{cpu_millicores:1000,memory_mib:1024,gpu_slots:0,gpu_memory_mib:0},upstream_urls:['http://demo-infer:8000/v1']}]},null,2)
 const anthropicExamples=`GATEWAY=http://v-scheduler:8080
 # x-api-key: V-Scheduler gateway key
 # AUTO: JSON response
@@ -26,8 +61,13 @@ curl -i "$GATEWAY/v1/chat/completions" -H "Authorization: Bearer $VOS_TOKEN" -H 
 
 </script>
 <template>
- <article class="integration-guide panel">
+ <article ref="guide" class="integration-guide panel">
   <h2>{{t('应用接入')}}</h2>
+  <nav class="guide-contents" :aria-label="t('快速跳转')">
+   <strong>{{t('快速跳转')}}</strong>
+   <ul><li v-for="[id,label] in contents" :key="id"><button type="button" class="quiet" @click="jump(id)">{{t(label)}}</button></li></ul>
+  </nav>
+  <h3 id="integration-addresses" tabindex="-1">{{t('接入地址')}}</h3>
   <p>{{t('模型客户端继续使用网关 API；调度管理使用独立前缀。')}}</p>
   <p>{{t('统一容器的正式 host alias 只有 v-scheduler：8080 为网关，38120 为调度，6005 为模型管理。表中其余名称均为兼容别名，指向同一容器；三个 Ollama 是独立容器。新应用和已有应用后续适配均推荐使用 v-scheduler。')}}</p>
   <div class="endpoint-table"><table><thead><tr><th>{{t('用途')}}</th><th>{{t('正式 host alias : 内部端口')}}</th><th>{{t('兼容别名')}}</th><th>{{t('宿主机地址 : 映射端口')}}</th></tr></thead><tbody><tr v-for="endpoint in endpoints" :key="endpoint.name"><td>{{endpoint.name}}</td><td><code>{{endpoint.internal}}{{endpoint.path}}</code></td><td><div v-for="alias in endpoint.aliases||[]" :key="alias"><code>{{alias}}</code></div><div v-for="alias in endpoint.compatibility_aliases||[]" :key="alias">{{t('兼容')}}：<code>{{alias}}</code></div><span v-if="!endpoint.aliases?.length&&!endpoint.compatibility_aliases?.length">—</span></td><td><code>http://{{locationHost}}:{{endpoint.host_port}}{{endpoint.path}}</code></td></tr></tbody></table></div>
@@ -35,11 +75,20 @@ curl -i "$GATEWAY/v1/chat/completions" -H "Authorization: Bearer $VOS_TOKEN" -H 
   <p>{{t('正式别名由当前 V-Scheduler 安装声明；兼容别名仅供旧客户端使用。新应用优先使用正式别名；与旧 V-Router 共存时不要向兼容别名发送私有凭据。所有别名均指向现有容器，不新增服务。')}}</p>
   <h3>{{t('本地与云端模型')}}</h3>
   <p>{{t('本地和纳管远端模型先取得资源许可；云端供应商模型不占本地资源预约。资源忙时遵守重试提示，不能绕过网关直接启动同一次计算。')}}</p>
-  <h3>Anthropic Messages</h3>
+  <h3 id="integration-deepseek" tabindex="-1">{{t('DeepSeek Flash 调用')}}</h3>
+  <p>{{t('在模型与上游打开 DeepSeek Flash 的模型设置，选择公开、私有或继承上游。仅所有者和管理员可改可见范围。私有模型仅对所有者和管理员可见可调用。')}}</p>
+  <pre>{{deepseekSetup}}</pre>
+  <h4>{{t('私有模型 · VOS 用户')}}</h4>
+  <p>{{t('用已登录用户的 VOS access token 设置 VOS_TOKEN。应用内通过 VOS 登录或 fastpath 获取当前用户 token。外部客户端使用 VOS 登录或 OAuth 签发的 access token。')}}</p>
+  <pre>{{deepseekPrivate}}</pre>
+  <h4>{{t('公开模型 · 直接调用')}}</h4>
+  <p>{{t('关闭网关强制鉴权时，公开模型可以不带凭据调用。若开启网关强制鉴权，OpenAI 使用 Authorization: Bearer，Anthropic 使用 x-api-key，填写 VOS access token 或网关 Key。上游 DeepSeek 密钥由网关保存。')}}</p>
+  <pre>{{deepseekPublic}}</pre>
+  <h4>Anthropic Messages / Auto</h4>
   <p>{{t('使用网关 Key 设置 GATEWAY_KEY。局域网调用时，GATEWAY 填上表的网关宿主机地址。同一个聊天模型 ID（包括 Auto）可以通过 Chat Completions 或 Anthropic Messages 调用。网关按上游协议转换请求、普通响应和流式输出。')}}</p>
   <p>{{t('Auto 的 Messages 请求使用可转换的字段。thinking、提示缓存和服务端工具请使用支持这些能力的原生模型。指定模型示例中的 ID 以本机模型目录为准。')}}</p>
   <pre>{{anthropicExamples}}</pre>
-  <h3>{{t('Auto 自动选型')}}</h3>
+  <h3 id="integration-auto" tabindex="-1">{{t('Auto 自动选型')}}</h3>
   <p>{{t('Auto 是始终可发现的模型。默认按均衡策略自动选择可用聊天模型；本地调用继续经过资源准入。')}}</p>
   <p>{{t('不勾选候选时使用自动候选池；勾选后仅使用指定模型，并按配置的能力档位筛选。规则无需额外模型。')}}</p>
   <p>{{t('自动候选排序相同时，优先使用已核验权重占用较小的模型；手工候选设置不变。')}}</p>
@@ -52,7 +101,7 @@ curl -i "$GATEWAY/v1/chat/completions" -H "Authorization: Bearer $VOS_TOKEN" -H 
   <pre>{{autoExamples}}</pre>
   <p>{{t('X-VScheduler-Auto-Policy 支持 balanced/fast/quality/economy；X-VScheduler-Auto-Local-Only=true 只能收紧策略。响应头 X-VScheduler-Auto-Model 与 X-VScheduler-Auto-Decision-ID 标识实际选型。工具续轮须使用同一 X-VScheduler-Session-ID，失效返回 409，不静默换模型。')}}</p>
   <p><a href="https://github.com/ictrektech/V-Scheduler/blob/main/docs/auto-routing.md" target="_blank" rel="noopener">{{t('Auto 配置与 API 完整指南')}}</a></p>
-  <h3>{{t('模型与上游')}}</h3>
+  <h3 id="integration-providers" tabindex="-1">{{t('模型与上游')}}</h3>
   <p>{{t('一处配置，VOS 内应用按权限共享使用。')}}</p>
   <p>{{t('从首页「去配置上游模型」进入统一工作区，按上游或应用来源分组。来源网址、编辑、放行和路由在来源卡片中，能力、接口和预算在模型设置中；下载和更新位于权重管理。手动添加上游或单个模型为持久配置，不需要心跳。')}}</p>
   <h3>{{t('原生 Provider')}}</h3>
@@ -66,7 +115,7 @@ curl -i "$GATEWAY/v1/chat/completions" -H "Authorization: Bearer $VOS_TOKEN" -H 
   <p>{{t('TypeSafe / Jev 使用 typesafe 协议和 https://api.typesafe.ai/v1，也可使用实现同协议的自有中转。模型列表读取 models[].name；能力为 decision，接口为 systemone，不会冒充 Harness 聊天模型。工作台选择 System One 后输入包含 state、questions 的 JSON 测试。')}}</p>
   <p><code>POST http://v-scheduler:8080/v1/systemone</code> · <code>http://{{locationHost}}:22888/v1/systemone</code></p>
   <p>{{t('局域网端口以安装配置为准。同域入口为 /api/com.ictrek.v-scheduler/v1/systemone；鉴权沿用本人 VOS token 或网关 Key，受限应用凭据保留原白名单。供应商密钥保存在网关，请求仅重写模型 ID，保留 state、questions、assets、功能头及原生 answers、概率、置信度和 usage；不支持 SSE。')}}</p>
-  <h3>{{t('模型注册 API 与自动能力识别')}}</h3>
+  <h3 id="integration-register" tabindex="-1">{{t('模型注册 API 与自动能力识别')}}</h3>
   <p>{{t('POST /api/v1/registrations 支持 ollama、typesafe 及现有协议。Ollama 可省略 models 自动发现，也可用 model 或 models 指定子集；两种方式均读取 /api/show，自动识别 vision、tools、thinking、embedding、rerank、decision。能力与接口覆盖顺序为自动识别、顶层 capabilities/endpoints、models 内逐模型声明、model_capabilities/model_endpoints 映射；后者优先，声明能力而未声明接口时重新推断接口，避免专用模型误带聊天接口。普通聊天无声明默认 Chat Completions；Jev 为 decision/systemone。心跳维护服务在线状态，失联后自动移除，完整注册快照心跳支持自动恢复；模型或能力变更时使用相同 service_id 重新注册。')}}</p>
   <p>{{t('能力和接口数组省略或为空时保留自动识别或默认值；注册只声明模型，不自动授予资源预算、执行器审批或强制放行权限。')}}</p>
   <pre>{"service_id":"my-ollama","protocol":"ollama","base_url":"http://my-ollama:11434/v1","models":[{"id":"qwen3.5:2b"},{"id":"bge-m3:latest"}],"heartbeat_timeout_seconds":90}</pre>
@@ -80,7 +129,22 @@ curl -i "$GATEWAY/v1/chat/completions" -H "Authorization: Bearer $VOS_TOKEN" -H 
   <p>{{t('V-Voice 就绪后会主动接入调度器，自动绑定已校准的执行器与模型映射。外部云端服务可在上游页面配置。')}}</p>
   <p>{{t('自动绑定必须收到 configured=true 且 binding_revision 与当前下发版本一致的回执；HTTP 200 或绑定文件存在不代表已接入。应用升级或重启后自动重试，原身份和资源校准继续核验。')}}</p>
   <p>{{t('V-Voice 0.0.27 保留 ONNX、声纹与 audio.cpp GGUF，移除四个 PyTorch 原生音乐模型；绑定以实际就绪模型和匹配审批为准。')}}</p>
-  <h3>{{t('节点、应用、预算与停止的统一流程')}}</h3>
+  <h3 id="integration-nodes" tabindex="-1">{{t('节点注册与资源查询')}}</h3>
+  <ol>
+   <li>{{t('管理员创建一次性节点邀请。VOS App 的组件用邀请登记节点并安全保存 worker 凭据。管理员批准节点容量后，组件可上报资源、提交执行器申请和查询本节点。')}}</li>
+   <li>{{t('执行器申请用 resources 声明单次计算预算，用 upstream_urls 声明网关可达的服务地址。管理员审核后才能执行。模型发现另外使用网关的模型注册接口。')}}</li>
+   <li>{{t('节点心跳上报实际采样。查询响应区分批准容量、驻留、预约、剩余预算和实时遥测；剩余预算未扣安全保留，也不保证本次能取得许可。遥测过期时 report 为 null。')}}</li>
+  </ol>
+  <pre>{{nodeCommands}}</pre>
+  <h4>registration.json</h4>
+  <pre>{"protocol_version":1,"node_id":"compute-a","display_name":"Compute A","instance_id":"instance-a","boot_id":"boot-a","session_id":"session-a","worker_token":"&lt;locally-generated-worker-token&gt;"}</pre>
+  <p>{{t('管理员用 POST /nodes/{id}/approve 批准节点，用 POST /executors/{id} 启用执行器。版本和审批字段见调度管理 API。')}}</p>
+  <h4>executors.json</h4>
+  <pre>{{executorExample}}</pre>
+  <h4>heartbeat.json</h4>
+  <pre>{"session_id":"session-a","report":{"observed_at":"&lt;UTC ISO timestamp&gt;","cpu_logical_count":8,"cpu_used_percent":20,"memory_total_mib":16384,"memory_available_mib":8192,"gpus":[]}}</pre>
+  <p>{{t('示例数值仅说明格式。生产节点由 VOS App 自动上报真实采样，无需手工安装 Agent。ModelInfer 的观察节点仍由所属应用管理。')}}</p>
+  <h3 id="integration-lifecycle" tabindex="-1">{{t('节点、应用、预算与停止的统一流程')}}</h3>
   <p>{{t('节点遥测由 VOS App 内置组件自动上报；应用登记已批准的执行器并定时心跳，停止请求经原生退出及权重卸载核验后释放预约。')}}</p>
   <p>{{t('节点约每 2 秒上报，超过 12 秒无心跳暂停新准入。应用按响应间隔心跳（当前 5 秒），超过 20 秒暂停该执行器新准入；心跳恢复后重新核验。用户无需 SSH 或手工部署 Agent。')}}</p>
   <p><code>GET /scheduler/api/v1/integrations</code> · <code>POST /scheduler/api/v1/integrations</code> · <code>POST /scheduler/api/v1/integrations/heartbeat</code></p>
@@ -92,11 +156,11 @@ curl -i "$GATEWAY/v1/chat/completions" -H "Authorization: Bearer $VOS_TOKEN" -H 
   <p>{{t('V-Voice（含配乐）、V-Sub、Desensitize 和 Image Studio 在可信绑定后自动登记。调用方 V-ChatCut、HybRAG 复用实际执行端，不重复申报预算。')}}</p>
   <p>{{t('应用私有目录保存已确认停止的回执，重启后继续重试；未知执行不推定停止。阻塞式原生调用须等待实际返回及卸载，异步任务在统一接入页面使用取消。')}}</p>
   <p>{{t('GPU 槽位是调度并发计数，不是独立显存。统一内存预算只计一份：Thor 的 SenseVoice、Kokoro 和 CAM++ 使用实测的 4 GiB 共享内存预算；较大语音与音乐模型使用各自校准。192 的 CPU 语音记录为 1.75 GiB、GPU 并发计数 0，不因统一内存就自动改为 GPU 执行。')}}</p>
-  <h3>{{t('计算启动与停止 API')}}</h3>
+  <h3 id="integration-controls" tabindex="-1">{{t('计算启动与停止 API')}}</h3>
   <p>{{t('应用注册已批准算力时，可选 controls：executor_id、start_url 和 stop_url；仅停止可省略 start_url。地址必须与执行器已批准服务同 origin。POST /scheduler/api/v1/integrations/executions 先准入再启动，停止沿用 permits/{id}/stop 与原生证明；启动超时保留预约，不重放计算。')}}</p>
   <pre>{"controls":[{"executor_id":"my-compute","start_url":"http://my-app:9000/compute/start","stop_url":"http://my-app:9000/compute/stop-and-unload"}]}</pre>
   <p><a href="https://github.com/ictrektech/V-Scheduler/blob/main/docs/application-compute-controls.md" target="_blank" rel="noopener">{{t('计算控制 API 完整指南')}}</a></p>
-  <h3>{{t('推理等待队列')}}</h3>
+  <h3 id="integration-queue" tabindex="-1">{{t('推理等待队列')}}</h3>
   <p>{{t('本地推理设置 X-VScheduler-Queue-Wait-Seconds（1..300）、X-VScheduler-Priority（background/interactive/high）和唯一 X-VScheduler-Request-ID。开启内置驻留且身份已验证时，未设置等待默认等 30 秒；显式 0 保持立即准入。试聊默认等待 120 秒，可查看位置并取消。')}}</p>
   <p><code>GET /api/v1/inference-queue</code> · <code>DELETE /api/v1/inference-queue/{id}</code></p>
   <p>{{t('队列按用户和应用隔离；每等待 30 秒提升一级优先级，默认不抢占运行中的计算；协作抢占须双方显式同意。等待不预约资源，重启不重放请求；总超时应覆盖排队、冷加载和推理。')}}</p>
@@ -112,17 +176,17 @@ curl -i "$GATEWAY/v1/chat/completions" -H "Authorization: Bearer $VOS_TOKEN" -H 
   <p>{{t('优先级属于本次请求或任务，不属于模型。已放行请求不受普通队列阻塞；其他请求按任务优先级和等待时间排序。同一后端实例的权重只保留一份，运行预算不足时排队。')}}</p>
   <h3>{{t('原生应用统一等待准入')}}</h3>
   <p>{{t('原生执行端通过 POST /scheduler/api/v1/permits/wait 申请准入，JSON 为 {"request":原 permits 请求,"wait_seconds":30}；默认等待 30 秒，X-VScheduler-Queue-Wait-Seconds 可设为 0..300，0 表示立即尝试。等待只保存身份与顺序，不预约模型权重，不启动或重放推理；超时返回 429 QUEUE_TIMEOUT。V-Voice、Desensitize、V-Sub 在本地执行锁之前进入统一队列，同一已批准原生进程只保留一条执行通道；不同进程的实际副本分别预算。授权强制请求先行，其后按本次任务优先级、等待老化和到达顺序执行。其他应用申请资源不会无条件卸载空闲 Ollama，只有内存不足才请求卸载，确认停止后才释放预算。')}}</p>
-  <h3>{{t('模型驻留与卸载')}}</h3>
+  <h3 id="integration-residency" tabindex="-1">{{t('模型驻留与卸载')}}</h3>
   <p>{{t('在模型仓库的「模型接入状态」设置空闲保留秒数，默认 60，范围 0..600；0 表示每次卸载。QA、Embedding、Rerank 可同时驻留，空闲时保留已确认内存；调用前恢复完整计算预算，资源不足才按空闲先后卸载。')}}</p>
   <p><code>GET /api/v1/model-residency</code> · <code>PUT /api/v1/model-residency</code> · <code>{"idle_seconds":60}</code></p>
   <h3>{{t('模型接入状态')}}</h3>
   <p>{{t('通过推理服务的 metadata.model_bindings 将后端模型名称关联到仓库模型 ID。状态页统一显示权重、网关路由、后端健康与调度绑定，并说明不可调用原因；配置就绪不代表当前资源一定可用。')}}</p>
   <p><code>GET /api/v1/model-lifecycle</code> · <code>{"metadata":{"model_bindings":{"served-name":"hf://org/repo"}}}</code></p>
   <p>{{t('这些接口属于网关：容器内使用 http://v-scheduler:8080，宿主机使用上表的网关映射端口。驻留设置和完整接入状态需要管理员身份。')}}</p>
-  <h3>{{t('诊断日志')}}</h3>
+  <h3 id="integration-diagnostics" tabindex="-1">{{t('诊断日志')}}</h3>
   <p>{{t('认证过期和请求重试在后台自动恢复，主界面保留已加载内容；技术事件在「高级管理 → 诊断日志」查看。应用使用 VOS 桥接刷新凭据，日志只保存当前浏览器会话的安全事件码，不保存 token、密钥或原始响应。')}}</p>
   <h3>{{t('开发文档')}}</h3>
   <p><a href="https://github.com/ictrektech/V-Scheduler/blob/main/docs/application-integration.md" target="_blank" rel="noopener">{{t('应用接入指南')}}</a> · <a href="https://github.com/ictrektech/V-Scheduler/blob/main/docs/integration-standard.md" target="_blank" rel="noopener">{{t('公开 API 与接入标准')}}</a> · <a href="https://github.com/ictrektech/V-Scheduler/blob/main/docs/unified-application.md" target="_blank" rel="noopener">{{t('统一应用说明')}}</a></p>
  </article>
 </template>
-<style scoped>.endpoint-table{overflow:auto}.integration-guide{padding:24px;line-height:1.8}.integration-guide h3{margin-top:24px}.integration-guide table{margin:18px 0}.integration-guide a{color:#265cc2}.integration-guide code{overflow-wrap:anywhere}</style>
+<style scoped>.endpoint-table{overflow:auto}.integration-guide{padding:24px;line-height:1.8}.integration-guide h3{margin-top:24px}.integration-guide table{margin:18px 0}.integration-guide a{color:#265cc2}.integration-guide code{overflow-wrap:anywhere}.guide-contents ul{display:flex;flex-wrap:wrap;gap:6px;list-style:none;padding:0;margin:8px 0}.integration-guide h3[id]{scroll-margin-top:24px}</style>

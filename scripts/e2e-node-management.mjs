@@ -154,6 +154,14 @@ try{
  await until(async()=>{const n=(await request('/nodes')).data;return n.filter(n=>n.managed!==false&&n.heartbeat&&Date.now()-Date.parse(n.heartbeat)<12000).length===5},'approved collectors did not report')
  nodes=(await expect('/nodes',200)).data;assert.equal(nodes.length,5);assert.equal(nodes.filter(n=>n.managed===false).length,0)
  await expect('/workers/spark-02/heartbeat',403,{auth:firstIdentity.token,method:'POST',body:{session_id:firstJournal.session_id,report:{}}})
+ const workerResources='/workers/spark-01/resources'
+ await expect('/workers/spark-02/resources',403,{auth:firstIdentity.token})
+ await expect(workerResources,401,{auth:token()})
+ const snapshot=async()=> (await expect(workerResources,200,{auth:firstIdentity.token})).data
+ const idleSnapshot=await snapshot()
+ assert.equal(idleSnapshot.telemetry_fresh,true)
+ assert.equal(typeof idleSnapshot.report.memory_available_mib,'number')
+ assert.deepEqual(idleSnapshot.remaining_budget,capacity)
  pass('real Agents durably enroll pending, retry idempotently, wait for approval and stay scoped to their own node')
  await until(async()=>((await management()).executors.filter(e=>e.state==='pending').length===2),'Agent executor proposals not received',160)
  for(const id of [asyncDefinition.id,inferDefinition.id]){const entry=(await management()).executors.find(e=>e.id===id);await expect('/executors/'+id,200,{method:'POST',body:{version:entry.version,enabled:true,definition:entry.definition}})}
@@ -171,12 +179,17 @@ try{
  const permitBody={executor_id:inferDefinition.id,upstream_url:upstream,model_id:'cluster-chat'}
  const acquire=key=>expect('/permits',200,{auth:keys.router,method:'POST',body:permitBody,headers:{'Idempotency-Key':key}})
  const held=await acquire('all-four-hold');let reserved=(await expect('/reservations',200)).data.filter(r=>r.attempt_id===held.data.permit_id);assert.equal(reserved.length,4);assert.equal(new Set(reserved.map(r=>r.node_id)).size,4)
+ const busySnapshot=await snapshot()
+ assert.deepEqual(busySnapshot.reserved,resource)
+ assert.equal(busySnapshot.remaining_budget.memory_mib,capacity.memory_mib-resource.memory_mib)
  await expect('/nodes/spark-04/revoke',409,{method:'POST',body:{}})
  const peer=(await management()).nodes.find(n=>n.id==='spark-04')
  await expect('/nodes/spark-04',409,{method:'POST',body:{version:peer.version,display_name:peer.display_name,...peer.definition}})
  await expect('/permits/'+held.data.permit_id+'/delegate',409,{auth:keys.router,method:'POST',body:{task_id:submit.data.task_id,app_task_id:taskBody.app_task_id}})
  await expect('/permits/'+held.data.permit_id+'/release',200,{auth:keys.router,method:'POST',body:{stopped:true,evidence:'fixture_never_started_model'}})
  assert.equal((await expect('/reservations',200)).data.filter(r=>r.attempt_id===held.data.permit_id).length,0)
+ assert.deepEqual((await snapshot()).remaining_budget,capacity)
+ pass('own-node resource snapshot tracks reservations and release without exposing other nodes')
  // A single unavailable peer must leave no partial head or peer allocation.
  await expect('/nodes/spark-03/drain',200,{method:'POST',body:{draining:true}})
  const before=Number(sql('SELECT count(*) FROM vrs_permits'))

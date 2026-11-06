@@ -52,6 +52,45 @@ pub(super) fn model(id: &str) -> Model {
     }
 }
 
+#[tokio::test]
+async fn model_visibility_changes_are_independent_and_survive_refresh() {
+    let root = temp();
+    let g = gateway(&root, Router::new());
+    let alice = principal("alice");
+    let bob = principal("bob");
+    let mut u = upstream("fixture");
+    u.owner = alice.owner.clone();
+    u.visibility = "private".into();
+    g.registry.lock().unwrap().put(u.clone(), vec![model("flash"), model("sibling")]);
+    let change = |visibility: Value| Request::builder().method("PATCH").uri("/api/v1/models")
+        .header("content-type", "application/json")
+        .body(Body::from(json!({"model":"manual/flash","upstream_id":"fixture","visibility":visibility}).to_string()))
+        .unwrap();
+    assert!(manage::handle(&g, &bob, change(json!("public"))).await.is_err());
+    manage::handle(&g, &alice, change(json!("public"))).await.unwrap();
+    {
+        let mut r = g.registry.lock().unwrap();
+        r.put(u.clone(), vec![model("flash"), model("sibling")]);
+        assert_eq!(r.list_models(&bob).iter().map(|m| m.id.as_str()).collect::<Vec<_>>(), ["flash"]);
+        assert!(r.acquire("manual/flash", "/messages", "", &bob).is_ok());
+        assert!(r.acquire("manual/sibling", "/chat/completions", "", &bob).is_err());
+        assert!(r.acquire("flash", "/chat/completions", "fixture", &bob).is_err());
+    }
+    manage::handle(&g, &alice, change(json!("private"))).await.unwrap();
+    {
+        let mut r = g.registry.lock().unwrap();
+        u.visibility = "public".into();
+        r.put(u, vec![model("flash"), model("sibling")]);
+        assert_eq!(r.list_models(&bob).iter().map(|m| m.id.as_str()).collect::<Vec<_>>(), ["sibling"]);
+        assert!(r.acquire("manual/flash", "/chat/completions", "", &bob).is_err());
+        assert!(r.acquire("manual/flash", "/chat/completions", "", &alice).is_ok());
+        assert!(r.acquire("flash", "/chat/completions", "fixture", &bob).is_err());
+    }
+    manage::handle(&g, &alice, change(Value::Null)).await.unwrap();
+    assert_eq!(g.registry.lock().unwrap().list_models(&bob).len(), 2);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
 #[test]
 fn provider_metadata_defaults_are_conservative_and_persisted() {
     let root = temp();

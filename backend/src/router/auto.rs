@@ -157,7 +157,7 @@ pub(super) fn configure(g: &Gateway, id: &Identity, payload: Value) -> Api<Value
             u.visible(id)
                 && r.models.get(&u.id).is_some_and(|ms| {
                     ms.iter().any(|m| {
-                        m.qualified == c.model && supports_chat(u, m)
+                        m.qualified == c.model && m.visible(u, id) && supports_chat(u, m)
                     })
                 })
         });
@@ -185,7 +185,7 @@ pub(super) fn configure(g: &Gateway, id: &Identity, payload: Value) -> Api<Value
             u.visible(id)
                 && r.models.get(&u.id).is_some_and(|ms| {
                     ms.iter().any(|m| {
-                        m.qualified == config.jev_model && registry::supports(u, m, if config.classifier == "llm" {"/chat/completions"} else {"/systemone"})
+                        m.qualified == config.jev_model && m.visible(u, id) && registry::supports(u, m, if config.classifier == "llm" {"/chat/completions"} else {"/systemone"})
                     })
                 })
         });
@@ -241,9 +241,8 @@ fn external(u: &Upstream) -> bool {
     // labelled them manual; short container aliases are treated as local.
     host.contains('.') && !host.ends_with(".vos_default")
 }
-fn available(r: &Registry, u: &Upstream, id: &Identity) -> bool {
-    u.visible(id)
-        && u.live()
+fn available(r: &Registry, u: &Upstream) -> bool {
+    u.live()
         && !r.routing.get(&u.id).is_some_and(|p| p.disabled)
         && !r
             .breaker
@@ -431,14 +430,14 @@ async fn classify_model(
         let u = r
             .upstreams
             .get(&config.jev_upstream_id)
-            .filter(|u| available(&r, u, id))
+            .filter(|u| available(&r, u))
             .ok_or_else(|| error(503, "classifier unavailable"))?;
         let m = r
             .models
             .get(&u.id)
             .into_iter()
             .flatten()
-            .find(|m| m.qualified == config.jev_model)
+            .find(|m| m.qualified == config.jev_model && m.visible(u, id))
             .ok_or_else(|| error(503, "classifier unavailable"))?;
         (u.clone(), m.id.clone(), m.capabilities.iter().any(|c| c == "structured_output"))
     };
@@ -605,7 +604,8 @@ pub(super) async fn resolve_for(
         let r = g.registry.lock().unwrap();
         config.candidates.iter().any(|c| {
             r.upstreams.get(&c.upstream_id).is_some_and(|u| {
-                available(&r, u, id)
+                available(&r, u)
+                    && r.models.get(&u.id).is_some_and(|ms| ms.iter().any(|m| m.qualified == c.model && m.visible(u, id)))
                     && (config.allow_cloud || !external(u))
                     && (local_only != "true" || !external(u))
             })
@@ -657,7 +657,7 @@ pub(super) async fn resolve_for(
     let mut choices: Vec<(&Candidate, f64, u64, bool, u64)> = vec![];
     let minimum = tier(&classification.complexity);
     for c in &config.candidates {
-        let Some(u) = r.upstreams.get(&c.upstream_id).filter(|u| u.visible(id)) else {
+        let Some(u) = r.upstreams.get(&c.upstream_id) else {
             continue;
         };
         let Some(m) = r
@@ -665,14 +665,14 @@ pub(super) async fn resolve_for(
             .get(&u.id)
             .into_iter()
             .flatten()
-            .find(|m| m.qualified == c.model)
+            .find(|m| m.qualified == c.model && m.visible(u, id))
         else {
-            reports.push(json!({"model":c.model,"upstream_id":c.upstream_id,"eligible":false,"reason":"model_unavailable"}));
+            if id.admin { reports.push(json!({"model":c.model,"upstream_id":c.upstream_id,"eligible":false,"reason":"model_unavailable"})); }
             continue;
         };
         let caps = |cap: &str| m.capabilities.iter().any(|s| s == cap);
         let estimate = input + images as u64 * c.image_tokens.unwrap_or(0) as u64;
-        let reason = if !available(&r, u, id) {
+        let reason = if !available(&r, u) {
             "upstream_unavailable"
         } else if (!config.allow_cloud || local_only == "true") && external(u) {
             "cloud_disallowed"

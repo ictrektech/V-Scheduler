@@ -88,6 +88,17 @@ pub(super) struct Model {
     pub endpoints: Vec<String>,
     pub owned_by: String,
     pub metadata_override: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub visibility: Option<String>,
+}
+impl Model {
+    pub fn visible(&self, upstream: &Upstream, identity: &Identity) -> bool {
+        match self.visibility.as_deref() {
+            Some("public") => true,
+            Some("private") => identity.admin || (!upstream.owner.is_empty() && upstream.owner == identity.owner),
+            _ => upstream.visible(identity),
+        }
+    }
 }
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(default)]
@@ -241,7 +252,12 @@ impl Registry {
             .get(&u.id)
             .and_then(|old| old.created_at)
             .or(Some(Utc::now()));
+        let previous = self.models.get(&u.id);
         for m in &mut models {
+            if u.source == "api" && m.visibility.is_none() {
+                m.visibility = previous.and_then(|rows| rows.iter().find(|old| old.id == m.id))
+                    .and_then(|old| old.visibility.clone());
+            }
             normalize_upstream_model(m, &u);
             m.upstream_id = u.id.clone();
             m.qualified = format!("{}/{}", u.prefix(), m.id);
@@ -295,9 +311,9 @@ impl Registry {
         for u in self
             .upstreams
             .values()
-            .filter(|u| u.live() && u.visible(identity))
+            .filter(|u| u.live())
         {
-            for m in self.models.get(&u.id).into_iter().flatten() {
+            for m in self.models.get(&u.id).into_iter().flatten().filter(|m| m.visible(u, identity)) {
                 models
                     .entry(m.qualified.clone())
                     .or_insert_with(|| m.clone());
@@ -318,12 +334,15 @@ impl Registry {
         self.prune_services(Utc::now());
         let mut choices: Vec<(Upstream, String)> = vec![];
         let (mut found, mut live, mut compatible) = (false, false, false);
-        for u in self.upstreams.values().filter(|u| u.visible(id)) {
+        for u in self.upstreams.values() {
             if selected_upstream.is_some_and(|key| u.id != key) { continue; }
             if !pinned.is_empty() && u.id != pinned {
                 continue;
             }
             let model = if !pinned.is_empty() {
+                if !u.visible(id) || self.models.get(&u.id).is_some_and(|models| models.iter().any(|m| !m.visible(u, id))) {
+                    continue;
+                }
                 Some(Model {
                     id: requested.into(),
                     ..Model::default()
@@ -331,7 +350,7 @@ impl Registry {
             } else {
                 self.models
                     .get(&u.id)
-                    .and_then(|ms| ms.iter().find(|m| m.qualified == requested))
+                    .and_then(|ms| ms.iter().find(|m| m.qualified == requested && m.visible(u, id)))
                     .cloned()
             };
             let Some(model) = model else {

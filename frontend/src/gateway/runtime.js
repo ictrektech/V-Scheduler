@@ -669,6 +669,10 @@ const app = {
     $("modelEditName").textContent = model.qualified;
     $("modelEditQualified").value = model.qualified;
     $("modelEditUpstream").value = model.upstream_id || "";
+    const visibility = $("modelEditVisibility");
+    visibility.value = model.visibility || "";
+    visibility.dataset.original = visibility.value;
+    visibility.disabled = model.visibility_manageable === false;
     $("modelEditKind").value = ["chat", "embedding", "unknown"].includes(model.kind) ? model.kind : "";
     const protocol = this.state.upstreams.find(u => u.id === model.upstream_id)?.protocol || 'openai';
     const metadata = effectiveMetadata(model, protocol);
@@ -688,6 +692,8 @@ const app = {
         capabilities: readChoices($("modelEditCapabilities")),
         endpoints: readChoices($("modelEditEndpoints")),
       };
+      const visibility = $("modelEditVisibility");
+      if (!visibility.disabled && visibility.value !== visibility.dataset.original) payload.visibility = visibility.value || null;
       const kind = $("modelEditKind").value;
       if (kind) payload.kind = kind;
       await this.api("PATCH", "/api/v1/models", payload);

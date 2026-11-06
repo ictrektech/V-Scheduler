@@ -319,6 +319,8 @@ Ollama 模型能力自动从原生 `/api/show` 读取，包含视觉、工具、
 
 v-YuE2 可通过固定 VOS 可信绑定取得独立 submitter 与实测 executor，Go broker 在原生引擎启动前等待许可，终态确认进程组退出后释放；不额外叠加 gateway/Agent 层。未校准的硬件、模型或设置保持拒绝。详见 [固定应用绑定](docs/application-auto-binding.md#v-yue2-原生-broker)。
 
+已添加的模型可以单独设为公开、私有或继承上游。应用内「API 文档 → 应用接入」提供 VOS 身份、公开直调及两种推理协议的示例。已批准节点可用自己的 worker 凭据查询 `GET /api/v1/workers/{id}/resources`，读取批准容量、预约、剩余预算和实时采样。见[统一接入指南](docs/application-integration.md)。
+
 ### Auto 自动选模型
 
 新增「Auto 自动选型」页面：管理员勾选真实模型及上游实例，设置档位和策略；同一份配置也支持网关 `GET/PUT /api/v1/auto-routing` 与候选目录 `GET /api/v1/auto-routing/candidates`。默认本地规则无需额外模型，可选本地 Ollama System One 决策模型或云端 Jev；本地分类经过资源准入并在回答前卸载，云端分类需单独开启外发许可。OpenRouter 原生 Jev 可使用已有 Key。 OpenAI Decisions 可通过 `gpt-6-luna` 作为原生决策分类器，模型目录展示「决策」能力，网关提供 `POST /v1/decisions`。

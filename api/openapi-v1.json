@@ -1349,6 +1349,23 @@
         }
       }
     },
+    "/workers/{id}/resources": {
+      "get": {
+        "operationId": "get_workers_id_resources",
+        "tags": ["Workers"],
+        "summary": "Read one node's resource snapshot",
+        "description": "The node's worker credential or an administrator can read approved capacities, resident baseline, unreleased reservations, remaining_budget and the effective safety reserve. remaining_budget is capacity minus baseline and reservations, before live admission checks. report contains observed resources only while fresh.",
+        "x-required-scope": "worker:{id} or admin",
+        "security": [{"bearerAuth": []}],
+        "parameters": [{"name":"id","in":"path","required":true,"schema":{"type":"string"}}],
+        "responses": {
+          "200": {"description":"Resource snapshot in data, including telemetry_fresh, heartbeat, draining and report"},
+          "401": {"description":"Invalid credential"},
+          "403": {"description":"The credential cannot read this node"},
+          "404": {"description":"No approved node with this ID"}
+        }
+      }
+    },
     "/workers/{id}/heartbeat": {
       "post": {
         "operationId": "post_workers_id_heartbeat",

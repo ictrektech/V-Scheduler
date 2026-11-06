@@ -486,6 +486,7 @@ pub async fn serve(
         .route("/nodes/{id}/drain", post(drain))
         .route("/reservations", get(reservations))
         .route("/workers/{id}/heartbeat", post(heartbeat))
+        .route("/workers/{id}/resources", get(worker_resources))
         .route("/workers/{id}/commands/claim", post(claim))
         .route("/attempts/{id}/renew", post(renew))
         .route("/attempts/{id}/report", post(report));
@@ -791,6 +792,48 @@ async fn drain(
     tx.commit().await.map_err(unavailable)?;
     Ok(ok(json!({"draining":d})))
 }
+async fn worker_resources(
+    State(a): State<App>,
+    h: HeaderMap,
+    Path(id): Path<String>,
+) -> Api<Json<Value>> {
+    let p = auth(&a, &h).await?;
+    if p.role != "admin" {
+        worker(&p, &id)?;
+    }
+    let query = format!(
+        "SELECT capacities,resident_baseline,safety_reserve,report,heartbeat,draining,
+         ARRAY({}) AS reservations FROM vrs_nodes WHERE id=$1 AND management_enabled",
+        allocations::RESOURCES_SQL
+    );
+    let row = sqlx::query(&query).bind(&id).fetch_optional(&a.db).await
+        .map_err(unavailable)?.ok_or(Error(StatusCode::NOT_FOUND, "NODE_NOT_APPROVED"))?;
+    let capacity: Resources = serde_json::from_value(row.get("capacities")).map_err(|_| invalid())?;
+    let baseline: Resources = serde_json::from_value(row.get("resident_baseline")).map_err(|_| invalid())?;
+    let reserve: Resources = serde_json::from_value(row.get("safety_reserve")).map_err(|_| invalid())?;
+    let mut reserved = Resources::default();
+    for value in row.get::<Vec<Value>, _>("reservations") {
+        reserved.add(&serde_json::from_value(value).map_err(|_| invalid())?);
+    }
+    let mut committed = baseline.clone();
+    committed.add(&reserved);
+    let remaining = Resources {
+        cpu_millicores: capacity.cpu_millicores.saturating_sub(committed.cpu_millicores).max(0),
+        memory_mib: capacity.memory_mib.saturating_sub(committed.memory_mib).max(0),
+        gpu_slots: capacity.gpu_slots.saturating_sub(committed.gpu_slots).max(0),
+        gpu_memory_mib: capacity.gpu_memory_mib.saturating_sub(committed.gpu_memory_mib).max(0),
+    };
+    let report: Value = row.get("report");
+    let heartbeat: Option<DateTime<Utc>> = row.get("heartbeat");
+    let fresh = timestamp_fresh(&json!(heartbeat), 12) && report_fresh(&report);
+    Ok(ok(json!({
+        "node_id":id, "capacities":capacity, "resident_baseline":baseline, "reserved":reserved,
+        "remaining_budget":remaining, "effective_safety_reserve":reserve.safety_floor(&report),
+        "heartbeat":heartbeat, "draining":row.get::<bool,_>("draining"), "telemetry_fresh":fresh,
+        "report":if fresh { report } else { Value::Null }
+    })))
+}
+
 #[derive(Deserialize)]
 struct Heartbeat {
     session_id: String,

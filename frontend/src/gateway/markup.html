@@ -349,6 +349,8 @@
       <input type="hidden" id="modelEditUpstream" />
       <div class="field"><div class="hint mono" id="modelEditName"></div></div>
       <div class="field">
+        <label for="modelEditVisibility">模型可见范围</label>
+        <select id="modelEditVisibility"><option value="">继承上游</option><option value="public">公开</option><option value="private">私有</option></select>
         <label for="modelEditKind">模型类型</label>
         <select id="modelEditKind"><option value="">自动（按接口/能力推断）</option><option value="chat">对话</option><option value="embedding">Embedding</option><option value="unknown">由上游决定</option></select>
         <div class="hint">类型会影响模型列表展示和按端点的能力判断；留空时按接口和能力自动推断。</div>
