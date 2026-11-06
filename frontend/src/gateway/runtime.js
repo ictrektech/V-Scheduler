@@ -732,7 +732,7 @@ const app = {
               ? ` · ${u.visibility === "private" ? "Private" : "Shared"}${u.owner ? ` · owner ${esc(u.owner)}` : ""}`
               : (registered ? " · Public" : "");
             return [
-              `<span class="mono" title="${esc(u.base_url)}">${esc(u.name)}</span><div class="hint mono">ID: ${esc(u.id)} · ${esc(u.protocol || (u.source === "model-hub" ? "chat_completions" : "openai"))}${u.model_prefix ? ` · ${VRouterI18n.t("前缀")} ${esc(u.model_prefix)}` : ""}${scope}</div><div class="hint">${u.routing?.direct ? `${VRouterI18n.t("进行中")} ${u.inflight || 0} · ${VRouterI18n.t("直接放行")}` : `${VRouterI18n.t("进行中")} ${u.inflight || 0} / ${u.routing?.max_inflight || VRouterI18n.t("不限")} · ${VRouterI18n.t("权重")} ${u.routing?.weight || 1}`}${u.routing?.disabled ? VRouterI18n.t(" · 已暂停") : ""}</div>`,
+              `<span class="mono" title="${esc(u.base_url)}">${esc(u.name)}</span><div class="hint mono">ID: ${esc(u.id)} · ${esc(u.protocol || (u.source === "model-hub" ? "chat_completions" : "openai"))}${u.base_url ? ` · ${esc(u.base_url)}` : ""}${scope}</div><div class="hint">${u.routing?.direct ? `${VRouterI18n.t("进行中")} ${u.inflight || 0} · ${VRouterI18n.t("直接放行")}` : `${VRouterI18n.t("进行中")} ${u.inflight || 0} / ${u.routing?.max_inflight || VRouterI18n.t("不限")} · ${VRouterI18n.t("权重")} ${u.routing?.weight || 1}`}${u.routing?.disabled ? VRouterI18n.t(" · 已暂停") : ""}</div>`,
               `<span class="pill ${u.kind}">${kindLabel(u.kind)}</span>`,
               u.source === "api" ? (u.kind === "cloud" ? VRouterI18n.t("云端 API") : VRouterI18n.t("手动添加")) : u.source === "registered" ? VRouterI18n.t("后端注册") : u.source === "video-structure" ? VRouterI18n.t("视频结构化") : u.source === "v-scheduler" ? "V-Scheduler" : "Model Hub",
               u.models,
@@ -1309,7 +1309,7 @@ const app = {
         .map((model) => ({ id: model.id, kind: model.kind, capabilities: model.capabilities, endpoints: model.endpoints }));
       this.setUpstreamModels(owned.length ? owned : (u.model_ids || []).map((model) => ({ id: model })));
       VRouterI18n.bind($("ufKeyHint"), "textContent", () => VRouterI18n.t("留空保持原密钥不变；密钥保存在本机，接口永不回显。"));
-      VRouterI18n.bind($("ufBaseHint"), "innerHTML", () => u.kind === "cloud" ? this.cloudHintHTML(u.model_prefix) : VRouterI18n.t("可填 OpenAI 兼容 /v1、Anthropic API 地址；未写协议时默认 https，未写路径时默认 /v1。"));
+      VRouterI18n.bind($("ufBaseHint"), "innerHTML", () => u.kind === "cloud" ? this.cloudHintHTML() : VRouterI18n.t("可填 OpenAI 兼容 /v1、Anthropic API 地址；未写协议时默认 https，未写路径时默认 /v1。"));
     } else {
       $("upstreamForm").reset();
       this.clearNewUpstreamFields();
@@ -1325,7 +1325,7 @@ const app = {
         $("ufName").placeholder = "ICTrek AI";
         $("ufBaseURL").placeholder = "https://ai.ictrek.com/v1";
         $("ufAllowProbeFailure").checked = true;
-        $("ufBaseHint").innerHTML = this.cloudHintHTML("com.ictrek.ai");
+        $("ufBaseHint").innerHTML = this.cloudHintHTML();
       } else {
         VRouterI18n.bind($("upstreamDialogTitle"), "textContent", () => VRouterI18n.t("添加上游"));
         VRouterI18n.bind($("ufName"), "placeholder", () => VRouterI18n.t("例如 ICTrek AI / OpenAI / Anthropic"));
@@ -1344,8 +1344,8 @@ const app = {
     }
   },
 
-  cloudHintHTML(prefix) {
-    return `${VRouterI18n.t("填写自己的模型服务地址与凭据；模型前缀按域名生成。")}${prefix?` <span class="mono">${esc(prefix)}</span>`:''}`;
+  cloudHintHTML() {
+    return VRouterI18n.t("填写自己的模型服务地址与凭据。");
   },
 
   closeUpstreamDialog() {
@@ -1357,7 +1357,7 @@ const app = {
     const native=$("ufProtocol").value==="pi";
     $("ufNativeFields").hidden=!native;
     if(native)VRouterI18n.bind($("ufBaseHint"),"textContent",()=>VRouterI18n.t("默认地址由原生目录按模型选择协议路径；修改地址可接入兼容的中转。区域与项目配置见原生凭据及 API 文档。"));
-    if(!native)VRouterI18n.bind($("ufBaseHint"),"innerHTML",()=>$("ufKind").value==="cloud"?this.cloudHintHTML(""):VRouterI18n.t("可填 OpenAI 兼容 /v1、Anthropic API 地址；未写协议时默认 https，未写路径时默认 /v1。"));
+    if(!native)VRouterI18n.bind($("ufBaseHint"),"innerHTML",()=>$("ufKind").value==="cloud"?this.cloudHintHTML():VRouterI18n.t("可填 OpenAI 兼容 /v1、Anthropic API 地址；未写协议时默认 https，未写路径时默认 /v1。"));
     if(native&&fromUser)this.applyNativeProvider();
     const asyncTask = $("ufProtocol").value === "async_task";
     $("ufAsyncFields").hidden = !asyncTask;
@@ -1449,7 +1449,7 @@ const app = {
     el.className = "probe-result " + (result.ok ? "ok" : "bad");
     const models = result.models || [];
     VRouterI18n.bind(el, "innerHTML", () => result.ok
-      ? `<strong>${VRouterI18n.t("模型列表可用")}</strong><div class="hint mono">${VRouterI18n.t("前缀")} ${esc(result.model_prefix || "")} · ${esc(result.base_url || "")}</div><div class="hint">${models.length ? `${VRouterI18n.t("发现")} ${models.length} ${VRouterI18n.t("个模型")}：${esc(models.slice(0, 12).join(", "))}${models.length > 12 ? " …" : ""}` : VRouterI18n.t("模型列表为空")}</div>${result.protocol === "pi" ? `<div class="hint">${VRouterI18n.t("原生目录不代表账号已获得模型权限；填写具体模型进行轻量调用验证。")}</div>` : ""}${result.test_ok ? `<div class="hint">${VRouterI18n.t("指定模型联通测试通过")}</div>` : result.test_error ? `<div class="hint">${VRouterI18n.t("指定模型测试失败")}：${esc(result.test_error)}</div>` : ""}`
+      ? `<strong>${VRouterI18n.t("模型列表可用")}</strong><div class="hint mono">${esc(result.base_url || "")}</div><div class="hint">${models.length ? `${VRouterI18n.t("发现")} ${models.length} ${VRouterI18n.t("个模型")}：${esc(models.slice(0, 12).join(", "))}${models.length > 12 ? " …" : ""}` : VRouterI18n.t("模型列表为空")}</div>${result.protocol === "pi" ? `<div class="hint">${VRouterI18n.t("原生目录不代表账号已获得模型权限；填写具体模型进行轻量调用验证。")}</div>` : ""}${result.test_ok ? `<div class="hint">${VRouterI18n.t("指定模型联通测试通过")}</div>` : result.test_error ? `<div class="hint">${VRouterI18n.t("指定模型测试失败")}：${esc(result.test_error)}</div>` : ""}`
       : `<strong>${VRouterI18n.t("模型列表测试未通过")}</strong><div class="hint">${esc(result.error || VRouterI18n.t("未知错误"))}</div>${result.test_ok ? `<div class="hint">${VRouterI18n.t("但指定模型联通测试通过")}；${VRouterI18n.t("保存时会把该模型加入列表")}。</div>` : result.test_error ? `<div class="hint">${VRouterI18n.t("指定模型测试也失败")}：${esc(result.test_error)}</div>` : ""}<div class="hint">${VRouterI18n.t("仍可勾选")}“${VRouterI18n.t("探测失败也允许保存")}”，${VRouterI18n.t("让运行时返回上游的具体错误")}。</div>`);
   },
 

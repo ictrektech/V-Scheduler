@@ -53,7 +53,7 @@ export const VRouterMessages = {
 "已保存，留空保留原生凭据":{"en": "Saved; leave blank to retain native credentials", "zh-TW": "已儲存，留空保留原生憑據"},
 "原生凭据必须为有效的 JSON 对象":{"en": "Native credentials must be a valid JSON object", "zh-TW": "原生憑據必須為有效的 JSON 物件"},
 "管理推理服务":{"en": "Manage inference services", "zh-TW": "管理推理服務"},
-"填写自己的模型服务地址与凭据；模型前缀按域名生成。":{"en": "Enter your model service URL and credentials. Model prefixes follow the domain.", "zh-TW": "填寫自己的模型服務位址與憑據；模型前綴依網域產生。"},
+"填写自己的模型服务地址与凭据。":{"en": "Enter your model service URL and credentials.", "zh-TW": "填寫自己的模型服務位址與憑據。"},
 "复用厂商原生协议、工具调用和鉴权。现有透明代理接口继续保留；原生模式提供对话、Responses 和 Messages。":{"en": "Use the provider’s native protocol, tool calls and authentication. Transparent proxy routes remain available. Native mode serves chat, Responses and Messages.", "zh-TW": "使用廠商原生協定、工具呼叫與驗證。現有透明代理介面繼續保留；原生模式提供對話、Responses 與 Messages。"},
 "留空保留已保存凭据。区域、项目等写入 env；OAuth 填入已授权的 access、refresh、expires，运行时负责续期。凭据不回显，保存后清空输入。":{"en": "Leave blank to retain saved credentials. Put region and project settings in env. For OAuth, import authorized access, refresh and expires values; the runtime refreshes them. Credentials are never returned, and the input is cleared after saving.", "zh-TW": "留空保留已儲存憑據。區域、專案等寫入 env；OAuth 填入已授權的 access、refresh、expires，由執行階段續期。憑據不回顯，儲存後清空輸入。"},
 "使用原生 Provider 运行时。填写服务密钥或展开原生凭据，按供应商要求提供区域、项目或已授权的 OAuth 凭据；OAuth 可自动刷新。":{"en": "Uses the native provider runtime. Enter a service key or expand native credentials for region, project or authorized OAuth credentials. OAuth tokens can refresh automatically.", "zh-TW": "使用原生 Provider 執行階段。填寫服務金鑰或展開原生憑據，依廠商要求提供區域、專案或已授權的 OAuth 憑據；OAuth 可自動更新。"},
