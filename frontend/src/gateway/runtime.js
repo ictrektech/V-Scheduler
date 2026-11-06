@@ -339,13 +339,13 @@ const app = {
       if (this.state.usageSort === "name") return a[0].localeCompare(b[0]);
       return Number(b[1][this.state.usageSort] || 0) - Number(a[1][this.state.usageSort] || 0) || a[0].localeCompare(b[0]);
     });
-    const per = sorted(Object.entries(usage?.per_model || {}));
+    const per = sorted(Object.entries(usage?.per_model || {}).map(([id, value]) => [id, {...value, name: this.modelLabel(id)}]));
     VRouterI18n.bind($("usageSince"), "textContent", () => usage?.since ? VRouterI18n.t("（自 ") + fmt(usage.since) + "）" : "");
     VRouterI18n.bind($("usagePerModel"), "innerHTML", () => per.length
       ? table(
           [VRouterI18n.t("模型"), VRouterI18n.t("请求"), VRouterI18n.t("输入"), VRouterI18n.t("输出"), VRouterI18n.t("合计"), VRouterI18n.t("Token 上报"), VRouterI18n.t("失败"), VRouterI18n.t("平均延迟")],
-          per.map(([k, v]) => [
-            `<span class="mono">${esc(k)}</span>`,
+          per.map(([, v]) => [
+            `<span class="mono">${esc(v.name)}</span>`,
             v.requests,
             token(v, "input_tokens"),
             token(v, "output_tokens"),
@@ -396,7 +396,7 @@ const app = {
           recent.slice(0, 30).map((r) => [
             `<span class="mono">${esc(fmt(r.time))}</span>`,
             `<span class="pill kind">${esc(r.user)}</span>`,
-            `<span class="mono">${esc(r.model)}</span>`,
+            `<span class="mono">${esc(this.modelLabel(r.model, r.upstream_id))}</span>`,
             esc(r.upstream_name),
             esc(r.endpoint),
             r.usage_reported ? Number(r.input_tokens || 0).toLocaleString() : "—",
@@ -455,6 +455,10 @@ const app = {
         <div class="catalog-group-body">${group.upstreams.map(u=>`<section class="catalog-upstream"><div class="source-toolbar"><div><strong>${esc(VRouterI18n.t(u.name||u.id))}</strong><span class="pill">${esc(VRouterI18n.t(sourceLabel(u.source)))}</span>${u.virtual ? `<p class="hint">${VRouterI18n.t('Auto 根据候选模型与策略选型，无需独立服务地址。候选留空时自动选择；指定后仅使用已选模型。')}</p>` : `<code>${esc(u.base_url||VRouterI18n.t('来源未提供地址'))}</code><small>${esc(u.protocol||'')} · ${u.routing?.direct ? VRouterI18n.t('直接放行') : `${VRouterI18n.t('路由权重')} ${u.routing?.weight||1} · ${VRouterI18n.t('并发上限')} ${u.routing?.max_inflight||VRouterI18n.t('不限')}`}</small>`}</div><div class="source-actions">${this.upstreamCatalogActions(u)}</div></div>${u.catalogModels.length ? table([VRouterI18n.t('模型与能力'),VRouterI18n.t('类型'),VRouterI18n.t('位置'),VRouterI18n.t('上游'),VRouterI18n.t('资源预算'),VRouterI18n.t('操作')],this.modelCatalogRows(u.catalogModels)) : `<p class="empty">${VRouterI18n.t('尚未发现模型，可编辑上游或刷新模型列表。')}</p>`}</section>`).join('')}</div>
       </details>`).join('') : `<div class="catalog-empty"><h3>${VRouterI18n.t(this.catalogQuery?'没有匹配的来源或模型':'先连接一个模型来源')}</h3><p>${VRouterI18n.t('一处配置，VOS 内应用按权限共享使用。')}</p><button class="btn primary" onclick="app.openUpstreamDialog()">${VRouterI18n.t('添加上游')}</button></div>`);
   },
+  modelLabel(id, upstreamId) {
+    return this.state.models.find(m => m.qualified === id && (!upstreamId || m.upstream_id === upstreamId))?.name || id;
+  },
+
   modelCatalogRows(models) {
     const admin = this.state.status?.is_admin === true;
     return models.map(m=>{
@@ -626,7 +630,7 @@ const app = {
       : VRouterI18n.t("该模型没有自动默认预算（由上游直接转发），请按实测结果填写。");
     $("budgetRestore").hidden = !budget || budget.mode === "automatic";
     $("budgetModel").value = generic ? model.id : qualified;
-    $("budgetModelName").textContent = model.qualified;
+    $("budgetModelName").textContent = model.name || model.qualified;
     $("budgetMode").querySelector('option[value="direct"]').disabled = generic;
     $("budgetMode").value = budget?.mode === "direct" && !generic ? "direct" : "calibrated";
     $("budgetCpu").value = Number(resources.cpu_millicores || 0) || "";
@@ -723,7 +727,7 @@ const app = {
   async restoreBudget(qualified, upstreamId) {
     const model = this.state.models.find((item) => item.qualified === qualified && (!upstreamId || item.upstream_id === upstreamId));
     if (!model) return false;
-    if (!confirm(`${VRouterI18n.t("恢复默认预算")} ${qualified}?`)) return false;
+    if (!confirm(`${VRouterI18n.t("恢复默认预算")} ${this.modelLabel(qualified, upstreamId)}?`)) return false;
     const generic = model.upstream_source !== "v-scheduler";
     try {
       await this.api("POST", "/scheduler/api/v1/model-budgets/restore", generic
@@ -748,7 +752,7 @@ const app = {
   openModelDialog(qualified, upstreamId) {
     const model = this.state.models.find((item) => item.qualified === qualified && (!upstreamId || item.upstream_id === upstreamId));
     if (!model) return;
-    $("modelEditName").textContent = model.qualified;
+    $("modelEditName").textContent = model.name || model.qualified;
     $("modelEditQualified").value = model.qualified;
     $("modelEditUpstream").value = model.upstream_id || "";
     const visibility = $("modelEditVisibility");
@@ -1826,7 +1830,7 @@ const app = {
       }
       if (!answer) throw new Error(VRouterI18n.t(reasoningLength ? "模型仅返回思考内容，未返回正文" : "模型未返回正文"));
       const total = performance.now() - started;
-      VRouterI18n.bind($("pgMeta"), "textContent", () => `${endpoint.label} · ${model} · ${VRouterI18n.t("上游")} ${res.headers.get("X-VRouter-Upstream") || pinned || VRouterI18n.t("未知")}（${VRouterI18n.t("指定")}） · ${VRouterI18n.t("总耗时")} ${(total / 1000).toFixed(2)}s` +
+      VRouterI18n.bind($("pgMeta"), "textContent", () => `${endpoint.label} · ${this.modelLabel(model, pinned)} · ${VRouterI18n.t("上游")} ${res.headers.get("X-VRouter-Upstream") || pinned || VRouterI18n.t("未知")}（${VRouterI18n.t("指定")}） · ${VRouterI18n.t("总耗时")} ${(total / 1000).toFixed(2)}s` +
         (firstToken !== null ? ` · ${VRouterI18n.t("首")} token ${(firstToken / 1000).toFixed(2)}s` : ""));
     } catch (err) {
       if(isSessionError(err)){recordDiagnostic("AUTH_REQUEST_REJECTED","playground_auth");input.value=text;out.textContent=VRouterI18n.t("连接恢复后可重试，输入已保留。");return;}
