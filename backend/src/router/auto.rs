@@ -134,15 +134,10 @@ pub(super) fn configure(g: &Gateway, id: &Identity, payload: Value) -> Api<Value
             "Auto configuration changed; reload before saving",
         ));
     }
-    // Persist the historical references so rollback can read saved settings.
     for c in &mut config.candidates {
-        if let Some(model) = r.upstreams.get(&c.upstream_id).and_then(|u| r.model_by_id(u, &c.model, id)) {
-            c.model = model.qualified.clone();
-        }
+        c.model = r.catalog_ref(&c.upstream_id, &c.model, id);
     }
-    if let Some(model) = r.upstreams.get(&config.jev_upstream_id).and_then(|u| r.model_by_id(u, &config.jev_model, id)) {
-        config.jev_model = model.qualified.clone();
-    }
+    config.jev_model = r.catalog_ref(&config.jev_upstream_id, &config.jev_model, id);
     let mut seen = std::collections::BTreeSet::new();
     for c in &config.candidates {
         if !seen.insert((&c.model, &c.upstream_id))
@@ -164,17 +159,13 @@ pub(super) fn configure(g: &Gateway, id: &Identity, payload: Value) -> Api<Value
         // An unchanged temporarily offline record may be retained for recovery.
         let known = r.upstreams.get(&c.upstream_id).is_some_and(|u| {
             u.visible(id)
-                && r.models.get(&u.id).is_some_and(|ms| {
-                    ms.iter().any(|m| {
-                        m.qualified == c.model && m.visible(u, id) && supports_chat(u, m)
-                    })
-                })
+                && r.model_by_id(u, &c.model, id).is_some_and(|m| supports_chat(u, m))
         });
         let retained = r
             .auto
             .candidates
             .iter()
-            .any(|old| old.model == c.model && old.upstream_id == c.upstream_id);
+            .any(|old| old.upstream_id == c.upstream_id && r.catalog_ref(&old.upstream_id, &old.model, id) == c.model);
         if c.model == "auto" || (!known && !retained) {
             return Err(error(
                 422,
@@ -192,11 +183,7 @@ pub(super) fn configure(g: &Gateway, id: &Identity, payload: Value) -> Api<Value
         }
         let valid = r.upstreams.get(&config.jev_upstream_id).is_some_and(|u| {
             u.visible(id)
-                && r.models.get(&u.id).is_some_and(|ms| {
-                    ms.iter().any(|m| {
-                        m.qualified == config.jev_model && m.visible(u, id) && registry::supports(u, m, if config.classifier == "llm" {"/chat/completions"} else {"/systemone"})
-                    })
-                })
+                && r.model_by_id(u, &config.jev_model, id).is_some_and(|m| registry::supports(u, m, if config.classifier == "llm" {"/chat/completions"} else {"/systemone"}))
         });
         if !valid {
             return Err(error(
@@ -229,6 +216,17 @@ fn config_view(r: &Registry, mut config: Config, id: &Identity) -> Value {
     }
     config.jev_model = r.catalog_ref(&config.jev_upstream_id, &config.jev_model, id);
     json!(config)
+}
+// Resolve stored operator references, then enforce the requesting user's visibility.
+fn configured_model<'a>(r: &'a Registry, u: &Upstream, requested: &str, id: &Identity) -> Option<&'a Model> {
+    let operator = Identity { admin: true, ..Default::default() };
+    r.model_by_id(u, requested, &operator).filter(|m| m.visible(u, id))
+}
+
+fn candidate_id(r: &Registry, upstream: &str, requested: &str, id: &Identity) -> String {
+    r.upstreams.get(upstream)
+        .and_then(|u| configured_model(r, u, requested, id).map(|m| r.catalog_id(m, u, id)))
+        .unwrap_or_else(|| requested.to_owned())
 }
 fn external(u: &Upstream) -> bool {
     if u.kind == "cloud" {
@@ -448,12 +446,7 @@ async fn classify_model(
             .get(&config.jev_upstream_id)
             .filter(|u| available(&r, u))
             .ok_or_else(|| error(503, "classifier unavailable"))?;
-        let m = r
-            .models
-            .get(&u.id)
-            .into_iter()
-            .flatten()
-            .find(|m| m.qualified == config.jev_model && m.visible(u, id))
+        let m = configured_model(&r, u, &config.jev_model, id)
             .ok_or_else(|| error(503, "classifier unavailable"))?;
         (u.clone(), m.id.clone(), m.capabilities.iter().any(|c| c == "structured_output"))
     };
@@ -621,7 +614,7 @@ pub(super) async fn resolve_for(
         config.candidates.iter().any(|c| {
             r.upstreams.get(&c.upstream_id).is_some_and(|u| {
                 available(&r, u)
-                    && r.models.get(&u.id).is_some_and(|ms| ms.iter().any(|m| m.qualified == c.model && m.visible(u, id)))
+                    && configured_model(&r, u, &c.model, id).is_some()
                     && (config.allow_cloud || !external(u))
                     && (local_only != "true" || !external(u))
             })
@@ -676,14 +669,9 @@ pub(super) async fn resolve_for(
         let Some(u) = r.upstreams.get(&c.upstream_id) else {
             continue;
         };
-        let Some(m) = r
-            .models
-            .get(&u.id)
-            .into_iter()
-            .flatten()
-            .find(|m| m.qualified == c.model && m.visible(u, id))
+        let Some(m) = configured_model(&r, u, &c.model, id)
         else {
-            if id.admin { reports.push(json!({"model":r.catalog_ref(&c.upstream_id, &c.model, id),"upstream_id":c.upstream_id,"eligible":false,"reason":"model_unavailable"})); }
+            if id.admin { reports.push(json!({"model":candidate_id(&r, &c.upstream_id, &c.model, id),"upstream_id":c.upstream_id,"eligible":false,"reason":"model_unavailable"})); }
             continue;
         };
         let caps = |cap: &str| m.capabilities.iter().any(|s| s == cap);
@@ -727,7 +715,7 @@ pub(super) async fn resolve_for(
             "eligible"
         };
         if reason != "eligible" {
-            reports.push(json!({"model":r.catalog_ref(&c.upstream_id, &c.model, id),"upstream_id":c.upstream_id,"eligible":false,"reason":reason}));
+            reports.push(json!({"model":candidate_id(&r, &c.upstream_id, &c.model, id),"upstream_id":c.upstream_id,"eligible":false,"reason":reason}));
             continue;
         }
         let approval = lease::approval(g, u, &m.id, "POST", endpoint, false);
@@ -755,7 +743,7 @@ pub(super) async fn resolve_for(
             Err(_) => false,
         };
         if !approved {
-            reports.push(json!({"model":r.catalog_ref(&c.upstream_id, &c.model, id),"upstream_id":c.upstream_id,"eligible":false,"reason":"scheduler_policy_or_input_not_approved"}));
+            reports.push(json!({"model":candidate_id(&r, &c.upstream_id, &c.model, id),"upstream_id":c.upstream_id,"eligible":false,"reason":"scheduler_policy_or_input_not_approved"}));
             continue;
         }
         let resident = residency["residents"].as_array().is_some_and(|rows| {
@@ -768,7 +756,7 @@ pub(super) async fn resolve_for(
             (Some(a), Some(b)) => (estimate as f64 * a + output as f64 * b) / 1000000.0,
             _ => f64::INFINITY,
         };
-        reports.push(json!({"model":r.catalog_ref(&c.upstream_id, &c.model, id),"upstream_id":c.upstream_id,"eligible":true,"reason":"eligible","resident":resident,"inflight":load,"estimated_start_ms":wait,"estimated_cost":if cost.is_finite(){Some(cost)}else{None},"native_model_size_bytes":if native_bytes==u64::MAX {None}else{Some(native_bytes)},"tier":c.tier}));
+        reports.push(json!({"model":candidate_id(&r, &c.upstream_id, &c.model, id),"upstream_id":c.upstream_id,"eligible":true,"reason":"eligible","resident":resident,"inflight":load,"estimated_start_ms":wait,"estimated_cost":if cost.is_finite(){Some(cost)}else{None},"native_model_size_bytes":if native_bytes==u64::MAX {None}else{Some(native_bytes)},"tier":c.tier}));
         choices.push((c, cost, wait, resident, native_bytes));
     }
     choices.sort_by(|a, b| {
@@ -817,7 +805,7 @@ pub(super) async fn resolve_for(
         if let Some((model, upstream, _)) = sessions.get(&key) {
             if let Some(c) = choices
                 .iter()
-                .find(|v| &v.0.upstream_id == upstream && r.catalog_ref(upstream, &v.0.model, id) == *model)
+                .find(|v| &v.0.upstream_id == upstream && candidate_id(&r, upstream, &v.0.model, id) == *model)
             {
                 picked = c.0;
                 session_reused = true;
@@ -833,7 +821,7 @@ pub(super) async fn resolve_for(
     Ok(Decision {
         id: uuid::Uuid::new_v4().to_string(),
         requested_model: "auto".into(),
-        resolved_model: r.catalog_ref(&picked.upstream_id, &picked.model, id),
+        resolved_model: candidate_id(&r, &picked.upstream_id, &picked.model, id),
         upstream_id: picked.upstream_id.clone(),
         policy: selected_policy,
         revision: config.revision,

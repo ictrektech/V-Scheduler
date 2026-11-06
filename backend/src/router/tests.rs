@@ -131,7 +131,7 @@ async fn model_catalog_names_keep_legacy_ids_routable() {
     for (revision, model) in [(0, "com.example.api/echo"), (1, "api.example.com/echo")] {
         let saved = auto::configure(&g, &admin, json!({"revision":revision,"candidates":[{"model":model,"upstream_id":"domain"}]})).unwrap();
         assert_eq!(saved["candidates"][0]["model"], "api.example.com/echo");
-        assert_eq!(g.registry.lock().unwrap().auto.candidates[0].model, "com.example.api/echo");
+        assert_eq!(g.registry.lock().unwrap().auto.candidates[0].model, "api.example.com/echo");
     }
     std::fs::remove_dir_all(root).unwrap();
 }
