@@ -485,9 +485,91 @@ const app = {
               `<span class="pill ${m.upstream_kind}">${kindLabel(m.upstream_kind)}</span>`,
               esc(VRouterI18n.t(m.upstream_name)),
               this.budgetCell(m, budget),
-              actions.length ? `<div class="model-row-actions">${!m.short && m.kind !== 'service' ? actions.shift() : ''}${actions.length ? `<details class="catalog-actions" ${this.catalogActionOpen.has(m.qualified)?'open':''} ontoggle="app.rememberCatalogAction(${jsArg(m.qualified)},this.open)"><summary>${VRouterI18n.t('模型设置')}</summary><div>${actions.join('')}</div></details>` : ''}</div>` : "",
+              `<div class="model-row-actions">${!m.short && m.kind !== 'service' ? actions.shift() : ''}<button type="button" class="btn" onclick="app.openModelCall(${jsArg(m.qualified)}, ${jsArg(m.upstream_id)})">${VRouterI18n.t("调用方式")}</button>${actions.length ? `<details class="catalog-actions" ${this.catalogActionOpen.has(m.qualified)?'open':''} ontoggle="app.rememberCatalogAction(${jsArg(m.qualified)},this.open)"><summary>${VRouterI18n.t('模型设置')}</summary><div>${actions.join('')}</div></details>` : ''}</div>`,
             ];
     });
+  },
+
+  openModelCall(qualified, upstreamId) {
+    const model = this.state.models.find(m => m.qualified === qualified && m.upstream_id === upstreamId);
+    if (!model) return;
+    const upstream = this.state.upstreams.find(u => u.id === upstreamId);
+    const pinned = Boolean(upstream && !model.virtual && model.kind !== "service");
+    const bases = this.state.status?.base_urls || {};
+    const base = (bases.internal || "http://v-scheduler:8080/v1").replace(/\/$/, "");
+    const shell = value => "'" + String(value).replaceAll("'", "'\\''") + "'";
+    const native = pinned ? model.id : model.qualified;
+    const chat = [{role: "user", content: "Hello"}];
+    const decision = [{name:"category",type:"choice",choices:[{value:"general",description:"General request"},{value:"technical",description:"Technical request"}],instructions:"Classify the request"}];
+    const jsonBodies = {
+      "/chat/completions": {messages: chat},
+      "/messages": {messages: chat, max_tokens: 128},
+      "/responses": {input:"Hello", store:false},
+      "/completions": {prompt:"Hello", max_tokens:128},
+      "/embeddings": {input:"Example text"},
+      "/rerank": {query:"Example query", documents:["First document","Second document"], top_n:1},
+      "/images/generations": {prompt:"A mountain at sunrise"},
+      "/videos/generations": {prompt:"A mountain at sunrise"},
+      "/audio/speech": {input:"Hello", voice:"alloy"},
+      "/moderations": {input:"Example text"},
+      "/systemone": {state:"Example request", questions:{general:{type:"noul",instructions:"Is the request general?"}}},
+      "/decisions": {input:"Example request", questions:decision},
+    };
+    const multipart = {
+      "/audio/transcriptions": ["file=@audio.wav"],
+      "/audio/translations": ["file=@audio.wav"],
+      "/images/edits": ["image=@image.png", "prompt=A watercolor painting"],
+      "/images/variations": ["image=@image.png"],
+    };
+    const known = [...new Set([...Object.keys(jsonBodies), ...Object.keys(multipart)])];
+    const declared = (model.endpoints || []).map(value => this.normalizeEndpoint(value));
+    const methods = known.filter(path => {
+      if (model.virtual) return ["/chat/completions", "/messages"].includes(path);
+      if (!upstream || !PG_ENDPOINTS.some(endpoint => endpoint.path === path)) {
+        return declared.includes(this.normalizeEndpoint(path));
+      }
+      if (upstream.protocol === "anthropic" && path === "/chat/completions") {
+        return this.upstreamSupportsEndpoint(upstream, model, "/messages");
+      }
+      if (!pinned && upstream.protocol === "openai" && path === "/messages") {
+        return this.upstreamSupportsEndpoint(upstream, model, "/chat/completions");
+      }
+      return this.upstreamSupportsEndpoint(upstream, model, path);
+    });
+    const output = $("modelCallExamples");
+    output.replaceChildren();
+    for (const path of methods) {
+      const headers = path === "/messages"
+        ? ['-H "x-api-key: $VOS_TOKEN"', "-H 'anthropic-version: 2023-06-01'"]
+        : ['-H "Authorization: Bearer $VOS_TOKEN"'];
+      if (pinned) headers.push("-H " + shell("X-VRouter-Upstream: " + upstreamId));
+      const data = multipart[path]
+        ? ["model=" + native, ...multipart[path]].map(value => "-F " + shell(value))
+        : ["-H 'Content-Type: application/json'", "-d " + shell(JSON.stringify({model:native,...(path === "/systemone" && upstream?.protocol === "openai_decisions"
+          ? {state:"Example request",questions:{category:{type:"choice",instructions:"Classify the request",criteria:{general:"General request",technical:"Technical request"}}}}
+          : jsonBodies[path])}))];
+      const command = ["curl -fsS " + shell(base + path), ...headers, ...data].join(" \\\n  ");
+      const section = document.createElement("section");
+      const title = document.createElement("h4");
+      title.textContent = "POST /v1" + path;
+      const pre = document.createElement("pre");
+      pre.textContent = command;
+      const copy = document.createElement("button");
+      copy.type = "button";
+      copy.className = "btn";
+      copy.textContent = VRouterI18n.t("复制");
+      copy.onclick = () => this.copyText(command);
+      section.append(title, pre, copy);
+      output.append(section);
+    }
+    $("modelCallName").textContent = [qualified, upstream?.name || model.upstream_name].filter(Boolean).join(" · ");
+    $("modelCallLAN").textContent = lanBaseURL(bases);
+    $("modelCallDeclared").textContent = !methods.length ? (model.endpoints || []).join(" · ") : "";
+    VRouterI18n.bind($("modelCallHint"), "textContent", () => VRouterI18n.t(pinned
+      ? "示例已指定当前上游，使用 VOS access token 和该上游的原生模型 ID。"
+      : "示例使用目录中的完整模型 ID，由网关选路。"));
+    $("modelCallNoExample").hidden = methods.length > 0;
+    $("modelCallDialog").showModal();
   },
 
   budgetFor(model) {

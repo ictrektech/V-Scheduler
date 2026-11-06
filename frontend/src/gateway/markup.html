@@ -341,6 +341,17 @@
     </form>
   </dialog>
 
+  <dialog id="modelCallDialog" aria-labelledby="modelCallTitle">
+    <h3 id="modelCallTitle">调用方式</h3>
+    <p class="mono" id="modelCallName"></p>
+    <p class="hint" id="modelCallHint"></p>
+    <p class="hint"><span>局域网调用</span> <code id="modelCallLAN"></code></p>
+    <p class="hint" id="modelCallNoExample">该模型接口的请求字段请查阅 API 文档。</p>
+    <p class="mono" id="modelCallDeclared"></p>
+    <div id="modelCallExamples" class="model-call-examples"></div>
+    <div class="form-actions"><button type="button" class="btn" onclick="app.element('modelCallDialog').close()">关闭</button></div>
+  </dialog>
+
   <!-- 模型元数据对话框 -->
   <dialog id="modelDialog">
     <h3>模型元数据</h3>
