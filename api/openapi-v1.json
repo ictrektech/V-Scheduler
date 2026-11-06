@@ -1354,6 +1354,7 @@
         "operationId": "get_workers_id_resources",
         "tags": ["Workers"],
         "summary": "Read one node's resource snapshot",
+        "x-title": {"zh-CN":"查询节点资源","en":"Read node resources","zh-TW":"查詢節點資源"},
         "description": "The node's worker credential or an administrator can read approved capacities, resident baseline, unreleased reservations, remaining_budget and the effective safety reserve. remaining_budget is capacity minus baseline and reservations, before live admission checks. report contains observed resources only while fresh.",
         "x-required-scope": "worker:{id} or admin",
         "security": [{"bearerAuth": []}],

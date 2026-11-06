@@ -77,6 +77,8 @@ curl -i "$GATEWAY/v1/chat/completions" -H "Authorization: Bearer $VOS_TOKEN" -H 
   <p>{{t('本地和纳管远端模型先取得资源许可；云端供应商模型不占本地资源预约。资源忙时遵守重试提示，不能绕过网关直接启动同一次计算。')}}</p>
   <h3 id="integration-deepseek" tabindex="-1">{{t('DeepSeek Flash 调用')}}</h3>
   <p>{{t('在模型与上游打开 DeepSeek Flash 的模型设置，选择公开、私有或继承上游。仅所有者和管理员可改可见范围。私有模型仅对所有者和管理员可见可调用。')}}</p>
+  <pre>PATCH /api/v1/models
+{"upstream_id":"deepseek","model":"com.deepseek.api/deepseek-flash","visibility":"private"}</pre>
   <pre>{{deepseekSetup}}</pre>
   <h4>{{t('私有模型 · VOS 用户')}}</h4>
   <p>{{t('用已登录用户的 VOS access token 设置 VOS_TOKEN。应用内通过 VOS 登录或 fastpath 获取当前用户 token。外部客户端使用 VOS 登录或 OAuth 签发的 access token。')}}</p>

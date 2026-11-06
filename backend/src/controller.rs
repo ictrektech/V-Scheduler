@@ -825,7 +825,7 @@ async fn worker_resources(
     };
     let report: Value = row.get("report");
     let heartbeat: Option<DateTime<Utc>> = row.get("heartbeat");
-    let fresh = timestamp_fresh(&json!(heartbeat), 12) && report_fresh(&report);
+    let fresh = timestamp_fresh(&json!(heartbeat), 12) && timestamp_fresh(&report["observed_at"], 30);
     Ok(ok(json!({
         "node_id":id, "capacities":capacity, "resident_baseline":baseline, "reserved":reserved,
         "remaining_budget":remaining, "effective_safety_reserve":reserve.safety_floor(&report),
