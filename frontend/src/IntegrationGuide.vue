@@ -19,7 +19,7 @@ function jump(id: string) {
   section?.scrollIntoView({block:'start'})
 }
 const deepseekSetup = `GATEWAY=http://v-scheduler:8080
-MODEL=com.deepseek.api/deepseek-flash
+MODEL=api.deepseek.com/deepseek-flash
 BODY='{"model":"'$MODEL'","messages":[{"role":"user","content":"Say hello."}],"max_tokens":128}'
 # Check the VOS identity and model ID (private or authenticated public access).
 curl -fsS "$GATEWAY/api/v1/auth/me" -H "Authorization: Bearer $VOS_TOKEN"
@@ -47,9 +47,9 @@ curl -fsS "$GATEWAY/v1/messages" -H "x-api-key: $GATEWAY_KEY" -H 'anthropic-vers
 # AUTO: streaming
 curl -fsSN "$GATEWAY/v1/messages" -H "x-api-key: $GATEWAY_KEY" -H 'anthropic-version: 2023-06-01' -H 'Content-Type: application/json' -d '{"model":"auto","max_tokens":64,"stream":true,"messages":[{"role":"user","content":"Say hello."}]}'
 # Explicit model: use its qualified ID from /api/v1/models
-curl -fsS "$GATEWAY/v1/messages" -H "x-api-key: $GATEWAY_KEY" -H 'anthropic-version: 2023-06-01' -H 'Content-Type: application/json' -d '{"model":"com.deepseek.api/deepseek-flash","max_tokens":64,"messages":[{"role":"user","content":"Say hello."}]}'
+curl -fsS "$GATEWAY/v1/messages" -H "x-api-key: $GATEWAY_KEY" -H 'anthropic-version: 2023-06-01' -H 'Content-Type: application/json' -d '{"model":"api.deepseek.com/deepseek-flash","max_tokens":64,"messages":[{"role":"user","content":"Say hello."}]}'
 # The same model ID via OpenAI Chat Completions
-curl -fsS "$GATEWAY/v1/chat/completions" -H "Authorization: Bearer $GATEWAY_KEY" -H 'Content-Type: application/json' -d '{"model":"com.deepseek.api/deepseek-flash","max_tokens":64,"messages":[{"role":"user","content":"Say hello."}]}'`
+curl -fsS "$GATEWAY/v1/chat/completions" -H "Authorization: Bearer $GATEWAY_KEY" -H 'Content-Type: application/json' -d '{"model":"api.deepseek.com/deepseek-flash","max_tokens":64,"messages":[{"role":"user","content":"Say hello."}]}'`
 const autoExamples=`# GATEWAY: http://v-scheduler:8080
 # VOS_TOKEN: VOS administrator token / gateway administrator key
 curl -fsS "$GATEWAY/api/v1/auto-routing/candidates" -H "Authorization: Bearer $VOS_TOKEN"
@@ -78,7 +78,7 @@ curl -i "$GATEWAY/v1/chat/completions" -H "Authorization: Bearer $VOS_TOKEN" -H 
   <h3 id="integration-deepseek" tabindex="-1">{{t('DeepSeek Flash 调用')}}</h3>
   <p>{{t('在模型与上游打开 DeepSeek Flash 的模型设置，选择公开、私有或继承上游。仅所有者和管理员可改可见范围。私有模型仅对所有者和管理员可见可调用。')}}</p>
   <pre>PATCH /api/v1/models
-{"upstream_id":"deepseek","model":"com.deepseek.api/deepseek-flash","visibility":"private"}</pre>
+{"upstream_id":"deepseek","model":"api.deepseek.com/deepseek-flash","visibility":"private"}</pre>
   <pre>{{deepseekSetup}}</pre>
   <h4>{{t('私有模型 · VOS 用户')}}</h4>
   <p>{{t('用已登录用户的 VOS access token 设置 VOS_TOKEN。应用内通过 VOS 登录或 fastpath 获取当前用户 token。外部客户端使用 VOS 登录或 OAuth 签发的 access token。')}}</p>

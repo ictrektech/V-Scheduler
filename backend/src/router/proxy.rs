@@ -372,8 +372,8 @@ async fn handle_inner(g: Arc<Gateway>, id: Identity, request: Request, classifie
     if path == "/v1/models" && pinned.is_empty() {
         let r=g.registry.lock().unwrap();
         let mut models = r.list_models(&id).iter().map(|m| {
-            let name = r.upstreams.get(&m.upstream_id).map_or_else(|| m.qualified.clone(), |u| m.display_name(u, &id));
-            json!({"id":m.qualified,"name":name,"object":"model","created":0,"owned_by":m.owned_by})
+            let name = r.catalog_ref(&m.upstream_id, &m.qualified, &id);
+            json!({"id":name,"name":name,"object":"model","created":0,"owned_by":m.owned_by})
         }).collect::<Vec<_>>();
         if auto::advertised(&r,&id) {models.push(json!({"id":"auto","object":"model","created":0,"owned_by":"v-scheduler"}));}
         return Ok(axum::Json(json!({"object":"list","data":models})).into_response());

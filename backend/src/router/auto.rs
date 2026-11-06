@@ -134,6 +134,15 @@ pub(super) fn configure(g: &Gateway, id: &Identity, payload: Value) -> Api<Value
             "Auto configuration changed; reload before saving",
         ));
     }
+    // Persist the historical references so rollback can read saved settings.
+    for c in &mut config.candidates {
+        if let Some(model) = r.upstreams.get(&c.upstream_id).and_then(|u| r.model_by_id(u, &c.model, id)) {
+            c.model = model.qualified.clone();
+        }
+    }
+    if let Some(model) = r.upstreams.get(&config.jev_upstream_id).and_then(|u| r.model_by_id(u, &config.jev_model, id)) {
+        config.jev_model = model.qualified.clone();
+    }
     let mut seen = std::collections::BTreeSet::new();
     for c in &config.candidates {
         if !seen.insert((&c.model, &c.upstream_id))
@@ -204,15 +213,22 @@ pub(super) fn configure(g: &Gateway, id: &Identity, payload: Value) -> Api<Value
     }
     g.auto_runtime.sessions.lock().unwrap().clear();
     *g.auto_runtime.cooldown.lock().unwrap() = None;
-    Ok(json!(config))
+    Ok(config_view(&r, config, id))
 }
 pub(super) fn configuration(g: &Gateway, id: &Identity) -> Api<Value> {
     if !id.admin {
         return Err(error(403, "Auto configuration requires an administrator"));
     }
-    let mut config = g.registry.lock().unwrap().auto.clone();
+    let r = g.registry.lock().unwrap();
+    Ok(config_view(&r, r.auto.clone(), id))
+}
+fn config_view(r: &Registry, mut config: Config, id: &Identity) -> Value {
     config.enabled = true;
-    Ok(json!(config))
+    for c in &mut config.candidates {
+        c.model = r.catalog_ref(&c.upstream_id, &c.model, id);
+    }
+    config.jev_model = r.catalog_ref(&config.jev_upstream_id, &config.jev_model, id);
+    json!(config)
 }
 fn external(u: &Upstream) -> bool {
     if u.kind == "cloud" {
@@ -667,7 +683,7 @@ pub(super) async fn resolve_for(
             .flatten()
             .find(|m| m.qualified == c.model && m.visible(u, id))
         else {
-            if id.admin { reports.push(json!({"model":c.model,"upstream_id":c.upstream_id,"eligible":false,"reason":"model_unavailable"})); }
+            if id.admin { reports.push(json!({"model":r.catalog_ref(&c.upstream_id, &c.model, id),"upstream_id":c.upstream_id,"eligible":false,"reason":"model_unavailable"})); }
             continue;
         };
         let caps = |cap: &str| m.capabilities.iter().any(|s| s == cap);
@@ -711,7 +727,7 @@ pub(super) async fn resolve_for(
             "eligible"
         };
         if reason != "eligible" {
-            reports.push(json!({"model":c.model,"upstream_id":c.upstream_id,"eligible":false,"reason":reason}));
+            reports.push(json!({"model":r.catalog_ref(&c.upstream_id, &c.model, id),"upstream_id":c.upstream_id,"eligible":false,"reason":reason}));
             continue;
         }
         let approval = lease::approval(g, u, &m.id, "POST", endpoint, false);
@@ -739,7 +755,7 @@ pub(super) async fn resolve_for(
             Err(_) => false,
         };
         if !approved {
-            reports.push(json!({"model":c.model,"upstream_id":c.upstream_id,"eligible":false,"reason":"scheduler_policy_or_input_not_approved"}));
+            reports.push(json!({"model":r.catalog_ref(&c.upstream_id, &c.model, id),"upstream_id":c.upstream_id,"eligible":false,"reason":"scheduler_policy_or_input_not_approved"}));
             continue;
         }
         let resident = residency["residents"].as_array().is_some_and(|rows| {
@@ -752,7 +768,7 @@ pub(super) async fn resolve_for(
             (Some(a), Some(b)) => (estimate as f64 * a + output as f64 * b) / 1000000.0,
             _ => f64::INFINITY,
         };
-        reports.push(json!({"model":c.model,"upstream_id":c.upstream_id,"eligible":true,"reason":"eligible","resident":resident,"inflight":load,"estimated_start_ms":wait,"estimated_cost":if cost.is_finite(){Some(cost)}else{None},"native_model_size_bytes":if native_bytes==u64::MAX {None}else{Some(native_bytes)},"tier":c.tier}));
+        reports.push(json!({"model":r.catalog_ref(&c.upstream_id, &c.model, id),"upstream_id":c.upstream_id,"eligible":true,"reason":"eligible","resident":resident,"inflight":load,"estimated_start_ms":wait,"estimated_cost":if cost.is_finite(){Some(cost)}else{None},"native_model_size_bytes":if native_bytes==u64::MAX {None}else{Some(native_bytes)},"tier":c.tier}));
         choices.push((c, cost, wait, resident, native_bytes));
     }
     choices.sort_by(|a, b| {
@@ -801,7 +817,7 @@ pub(super) async fn resolve_for(
         if let Some((model, upstream, _)) = sessions.get(&key) {
             if let Some(c) = choices
                 .iter()
-                .find(|v| &v.0.model == model && &v.0.upstream_id == upstream)
+                .find(|v| &v.0.upstream_id == upstream && r.catalog_ref(upstream, &v.0.model, id) == *model)
             {
                 picked = c.0;
                 session_reused = true;
@@ -817,7 +833,7 @@ pub(super) async fn resolve_for(
     Ok(Decision {
         id: uuid::Uuid::new_v4().to_string(),
         requested_model: "auto".into(),
-        resolved_model: picked.model.clone(),
+        resolved_model: r.catalog_ref(&picked.upstream_id, &picked.model, id),
         upstream_id: picked.upstream_id.clone(),
         policy: selected_policy,
         revision: config.revision,

@@ -2,6 +2,7 @@ use super::*;
 use axum::Json;
 fn view(r: &Registry, u: &Upstream, id: &Identity) -> Value {
     let mut v = serde_json::to_value(u).unwrap();
+    v["model_prefix"] = json!(u.display_prefix());
     v["api_key"] = json!("");
     v["provider_credentials"] = Value::Null;
     v["has_provider_credentials"] = json!(!u.provider_credentials.is_null());
@@ -81,7 +82,10 @@ fn upstream_views(r: &Registry, id: &Identity) -> Vec<Value> {
 fn model_view(r: &Registry, m: &Model, id: &Identity) -> Value {
     let mut v = json!(m);
     let u = &r.upstreams[&m.upstream_id];
+    let catalog_id = r.catalog_id(m, u, id);
     v["name"] = json!(m.display_name(u, id));
+    v["qualified"] = json!(catalog_id);
+
     v["short"] = json!(false);
     v["upstream_name"] = json!(u.name);
     v["upstream_kind"] = json!(u.kind);
@@ -95,7 +99,7 @@ fn model_view(r: &Registry, m: &Model, id: &Identity) -> Value {
         .model_routing
         .get(&format!("{}/{}", m.upstream_id, m.id))
         .is_some_and(|policy| policy.direct));
-    v["model_prefix"] = json!(u.prefix());
+    v["model_prefix"] = json!(catalog_id.strip_suffix(&format!("/{}", m.id)).unwrap_or(u.prefix()));
     v["upstream_url"] = if u.visible(id) { json!(u.base_url) } else { Value::Null };
     v["visibility_manageable"] = json!(id.admin || (!u.owner.is_empty() && u.owner == id.owner));
     v["effective_visibility"] = json!(m.visibility.as_deref().unwrap_or(&u.visibility));
@@ -371,15 +375,9 @@ fn update_model(g: &Arc<Gateway>, id: &Identity, payload: Value) -> Api<Response
     }
     let requested = text(&payload, "upstream_id").trim().to_string();
     let mut r = g.registry.lock().unwrap();
-    let (upstream_id, mut model) = r
-        .models
-        .iter()
-        .filter(|(key, _)| requested.is_empty() || **key == requested)
-        .find_map(|(key, rows)| {
-            rows.iter()
-                .find(|m| m.qualified == qualified)
-                .map(|m| (key.clone(), m.clone()))
-        })
+    let (upstream_id, mut model) = r.upstreams.values()
+        .filter(|u| requested.is_empty() || u.id == requested)
+        .find_map(|u| r.model_by_id(u, &qualified, id).map(|m| (u.id.clone(), m.clone())))
         .ok_or_else(|| Failure::new(404, "model not found"))?;
     let u = r
         .upstreams
@@ -430,7 +428,7 @@ fn update_model(g: &Arc<Gateway>, id: &Identity, payload: Value) -> Api<Response
         model.kind = explicit;
     }
     let rows = r.models.get_mut(&upstream_id).expect("model source exists");
-    let index = rows.iter().position(|m| m.qualified == qualified).expect("model exists");
+    let index = rows.iter().position(|m| m.id == model.id).expect("model exists");
     let previous = std::mem::replace(&mut rows[index], model.clone());
     if r.persist(&g.state_path).is_err() {
         r.models.get_mut(&upstream_id).expect("model source exists")[index] = previous;
@@ -798,7 +796,7 @@ pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) ->
         };
         if probe {
             let details = fetched.as_ref().map(|ms| ms.iter().map(|m| json!({"id":m.id,"kind":m.kind,"capabilities":m.capabilities,"endpoints":m.endpoints,"owned_by":m.owned_by})).collect::<Vec<_>>()).unwrap_or_default();
-            let mut report = json!({"ok":fetched.is_ok(),"base_url":u.base_url,"model_prefix":u.prefix(),"protocol":u.protocol,"models":fetched.as_ref().map(|ms|ms.iter().map(|m|m.id.clone()).collect::<Vec<_>>()).unwrap_or_default(),"model_details":details,"error":fetched.err().map(|e|e.message).unwrap_or_default()});
+            let mut report = json!({"ok":fetched.is_ok(),"base_url":u.base_url,"model_prefix":u.display_prefix(),"protocol":u.protocol,"models":fetched.as_ref().map(|ms|ms.iter().map(|m|m.id.clone()).collect::<Vec<_>>()).unwrap_or_default(),"model_details":details,"error":fetched.err().map(|e|e.message).unwrap_or_default()});
             let test = text(&payload, "test_model");
             if !test.is_empty() {
                 match probe_model(g, &u, test).await {

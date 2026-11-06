@@ -33,6 +33,19 @@ pub(super) struct Upstream {
     pub async_task: Option<Value>,
 }
 impl Upstream {
+    pub fn display_prefix(&self) -> String {
+        if self.kind == "cloud" {
+            if let Ok(url) = reqwest::Url::parse(&self.base_url) {
+                if let Some(host) = url.host_str() {
+                    let legacy = host.trim_start_matches("www.").rsplit('.').collect::<Vec<_>>().join(".");
+                    if self.prefix() == legacy {
+                        return host.to_owned();
+                    }
+                }
+            }
+        }
+        self.prefix().to_owned()
+    }
     pub fn prefix(&self) -> &str {
         if !self.model_prefix.is_empty() {
             &self.model_prefix
@@ -93,15 +106,8 @@ pub(super) struct Model {
 }
 impl Model {
     pub fn display_name(&self, upstream: &Upstream, identity: &Identity) -> String {
-        if upstream.kind == "cloud" && upstream.visible(identity) {
-            if let Ok(url) = reqwest::Url::parse(&upstream.base_url) {
-                if let Some(host) = url.host_str() {
-                    let legacy = host.trim_start_matches("www.").rsplit('.').collect::<Vec<_>>().join(".");
-                    if upstream.prefix() == legacy && self.qualified == format!("{legacy}/{}", self.id) {
-                        return format!("{host}/{}", self.id);
-                    }
-                }
-            }
+        if upstream.visible(identity) && self.qualified == format!("{}/{}", upstream.prefix(), self.id) {
+            return format!("{}/{}", upstream.display_prefix(), self.id);
         }
         self.qualified.clone()
     }
@@ -320,6 +326,25 @@ impl Registry {
         };
         json!({"state":state,"detail":u.last_error})
     }
+    pub fn catalog_id(&self, model: &Model, upstream: &Upstream, identity: &Identity) -> String {
+        let name = model.display_name(upstream, identity);
+        // An existing exact ID keeps its meaning even if another host's alias collides.
+        if name != model.qualified && self.models.values().flatten().any(|row| row.qualified == name) {
+            return model.qualified.clone();
+        }
+        name
+    }
+    pub fn model_by_id(&self, upstream: &Upstream, requested: &str, identity: &Identity) -> Option<&Model> {
+        self.models.get(&upstream.id)?.iter().find(|model| {
+            model.visible(upstream, identity)
+                && (model.qualified == requested || self.catalog_id(model, upstream, identity) == requested)
+        })
+    }
+    pub fn catalog_ref(&self, upstream_id: &str, requested: &str, identity: &Identity) -> String {
+        self.upstreams.get(upstream_id)
+            .and_then(|u| self.model_by_id(u, requested, identity).map(|m| self.catalog_id(m, u, identity)))
+            .unwrap_or_else(|| requested.to_owned())
+    }
     pub fn list_models(&self, identity: &Identity) -> Vec<Model> {
         let mut models: BTreeMap<String, Model> = BTreeMap::new();
         for u in self
@@ -329,7 +354,7 @@ impl Registry {
         {
             for m in self.models.get(&u.id).into_iter().flatten().filter(|m| m.visible(u, identity)) {
                 models
-                    .entry(m.qualified.clone())
+                    .entry(self.catalog_id(m, u, identity))
                     .or_insert_with(|| m.clone());
             }
         }
@@ -358,14 +383,11 @@ impl Registry {
                     continue;
                 }
                 Some(Model {
-                    id: requested.into(),
+                    id: self.model_by_id(u, requested, id).map_or_else(|| requested.into(), |m| m.id.clone()),
                     ..Model::default()
                 })
             } else {
-                self.models
-                    .get(&u.id)
-                    .and_then(|ms| ms.iter().find(|m| m.qualified == requested && m.visible(u, id)))
-                    .cloned()
+                self.model_by_id(u, requested, id).cloned()
             };
             let Some(model) = model else {
                 continue;

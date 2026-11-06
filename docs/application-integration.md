@@ -49,7 +49,7 @@
 
 下文 `/tasks`、`/permits`、`/executors` 等短路径均相对于调度 API base。网关 `/api/v1/*` 保留模型与上游管理含义。 普通已验证用户可通过网关 `GET /api/v1/models` 读取 `{models:[...]}` 能力目录，包含 `qualified`、`upstream_id`、`capabilities`、`endpoints`，按当前身份过滤可见性；`GET /v1/models` 是仅含模型 ID 的 OpenAI 兼容列表。控制器 `38120/api/v1/models` 不存在，不能用来发现模型。 管理目录按 `qualified + upstream_id` 区分模型实例，每个来源保留自己的设置；`/v1/models` 仍按完整 qualified ID 去重。不同前缀下的同名原生模型不会合并。旧网关别名和旧同域路径为已有客户端保留兼容；控制器直连地址是上表中的正式调度入口。
 
-两个网关模型目录可返回 `name` 作为显示标签。客户端优先显示 `name`，为空时显示原模型 ID。发起推理、保存选择与判断模型是否仍存在时，继续使用 `/v1/models` 的 `id` 或管理目录的 `qualified`；固定上游调用使用管理目录的 `upstream_id` 和原生 `id`。
+模型目录会用正序云端域名或 IP 发布模型 ID。使用 `/v1/models` 的 `id` 或管理目录的 `qualified` 发起推理，客户端可用 `name` 作显示标签。旧反序 ID 仍可调用。正序与已有 ID 冲突时沿用已有 ID，避免把请求发给不同上游。固定上游调用仍使用管理目录的 `upstream_id` 和原生 `id`。
 
 VOS 本机资源采集内置于应用，无需应用开发者部署独立 Agent；外部节点通过所属 VOS 应用发现和管理，复用其已有监控；Scheduler 预算规划不直接授予执行权限，远端调度控制待验证，见[VOS 节点管理](node-management.md)。用户无需 SSH 或另装 Agent。自动发现模型不等于批准计算，仍需实际峰值预算与执行器授权。
 
@@ -86,13 +86,13 @@ VOS 本机资源采集内置于应用，无需应用开发者部署独立 Agent�
 
 ## DeepSeek Flash 的私有与公开调用
 
-在「模型与上游」打开已添加模型的设置，选择公开、私有或继承上游。修改由模型所属上游的所有者或管理员操作。单模型设置覆盖上游默认值，同一上游其他模型继续使用自己的设置。接口为 `PATCH /api/v1/models`，使用 VOS Bearer，提交 `{"upstream_id":"deepseek","model":"com.deepseek.api/deepseek-flash","visibility":"private"}`。设为 `"public"` 切换公开，`null` 恢复继承。用实际目录返回的 `upstream_id` 与 `qualified` 替换示例。
+在「模型与上游」打开已添加模型的设置，选择公开、私有或继承上游。修改由模型所属上游的所有者或管理员操作。单模型设置覆盖上游默认值，同一上游其他模型继续使用自己的设置。接口为 `PATCH /api/v1/models`，使用 VOS Bearer，提交 `{"upstream_id":"deepseek","model":"api.deepseek.com/deepseek-flash","visibility":"private"}`。设为 `"public"` 切换公开，`null` 恢复继承。用实际目录返回的 `upstream_id` 与 `qualified` 替换示例。
 
 容器内使用 `http://v-scheduler:8080`。局域网使用宿主机映射端口，默认 `22888`。VOS 同源客户端可用 `/api/com.ictrek.v-scheduler`。私有调用使用当前登录账号的 VOS access token，应用可由 VOS 登录桥接或 fastpath 获取。公开模型在网关未要求强制鉴权时可直接调用；启用强制鉴权时，公开调用也传 VOS access token 或网关 Key。上游 DeepSeek Key 由网关保存。
 
 ```bash
 GATEWAY=http://v-scheduler:8080
-MODEL=com.deepseek.api/deepseek-flash
+MODEL=api.deepseek.com/deepseek-flash
 BODY='{"model":"'$MODEL'","messages":[{"role":"user","content":"Say hello."}],"max_tokens":128}'
 
 # Private, as the owner or a VOS administrator
@@ -669,7 +669,7 @@ curl http://v-scheduler:8080/api/v1/registrations \
 
 ```bash
 GATEWAY=http://v-scheduler:8080
-MODEL=com.deepseek.api/deepseek-flash
+MODEL=api.deepseek.com/deepseek-flash
 curl -fsSN "$GATEWAY/v1/messages" \
   -H "x-api-key: $GATEWAY_KEY" -H 'anthropic-version: 2023-06-01' \
   -H 'Content-Type: application/json' \

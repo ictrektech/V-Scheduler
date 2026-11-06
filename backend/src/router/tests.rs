@@ -115,13 +115,23 @@ async fn model_catalog_names_keep_legacy_ids_routable() {
     for (id, _, prefix, host) in entries {
         let qualified = format!("{prefix}/echo");
         let display = format!("{host}/echo");
-        let wire = openai["data"].as_array().unwrap().iter().find(|row| row["id"] == qualified).unwrap();
+        let wire = openai["data"].as_array().unwrap().iter().find(|row| row["id"] == display).unwrap();
         let row = management["models"].as_array().unwrap().iter().find(|row| row["upstream_id"] == id).unwrap();
         assert_eq!(wire["name"], display);
         assert_eq!(row["name"], display);
-        assert_eq!(row["qualified"], qualified);
+        assert_eq!(row["qualified"], display);
+        assert!(!openai["data"].as_array().unwrap().iter().any(|row| row["id"] == qualified));
+        let (canonical_upstream, canonical_native) = g.registry.lock().unwrap().acquire(&display, "/chat/completions", "", &user).unwrap();
+        assert_eq!((canonical_upstream.id.as_str(), canonical_native.as_str()), (id, "echo"));
         let (upstream, native) = g.registry.lock().unwrap().acquire(&qualified, "/chat/completions", "", &user).unwrap();
         assert_eq!((upstream.id.as_str(), native.as_str()), (id, "echo"));
+    }
+    let mut admin = user.clone();
+    admin.admin = true;
+    for (revision, model) in [(0, "com.example.api/echo"), (1, "api.example.com/echo")] {
+        let saved = auto::configure(&g, &admin, json!({"revision":revision,"candidates":[{"model":model,"upstream_id":"domain"}]})).unwrap();
+        assert_eq!(saved["candidates"][0]["model"], "api.example.com/echo");
+        assert_eq!(g.registry.lock().unwrap().auto.candidates[0].model, "com.example.api/echo");
     }
     std::fs::remove_dir_all(root).unwrap();
 }
