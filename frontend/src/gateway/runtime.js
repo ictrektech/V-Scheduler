@@ -835,9 +835,9 @@ const app = {
                   `<button class="btn" onclick="app.refreshUpstream('${esc(u.id)}')">${VRouterI18n.t("刷新")}</button>` +
                   `<button class="btn danger" onclick="app.deleteUpstream('${esc(u.id)}', '${esc(u.name)}')">${VRouterI18n.t("删除")}</button></div>`
                 : registered && editable
-                  ? `<div class="actions"><button class="btn danger" onclick="app.unregisterService('${esc(u.id)}', '${esc(u.name)}')">${VRouterI18n.t("注销")}</button></div><span class="muted" style="font-size:12px">${VRouterI18n.t("服务心跳注册")}${u.scheduler?.mode === "direct" ? ` · ${VRouterI18n.t("直接放行")}` : ""}</span>`
+                  ? `<div class="actions"><button class="btn danger" onclick="app.unregisterService('${esc(u.id)}', '${esc(u.name)}')">${VRouterI18n.t("注销")}</button></div><span class="muted" style="font-size:12px">${VRouterI18n.t("服务心跳注册")}${u.routing?.direct ? ` · ${VRouterI18n.t("直接放行")}` : ""}</span>`
                   : registered
-                    ? `<span class="muted" style="font-size:12px">${VRouterI18n.t("服务心跳注册")}${u.scheduler?.mode === "direct" ? ` · ${VRouterI18n.t("直接放行")}` : ""}</span>`
+                    ? `<span class="muted" style="font-size:12px">${VRouterI18n.t("服务心跳注册")}${u.routing?.direct ? ` · ${VRouterI18n.t("直接放行")}` : ""}</span>`
                   : u.source === "video-structure"
                     ? `<span class="muted" style="font-size:12px">${VRouterI18n.t("自动发现")} · ${VRouterI18n.t("只读")}</span>`
                     : u.source === "v-scheduler"

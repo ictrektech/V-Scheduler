@@ -7,7 +7,7 @@ onMounted(async()=>{try{endpoints.value=(await request('/api/v1/integration')).e
 defineProps<{t:(value:string)=>string}>()
 const guide = ref<HTMLElement>()
 const contents = [
-  ['addresses','接入地址'], ['keys','API Key 设置与修改'], ['deepseek','DeepSeek Flash 调用'], ['auto','Auto 自动选型'],
+  ['addresses','接入地址'], ['keys','API Key 设置与修改'], ['key-responses','模型 Key 的请求与响应'], ['deepseek','DeepSeek Flash 调用'], ['auto','Auto 自动选型'],
   ['providers','模型与上游'], ['register','模型注册 API 与自动能力识别'],
   ['scheduling','注册调度模式与直接放行'], ['reference','完整 API 索引与错误处理'], ['nodes','节点注册与资源查询'], ['lifecycle','节点、应用、预算与停止的统一流程'],
   ['controls','计算启动与停止 API'], ['queue','推理等待队列'],
@@ -29,6 +29,7 @@ curl -fsS -X PUT "$GATEWAY/api/v1/models/access-key" -H "Authorization: Bearer $
 # External agent: use its KEY only; no VOS token required.
 curl -fsS "$GATEWAY/v1/chat/completions" -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' -d '{"model":"api.deepseek.com/deepseek-flash","max_tokens":128,"messages":[{"role":"user","content":"Hello"}]}'
 curl -fsS "$GATEWAY/v1/messages" -H "x-api-key: $KEY" -H 'anthropic-version: 2023-06-01' -H 'Content-Type: application/json' -d '{"model":"api.deepseek.com/deepseek-flash","max_tokens":128,"messages":[{"role":"user","content":"Hello"}]}'`
+const modelKeyResponses = "# PUT /api/v1/models/access-key\n# Authorization: Bearer $VOS_TOKEN (owner or administrator)\n# Generate a new model access key:\n{\n  \"upstream_id\": \"deepseek\",\n  \"model\": \"api.deepseek.com/deepseek-flash\",\n  \"access_key\": true\n}\n# HTTP 200 — example placeholders, not usable secrets:\n{\n  \"model_access_keys\": [\n    {\n      \"model\": \"deepseek/deepseek-flash\",\n      \"key\": {\n        \"id\": \"<key-id>\",\n        \"name\": \"Model: deepseek/deepseek-flash\",\n        \"prefix\": \"vs-key-<prefix>\",\n        \"models\": [\n          \"deepseek/deepseek-flash\"\n        ],\n        \"created_at\": \"<UTC timestamp>\",\n        \"expires_at\": null,\n        \"revoked_at\": null,\n        \"active\": true\n      },\n      \"api_key\": \"vs-key-<complete-generated-key-returned-once>\"\n    }\n  ]\n}\n# Set your own key (16..512 printable non-space ASCII characters):\n{\n  \"upstream_id\": \"deepseek\",\n  \"model\": \"api.deepseek.com/deepseek-flash\",\n  \"access_key\": \"<your-own-strong-model-key>\"\n}\n# HTTP 200 — metadata only; no api_key field:\n{\n  \"model_access_keys\": [\n    {\n      \"model\": \"deepseek/deepseek-flash\",\n      \"key\": {\n        \"id\": \"<key-id>\",\n        \"name\": \"Model: deepseek/deepseek-flash\",\n        \"prefix\": \"custom-<hash-prefix>\",\n        \"models\": [\n          \"deepseek/deepseek-flash\"\n        ],\n        \"created_at\": \"<UTC timestamp>\",\n        \"expires_at\": null,\n        \"revoked_at\": null,\n        \"active\": true\n      }\n    }\n  ]\n}\n# Revoke:\n{\n  \"upstream_id\": \"deepseek\",\n  \"model\": \"api.deepseek.com/deepseek-flash\",\n  \"access_key\": null\n}\n# HTTP 200:\n{\n  \"model_access_keys\": [\n    {\n      \"model\": \"deepseek/deepseek-flash\",\n      \"key\": null\n    }\n  ]\n}\n# Query owner metadata (never retrieves complete keys):\ncurl -fsS \"$GATEWAY/api/v1/api-keys\" -H \"Authorization: Bearer $VOS_TOKEN\"\n# Model registration uses the same response entries for access_key/model_access_keys.\n"
 const registrationKeys = `curl -fsS "$GATEWAY/api/v1/registrations" -H "Authorization: Bearer $VOS_TOKEN" -H 'Content-Type: application/json' -d '{"service_id":"my-infer","base_url":"http://my-infer:8000/v1","protocol":"chat_completions","visibility":"private","models":[{"id":"chat-a","endpoints":["chat_completions"]}],"access_key":true,"heartbeat_timeout_seconds":90}'
 # Per-model override for multiple submitted models:
 # "model_access_keys":{"chat-a":"your-strong-model-access-key","chat-b":true}
@@ -96,6 +97,10 @@ curl -i "$GATEWAY/v1/chat/completions" -H "Authorization: Bearer $VOS_TOKEN" -H 
   <p>{{t('个人 Key 继承所属 VOS 用户的模型权限；模型专用 Key 仅授权指定模型。两者只允许推理和模型发现。创建、设置与撤销 Key 使用 VOS 账户 token，不能使用另一把 Key 代替。VOS 用户鉴权继续支持，不需要同时发送 token 和 Key。')}}</p>
   <p>{{t('public 模型接受无 Key、有效 Key 或任意填写的 Key；无效凭据仅获得匿名公开权限，不能访问 private 模型。private 模型需要有权限的 VOS 账户、个人 Key 或该模型的专用 Key。切换 public/private 不会修改已有 Key。')}}</p>
   <pre>{{keyExamples}}</pre>
+  <h4 id="integration-key-responses" tabindex="-1">{{t('模型 Key 的请求与响应')}}</h4>
+  <p>{{t('access_key=true 自动生成时，仅本次响应的 model_access_keys[].api_key 返回完整 Key；请立即保存。字符串表示设置调用方已有的自定义 Key，成功响应只返回模型与 Key 元数据，不回显 api_key。null 表示撤销，返回 key:null。省略 access_key 的注册请求保留已有 Key，不返回原 Key。')}}</p>
+  <p>{{t('GET /api/v1/api-keys 只能查看本人 Key 的 id、name、prefix、models、active 和时间等元数据，不返回明文或 hash。遗失自动生成的 Key 后无法找回，请重新生成或设置替换；该模型旧 Key 随即失效，不影响其他模型及个人 Key。操作需要所有者或管理员的 VOS token，不能使用推理 Key。响应 model 使用内部 upstream_id/native_model_id，与请求可使用的公开完整模型 id 含义不同。')}}</p>
+  <pre>{{modelKeyResponses}}</pre>
   <h4>{{t('注册模型时同时设置 Key')}}</h4>
   <p>{{t('access_key=true 自动生成，字符串设置自己的 Key（16 至 512 个可打印 ASCII 字符），null 撤销。model_access_keys 可按原生模型 ID 逐项覆盖；省略时保留已有设置。上游 api_key 只用于请求上游，与 V-Scheduler 的访问 Key 分开。')}}</p>
   <pre>{{registrationKeys}}</pre>
@@ -158,7 +163,7 @@ curl -i "$GATEWAY/v1/chat/completions" -H "Authorization: Bearer $VOS_TOKEN" -H 
   <h3 id="integration-scheduling" tabindex="-1">{{t('注册调度模式与直接放行')}}</h3>
   <p>{{t('注册只让模型可被发现，不代表资源预算和执行器已获批。自管的外部推理服务可由管理员在注册时声明 scheduler.mode=direct；需要资源调度的服务应完成节点、执行器、模型预算审批与绑定。不要用直接放行掩盖缺失的资源绑定。')}}</p>
   <p>{{t('scheduler 策略需要管理员 VOS 身份。direct 跳过资源许可；cloud 声明远程云端计算；permit 需要 executor_id 和 completion=synchronous；delegated 由应用承担任务完成与停止回执。省略 scheduler 时按受管服务处理，不会自动获得预算。')}}</p>
-  <p>{{t('注册策略和路由直接放行不同：scheduler.mode=direct 保留路由并发与熔断检查；上游 routing.direct=true 或模型级 direct=true 还会跳过这些检查。模型级修改需管理员，使用内部 upstream_id/native_model_id；公开调用仍使用模型目录返回的完整 id。')}}</p>
+  <p>{{t('注册时的 scheduler.mode=direct 与上游界面的直接放行是同一设置：服务器统一保存为 routing.direct。两者都跳过资源许可、模型预算、路由并发与熔断检查；暂停、模型权限和协议能力检查仍生效。API 设置后界面显示相同状态，界面关闭后 API 也读取到 false，正常心跳不会重新开启。模型级修改使用内部 upstream_id/native_model_id；公开调用仍使用模型目录返回的完整 id。')}}</p>
   <pre>GATEWAY=http://v-scheduler:8080
 # Administrator VOS token; not a personal/model inference key.
 # Save the full snapshot as registration.json for recovery heartbeats.

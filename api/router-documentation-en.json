@@ -495,7 +495,7 @@
           "method": "PUT",
           "path": "/api/v1/models/access-key",
           "summary": "Set, rotate or revoke a model access key",
-          "desc": "Requires the model owner’s or administrator’s VOS token. access_key=true generates a key, a string sets a 16..512 printable ASCII secret, null revokes it. Authorizes only this model; replaces its previous key. Does not change public/private visibility or the upstream provider api_key.",
+          "desc": "Requires the model owner’s or administrator’s VOS token. access_key=true generates a key, a string sets a 16..512 printable ASCII secret, null revokes it. Authorizes only this model; replaces its previous key. Does not change public/private visibility or the upstream provider api_key. Only generation returns model_access_keys[].api_key once. Custom keys are not echoed; revocation returns key:null. Subsequent list queries never return secrets.",
           "example": "curl -X PUT \"$GATEWAY/api/v1/models/access-key\" -H \"Authorization: Bearer $VOS_TOKEN\" -H \"Content-Type: application/json\" -d '{\"upstream_id\":\"deepseek\",\"model\":\"api.deepseek.com/deepseek-flash\",\"access_key\":true}'"
         },
         {

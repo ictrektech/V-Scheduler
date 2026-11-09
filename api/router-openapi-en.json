@@ -453,7 +453,7 @@
                         }
                       }
                     },
-                    "description": "Administrator-only policy. Omit for managed admission. direct skips resource admission but retains routing limits; cloud declares remote compute. permit requires an approved executor_id, completion=synchronous and a matching model resource policy; delegated uses an application-owned task lifecycle. Registration alone never grants resource approval."
+                    "description": "Administrator-only registration policy. mode=direct is normalized to the SAME persisted upstream routing.direct flag used by the UI and routing API; it bypasses resource permits, budgets, routing concurrency and circuit checks. Other explicit modes clear that direct flag. Omission preserves the current routing flag. Existing-entry heartbeats do not overwrite configuration. cloud declares external compute; permit requires executor_id and completion=synchronous; delegated requires application-owned completion/stop receipts."
                   },
                   "service_id": {
                     "type": "string",
@@ -782,7 +782,7 @@
                         }
                       }
                     },
-                    "description": "Administrator-only policy. Omit for managed admission. direct skips resource admission but retains routing limits; cloud declares remote compute. permit requires an approved executor_id, completion=synchronous and a matching model resource policy; delegated uses an application-owned task lifecycle. Registration alone never grants resource approval."
+                    "description": "Administrator-only registration policy. mode=direct is normalized to the SAME persisted upstream routing.direct flag used by the UI and routing API; it bypasses resource permits, budgets, routing concurrency and circuit checks. Other explicit modes clear that direct flag. Omission preserves the current routing flag. Existing-entry heartbeats do not overwrite configuration. cloud declares external compute; permit requires executor_id and completion=synchronous; delegated requires application-owned completion/stop receipts."
                   },
                   "service_id": {
                     "type": "string",
@@ -13141,7 +13141,7 @@
     "/api/v1/models/access-key": {
       "put": {
         "summary": "Set, rotate or revoke a model access key",
-        "description": "Requires the model owner’s or administrator’s VOS token. access_key=true generates a key, a string sets a 16..512 printable ASCII secret, null revokes it. Authorizes only this model; replaces its previous key. Does not change public/private visibility or the upstream provider api_key.",
+        "description": "Requires the model owner’s or administrator’s VOS token. access_key=true generates a key, a string sets a 16..512 printable ASCII secret, null revokes it. Authorizes only this model; replaces its previous key. Does not change public/private visibility or the upstream provider api_key. Only access_key=true returns the generated secret once in model_access_keys[].api_key. A custom string returns metadata WITHOUT an api_key field; null returns key:null. GET /api/v1/api-keys never retrieves complete keys. Response model is internal upstream_id/native_model_id.",
         "tags": [
           "manage"
         ],
@@ -13153,7 +13153,94 @@
         ],
         "responses": {
           "200": {
-            "description": "Success"
+            "description": "Generated: includes api_key once. Custom: metadata only. Revoked: key=null.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "model_access_keys"
+                  ],
+                  "properties": {
+                    "model_access_keys": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "model",
+                          "key"
+                        ],
+                        "properties": {
+                          "model": {
+                            "type": "string",
+                            "description": "Internal upstream_id/native_model_id"
+                          },
+                          "key": {
+                            "oneOf": [
+                              {
+                                "type": "object",
+                                "required": [
+                                  "id",
+                                  "name",
+                                  "prefix",
+                                  "models",
+                                  "created_at",
+                                  "active"
+                                ],
+                                "properties": {
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "prefix": {
+                                    "type": "string"
+                                  },
+                                  "models": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "created_at": {
+                                    "type": "string",
+                                    "format": "date-time"
+                                  },
+                                  "expires_at": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "revoked_at": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "active": {
+                                    "type": "boolean"
+                                  }
+                                }
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "api_key": {
+                            "type": "string",
+                            "readOnly": true,
+                            "description": "Present ONLY when access_key=true generated a new key. Never returned for custom string or revocation."
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           },
           "default": {
             "description": "Gateway error"

@@ -58,9 +58,11 @@ async fn model_key_rotation_never_grants_other_private_models() {
     let result=value(response).await;let first=result["model_access_keys"][0]["api_key"].as_str().unwrap();
     let id=api_keys::authenticate(&g,first).await.unwrap();
     {let mut r=g.registry.lock().unwrap();assert_eq!(r.list_models(&id).len(),1);assert!(r.acquire("manual/two","/chat/completions","",&id).is_err());}
-    api_keys::model_access(&g,&alice,request("PUT","/api/v1/models/access-key",json!({"upstream_id":"source","model":"manual/one","access_key":"custom-model-secret-123"}))).await.unwrap();
+    let custom=value(api_keys::model_access(&g,&alice,request("PUT","/api/v1/models/access-key",json!({"upstream_id":"source","model":"manual/one","access_key":"custom-model-secret-123"}))).await.unwrap()).await;
+    assert!(custom["model_access_keys"][0].get("api_key").is_none(), "custom keys must not be echoed");
     assert!(api_keys::authenticate(&g,first).await.is_err());assert!(api_keys::authenticate(&g,"custom-model-secret-123").await.is_ok());
-    api_keys::model_access(&g,&alice,request("PUT","/api/v1/models/access-key",json!({"upstream_id":"source","model":"manual/one","access_key":null}))).await.unwrap();
+    let revoked=value(api_keys::model_access(&g,&alice,request("PUT","/api/v1/models/access-key",json!({"upstream_id":"source","model":"manual/one","access_key":null}))).await.unwrap()).await;
+    assert_eq!(revoked,json!({"model_access_keys":[{"model":"source/one","key":null}]}));
     assert!(api_keys::authenticate(&g,"custom-model-secret-123").await.is_err());task.abort();
 }
 #[tokio::test]

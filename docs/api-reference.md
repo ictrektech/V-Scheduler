@@ -30,7 +30,7 @@ Registration is model discovery, not resource approval. POST `/api/v1/registrati
 | mode | Behavior / 行为 |
 | --- | --- |
 | omitted / 省略 | Managed resource admission; requires a valid approved resource binding / 受管准入，须有获批资源绑定 |
-| `direct` | Skip resource admission; retain routing concurrency and breaker checks / 跳过资源许可，保留路由并发和熔断 |
+| `direct` | Same setting as upstream routing.direct: bypass permits, budgets, routing concurrency and breaker checks / 与上游 routing.direct 同一设置，跳过许可、预算、路由并发及熔断 |
 | `cloud` | Declare remote cloud compute; no local resource reservation / 声明远程云计算，不占本地预约 |
 | `permit` | Approved executor_id + completion=synchronous and matching model budget / 已批准执行器、同步完成与模型预算 |
 | `delegated` | Application owns asynchronous completion and confirmed stopping / 应用负责异步完成与确认停止 |
@@ -44,7 +44,7 @@ Save the same full payload locally as `registration.json`; POST it to `/api/v1/r
 
 将完整请求保存为 registration.json，按响应 heartbeat_after_seconds 向心跳接口发送。普通心跳仅续期，完整快照可恢复丢失的注册；修改元数据、权限、调度策略或注册 Key 请重新 POST 相同 service_id。healthy=false 隐藏服务，不释放正在执行的预约。默认超时 90 秒，范围 30–3600 秒。
 
-`PUT /api/v1/upstreams/{id}/routing` is a full routing replacement: `{ "weight":1, "max_inflight":0, "disabled":false, "direct":true }`. This `direct` also skips routing concurrency and breaker checks. `PUT /api/v1/model-routing` takes `{ "model_id":"registered-my-infer/chat-a", "direct":true }`; here model_id is **internal upstream_id/native model ID**, not the public catalog ID. Setting false removes only the model override; an upstream-wide direct setting still applies. Inference uses the full ID from `/v1/models` and accepts older saved IDs for compatibility.
+`PUT /api/v1/upstreams/{id}/routing` is a full routing replacement: `{ "weight":1, "max_inflight":0, "disabled":false, "direct":true }`. Registration `scheduler.mode=direct` is normalized into this same `routing.direct` flag; it is an input alias, not a second independent setting. Both bypass resource admission, budgets, routing concurrency and breaker checks. Pause, ownership and protocol capability checks still apply. Normal heartbeats do not overwrite an operator change; explicit re-registration with a scheduler policy is a new configuration change. `PUT /api/v1/model-routing` takes `{ "model_id":"registered-my-infer/chat-a", "direct":true }`; here model_id is **internal upstream_id/native model ID**, not the public catalog ID. Setting false removes only the model override; an upstream-wide direct setting still applies. Inference uses the full ID from `/v1/models` and accepts older saved IDs for compatibility.
 
 上游路由 PUT 为完整替换，其 direct 还跳过路由并发和熔断。模型级接口使用内部 upstream_id/原生模型 ID，false 只删除模型覆盖，不会取消上游放行。正常调用仍使用模型目录返回的完整 id。
 
@@ -397,3 +397,89 @@ Base: `http://v-scheduler:6005`. [Complete OpenAPI](../api/model-management.open
 All business codes and envelopes: [error contract](../api/error-contract.json). Preserve `request_id` when collecting diagnostics; do not log tokens or secrets. Network restrictions on some mainland-China test hosts may prevent access to overseas providers; verify connectivity from the host running V-Scheduler, not only from your browser.
 
 全部业务码及错误包结构见错误契约。排查保留 request_id，不记录 token/Key。部分中国大陆测试机可能因网络限制无法连接境外 API，应从实际运行 V-Scheduler 的主机检查连通性。
+
+## Model key response behavior / 模型 Key 返回值
+
+access_key=true 自动生成时，仅本次响应的 model_access_keys[].api_key 返回完整 Key；请立即保存。字符串表示设置调用方已有的自定义 Key，成功响应只返回模型与 Key 元数据，不回显 api_key。null 表示撤销，返回 key:null。省略 access_key 的注册请求保留已有 Key，不返回原 Key。
+
+Only access_key=true returns the generated secret in model_access_keys[].api_key, once in that response; save it immediately. A string sets a caller-supplied key and returns model/key metadata without an api_key echo. null revokes and returns key:null. Registration with access_key omitted preserves the existing key and never returns its secret.
+
+GET /api/v1/api-keys 只能查看本人 Key 的 id、name、prefix、models、active 和时间等元数据，不返回明文或 hash。遗失自动生成的 Key 后无法找回，请重新生成或设置替换；该模型旧 Key 随即失效，不影响其他模型及个人 Key。操作需要所有者或管理员的 VOS token，不能使用推理 Key。响应 model 使用内部 upstream_id/native_model_id，与请求可使用的公开完整模型 id 含义不同。
+
+GET /api/v1/api-keys lists only the current owner’s metadata such as id, name, prefix, models, active and timestamps, never secrets or hashes. A lost generated key cannot be recovered: generate or set a replacement. The old key stops authorizing this model; other models and personal keys are unaffected. Use the owner/admin VOS token, not an inference key. Response model is internal upstream_id/native_model_id; the request may use the public qualified model id.
+
+```text
+# PUT /api/v1/models/access-key
+# Authorization: Bearer $VOS_TOKEN (owner or administrator)
+# Generate a new model access key:
+{
+  "upstream_id": "deepseek",
+  "model": "api.deepseek.com/deepseek-flash",
+  "access_key": true
+}
+# HTTP 200 — example placeholders, not usable secrets:
+{
+  "model_access_keys": [
+    {
+      "model": "deepseek/deepseek-flash",
+      "key": {
+        "id": "<key-id>",
+        "name": "Model: deepseek/deepseek-flash",
+        "prefix": "vs-key-<prefix>",
+        "models": [
+          "deepseek/deepseek-flash"
+        ],
+        "created_at": "<UTC timestamp>",
+        "expires_at": null,
+        "revoked_at": null,
+        "active": true
+      },
+      "api_key": "vs-key-<complete-generated-key-returned-once>"
+    }
+  ]
+}
+# Set your own key (16..512 printable non-space ASCII characters):
+{
+  "upstream_id": "deepseek",
+  "model": "api.deepseek.com/deepseek-flash",
+  "access_key": "<your-own-strong-model-key>"
+}
+# HTTP 200 — metadata only; no api_key field:
+{
+  "model_access_keys": [
+    {
+      "model": "deepseek/deepseek-flash",
+      "key": {
+        "id": "<key-id>",
+        "name": "Model: deepseek/deepseek-flash",
+        "prefix": "custom-<hash-prefix>",
+        "models": [
+          "deepseek/deepseek-flash"
+        ],
+        "created_at": "<UTC timestamp>",
+        "expires_at": null,
+        "revoked_at": null,
+        "active": true
+      }
+    }
+  ]
+}
+# Revoke:
+{
+  "upstream_id": "deepseek",
+  "model": "api.deepseek.com/deepseek-flash",
+  "access_key": null
+}
+# HTTP 200:
+{
+  "model_access_keys": [
+    {
+      "model": "deepseek/deepseek-flash",
+      "key": null
+    }
+  ]
+}
+# Query owner metadata (never retrieves complete keys):
+curl -fsS "$GATEWAY/api/v1/api-keys" -H "Authorization: Bearer $VOS_TOKEN"
+# Model registration uses the same response entries for access_key/model_access_keys.
+```

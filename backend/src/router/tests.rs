@@ -2350,3 +2350,44 @@ async fn registered_provider_metadata_is_optional_and_explicit_capabilities_win(
     drop(r);
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[tokio::test]
+async fn registration_direct_and_ui_routing_share_one_persisted_setting() {
+    let root = temp();
+    let g = gateway(&root, Router::new());
+    let mut admin = principal("alice"); admin.admin = true;
+    let request = |method: &str, path: &str, body: Value| axum::http::Request::builder()
+        .method(method).uri(path).header("content-type", "application/json")
+        .body(Body::from(body.to_string())).unwrap();
+    let mut registration = json!({"service_id":"parity","protocol":"chat_completions","base_url":"http://fixture/v1","model":"echo","scheduler":{"mode":"direct"}});
+    let response = manage::handle(&g, &admin, request("POST", "/api/v1/registrations", registration.clone())).await.unwrap();
+    let view: Value = serde_json::from_slice(&axum::body::to_bytes(response.into_body(),65536).await.unwrap()).unwrap();
+    assert_eq!(view["upstream"]["routing"]["direct"],true, "the UI must see registration direct enabled");
+    assert!(view["upstream"]["scheduler"].is_null(), "do not expose two independent direct flags");
+    {
+        let mut r = g.registry.lock().unwrap();
+        r.routing.get_mut("registered-parity").unwrap().max_inflight = 1;
+        r.inflight.insert("registered-parity".into(), 9);
+        for _ in 0..3 { r.result("registered-parity", false); }
+        assert!(r.acquire("registered/echo", "/chat/completions", "", &admin).is_ok(), "registration direct must bypass the same concurrency and circuit checks as UI direct");
+    }
+    let routing = json!({"weight":2,"max_inflight":1,"disabled":false,"direct":false});
+    manage::handle(&g,&admin,request("PUT","/api/v1/upstreams/registered-parity/routing",routing.clone())).await.unwrap();
+    {
+        let mut r = g.registry.lock().unwrap();
+        assert!(!r.routing["registered-parity"].direct);
+        assert!(r.upstreams["registered-parity"].scheduler.is_none());
+        assert!(r.acquire("registered/echo", "/chat/completions", "", &admin).is_err(), "UI off must restore normal routing checks");
+    }
+    // A normal heartbeat must not silently restore the old registration value.
+    manage::handle(&g,&admin,request("POST","/api/v1/registrations/registered-parity/heartbeat",registration.clone())).await.unwrap();
+    assert!(!g.registry.lock().unwrap().routing["registered-parity"].direct);
+    // Explicit re-registration and API/UI routing edits are both authoritative.
+    manage::handle(&g,&admin,request("POST","/api/v1/registrations",registration.clone())).await.unwrap();
+    assert!(g.registry.lock().unwrap().routing["registered-parity"].direct);
+    registration["scheduler"] = json!({"mode":"cloud"});
+    manage::handle(&g,&admin,request("POST","/api/v1/registrations",registration)).await.unwrap();
+    let r = Registry::open(&root.join("state.json")).unwrap();
+    assert!(!r.routing["registered-parity"].direct);
+    std::fs::remove_dir_all(root).unwrap();
+}

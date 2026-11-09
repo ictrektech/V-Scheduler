@@ -202,6 +202,7 @@ impl Registry {
             {
                 u.expires_at = None;
             }
+            result.canonicalize_registration_direct(&mut u);
             result.upstreams.insert(u.id.clone(), u);
         }
         for p in result.routing.values_mut() {
@@ -266,7 +267,17 @@ impl Registry {
             self.upstreams.remove(&id);self.models.remove(&id);
         }
     }
+    // Registration's legacy scheduler.mode=direct is an input alias, never a
+    // second admission policy. The UI and API both read routing.direct.
+    fn canonicalize_registration_direct(&mut self, u: &mut Upstream) {
+        if u.source == "registered" && u.scheduler.as_ref().is_some_and(|p|
+            p["mode"] == "direct" && text(p, "upstream_url").trim_end_matches('/') == u.base_url.trim_end_matches('/')) {
+            self.routing.entry(u.id.clone()).or_default().direct = true;
+            u.scheduler = None;
+        }
+    }
     pub fn put(&mut self, mut u: Upstream, mut models: Vec<Model>) {
+        self.canonicalize_registration_direct(&mut u);
         if u.healthy {self.builtin_unavailable.remove(&u.id);}
         if u.source=="registered" {self.registration_owners.insert(u.id.clone(),u.owner.clone());}
         if u.source != "registered" {

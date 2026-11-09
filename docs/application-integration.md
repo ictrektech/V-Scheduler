@@ -859,3 +859,89 @@ Messages 示例去掉 `"stream":true` 即返回 JSON。工具和图像输入取�
 自动候选池的排序指标相同时，使用已核验绑定中的原生权重大小优先选择占用较小的模型，未知大小后置；不根据模型名称猜测规模，不改变手工候选的排序或能力档位，也不绕过实际资源准入。
 
 Auto 候选和策略可通过管理员 `GET/PUT /api/v1/auto-routing` 配置；模型条目的 `configuration_url`、`candidates_url` 指向配置与候选目录。空候选表示自动候选池，PUT 必须带最新 revision。OpenAI Decisions 与 Jev 的结构化分类统一用 `classifier=systemone`，分类模型使用 jev_model/jev_upstream_id，云端分类单独许可。详见 [Auto 配置 API](auto-routing.md#从模型卡片或-api-配置-auto)。
+
+## 设置与返回值的一致性
+
+注册时的 scheduler.mode=direct 与上游界面的直接放行是同一设置：服务器统一保存为 routing.direct。两者都跳过资源许可、模型预算、路由并发与熔断检查；暂停、模型权限和协议能力检查仍生效。API 设置后界面显示相同状态，界面关闭后 API 也读取到 false，正常心跳不会重新开启。模型级修改使用内部 upstream_id/native_model_id；公开调用仍使用模型目录返回的完整 id。
+
+### 模型访问 Key 的完整响应
+
+access_key=true 自动生成时，仅本次响应的 model_access_keys[].api_key 返回完整 Key；请立即保存。字符串表示设置调用方已有的自定义 Key，成功响应只返回模型与 Key 元数据，不回显 api_key。null 表示撤销，返回 key:null。省略 access_key 的注册请求保留已有 Key，不返回原 Key。
+
+GET /api/v1/api-keys 只能查看本人 Key 的 id、name、prefix、models、active 和时间等元数据，不返回明文或 hash。遗失自动生成的 Key 后无法找回，请重新生成或设置替换；该模型旧 Key 随即失效，不影响其他模型及个人 Key。操作需要所有者或管理员的 VOS token，不能使用推理 Key。响应 model 使用内部 upstream_id/native_model_id，与请求可使用的公开完整模型 id 含义不同。
+
+```text
+# PUT /api/v1/models/access-key
+# Authorization: Bearer $VOS_TOKEN (owner or administrator)
+# Generate a new model access key:
+{
+  "upstream_id": "deepseek",
+  "model": "api.deepseek.com/deepseek-flash",
+  "access_key": true
+}
+# HTTP 200 — example placeholders, not usable secrets:
+{
+  "model_access_keys": [
+    {
+      "model": "deepseek/deepseek-flash",
+      "key": {
+        "id": "<key-id>",
+        "name": "Model: deepseek/deepseek-flash",
+        "prefix": "vs-key-<prefix>",
+        "models": [
+          "deepseek/deepseek-flash"
+        ],
+        "created_at": "<UTC timestamp>",
+        "expires_at": null,
+        "revoked_at": null,
+        "active": true
+      },
+      "api_key": "vs-key-<complete-generated-key-returned-once>"
+    }
+  ]
+}
+# Set your own key (16..512 printable non-space ASCII characters):
+{
+  "upstream_id": "deepseek",
+  "model": "api.deepseek.com/deepseek-flash",
+  "access_key": "<your-own-strong-model-key>"
+}
+# HTTP 200 — metadata only; no api_key field:
+{
+  "model_access_keys": [
+    {
+      "model": "deepseek/deepseek-flash",
+      "key": {
+        "id": "<key-id>",
+        "name": "Model: deepseek/deepseek-flash",
+        "prefix": "custom-<hash-prefix>",
+        "models": [
+          "deepseek/deepseek-flash"
+        ],
+        "created_at": "<UTC timestamp>",
+        "expires_at": null,
+        "revoked_at": null,
+        "active": true
+      }
+    }
+  ]
+}
+# Revoke:
+{
+  "upstream_id": "deepseek",
+  "model": "api.deepseek.com/deepseek-flash",
+  "access_key": null
+}
+# HTTP 200:
+{
+  "model_access_keys": [
+    {
+      "model": "deepseek/deepseek-flash",
+      "key": null
+    }
+  ]
+}
+# Query owner metadata (never retrieves complete keys):
+curl -fsS "$GATEWAY/api/v1/api-keys" -H "Authorization: Bearer $VOS_TOKEN"
+# Model registration uses the same response entries for access_key/model_access_keys.
+```

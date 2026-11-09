@@ -400,3 +400,5 @@ public 模型支持无 Key、有效 Key 和任意 Key；无效凭据只获得匿
 ### Complete API documentation
 
 [Full API index](docs/api-reference.md) and [unified application integration](docs/application-integration.md) cover registration, scheduling/direct admission, node heartbeats and resource budgets, model visibility/capabilities, personal/model keys, Auto configuration, selected-file downloads and stop receipts. The application API tabs ship the same contracts. Missing/invalid resource bindings now return specific 503 business codes; registration alone does not approve a model budget.
+
+Registration `scheduler.mode=direct` is now an input alias for the same persisted `routing.direct` setting used by the upstream UI. The API response and UI reflect one value. Generated model keys are returned once; custom keys are not echoed and revoke returns `key:null`. See [full request/response examples](docs/api-reference.md#model-key-response-behavior--模型-key-返回值).

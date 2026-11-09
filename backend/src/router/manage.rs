@@ -1215,6 +1215,11 @@ async fn register(g: &Gateway, id: &Identity, p: Value) -> Api<Response> {
     }
     let access=if access_settings.is_empty(){json!({})}else{api_keys::configure_models(g,&id.owner,access_settings)?};
     let key = u.id.clone();
+    // An explicit registration scheduling choice updates the same flag edited
+    // by PUT upstreams/{id}/routing. An omitted choice retains that flag.
+    if let Some(policy) = p.get("scheduler").filter(|p| !p.is_null()) {
+        r.routing.entry(key.clone()).or_default().direct = policy["mode"] == "direct";
+    }
     r.put(u, models);
     r.breaker.remove(&key);
     r.persist(&g.state_path).map_err(|_|Failure::new(500,"cannot persist service ownership"))?;

@@ -495,7 +495,7 @@
           "method": "PUT",
           "path": "/api/v1/models/access-key",
           "summary": "设置、轮换或撤销模型 Key",
-          "desc": "仅模型所属 VOS 用户或管理员凭 VOS token 可修改。access_key=true 生成，字符串设置（16..512 位可打印 ASCII），null 撤销。只授权该模型，旧 Key 立即失效；不改变 public/private，不修改上游厂商 api_key。",
+          "desc": "仅模型所属 VOS 用户或管理员凭 VOS token 可修改。access_key=true 生成，字符串设置（16..512 位可打印 ASCII），null 撤销。只授权该模型，旧 Key 立即失效；不改变 public/private，不修改上游厂商 api_key。 仅自动生成时，本次响应返回 model_access_keys[].api_key；自定义 Key 不回显，撤销返回 key:null，后续列表查询没有明文。",
           "example": "curl -X PUT \"$GATEWAY/api/v1/models/access-key\" -H \"Authorization: Bearer $VOS_TOKEN\" -H \"Content-Type: application/json\" -d '{\"upstream_id\":\"deepseek\",\"model\":\"api.deepseek.com/deepseek-flash\",\"access_key\":true}'"
         },
         {

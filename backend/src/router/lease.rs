@@ -287,18 +287,10 @@ pub(super) fn approval(
     } {
         return Ok(None);
     }
-    // Administrator-approved direct registrations bypass admission entirely,
-    // mirroring an external upstream (no permit, queue or budget).
+    // Valid registration direct inputs are normalized into routing.direct.
+    // A leftover policy is unbound/invalid and must never bypass admission.
     if u.source == "registered" && declared["mode"] == "direct" {
-        if text(&declared, "upstream_url").trim_end_matches('/')
-            != u.base_url.trim_end_matches('/')
-        {
-            return Err(Failure::new(
-                503,
-                "direct registration binding no longer matches upstream",
-            ));
-        }
-        return Ok(None);
+        return Err(Failure::new(503, "invalid direct registration binding; register the service again"));
     }
     if required
         && declared["mode"] == "cloud"
