@@ -671,3 +671,16 @@ V-Sub 后续完整 [CI 40463130778](https://github.com/ictrektech/V-Sub/actions/
 正式发布验收（2026-10-29）：[0.0.83 工作流](https://github.com/ictrektech/V-Scheduler/actions/runs/40722581623) 的 Release 与 App Store 两项均成功，[正式 Release](https://github.com/ictrektech/V-Scheduler/releases/tag/v0.0.83) 已包含 `v_scheduler_0.0.83_pull.tar`。包 SHA-256 为 `dfa517a9f67ab4af95f2a1ce379c192d341198e60387345d13bd2588d5a42b51`；下载回读确认外层仅含 `app.tar.gz`，内层版本及镜像引用正确。
 
 ARM 镜像 `arm_20261028` digest 为 `d738dcbd752c082f904d037049ca4a6671253fbda95af8fb8310ac406f601bf1`，AMD 镜像 `amd_20261029` digest 为 `fff4a1c6bf10e1a89e545cafdff1874eee8173aa2fa0a1b679dc4da25f4f7ba8`；两者均推送并回读飞书对应列，包内引用一致。发行镜像确认包含 Node 24.22.1、固定 pi-ai 1.1.0 worker、界面与 Models.dev 许可证。APT 构建增加 IPv4、超时和重试边界；AMD 下载受阻时使用临时构建代理取得相同官方校验基础层与签名系统依赖，不改变应用配置。代理、隧道及本地/远端临时镜像传输文件均已清理。本轮完成正式发布，未执行新的测试机应用升级。
+
+
+## 安装后管理用户与模型 API Key（2026-11-09，0.0.97）
+
+[0.0.97 工作流](https://github.com/ictrektech/V-Scheduler/actions/runs/42577079587) 的 Release 和 App Store 均成功，[发布包](https://github.com/ictrektech/V-Scheduler/releases/tag/v0.0.97) SHA-256 为 `b3648745e72eded9e85903d7d9f4d485f38cac5c1e71db200710361d914dc9be`。下载回读确认外层仅有 `app.tar.gz`，内层为 0.0.97，使用本次发布并写入飞书的 ARM / AMD `*_20261109_keys97` 镜像。原 Ollama 镜像保持复用。
+
+- 229 ARM 通过 181 项后端测试；4 项既有 PostgreSQL 专项默认忽略，本次不涉及数据库协议变更。前端 42 项测试、TypeScript 检查和生产构建通过。新增覆盖 Key 哈希存储与文件权限、VOS 账户停用/删除/角色变更、到期与撤销、管理权限隔离、模型 Key 范围、注册时设置、重注册保留，以及两种协议的普通/流式/指定上游请求。
+- 35、229 经 VOS 正式升级至 0.0.97，均保留原 `thor-spark` profile、用户配置和共享模型目录。229 实际容器使用 `v-scheduler:arm_20261109_keys97`，Key 存储权限为 0600。
+- 每台通过 34 次临时 HTTP 推理服务的普通与 SSE 成功请求，覆盖 VOS token、个人 Key、模型 Key、OpenAI / Anthropic 和指定上游。另验证 private 的匿名/错误 Key/跨模型拒绝、public 的无 Key/有效 Key/任意 Key、禁止 Key 管理配置或签发其他 Key、模型 Key 自选设置与轮换、撤销后拒绝、重注册不丢失已有 Key，以及 VOS 鉴权继续可用。此项验证网关鉴权与协议链路，使用无模型权重、无数据库连接的临时服务，不作为真实模型或 Agent 工具调用验收。
+- 两台临时模型注册已注销，各 4 个测试 Key 均已撤销；临时 HTTP 容器已删除。既有上游、模型权限、Key 和共享权重未修改。
+- 229 的中英文实机界面验证顶栏入口、模型行跳转定位、模型 Key 设置表单与应用内 API 文档快速跳转。两份飞书用户指南各新增 27 个内容块和 3 张对应语言截图；9 个快速链接可定位，上传截图逐字节回读一致，原有其他应用章节保持。
+
+脱敏汇总及文档截图位于本机 `~/dev/build/V-Scheduler/api-keys-20261109/`；远端测试/构建日志位于对应机器 `~/dev/build/V-Scheduler/api-keys-*.log`。
