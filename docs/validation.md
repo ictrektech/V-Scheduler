@@ -684,3 +684,12 @@ ARM 镜像 `arm_20261028` digest 为 `d738dcbd752c082f904d037049ca4a6671253fbda9
 - 229 的中英文实机界面验证顶栏入口、模型行跳转定位、模型 Key 设置表单与应用内 API 文档快速跳转。两份飞书用户指南各新增 27 个内容块和 3 张对应语言截图；9 个快速链接可定位，上传截图逐字节回读一致，原有其他应用章节保持。
 
 脱敏汇总及文档截图位于本机 `~/dev/build/V-Scheduler/api-keys-20261109/`；远端测试/构建日志位于对应机器 `~/dev/build/V-Scheduler/api-keys-*.log`。
+
+## 2026-11-09 · 0.0.98 API documentation audit
+
+- Published [0.0.98](https://github.com/ictrektech/V-Scheduler/releases/tag/v0.0.98); GitHub Actions [42583414585](https://github.com/ictrektech/V-Scheduler/actions/runs/42583414585) completed both release and App Store jobs successfully. The downloaded pull package contains the final ARM/AMD `20261109_docs98` images.
+- Matched the shipped route tables against both gateway guides/OpenAPI documents and the controller/weights routers. The complete index covers 214 gateway, 57 controller and 33 weight-management operations. CI now checks route coverage, bilingual request-schema parity and reference-index coverage. Rust regressions compare routing/Auto fields and defaults against their serialized types.
+- Completed schemas and examples for registration scheduling (`cloud`, `permit`, `delegated`, `direct`), model/upstream direct routing, visibility, model selection/refresh and Auto configuration/test requests. The integration guide distinguishes discovery from approved budgets, registration `direct` from routing `direct`, and inference keys from VOS management identity.
+- On the ARM build host: 183 backend tests passed; four existing PostgreSQL-dependent tests remained ignored. Frontend tests, type checking and production build passed; the release workflow independently repeated these checks.
+- Upgraded 229 through VOS to 0.0.98, retaining its `thor-spark` profile and shared model directory. A temporary HTTP fixture verified an actionable `SCHEDULER_BINDING_MISSING` 503 for unbound managed inference; registration `scheduler.mode=direct` then passed OpenAI and Anthropic ordinary/SSE requests. Heartbeat hide/full-snapshot recovery, model/upstream routing updates and the installed OpenAPI fields passed. Test registration and container were removed.
+- Verified application guide jumps in Chinese and English on 229. Updated both canonical Feishu guides with all 304 operation references, configuration and node JSON examples, permission/error explanations, two matching-language screenshots each and 17 valid internal navigation links per guide. Downloaded screenshot bytes matched the uploaded originals. Existing unrelated guide content was preserved.
