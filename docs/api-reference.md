@@ -40,7 +40,7 @@ GATEWAY=http://v-scheduler:8080
 curl -fsS "$GATEWAY/api/v1/registrations" -H "Authorization: Bearer $VOS_TOKEN" -H 'Content-Type: application/json' -d '{"service_id":"my-infer","base_url":"http://my-infer:8000/v1","protocol":"chat_completions","visibility":"private","models":[{"id":"chat-a","capabilities":["chat","completion"],"endpoints":["chat_completions"]}],"scheduler": {"mode": "direct"},"heartbeat_timeout_seconds":90}'
 ```
 
-Save the same full payload locally as `registration.json`; POST it to `/api/v1/registrations/my-infer/heartbeat` at the returned `heartbeat_after_seconds`. Existing entries only renew health/timeout; a full snapshot restores a missing service after restart. Re-register the same service_id to change metadata, visibility, scheduling or registration keys. `healthy=false` hides a service without releasing active resource reservations. Timeout defaults to 90 seconds, allowed 30–3600; `ttl_seconds` is a compatibility alias.
+Save the same full payload locally as `registration.json`; POST it to `/api/v1/registrations/registered-my-infer/heartbeat` at the returned `heartbeat_after_seconds`. Existing entries only renew health/timeout; a full snapshot restores a missing service after restart. Re-register the same service_id to change metadata, visibility, scheduling or registration keys. `healthy=false` hides a service without releasing active resource reservations. Timeout defaults to 90 seconds, allowed 30–3600; `ttl_seconds` is a compatibility alias.
 
 将完整请求保存为 registration.json，按响应 heartbeat_after_seconds 向心跳接口发送。普通心跳仅续期，完整快照可恢复丢失的注册；修改元数据、权限、调度策略或注册 Key 请重新 POST 相同 service_id。healthy=false 隐藏服务，不释放正在执行的预约。默认超时 90 秒，范围 30–3600 秒。
 

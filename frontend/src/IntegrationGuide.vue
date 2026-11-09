@@ -165,7 +165,7 @@ curl -i "$GATEWAY/v1/chat/completions" -H "Authorization: Bearer $VOS_TOKEN" -H 
 curl -fsS "$GATEWAY/api/v1/registrations" -H "Authorization: Bearer $VOS_TOKEN" -H 'Content-Type: application/json' -d '{"service_id":"my-infer","base_url":"http://my-infer:8000/v1","protocol":"chat_completions","visibility":"private","models":[{"id":"chat-a","capabilities":["chat","completion"],"endpoints":["chat_completions"]}],"scheduler": {"mode": "direct"},"heartbeat_timeout_seconds":90}'
 # For metadata/policy changes, POST the same service_id again.
 # Heartbeats renew health; a full snapshot restores a missing registration.
-curl -fsS "$GATEWAY/api/v1/registrations/my-infer/heartbeat" -H "Authorization: Bearer $VOS_TOKEN" -H 'Content-Type: application/json' --data-binary @registration.json
+curl -fsS "$GATEWAY/api/v1/registrations/registered-my-infer/heartbeat" -H "Authorization: Bearer $VOS_TOKEN" -H 'Content-Type: application/json' --data-binary @registration.json
 # Upstream-wide direct routing: send ALL routing fields (full replacement).
 curl -fsS -X PUT "$GATEWAY/api/v1/upstreams/registered-my-infer/routing" -H "Authorization: Bearer $VOS_TOKEN" -H 'Content-Type: application/json' -d '{"weight":1,"max_inflight":0,"disabled":false,"direct":true}'
 # Per-model override. false removes it; upstream direct still applies.
