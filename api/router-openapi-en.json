@@ -1625,15 +1625,77 @@
           }
         ],
         "requestBody": {
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": true,
-                "type": "object"
+                "type": "object",
+                "properties": {
+                  "models": {
+                    "type": "array",
+                    "items": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "chat",
+                                "embedding",
+                                "unknown"
+                              ]
+                            },
+                            "owned_by": {
+                              "type": "string"
+                            },
+                            "capabilities": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "endpoints": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "metadata_override": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "id"
+                          ]
+                        }
+                      ]
+                    },
+                    "description": "Optional discovery subset with per-model metadata. Omit for all discovered models; [] selects none."
+                  },
+                  "allow_probe_failure": {
+                    "type": "boolean"
+                  },
+                  "test_model": {
+                    "type": "string"
+                  }
+                },
+                "description": "Omit models to retain the current selected subset and manual overrides; supply models to replace the subset. allow_probe_failure/test_model explicitly retain a fallback when discovery fails."
+              },
+              "example": {
+                "models": [
+                  "chat-a"
+                ],
+                "allow_probe_failure": false
               }
             }
-          },
-          "required": false
+          }
         },
         "responses": {
           "200": {
@@ -12824,7 +12886,66 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object"
+                "type": "object",
+                "required": [
+                  "messages"
+                ],
+                "additionalProperties": true,
+                "properties": {
+                  "model": {
+                    "type": "string",
+                    "default": "auto"
+                  },
+                  "messages": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "role": {
+                          "type": "string"
+                        },
+                        "content": {
+                          "type": [
+                            "string",
+                            "array",
+                            "null"
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "max_tokens": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "default": 1024,
+                    "description": "Use either max_tokens or max_completion_tokens, not both."
+                  },
+                  "max_completion_tokens": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "tools": {
+                    "type": "array",
+                    "items": {
+                      "type": "object"
+                    }
+                  },
+                  "parallel_tool_calls": {
+                    "type": "boolean"
+                  }
+                },
+                "description": "Tests selection, not answer generation. A configured model classifier can still make an inference request. Accepts chat request fields; policy/local-only/task/session request headers follow normal Auto calls."
+              },
+              "example": {
+                "model": "auto",
+                "messages": [
+                  {
+                    "role": "user",
+                    "content": "Hello"
+                  }
+                ],
+                "max_tokens": 128
               }
             }
           }
