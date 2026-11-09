@@ -406,3 +406,5 @@ Registration `scheduler.mode=direct` is now an input alias for the same persiste
 网关管理 API 的成功响应使用具名 JSON Schema（包括注册/心跳分支、public/private、路由策略、Auto、个人与模型 Key、驻留和等待队列）。上游创建返回 201，删除上游/注册返回 204 无正文。应用内网关与调度 API 展开后可查看路径/查询参数、嵌套请求及各状态响应字段，不再只列状态码；接口说明按运行版本提供。`scripts/check_api_documentation.py` 同时检查中英文请求/响应结构和管理接口成功响应覆盖。
 
 推理 API 同时补全 OpenAI/Anthropic 普通与流式、Responses、embedding、rerank、决策、图像和音频的公共请求/返回契约；原生资源透传明确标注上游依赖及原始状态/媒体，不承诺不存在的统一成功包络。文档门禁校验本地 Schema 引用、中英结构及主协议字段覆盖。Key 的生成/自定义/轮换/撤销、公开任意 Key、私有隔离和 VOS 身份另以临时服务真实调用验证，测试后清除临时注册和 Key。
+
+English readers can use the [complete API integration handbook](docs/api-reference.en.md) for canonical/compatibility addresses, VOS and Key permissions, full Key lifecycle, registration policies, nodes/resources/heartbeats, queue priority, confirmed stopping, weight management and both chat protocols. Field-level contracts remain in the in-app explorer and the linked versioned OpenAPI documents.
