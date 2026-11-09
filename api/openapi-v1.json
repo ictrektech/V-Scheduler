@@ -33,16 +33,76 @@
         "x-role": "public",
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "protocol_version": {
+                              "type": "integer"
+                            },
+                            "implementation_version": {
+                              "type": "string"
+                            },
+                            "features": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "unsupported": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "authentication": {
+                              "type": "string"
+                            },
+                            "max_body_bytes": {
+                              "type": "integer"
+                            },
+                            "openapi_url": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "protocol_version",
+                            "implementation_version",
+                            "features",
+                            "unsupported",
+                            "authentication",
+                            "max_body_bytes",
+                            "openapi_url"
+                          ],
+                          "additionalProperties": true
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           }
-        }
+        },
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/openapi.json": {
@@ -58,7 +118,47 @@
         "x-role": "public",
         "responses": {
           "200": {
-            "description": "OpenAPI 3.1 document"
+            "description": "Raw OpenAPI document without a Scheduler envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "openapi": {
+                      "type": "string"
+                    },
+                    "info": {
+                      "type": "object",
+                      "properties": {
+                        "title": {
+                          "type": "string"
+                        },
+                        "version": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "title",
+                        "version"
+                      ],
+                      "additionalProperties": true
+                    },
+                    "paths": {
+                      "type": "object"
+                    },
+                    "components": {
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "openapi",
+                    "info",
+                    "paths"
+                  ],
+                  "additionalProperties": true
+                }
+              }
+            }
           }
         }
       }
@@ -80,13 +180,36 @@
         "x-role": "submitter",
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/ExecutorDefinition"
+                          }
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           },
           "401": {
@@ -110,7 +233,8 @@
           "503": {
             "description": "Temporarily unavailable"
           }
-        }
+        },
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/tasks": {
@@ -135,17 +259,64 @@
         "x-role": "submitter",
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/TaskView"
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           },
           "202": {
-            "description": "New queued task"
+            "description": "Successful response; data follows this operation-specific contract.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/TaskView"
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
+                }
+              }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
+            }
           },
           "401": {
             "description": "Missing or invalid bearer token"
@@ -214,7 +385,8 @@
             "job_id": "business-job-001"
           },
           "inputs": []
-        }
+        },
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       },
       "get": {
         "operationId": "get_tasks",
@@ -233,13 +405,56 @@
         "x-role": "submitter",
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "items": {
+                              "type": "array",
+                              "items": {
+                                "$ref": "#/components/schemas/TaskView"
+                              }
+                            },
+                            "next_cursor": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "items",
+                            "next_cursor"
+                          ],
+                          "additionalProperties": true
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           },
           "401": {
@@ -287,7 +502,8 @@
               "default": 50
             }
           }
-        ]
+        ],
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/tasks/{id}": {
@@ -308,13 +524,33 @@
         "x-role": "submitter",
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/TaskView"
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           },
           "401": {
@@ -353,7 +589,8 @@
               "type": "string"
             }
           }
-        ]
+        ],
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       },
       "delete": {
         "operationId": "delete_tasks_id",
@@ -371,13 +608,52 @@
         "x-role": "submitter",
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "task_id": {
+                              "type": "string"
+                            },
+                            "deleted": {
+                              "type": "boolean"
+                            },
+                            "outputs_deleted": {
+                              "type": "boolean"
+                            },
+                            "audit_retained": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "task_id",
+                            "deleted"
+                          ],
+                          "additionalProperties": true
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           },
           "401": {
@@ -417,7 +693,8 @@
               "type": "string"
             }
           }
-        ]
+        ],
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/tasks/{id}/cancel": {
@@ -437,13 +714,33 @@
         "x-role": "submitter",
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/TaskView"
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           },
           "401": {
@@ -477,7 +774,8 @@
               "type": "string"
             }
           }
-        ]
+        ],
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/tasks/{id}/retry": {
@@ -497,13 +795,33 @@
         "x-role": "submitter",
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/TaskView"
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           },
           "401": {
@@ -553,7 +871,8 @@
               "maxLength": 256
             }
           }
-        ]
+        ],
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/tasks/{id}/attempts": {
@@ -573,13 +892,36 @@
         "x-role": "submitter",
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/TaskAttemptView"
+                          }
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           },
           "401": {
@@ -613,7 +955,8 @@
               "type": "string"
             }
           }
-        ]
+        ],
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/events": {
@@ -634,13 +977,56 @@
         "x-role": "submitter",
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "items": {
+                              "type": "array",
+                              "items": {
+                                "$ref": "#/components/schemas/TaskEventView"
+                              }
+                            },
+                            "next_cursor": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "items",
+                            "next_cursor"
+                          ],
+                          "additionalProperties": true
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           },
           "401": {
@@ -683,7 +1069,8 @@
               "default": 50
             }
           }
-        ]
+        ],
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/nodes": {
@@ -704,13 +1091,36 @@
         "x-role": "admin",
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/NodeView"
+                          }
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           },
           "401": {
@@ -739,7 +1149,8 @@
           "zh-CN": "合并 Agent 心跳、批准预算、VOS 清单与观测、本机安装应用和执行器位置；来源带新鲜度。",
           "en": "Combines Agent heartbeat, approved budgets, VOS observations, local app installations and executor placement with source freshness.",
           "zh-TW": "合併 Agent 心跳、核准預算、VOS 清單與觀測、本機安裝應用和執行器位置；來源含新鮮度。"
-        }
+        },
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/nodes/{id}/drain": {
@@ -759,13 +1170,42 @@
         "x-role": "admin",
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "draining": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "draining"
+                          ],
+                          "additionalProperties": true
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           },
           "401": {
@@ -812,7 +1252,8 @@
         },
         "x-example": {
           "draining": true
-        }
+        },
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/reservations": {
@@ -832,13 +1273,66 @@
         "x-role": "admin",
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "attempt_id": {
+                                "type": "string"
+                              },
+                              "task_id": {
+                                "type": "string"
+                              },
+                              "node_id": {
+                                "type": "string"
+                              },
+                              "resources": {
+                                "$ref": "#/components/schemas/ResourceBudget"
+                              },
+                              "state": {
+                                "type": "string"
+                              },
+                              "lease_until": {
+                                "type": "string",
+                                "format": "date-time"
+                              }
+                            },
+                            "required": [
+                              "attempt_id",
+                              "task_id",
+                              "node_id",
+                              "resources",
+                              "state",
+                              "lease_until"
+                            ],
+                            "additionalProperties": true
+                          }
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           },
           "401": {
@@ -862,7 +1356,8 @@
           "503": {
             "description": "Temporarily unavailable"
           }
-        }
+        },
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/permits": {
@@ -887,13 +1382,33 @@
         "x-role": "submitter",
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/PermitAcquired"
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           },
           "401": {
@@ -954,7 +1469,8 @@
           "upstream_url": "http://model-service:8000",
           "model_id": "approved-model"
         },
-        "description": " Fixed multi-node model.infer templates reserve every participant in one transaction; unavailable peers reject the entire request. The response data.node_ids lists all participants, while node_id remains the primary node."
+        "description": " Fixed multi-node model.infer templates reserve every participant in one transaction; unavailable peers reject the entire request. The response data.node_ids lists all participants, while node_id remains the primary node.",
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       },
       "get": {
         "operationId": "get_permits",
@@ -1105,13 +1621,33 @@
         },
         "responses": {
           "200": {
-            "description": "Active bound permit",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/PermitAcquired"
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           },
           "401": {
@@ -1132,7 +1668,8 @@
           "503": {
             "description": "Controller unavailable"
           }
-        }
+        },
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/permits/{id}/renew": {
@@ -1152,13 +1689,33 @@
         "x-role": "submitter",
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/LeaseRenewed"
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           },
           "401": {
@@ -1192,7 +1749,8 @@
               "type": "string"
             }
           }
-        ]
+        ],
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/permits/{id}/release": {
@@ -1212,13 +1770,33 @@
         "x-role": "submitter",
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/PermitState"
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           },
           "401": {
@@ -1272,7 +1850,8 @@
         "x-example": {
           "stopped": true,
           "evidence": "upstream_response_completed"
-        }
+        },
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/permits/{id}/confirm-stopped": {
@@ -1292,13 +1871,33 @@
         "x-role": "admin",
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/PermitState"
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           },
           "401": {
@@ -1346,25 +1945,81 @@
         "x-example": {
           "stopped": true,
           "evidence": "upstream_response_completed"
-        }
+        },
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/workers/{id}/resources": {
       "get": {
         "operationId": "get_workers_id_resources",
-        "tags": ["Workers"],
+        "tags": [
+          "Workers"
+        ],
         "summary": "Read one node's resource snapshot",
-        "x-title": {"zh-CN":"查询节点资源","en":"Read node resources","zh-TW":"查詢節點資源"},
+        "x-title": {
+          "zh-CN": "查询节点资源",
+          "en": "Read node resources",
+          "zh-TW": "查詢節點資源"
+        },
         "description": "The node's worker credential or an administrator can read approved capacities, resident baseline, unreleased reservations, remaining_budget and the effective safety reserve. remaining_budget is capacity minus baseline and reservations, before live admission checks. report contains observed resources only while fresh.",
         "x-required-scope": "worker:{id} or admin",
-        "security": [{"bearerAuth": []}],
-        "parameters": [{"name":"id","in":"path","required":true,"schema":{"type":"string"}}],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
-          "200": {"description":"Resource snapshot in data, including telemetry_fresh, heartbeat, draining and report"},
-          "401": {"description":"Invalid credential"},
-          "403": {"description":"The credential cannot read this node"},
-          "404": {"description":"No approved node with this ID"}
-        }
+          "200": {
+            "description": "Successful response; data follows this operation-specific contract.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/WorkerResources"
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
+                }
+              }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
+            }
+          },
+          "401": {
+            "description": "Invalid credential"
+          },
+          "403": {
+            "description": "The credential cannot read this node"
+          },
+          "404": {
+            "description": "No approved node with this ID"
+          }
+        },
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/workers/{id}/heartbeat": {
@@ -1384,13 +2039,33 @@
         "x-role": "worker",
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/LeaseRenewed"
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           },
           "401": {
@@ -1438,7 +2113,8 @@
         "x-example": {
           "session_id": "durable-agent-session",
           "report": {}
-        }
+        },
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/workers/{id}/commands/claim": {
@@ -1458,13 +2134,45 @@
         "x-role": "worker",
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "commands": {
+                              "type": "array",
+                              "items": {
+                                "$ref": "#/components/schemas/WorkerCommand"
+                              }
+                            }
+                          },
+                          "required": [
+                            "commands"
+                          ],
+                          "additionalProperties": true
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           },
           "401": {
@@ -1511,7 +2219,8 @@
         },
         "x-example": {
           "session_id": "durable-agent-session"
-        }
+        },
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/attempts/{id}/renew": {
@@ -1531,13 +2240,33 @@
         "x-role": "worker",
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/LeaseRenewed"
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           },
           "401": {
@@ -1585,7 +2314,8 @@
         "x-example": {
           "session_id": "durable-agent-session",
           "fence": 1
-        }
+        },
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/attempts/{id}/report": {
@@ -1605,13 +2335,42 @@
         "x-role": "worker",
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "status"
+                          ],
+                          "additionalProperties": true
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           },
           "401": {
@@ -1664,7 +2423,8 @@
           "result": {
             "output_reference": "application-owned-output"
           }
-        }
+        },
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/permits/{id}/delegate": {
@@ -1689,13 +2449,50 @@
         "x-role": "submitter",
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "permit_id": {
+                              "type": "string"
+                            },
+                            "task_id": {
+                              "type": "string"
+                            },
+                            "state": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "permit_id",
+                            "task_id",
+                            "state"
+                          ],
+                          "additionalProperties": true
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           },
           "401": {
@@ -1743,7 +2540,8 @@
         "x-example": {
           "task_id": "scheduler-task-id",
           "app_task_id": "business-job-id"
-        }
+        },
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/delegations/verify": {
@@ -1768,13 +2566,54 @@
         "x-role": "submitter",
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "permit_id": {
+                              "type": "string"
+                            },
+                            "lease_seconds": {
+                              "type": "integer"
+                            },
+                            "node_id": {
+                              "type": "string"
+                            },
+                            "parent_task_id": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "permit_id",
+                            "lease_seconds",
+                            "node_id",
+                            "parent_task_id"
+                          ],
+                          "additionalProperties": true
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           },
           "401": {
@@ -1827,7 +2666,8 @@
           "owner_id": "verified-owner",
           "upstream_url": "http://model-service:8000",
           "model_id": "approved-model"
-        }
+        },
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/statistics": {
@@ -1848,7 +2688,7 @@
         "x-role": "submitter",
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1857,15 +2697,24 @@
                       "$ref": "#/components/schemas/Envelope"
                     },
                     {
+                      "type": "object",
                       "properties": {
                         "data": {
                           "$ref": "#/components/schemas/Statistics"
                         }
-                      }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
                     }
                   ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           },
           "401": {
@@ -1895,7 +2744,8 @@
           "en": "Fixed last 24 hours, scoped to the authenticated app; administrators see all apps. First queue wait uses the first assignment only. Occupancy runs from assignment to confirmed stop and includes retry attempts. Cancellations do not count toward task failure rate; permit release is not inference success. Undated old permits are excluded from timing samples. P50 without samples and P95 below 20 samples are null.",
           "zh-TW": "固定最近 24 小時，按服務 app_id 隔離，管理員可查看全部。首次排隊只取任務第一次分配；執行占用按分配至確認停止計算，包含重試執行。任務失敗率不計取消；許可釋放不是推論成功。缺少釋放時間的舊許可不納入耗時樣本。P50 無樣本、P95 少於 20 個樣本時回傳 null。"
         },
-        "parameters": []
+        "parameters": [],
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/tasks/{id}/events": {
@@ -1915,7 +2765,7 @@
         "x-role": "submitter",
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1928,10 +2778,6 @@
                       "properties": {
                         "data": {
                           "type": "object",
-                          "required": [
-                            "items",
-                            "next_cursor"
-                          ],
                           "properties": {
                             "items": {
                               "type": "array",
@@ -1940,18 +2786,35 @@
                               }
                             },
                             "next_cursor": {
-                              "type": [
-                                "string",
-                                "null"
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
                               ]
                             }
-                          }
+                          },
+                          "required": [
+                            "items",
+                            "next_cursor"
+                          ],
+                          "additionalProperties": true
                         }
-                      }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
                     }
                   ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           },
           "401": {
@@ -2010,7 +2873,8 @@
           "zh-CN": "按最新事件在前查询单个任务的已保存状态与进度快照。cursor 为排他式向前翻页的事件游标，0 或省略表示最新页；next_cursor 为 null 表示没有更早记录。原 /events 的正向游标语义不变。",
           "en": "Saved state/progress snapshots for one visible task, newest first. cursor is an exclusive before-event cursor, 0 or omitted selects the newest page. next_cursor is null when there is no older page. Existing /events forward-cursor semantics are unchanged.",
           "zh-TW": "按最新事件在前查詢單一任務已儲存的狀態與進度快照。cursor 為查詢更早事件的排他游標，0 或省略表示最新頁；next_cursor 為 null 表示沒有更早紀錄。原 /events 的正向游標語意不變。"
-        }
+        },
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/management": {
@@ -2031,13 +2895,33 @@
         ],
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/ManagementOverview"
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           },
           "401": {
@@ -2061,7 +2945,8 @@
           "503": {
             "description": "Temporarily unavailable"
           }
-        }
+        },
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/model-budgets": {
@@ -2087,13 +2972,45 @@
         ],
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "items": {
+                              "type": "array",
+                              "items": {
+                                "$ref": "#/components/schemas/ModelBudgetView"
+                              }
+                            }
+                          },
+                          "required": [
+                            "items"
+                          ],
+                          "additionalProperties": true
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           },
           "401": {
@@ -2105,7 +3022,8 @@
           "503": {
             "description": "Budget storage unavailable"
           }
-        }
+        },
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/model-budgets/calibrate": {
@@ -2159,13 +3077,33 @@
         },
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/ModelBudgetCalibrationResult"
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           },
           "401": {
@@ -2186,7 +3124,8 @@
           "503": {
             "description": "RESOURCE_SAMPLE_NOT_READY or MODEL_BUDGET_STORAGE_UNAVAILABLE"
           }
-        }
+        },
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/model-budgets/restore": {
@@ -2225,13 +3164,52 @@
         },
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "model_id": {
+                              "type": "string"
+                            },
+                            "executor_id": {
+                              "type": "string"
+                            },
+                            "calibrated": {
+                              "type": "boolean"
+                            },
+                            "resources": {
+                              "$ref": "#/components/schemas/ResourceBudget"
+                            }
+                          },
+                          "required": [
+                            "model_id",
+                            "calibrated"
+                          ],
+                          "additionalProperties": true
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           },
           "401": {
@@ -2252,7 +3230,8 @@
           "503": {
             "description": "RESOURCE_SAMPLE_NOT_READY or MODEL_BUDGET_STORAGE_UNAVAILABLE"
           }
-        }
+        },
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/enrollments": {
@@ -2278,13 +3257,55 @@
         ],
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "node_id": {
+                              "type": "string"
+                            },
+                            "enrollment_token": {
+                              "type": "string"
+                            },
+                            "expires_at": {
+                              "type": "string",
+                              "format": "date-time"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "node_id",
+                            "enrollment_token",
+                            "expires_at"
+                          ],
+                          "additionalProperties": true
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           },
           "401": {
@@ -2344,7 +3365,8 @@
         "x-example": {
           "node_id": "spark-01",
           "ttl_seconds": 900
-        }
+        },
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/enrollments/{id}/revoke": {
@@ -2370,13 +3392,42 @@
         ],
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "revoked": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "revoked"
+                          ],
+                          "additionalProperties": true
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           },
           "401": {
@@ -2401,7 +3452,8 @@
               "type": "string"
             }
           }
-        ]
+        ],
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/workers/register": {
@@ -2427,13 +3479,50 @@
         ],
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "node_id": {
+                              "type": "string"
+                            },
+                            "state": {
+                              "type": "string"
+                            },
+                            "session_id": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "node_id",
+                            "state",
+                            "session_id"
+                          ],
+                          "additionalProperties": true
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           },
           "401": {
@@ -2517,7 +3606,8 @@
           "boot_id": "boot-id",
           "session_id": "durable-agent-session",
           "worker_token": "REPLACE_WITH_RANDOM_WORKER_TOKEN_32_PLUS"
-        }
+        },
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/nodes/{id}/approve": {
@@ -2543,13 +3633,46 @@
         ],
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "node_id": {
+                              "type": "string"
+                            },
+                            "version": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "node_id",
+                            "version"
+                          ],
+                          "additionalProperties": true
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           },
           "401": {
@@ -2602,7 +3725,8 @@
             "memory_mib": 8192
           },
           "vos_member_id": ""
-        }
+        },
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/nodes/{id}": {
@@ -2628,13 +3752,46 @@
         ],
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "node_id": {
+                              "type": "string"
+                            },
+                            "version": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "node_id",
+                            "version"
+                          ],
+                          "additionalProperties": true
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           },
           "401": {
@@ -2687,7 +3844,8 @@
             "memory_mib": 8192
           },
           "vos_member_id": ""
-        }
+        },
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/nodes/{id}/revoke": {
@@ -2713,13 +3871,46 @@
         ],
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "node_id": {
+                              "type": "string"
+                            },
+                            "state": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "node_id",
+                            "state"
+                          ],
+                          "additionalProperties": true
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           },
           "401": {
@@ -2744,7 +3935,8 @@
               "type": "string"
             }
           }
-        ]
+        ],
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/workers/{id}/executors": {
@@ -2770,13 +3962,46 @@
         ],
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "accepted": {
+                              "type": "boolean"
+                            },
+                            "approval_required": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "accepted",
+                            "approval_required"
+                          ],
+                          "additionalProperties": true
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           },
           "401": {
@@ -2825,7 +4050,8 @@
               }
             }
           }
-        }
+        },
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/executors/{id}": {
@@ -2851,13 +4077,50 @@
         ],
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "version": {
+                              "type": "integer"
+                            },
+                            "state": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "version",
+                            "state"
+                          ],
+                          "additionalProperties": true
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           },
           "401": {
@@ -2914,7 +4177,8 @@
             "retry_mode": "none",
             "max_attempts": 1
           }
-        }
+        },
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/service-identities": {
@@ -2940,13 +4204,50 @@
         ],
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "app_id": {
+                              "type": "string"
+                            },
+                            "token": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "app_id",
+                            "token"
+                          ],
+                          "additionalProperties": true
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           },
           "401": {
@@ -2976,7 +4277,8 @@
           "app_id": "example-app",
           "permit_executors": [],
           "delegated_executors": []
-        }
+        },
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/service-identities/{id}/revoke": {
@@ -3002,13 +4304,42 @@
         ],
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "revoked": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "revoked"
+                          ],
+                          "additionalProperties": true
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           },
           "401": {
@@ -3033,7 +4364,8 @@
               "type": "string"
             }
           }
-        ]
+        ],
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/node-sources/modelinfer/{id}": {
@@ -3068,7 +4400,51 @@
         },
         "responses": {
           "200": {
-            "description": "Saved with version; execution_enabled=false and control_state=pending_adapter_verification"
+            "description": "Successful response; data follows this operation-specific contract.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "version": {
+                              "type": "integer"
+                            },
+                            "execution_enabled": {
+                              "type": "boolean"
+                            },
+                            "control_state": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "version",
+                            "execution_enabled",
+                            "control_state"
+                          ],
+                          "additionalProperties": true
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
+                }
+              }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
+            }
           },
           "404": {
             "description": "Unknown source node"
@@ -3082,7 +4458,8 @@
           "en": "Save VOS App node budget plan",
           "zh-TW": "儲存 VOS 應用節點預算規劃"
         },
-        "x-required-scope": "admin"
+        "x-required-scope": "admin",
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/node-sources/modelinfer/{id}/control": {
@@ -3131,7 +4508,14 @@
         },
         "responses": {
           "501": {
-            "description": "VOS_NODE_CONTROL_PENDING_VERIFICATION; no remote action performed"
+            "description": "Reserved remote control is not implemented: VOS_NODE_CONTROL_PENDING_VERIFICATION; no remote action is executed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope"
+                }
+              }
+            }
           },
           "422": {
             "description": "Invalid action"
@@ -3152,12 +4536,49 @@
         "description": "Internal gateway coordination. Applications use gateway inference headers instead. Admission hints never reserve resources or replay execution. Warm reuse checks current identity/executor/node and refuses claimed or changed reservations.",
         "responses": {
           "200": {
-            "description": "Success"
+            "description": "Successful response; data follows this operation-specific contract.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "updated": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "updated"
+                          ],
+                          "additionalProperties": true
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
+                }
+              }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
+            }
           },
           "default": {
             "description": "Structured scheduler rejection"
           }
-        }
+        },
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/permits/{id}/reuse-resident": {
@@ -3167,7 +4588,47 @@
         "description": "Internal gateway coordination. Applications use gateway inference headers instead. Admission hints never reserve resources or replay execution. Warm reuse checks current identity/executor/node and refuses claimed or changed reservations.",
         "responses": {
           "200": {
-            "description": "Success"
+            "description": "Successful response; data follows this operation-specific contract.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "permit_id": {
+                              "type": "string"
+                            },
+                            "reused": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "permit_id",
+                            "reused"
+                          ],
+                          "additionalProperties": true
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
+                }
+              }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
+            }
           },
           "default": {
             "description": "Structured scheduler rejection"
@@ -3182,7 +4643,8 @@
               "type": "string"
             }
           }
-        ]
+        ],
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/permits/inspect": {
@@ -3191,12 +4653,61 @@
         "x-internal": true,
         "responses": {
           "200": {
-            "description": "Binding and node eligibility; not a capacity guarantee"
+            "description": "Successful response; data follows this operation-specific contract.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "outstanding_permits": {
+                              "type": "integer"
+                            },
+                            "binding_ready": {
+                              "type": "boolean"
+                            },
+                            "node_ready": {
+                              "type": "boolean"
+                            },
+                            "resource_admission": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "outstanding_permits",
+                            "binding_ready",
+                            "node_ready",
+                            "resource_admission"
+                          ],
+                          "additionalProperties": true
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
+                }
+              }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
+            }
           },
           "default": {
             "description": "Structured scheduler rejection"
           }
-        }
+        },
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/integrations": {
@@ -3216,13 +4727,61 @@
         "x-role": "submitter",
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "items": {
+                              "type": "array",
+                              "items": {
+                                "$ref": "#/components/schemas/ApplicationIntegrationView"
+                              }
+                            },
+                            "node_heartbeat_seconds": {
+                              "type": "integer"
+                            },
+                            "node_stale_seconds": {
+                              "type": "integer"
+                            },
+                            "application_heartbeat_seconds": {
+                              "type": "integer"
+                            },
+                            "application_stale_seconds": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "items",
+                            "node_heartbeat_seconds",
+                            "node_stale_seconds",
+                            "application_heartbeat_seconds",
+                            "application_stale_seconds"
+                          ],
+                          "additionalProperties": true
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           },
           "401": {
@@ -3252,7 +4811,8 @@
           "en": "App-scoped node freshness, approved budgets and pending executions; administrators see all applications. Includes active asynchronous tasks; cancel using /tasks/{id}/cancel.",
           "zh-TW": "應用統一接入狀態 包含进行中的异步任务，通过 /tasks/{id}/cancel 取消。"
         },
-        "description": "App-scoped node freshness, approved budgets and pending executions; administrators see all applications. Includes active asynchronous tasks; cancel using /tasks/{id}/cancel."
+        "description": "App-scoped node freshness, approved budgets and pending executions; administrators see all applications. Includes active asynchronous tasks; cancel using /tasks/{id}/cancel.",
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       },
       "post": {
         "operationId": "post_integrations",
@@ -3270,13 +4830,58 @@
         "x-role": "submitter",
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "app_id": {
+                              "type": "string"
+                            },
+                            "revision": {
+                              "type": "integer"
+                            },
+                            "heartbeat_after_seconds": {
+                              "type": "integer"
+                            },
+                            "stale_after_seconds": {
+                              "type": "integer"
+                            },
+                            "budget_granted": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "app_id",
+                            "revision",
+                            "heartbeat_after_seconds",
+                            "stale_after_seconds",
+                            "budget_granted"
+                          ],
+                          "additionalProperties": true
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           },
           "401": {
@@ -3316,7 +4921,8 @@
               }
             }
           }
-        }
+        },
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       },
       "delete": {
         "operationId": "delete_integrations",
@@ -3334,13 +4940,46 @@
         "x-role": "submitter",
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "app_id": {
+                              "type": "string"
+                            },
+                            "unregistered": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "app_id",
+                            "unregistered"
+                          ],
+                          "additionalProperties": true
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           },
           "401": {
@@ -3365,7 +5004,8 @@
             "description": "Temporarily unavailable"
           }
         },
-        "description": "Application service identity only; refuses while executions, tasks or unconfirmed stop commands remain. Does not revoke approved resource budgets."
+        "description": "Application service identity only; refuses while executions, tasks or unconfirmed stop commands remain. Does not revoke approved resource budgets.",
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/integrations/heartbeat": {
@@ -3385,13 +5025,33 @@
         "x-role": "submitter",
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/IntegrationHeartbeatResult"
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           },
           "401": {
@@ -3431,7 +5091,8 @@
               }
             }
           }
-        }
+        },
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/permits/{id}/stop": {
@@ -3451,13 +5112,49 @@
         "x-role": "submitter",
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "permit_id": {
+                              "type": "string"
+                            },
+                            "state": {
+                              "type": "string"
+                            },
+                            "resources_released": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "permit_id",
+                            "state"
+                          ],
+                          "additionalProperties": true
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           },
           "401": {
@@ -3497,7 +5194,8 @@
               "type": "string"
             }
           }
-        ]
+        ],
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/permits/{id}/stopped": {
@@ -3517,13 +5215,33 @@
         "x-role": "submitter",
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/PermitState"
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           },
           "401": {
@@ -3573,7 +5291,8 @@
               }
             }
           }
-        }
+        },
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/permits/{id}/park-resident": {
@@ -3583,7 +5302,47 @@
         "description": "Internal owned-Ollama protocol only. Revalidate identity, executor, node, model and execution proof; require native active_slots=0 and fresh bounded residency evidence. Rotate proof and retain materialized memory while returning idle CPU/GPU slots. Promotion through reuse-resident restores the complete approved budget atomically; third-party applications cannot use this endpoint.",
         "responses": {
           "200": {
-            "description": "Success"
+            "description": "Successful response; data follows this operation-specific contract.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "permit_id": {
+                              "type": "string"
+                            },
+                            "reused": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "permit_id",
+                            "reused"
+                          ],
+                          "additionalProperties": true
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
+                }
+              }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
+            }
           },
           "default": {
             "description": "Structured scheduler rejection"
@@ -3604,7 +5363,8 @@
           "zh-CN": "内置 Ollama 空闲驻留转换",
           "en": "Park owned Ollama residency",
           "zh-TW": "內建 Ollama 閒置駐留轉換"
-        }
+        },
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/permits/wait": {
@@ -3629,13 +5389,33 @@
         "x-role": "submitter",
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/PermitAcquired"
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           },
           "401": {
@@ -3711,7 +5491,8 @@
           "upstream_url": "http://model-service:8000",
           "model_id": "approved-model"
         },
-        "description": "Same scoped identity, Idempotency-Key and administrator proof as POST /permits. Waiters reserve no resources. The request contains admission metadata only; never inference payloads. Waiting is bounded to 0..300 seconds; 0 attempts immediate admission. A timeout returns 429 QUEUE_TIMEOUT. No inference is replayed."
+        "description": "Same scoped identity, Idempotency-Key and administrator proof as POST /permits. Waiters reserve no resources. The request contains admission metadata only; never inference payloads. Waiting is bounded to 0..300 seconds; 0 attempts immediate admission. A timeout returns 429 QUEUE_TIMEOUT. No inference is replayed.",
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     },
     "/integrations/executions": {
@@ -3730,13 +5511,56 @@
         "x-role": "submitter",
         "responses": {
           "200": {
-            "description": "Success",
+            "description": "Successful response; data follows this operation-specific contract.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Envelope"
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "permit_id": {
+                              "type": "string"
+                            },
+                            "execution_id": {
+                              "type": "string"
+                            },
+                            "phase": {
+                              "type": "string"
+                            },
+                            "replayed": {
+                              "type": "boolean"
+                            },
+                            "resources_released": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "permit_id",
+                            "phase",
+                            "resources_released"
+                          ],
+                          "additionalProperties": true
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ],
+                      "additionalProperties": true
+                    }
+                  ]
                 }
               }
+            },
+            "x-description": {
+              "en": "Successful response; data follows this operation-specific contract.",
+              "zh-CN": "成功响应；data 的字段按本操作定义。"
             }
           },
           "401": {
@@ -3786,7 +5610,8 @@
               "maxLength": 256
             }
           }
-        ]
+        ],
+        "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
     }
   },
@@ -3879,8 +5704,7 @@
             "type": "string"
           },
           "report": {
-            "type": "object",
-            "additionalProperties": true
+            "$ref": "#/components/schemas/NodeTelemetry"
           }
         },
         "required": [
@@ -4987,6 +6811,1488 @@
             "description": "Alternatively use Idempotency-Key. Conflicting values are rejected."
           }
         }
+      },
+      "ExecutorDefinition": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "contract_version": {
+            "type": "string"
+          },
+          "task_type": {
+            "type": "string"
+          },
+          "node_id": {
+            "type": "string"
+          },
+          "app_id": {
+            "type": "string"
+          },
+          "resources": {
+            "$ref": "#/components/schemas/ResourceBudget"
+          },
+          "upstream_urls": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "placements": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "node_id": {
+                  "type": "string"
+                },
+                "resources": {
+                  "$ref": "#/components/schemas/ResourceBudget"
+                }
+              },
+              "required": [
+                "node_id",
+                "resources"
+              ],
+              "additionalProperties": true
+            }
+          },
+          "retry_mode": {
+            "type": "string"
+          },
+          "max_attempts": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "contract_version",
+          "task_type",
+          "node_id",
+          "app_id",
+          "resources",
+          "upstream_urls",
+          "placements",
+          "retry_mode",
+          "max_attempts"
+        ],
+        "additionalProperties": true
+      },
+      "TaskView": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": "string"
+          },
+          "app_task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "executor_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scheduling": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Scheduling"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "preemption": {
+            "description": "Cooperative preemption metadata assigned by Scheduler, or null if no stop was requested."
+          },
+          "can_retry": {
+            "type": "boolean"
+          },
+          "attempt_count": {
+            "type": "integer"
+          },
+          "app_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "attempt_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "node_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fence": {
+            "type": "integer"
+          },
+          "progress": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "percent": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "stage": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true,
+            "description": "Executor progress snapshot; additional fields are application-defined. percent, when present, is 0..1."
+          },
+          "result": {
+            "description": "Application-defined JSON result. Interpret it using the registered executor contract; it may be null before completion."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "wait_reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "task_id",
+          "app_task_id",
+          "executor_id",
+          "scheduling",
+          "preemption",
+          "can_retry",
+          "attempt_count",
+          "app_id",
+          "status",
+          "version",
+          "attempt_id",
+          "node_id",
+          "fence",
+          "progress",
+          "result",
+          "created_at",
+          "wait_reasons"
+        ],
+        "additionalProperties": true
+      },
+      "NodeView": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "capacities": {
+            "$ref": "#/components/schemas/ResourceBudget"
+          },
+          "resident_baseline": {
+            "$ref": "#/components/schemas/ResourceBudget"
+          },
+          "safety_reserve": {
+            "$ref": "#/components/schemas/ResourceBudget"
+          },
+          "report": {
+            "$ref": "#/components/schemas/NodeTelemetry"
+          },
+          "management_enabled": {
+            "type": "boolean"
+          },
+          "draining": {
+            "type": "boolean"
+          },
+          "heartbeat": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "health_state": {
+            "type": "string"
+          },
+          "effective_safety_reserve": {
+            "$ref": "#/components/schemas/ResourceBudget"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "management_version": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "capacities",
+          "resident_baseline",
+          "safety_reserve",
+          "report",
+          "management_enabled",
+          "draining",
+          "heartbeat",
+          "health_state",
+          "effective_safety_reserve"
+        ],
+        "additionalProperties": true
+      },
+      "WorkerResources": {
+        "type": "object",
+        "properties": {
+          "node_id": {
+            "type": "string"
+          },
+          "capacities": {
+            "$ref": "#/components/schemas/ResourceBudget"
+          },
+          "resident_baseline": {
+            "$ref": "#/components/schemas/ResourceBudget"
+          },
+          "reserved": {
+            "$ref": "#/components/schemas/ResourceBudget"
+          },
+          "remaining_budget": {
+            "$ref": "#/components/schemas/ResourceBudget"
+          },
+          "effective_safety_reserve": {
+            "$ref": "#/components/schemas/ResourceBudget"
+          },
+          "heartbeat": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "draining": {
+            "type": "boolean"
+          },
+          "telemetry_fresh": {
+            "type": "boolean"
+          },
+          "report": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NodeTelemetry"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "node_id",
+          "capacities",
+          "resident_baseline",
+          "reserved",
+          "remaining_budget",
+          "effective_safety_reserve",
+          "heartbeat",
+          "draining",
+          "telemetry_fresh",
+          "report"
+        ],
+        "additionalProperties": true
+      },
+      "WorkerCommand": {
+        "type": "object",
+        "properties": {
+          "command_id": {
+            "type": "string"
+          },
+          "task_id": {
+            "type": "string"
+          },
+          "attempt_id": {
+            "type": "string"
+          },
+          "fence": {
+            "type": "integer"
+          },
+          "executor_id": {
+            "type": "string"
+          },
+          "parameters": {
+            "description": "Application-defined executor parameters, as submitted with the task."
+          },
+          "lease_seconds": {
+            "type": "integer"
+          },
+          "cancel": {
+            "type": "boolean"
+          },
+          "preempted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "command_id",
+          "task_id",
+          "attempt_id",
+          "fence",
+          "executor_id",
+          "parameters",
+          "lease_seconds",
+          "cancel",
+          "preempted"
+        ],
+        "additionalProperties": true
+      },
+      "LeaseRenewed": {
+        "type": "object",
+        "properties": {
+          "lease_seconds": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "lease_seconds"
+        ],
+        "additionalProperties": true
+      },
+      "PermitAcquired": {
+        "type": "object",
+        "properties": {
+          "permit_id": {
+            "type": "string"
+          },
+          "executor_id": {
+            "type": "string"
+          },
+          "node_id": {
+            "type": "string"
+          },
+          "model_id": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "lease_seconds": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "permit_id",
+          "executor_id",
+          "node_id",
+          "model_id",
+          "state",
+          "lease_seconds"
+        ],
+        "additionalProperties": true
+      },
+      "PermitState": {
+        "type": "object",
+        "properties": {
+          "permit_id": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "permit_id",
+          "state"
+        ],
+        "additionalProperties": true
+      },
+      "TaskAttemptView": {
+        "type": "object",
+        "properties": {
+          "attempt_id": {
+            "type": "string"
+          },
+          "fence": {
+            "type": "integer"
+          },
+          "node_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "result": {
+            "description": "Application-defined JSON result. Interpret it using the registered executor contract; it may be null before completion."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "stopped_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "attempt_id",
+          "fence",
+          "node_id",
+          "status",
+          "result",
+          "created_at",
+          "stopped_at"
+        ],
+        "additionalProperties": true
+      },
+      "TaskEventView": {
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "type": "integer"
+          },
+          "task_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "progress": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "percent": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "stage": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true,
+            "description": "Executor progress snapshot; additional fields are application-defined. percent, when present, is 0..1."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "cursor",
+          "task_id",
+          "status",
+          "version",
+          "progress"
+        ],
+        "additionalProperties": true
+      },
+      "IntegrationStopRequest": {
+        "type": "object",
+        "properties": {
+          "permit_id": {
+            "type": "string"
+          },
+          "nonce": {
+            "type": "string"
+          },
+          "executor_id": {
+            "type": "string"
+          },
+          "node_id": {
+            "type": "string"
+          },
+          "model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "execution_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "action": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "permit_id",
+          "nonce",
+          "executor_id",
+          "node_id",
+          "model_id",
+          "execution_id",
+          "action"
+        ],
+        "additionalProperties": true
+      },
+      "IntegrationExecutionView": {
+        "type": "object",
+        "properties": {
+          "permit_id": {
+            "type": "string"
+          },
+          "executor_id": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "execution_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "permit_id",
+          "executor_id",
+          "state",
+          "execution_id"
+        ],
+        "additionalProperties": true
+      },
+      "IntegrationHeartbeatResult": {
+        "type": "object",
+        "properties": {
+          "revision": {
+            "type": "integer"
+          },
+          "heartbeat_after_seconds": {
+            "type": "integer"
+          },
+          "stop_requests": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IntegrationStopRequest"
+            }
+          },
+          "executions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IntegrationExecutionView"
+            }
+          },
+          "complete_execution_snapshot": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "revision",
+          "heartbeat_after_seconds",
+          "stop_requests",
+          "executions",
+          "complete_execution_snapshot"
+        ],
+        "additionalProperties": true
+      },
+      "IntegrationExecutorView": {
+        "type": "object",
+        "properties": {
+          "definition": {
+            "$ref": "#/components/schemas/ExecutorDefinition"
+          },
+          "approval_current": {
+            "type": "boolean"
+          },
+          "node": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "heartbeat": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "fresh": {
+                    "type": "boolean"
+                  },
+                  "draining": {
+                    "type": "boolean"
+                  },
+                  "management_enabled": {
+                    "type": "boolean"
+                  },
+                  "capacities": {
+                    "$ref": "#/components/schemas/ResourceBudget"
+                  },
+                  "resident_baseline": {
+                    "$ref": "#/components/schemas/ResourceBudget"
+                  },
+                  "safety_reserve": {
+                    "$ref": "#/components/schemas/ResourceBudget"
+                  }
+                },
+                "required": [
+                  "heartbeat",
+                  "fresh",
+                  "draining",
+                  "management_enabled",
+                  "capacities",
+                  "resident_baseline",
+                  "safety_reserve"
+                ],
+                "additionalProperties": true
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "definition",
+          "approval_current",
+          "node"
+        ],
+        "additionalProperties": true
+      },
+      "ApplicationIntegrationView": {
+        "type": "object",
+        "properties": {
+          "app_id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "heartbeat": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "fresh": {
+            "type": "boolean"
+          },
+          "executors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IntegrationExecutorView"
+            }
+          },
+          "stop_protocol": {
+            "description": "Registered stop protocol from the application manifest."
+          },
+          "controls": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IntegrationControl"
+            }
+          },
+          "executions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "permit_id": {
+                  "type": "string"
+                },
+                "executor_id": {
+                  "type": "string"
+                },
+                "model_id": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "state": {
+                  "type": "string"
+                },
+                "stop_requested": {
+                  "type": "boolean"
+                },
+                "control_phase": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "controlled": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "permit_id",
+                "executor_id",
+                "model_id",
+                "state",
+                "stop_requested",
+                "control_phase",
+                "controlled"
+              ],
+              "additionalProperties": true
+            }
+          },
+          "tasks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "task_id": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "executor_id": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "scheduling": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/Scheduling"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "preemption": {
+                  "description": "Cooperative preemption metadata assigned by Scheduler, or null if no stop was requested."
+                }
+              },
+              "required": [
+                "task_id",
+                "status",
+                "executor_id",
+                "scheduling",
+                "preemption"
+              ],
+              "additionalProperties": true
+            }
+          }
+        },
+        "required": [
+          "app_id",
+          "revision",
+          "heartbeat",
+          "fresh",
+          "executors",
+          "stop_protocol",
+          "controls",
+          "executions",
+          "tasks"
+        ],
+        "additionalProperties": true
+      },
+      "ModelBudgetView": {
+        "type": "object",
+        "properties": {
+          "model_id": {
+            "type": "string"
+          },
+          "upstream_url": {
+            "type": "string"
+          },
+          "repository_model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "native_model": {
+            "type": "string"
+          },
+          "node_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "executor_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mode": {
+            "type": "string"
+          },
+          "calibrated": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resources": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceBudget"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "default_resources": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceBudget"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "limits": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModelBudgetLimits"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "default_limits": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModelBudgetLimits"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "capacity": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceBudget"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "model_id",
+          "repository_model_id",
+          "role",
+          "native_model",
+          "node_id",
+          "executor_id",
+          "mode",
+          "calibrated",
+          "enabled",
+          "version",
+          "updated_at",
+          "resources",
+          "default_resources",
+          "limits",
+          "default_limits",
+          "capacity"
+        ],
+        "additionalProperties": true
+      },
+      "ModelBudgetCalibrationResult": {
+        "type": "object",
+        "properties": {
+          "model_id": {
+            "type": "string"
+          },
+          "upstream_url": {
+            "type": "string"
+          },
+          "executor_id": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "calibrated": {
+            "type": "boolean"
+          },
+          "resources": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceBudget"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "model_id",
+          "mode",
+          "calibrated",
+          "resources"
+        ],
+        "additionalProperties": true
+      },
+      "ManagementNodeView": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "definition": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "capacities": {
+                    "$ref": "#/components/schemas/ResourceBudget"
+                  },
+                  "resident_baseline": {
+                    "$ref": "#/components/schemas/ResourceBudget"
+                  },
+                  "safety_reserve": {
+                    "$ref": "#/components/schemas/ResourceBudget"
+                  },
+                  "vos_member_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "capacities",
+                  "resident_baseline",
+                  "safety_reserve",
+                  "vos_member_id"
+                ],
+                "additionalProperties": true
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "version": {
+            "type": "integer"
+          },
+          "state": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "can_revoke": {
+            "type": "boolean"
+          },
+          "discovery_source": {
+            "type": "string"
+          },
+          "discovery_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "display_name",
+          "definition",
+          "version",
+          "state",
+          "source",
+          "can_revoke"
+        ],
+        "additionalProperties": true
+      },
+      "ManagementOverview": {
+        "type": "object",
+        "properties": {
+          "modelinfer_discovery": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "configured": {
+                    "type": "boolean"
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "observed_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "last_error": {
+                    "type": "string"
+                  }
+                },
+                "required": [],
+                "additionalProperties": true
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cluster_discovery": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "configured": {
+                    "type": "boolean"
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "observed_at": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "last_error": {
+                    "type": "string"
+                  }
+                },
+                "required": [],
+                "additionalProperties": true
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ManagementNodeView"
+            }
+          },
+          "executors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "definition": {
+                  "$ref": "#/components/schemas/ExecutorDefinition"
+                },
+                "state": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "integer"
+                },
+                "source": {
+                  "type": "string"
+                },
+                "editable": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "id",
+                "definition",
+                "state",
+                "version",
+                "source",
+                "editable"
+              ],
+              "additionalProperties": true
+            }
+          },
+          "enrollments": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "node_id": {
+                  "type": "string"
+                },
+                "expires_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "used_at": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "revoked_at": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "node_id",
+                "expires_at",
+                "used_at",
+                "revoked_at"
+              ],
+              "additionalProperties": true
+            }
+          },
+          "service_identities": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "app_id": {
+                  "type": "string"
+                },
+                "permit_executors": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "delegated_executors": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "revoked_at": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "created_at": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              },
+              "required": [
+                "id",
+                "app_id",
+                "permit_executors",
+                "delegated_executors",
+                "revoked_at",
+                "created_at"
+              ],
+              "additionalProperties": true
+            }
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "cursor": {
+                  "type": "integer"
+                },
+                "action": {
+                  "type": "string"
+                },
+                "resource": {
+                  "type": "string"
+                },
+                "created_at": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              },
+              "required": [
+                "cursor",
+                "action",
+                "resource",
+                "created_at"
+              ],
+              "additionalProperties": true
+            }
+          }
+        },
+        "required": [
+          "modelinfer_discovery",
+          "cluster_discovery",
+          "nodes",
+          "executors",
+          "enrollments",
+          "service_identities",
+          "events"
+        ],
+        "additionalProperties": true
+      },
+      "NodeTelemetry": {
+        "type": "object",
+        "properties": {
+          "observed_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "arch": {
+            "type": "string"
+          },
+          "agent_version": {
+            "type": "string"
+          },
+          "cpu_logical_count": {
+            "type": "integer"
+          },
+          "cpu_count_source": {
+            "type": "string"
+          },
+          "cpu_used_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cpu_cores": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer"
+                },
+                "utilization_percent": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "memory_total_mib": {
+            "type": "integer"
+          },
+          "memory_available_mib": {
+            "type": "integer"
+          },
+          "gpus": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "uuid": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "memory_type": {
+                  "type": "string",
+                  "enum": [
+                    "unified",
+                    "dedicated"
+                  ]
+                },
+                "memory_pool_id": {
+                  "type": "string"
+                },
+                "total_mib": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "free_mib": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "utilization_percent": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "memory_source": {
+                  "type": "string"
+                },
+                "memory_type_source": {
+                  "type": "string"
+                },
+                "utilization_source": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "executor_health": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "healthy": {
+                  "type": "boolean"
+                },
+                "observed_at": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              },
+              "required": [
+                "healthy",
+                "observed_at"
+              ]
+            }
+          }
+        },
+        "additionalProperties": true,
+        "description": "Host observations: RAM/GPU sizes are MiB, CPU/GPU load is percent. observed_at and per-executor health freshness are required for resource admission; an accepted heartbeat alone does not approve capacity. Unified GPU memory shares system RAM; unknown GPU values remain null rather than fabricated."
       }
     }
   }

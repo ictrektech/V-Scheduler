@@ -113,11 +113,31 @@
         ],
         "responses": {
           "200": {
-            "description": "Operation succeeded",
+            "description": "Successful model-management JSON; not a Scheduler envelope.",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "properties": {
+                    "model_id": {
+                      "type": "string"
+                    },
+                    "deleted": {
+                      "type": "boolean"
+                    },
+                    "freed_bytes": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "model_id",
+                    "deleted",
+                    "freed_bytes",
+                    "message"
+                  ],
                   "additionalProperties": true
                 }
               }
@@ -153,7 +173,8 @@
               }
             }
           }
-        }
+        },
+        "x-contract-source": "backend/src/modelhub/mod.rs, runtime.rs, scan.rs and specification.rs"
       }
     },
     "/api/v1/models/pull": {
@@ -429,11 +450,35 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": "Operation succeeded",
+            "description": "Successful model-management JSON; not a Scheduler envelope.",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "properties": {
+                    "synced": {
+                      "type": "integer"
+                    },
+                    "hf_added": {
+                      "type": "integer"
+                    },
+                    "ms_added": {
+                      "type": "integer"
+                    },
+                    "ollama_added": {
+                      "type": "integer"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "synced",
+                    "hf_added",
+                    "ms_added",
+                    "ollama_added",
+                    "message"
+                  ],
                   "additionalProperties": true
                 }
               }
@@ -469,7 +514,8 @@
               }
             }
           }
-        }
+        },
+        "x-contract-source": "backend/src/modelhub/mod.rs, runtime.rs, scan.rs and specification.rs"
       }
     },
     "/api/v1/models/cleanup": {
@@ -482,11 +528,23 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": "Operation succeeded",
+            "description": "Successful model-management JSON; not a Scheduler envelope.",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "properties": {
+                    "cleaned_count": {
+                      "type": "integer"
+                    },
+                    "freed_bytes": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "cleaned_count",
+                    "freed_bytes"
+                  ],
                   "additionalProperties": true
                 }
               }
@@ -522,7 +580,8 @@
               }
             }
           }
-        }
+        },
+        "x-contract-source": "backend/src/modelhub/mod.rs, runtime.rs, scan.rs and specification.rs"
       }
     },
     "/api/v1/models/repository-files": {
@@ -900,11 +959,23 @@
         ],
         "responses": {
           "200": {
-            "description": "Operation succeeded",
+            "description": "Successful model-management JSON; not a Scheduler envelope.",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "properties": {
+                    "task_id": {
+                      "type": "string"
+                    },
+                    "deleted": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "task_id",
+                    "deleted"
+                  ],
                   "additionalProperties": true
                 }
               }
@@ -940,7 +1011,8 @@
               }
             }
           }
-        }
+        },
+        "x-contract-source": "backend/src/modelhub/mod.rs, runtime.rs, scan.rs and specification.rs"
       }
     },
     "/api/v1/tasks/{id}/cancel": {
@@ -962,11 +1034,23 @@
         ],
         "responses": {
           "200": {
-            "description": "Operation succeeded",
+            "description": "Successful model-management JSON; not a Scheduler envelope.",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "properties": {
+                    "task_id": {
+                      "type": "string"
+                    },
+                    "cancelled": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "task_id",
+                    "cancelled"
+                  ],
                   "additionalProperties": true
                 }
               }
@@ -1002,7 +1086,8 @@
               }
             }
           }
-        }
+        },
+        "x-contract-source": "backend/src/modelhub/mod.rs, runtime.rs, scan.rs and specification.rs"
       }
     },
     "/api/v1/tasks/{id}/retry": {
@@ -1204,11 +1289,23 @@
         ],
         "responses": {
           "200": {
-            "description": "Operation succeeded",
+            "description": "Successful model-management JSON; not a Scheduler envelope.",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "properties": {
+                    "alias": {
+                      "type": "string"
+                    },
+                    "target_model_id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "alias",
+                    "target_model_id"
+                  ],
                   "additionalProperties": true
                 }
               }
@@ -1244,7 +1341,8 @@
               }
             }
           }
-        }
+        },
+        "x-contract-source": "backend/src/modelhub/mod.rs, runtime.rs, scan.rs and specification.rs"
       }
     },
     "/api/v1/containers": {
@@ -1325,12 +1423,11 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": "Operation succeeded",
+            "description": "Successful model-management JSON; not a Scheduler envelope.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "$ref": "#/components/schemas/ContainerBinding"
                 }
               }
             }
@@ -1380,7 +1477,8 @@
               }
             }
           }
-        }
+        },
+        "x-contract-source": "backend/src/modelhub/mod.rs, runtime.rs, scan.rs and specification.rs"
       }
     },
     "/api/v1/containers/unbind": {
@@ -1393,11 +1491,27 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": "Operation succeeded",
+            "description": "Successful model-management JSON; not a Scheduler envelope.",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "properties": {
+                    "container_id": {
+                      "type": "string"
+                    },
+                    "model_id": {
+                      "type": "string"
+                    },
+                    "ref_count": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "container_id",
+                    "model_id",
+                    "ref_count"
+                  ],
                   "additionalProperties": true
                 }
               }
@@ -1454,7 +1568,8 @@
               }
             }
           }
-        }
+        },
+        "x-contract-source": "backend/src/modelhub/mod.rs, runtime.rs, scan.rs and specification.rs"
       }
     },
     "/api/v1/inference-services": {
@@ -1531,12 +1646,11 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": "Operation succeeded",
+            "description": "Successful model-management JSON; not a Scheduler envelope.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "$ref": "#/components/schemas/InferenceService"
                 }
               }
             }
@@ -1589,7 +1703,8 @@
               }
             }
           }
-        }
+        },
+        "x-contract-source": "backend/src/modelhub/mod.rs, runtime.rs, scan.rs and specification.rs"
       }
     },
     "/api/v1/inference-services/{id}": {
@@ -1611,12 +1726,11 @@
         ],
         "responses": {
           "200": {
-            "description": "Operation succeeded",
+            "description": "Successful model-management JSON; not a Scheduler envelope.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "$ref": "#/components/schemas/InferenceServiceStatus"
                 }
               }
             }
@@ -1651,7 +1765,8 @@
               }
             }
           }
-        }
+        },
+        "x-contract-source": "backend/src/modelhub/mod.rs, runtime.rs, scan.rs and specification.rs"
       },
       "delete": {
         "summary": "Delete service registration",
@@ -1671,11 +1786,23 @@
         ],
         "responses": {
           "200": {
-            "description": "Operation succeeded",
+            "description": "Successful model-management JSON; not a Scheduler envelope.",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "properties": {
+                    "service_id": {
+                      "type": "string"
+                    },
+                    "deleted": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "service_id",
+                    "deleted"
+                  ],
                   "additionalProperties": true
                 }
               }
@@ -1711,7 +1838,8 @@
               }
             }
           }
-        }
+        },
+        "x-contract-source": "backend/src/modelhub/mod.rs, runtime.rs, scan.rs and specification.rs"
       }
     },
     "/api/v1/inference-services/{id}/models/start": {
@@ -1874,11 +2002,22 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": "Operation succeeded",
+            "description": "Successful model-management JSON; not a Scheduler envelope.",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
+                  "properties": {
+                    "runtimes": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/InferenceServiceStatus"
+                      }
+                    }
+                  },
+                  "required": [
+                    "runtimes"
+                  ],
                   "additionalProperties": true
                 }
               }
@@ -1914,7 +2053,8 @@
               }
             }
           }
-        }
+        },
+        "x-contract-source": "backend/src/modelhub/mod.rs, runtime.rs, scan.rs and specification.rs"
       }
     },
     "/api/v1/ollama/runtime/start": {
@@ -2061,12 +2201,11 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": "Operation succeeded",
+            "description": "Successful model-management JSON; not a Scheduler envelope.",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "$ref": "#/components/schemas/IntegrationAddresses"
                 }
               }
             }
@@ -2101,7 +2240,8 @@
               }
             }
           }
-        }
+        },
+        "x-contract-source": "backend/src/modelhub/mod.rs, runtime.rs, scan.rs and specification.rs"
       }
     },
     "/api/v1/version": {
@@ -2762,18 +2902,16 @@
             "type": "string"
           },
           "category": {
-            "type": "string",
-            "const": "v-scheduler"
+            "type": "string"
           },
           "data": {
-            "type": "object"
+            "description": "Error-specific diagnostics."
           },
           "msg": {
             "type": "string"
           },
           "version": {
-            "type": "string",
-            "const": "1"
+            "type": "string"
           },
           "request_id": {
             "type": "string"
@@ -2782,9 +2920,325 @@
             "type": "string"
           },
           "error": {
-            "type": "object"
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "message"
+            ],
+            "additionalProperties": true
           }
         }
+      },
+      "RuntimeModel": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "running": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "phase": {
+            "type": "string"
+          },
+          "active_slots": {
+            "type": "integer"
+          },
+          "total_slots": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "runtime_metrics": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "active_slots": {
+                    "type": "integer"
+                  },
+                  "total_slots": {
+                    "type": "integer"
+                  },
+                  "tokens_per_second": {
+                    "type": "number"
+                  },
+                  "prefill_tokens_per_second": {
+                    "type": "number"
+                  },
+                  "decode_tokens_per_second": {
+                    "type": "number"
+                  },
+                  "phase": {
+                    "type": "string"
+                  }
+                },
+                "required": [],
+                "additionalProperties": true
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tokens_per_second": {
+            "type": "number"
+          },
+          "prefill_tokens_per_second": {
+            "type": "number"
+          },
+          "decode_tokens_per_second": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "name",
+          "model",
+          "running",
+          "phase",
+          "active_slots",
+          "total_slots",
+          "runtime_metrics"
+        ],
+        "additionalProperties": true
+      },
+      "InferenceServiceStatus": {
+        "type": "object",
+        "properties": {
+          "service_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "base_url": {
+            "type": "string"
+          },
+          "gateway_url": {
+            "type": "string"
+          },
+          "api_url": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "preload_model": {
+            "type": "string"
+          },
+          "num_parallel": {
+            "type": "integer"
+          },
+          "context_length": {
+            "type": "integer"
+          },
+          "keep_alive": {
+            "type": "string"
+          },
+          "api_contract": {
+            "$ref": "#/components/schemas/InferenceServiceApiContract"
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Service registration metadata; native extensions remain present."
+          },
+          "healthy": {
+            "type": "boolean"
+          },
+          "online": {
+            "type": "boolean"
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RuntimeModel"
+            }
+          },
+          "running_models": {
+            "type": "array",
+            "items": {
+              "description": "Native running-model record retained from the backend. Normalized model state is in models[]."
+            }
+          },
+          "running_state_observed": {
+            "type": "boolean"
+          },
+          "version": {
+            "description": "Native backend version response, retained without changing its protocol."
+          },
+          "runtime_status": {
+            "description": "Native backend runtime-status response, retained as configured in api_contract."
+          },
+          "metrics": {
+            "type": "object",
+            "properties": {
+              "active_slots": {
+                "type": "integer"
+              },
+              "total_slots": {
+                "type": "integer"
+              },
+              "tokens_per_second": {
+                "type": "number"
+              },
+              "prefill_tokens_per_second": {
+                "type": "number"
+              },
+              "decode_tokens_per_second": {
+                "type": "number"
+              },
+              "phase": {
+                "type": "string"
+              }
+            },
+            "required": [],
+            "additionalProperties": true
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "active_slots": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "total_slots": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "service_id",
+          "name",
+          "kind",
+          "base_url",
+          "healthy",
+          "online",
+          "models",
+          "running_models",
+          "running_state_observed",
+          "error",
+          "active_slots",
+          "total_slots"
+        ],
+        "additionalProperties": true
+      },
+      "IntegrationEndpoint": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "internal": {
+            "type": "string"
+          },
+          "host_port": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "authentication": {
+            "type": "string"
+          },
+          "aliases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "compatibility_aliases": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "name",
+          "internal",
+          "host_port",
+          "path",
+          "authentication"
+        ],
+        "additionalProperties": true
+      },
+      "IntegrationAddresses": {
+        "type": "object",
+        "properties": {
+          "endpoints": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IntegrationEndpoint"
+            }
+          },
+          "shared_path": {
+            "type": "string"
+          },
+          "internal_storage_root": {
+            "type": "string"
+          },
+          "api_prefix": {
+            "type": "string"
+          },
+          "preloads_default": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "endpoints",
+          "shared_path",
+          "internal_storage_root",
+          "api_prefix",
+          "preloads_default"
+        ],
+        "additionalProperties": true
       }
     }
   }

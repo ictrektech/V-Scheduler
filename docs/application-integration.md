@@ -949,3 +949,9 @@ curl -fsS "$GATEWAY/api/v1/api-keys" -H "Authorization: Bearer $VOS_TOKEN"
 普通心跳和重启后的完整快照恢复不会覆盖已保存的放行设置，也不会重新生成或撤销模型 Key。需要修改设置或轮换 Key 时，明确调用配置 API；恢复响应不返回原 Key。
 
 Ordinary heartbeats and full-snapshot recovery after restart preserve saved direct settings and model keys; they do not regenerate or revoke keys. Use an explicit configuration/key API to change settings or rotate keys. Recovery never returns the existing secret.
+
+### 查看完整请求与响应契约
+
+应用内「API 文档 → 模型与网关 API」展开每个接口后，可查看路径/查询参数、嵌套请求字段、数组和可空分支，以及各 HTTP 状态的响应字段；「调度管理 API」也显示对应操作的契约。网关原始契约可通过 `GET /api/v1/openapi.json?lang=zh-CN` 或 `?lang=en` 获取；控制器与权重管理分别使用各自 OpenAPI。入口/前缀见本文地址表，不要将三份契约的相对路径混用。
+
+成功 JSON 不使用一个统一形状：模型列表是 `{models:[...]}`，上游列表是 `{upstreams:[...]}`，修改模型返回 `{model:{...}}`；创建上游返回 201 与上游对象，删除上游/注册返回 204 无正文。读取 204 时不要执行 JSON 解析。注册恢复心跳可能返回完整注册结果，正常心跳返回 online 元数据，主动下线返回 removed/registration_required。Key 明文返回规则见「模型 Key 的请求与响应」；查询接口不会读取已存 Key 明文。完整操作索引与响应说明见 [API reference](api-reference.md#response-contracts--响应字段与状态)。

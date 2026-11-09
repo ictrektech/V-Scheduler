@@ -1,3 +1,4 @@
+import {renderOperationContract} from '../api-contract.js';
 import {NATIVE_PROVIDERS} from './native-providers.js';
 import { groupCatalog, sourceLabel } from './model-catalog.js';
 import {apiError,browserIdentityFailure} from '../http-client.js';
@@ -1610,9 +1611,9 @@ const app = {
     // Clear the previous-language payload immediately while the new one loads.
     VRouterI18n.bind($("apidocIdentity"), "innerHTML", () => "");
     VRouterI18n.bind(container, "innerHTML", () => `<div class="empty">${VRouterI18n.t("文档加载中…")}</div>`);
-    let doc;
+    let doc, contract;
     try {
-      doc = await this.api("GET", `/api/v1/apidoc?lang=${lang}`);
+      [doc, contract] = await Promise.all([this.api("GET", `/api/v1/apidoc?lang=${lang}`), this.api("GET", `/api/v1/openapi.json?lang=${lang}`)]);
       if (request !== this.apiDocRequest) return;
     } catch (err) {
       if(isSessionError(err)){recordDiagnostic("AUTH_REQUEST_REJECTED","api_docs_auth");if(request===this.apiDocRequest)VRouterI18n.bind(container,"innerHTML",()=>previousHTML);this.apiDocRetry=setTimeout(()=>{if(!this.disposed&&options.visible()&&this.state.tab==="apidoc")void this.renderApiDoc()},5000);return;}
@@ -1667,6 +1668,7 @@ const app = {
             <span class="auth-tag">${esc(authLabel[e.auth] || e.auth)}</span>
           </summary>
           <div class="ep-desc">${esc(e.desc)}</div>
+          ${renderOperationContract(contract, contract.paths?.[e.path.replaceAll('...}', '}')]?.[e.method.toLowerCase()], lang)}
           ${e.example ? `<pre class="ep-example" data-copy="${esc(e.example)}">${esc(e.example)}</pre>
             <button class="btn" onclick="app.copyExample(this)">${VRouterI18n.t("复制示例")}</button>` : ""}
         </details>`,
@@ -1682,7 +1684,7 @@ const app = {
       const lang = VRouterI18n.locale === "en" ? "en" : "zh-CN";
       const doc = await this.api("GET", `/api/v1/openapi.json?lang=${lang}`);
       const url = URL.createObjectURL(new Blob([JSON.stringify(doc,null,2)],{type:"application/json"}));
-      const a=document.createElement("a"); a.href=url; a.download="v-router-openapi.json"; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);
+      const a=document.createElement("a"); a.href=url; a.download="v-scheduler-openapi.json"; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);
     } catch(err) {if(isSessionError(err)){recordDiagnostic("AUTH_REQUEST_REJECTED","gateway_request");this.showError("");return;}this.toast(err.message);}
   },
 

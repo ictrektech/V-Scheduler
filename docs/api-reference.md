@@ -487,3 +487,25 @@ curl -fsS "$GATEWAY/api/v1/api-keys" -H "Authorization: Bearer $VOS_TOKEN"
 普通心跳和重启后的完整快照恢复不会覆盖已保存的放行设置，也不会重新生成或撤销模型 Key。需要修改设置或轮换 Key 时，明确调用配置 API；恢复响应不返回原 Key。
 
 Ordinary heartbeats and full-snapshot recovery after restart preserve saved direct settings and model keys; they do not regenerate or revoke keys. Use an explicit configuration/key API to change settings or rotate keys. Recovery never returns the existing secret.
+
+## Response contracts / 响应字段与状态
+
+Gateway-owned management operations use named response schemas in [English OpenAPI](../api/router-openapi-en.json) and [中文 OpenAPI](../api/router-openapi-zh-CN.json). The in-app **Model & gateway API** operations expand request parameters, nested fields, array items, nullable/alternative branches and every response status. **Scheduler API** also renders its operation contracts. API fields remain their original JSON spelling in both languages.
+
+网关管理接口不是统一透传正文：`GET /api/v1/models` 返回 `{models:[...]}`，上游列表返回 `{upstreams:[...]}`，修改模型元数据返回 `{model:{...}}`，上游新增成功返回 **201 + 上游对象**；删除上游/注册返回 **204，无正文**。刷新或修改上游返回上游对象，不额外套 `data`。创建个人 Key 返回 `{api_key,key}`，查询与撤销只返回元数据；模型 Key 的一次性返回见前节。注册心跳既可能返回 online、removed，也可能在恢复时返回完整注册结果；客户端应按 `status` 和 `registration_required` 分支处理。
+
+These schemas describe successful gateway-generated JSON, not a new envelope around inference or upstream resources. OpenAI/Anthropic streaming, audio/files, asynchronous native resources and errors keep their documented protocols. Inspect HTTP status and Content-Type before choosing JSON, SSE or binary handling. A 200 response to a dry-run Auto test can have an empty `resolved_model` and `reason=no_eligible_candidate`; inspect the decision rather than treating transport success as an executable selection.
+
+以上 Schema 是网关自己的成功 JSON 契约，不会改变推理协议、原生资源接口或错误信封。Auto 测试成功返回 HTTP 200 时，仍可能 `resolved_model` 为空且 `reason=no_eligible_candidate`，需要读取分类和候选诊断，不能据 HTTP 成功推断已可执行。队列取消的 `execution_started` 可能为 null，表示取消先于请求入队被记录，不代表已收到原生停止证明。
+
+`python3 scripts/check_api_documentation.py` checks route coverage, bilingual request/response/component parity, and success schemas for every management operation, including the distinct 201/204 cases. Runtime acceptance must additionally validate actual payloads against the schemas; route counts alone do not establish contract correctness.
+
+## Protocol payloads and native resources / 推理协议与原生资源
+
+The in-app operation details now include path/query/header parameters, required flags, nested request fields, every declared response status/media type and shared schemas. OpenAI Chat Completions/Completions/Responses, Anthropic Messages, embeddings, reranking, Decisions/System One, images and audio document their common request/response fields. Expand SSE responses for framing and terminal events; an HTTP 200 stream can still fail, and usage-only chunks can have no text. Tool deltas, reasoning deltas and ordinary text are distinct. Context size, supported tools/media, output format and usage details remain constrained by the actual model/upstream; bypassing admission does not change these limits.
+
+应用内展开接口可查看路径/查询/Header、必填标记、嵌套请求、各状态和媒体类型及共享结构。OpenAI、Anthropic、向量、重排、Decisions/System One、图像与音频均说明公共请求/返回字段。SSE 需检查终态，HTTP200后仍可报错；纯 usage 片段可能没有正文，工具参数增量、思考增量、普通文字应分别处理。直接放行不改变模型上下文、工具解析或媒体支持。
+
+Additional `/v1/*` resource routes are transparent native forwarding. Their availability, methods, request/response fields and success codes are owned by the selected upstream/version; a routed path does not promise that upstream supports all methods. Their contract uses `default` responses to preserve native JSON, files and SSE instead of falsely promising HTTP200 or a Scheduler wrapper. Read the native provider/resource OpenAPI for those extensions. For managed API operations the response data is described specifically; a reserved node-control operation returns 501 and is not documented as successful execution.
+
+额外 `/v1/*` 资源是透明原生转发，是否可用、方法、字段和成功码由所选上游及版本决定，不因网关有路由就保证全部方法可用。此类契约使用 default 保留原生JSON/文件/SSE，不虚构HTTP200或统一调度包络，扩展字段应查所属协议。自有管理接口则提供具体数据结构；预留节点控制返回501，不能当作已执行。
