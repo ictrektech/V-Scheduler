@@ -42,7 +42,7 @@
       "endpoints": [
         {
           "auth": "inference",
-          "desc": "Combines models from all healthy upstreams. Only source-qualified names are returned, such as model-hub/xxx, image-studio/xxx, registered/xxx, manual/xxx and com.ictrek.ai/xxx.",
+          "desc": "Combines models from all healthy upstreams. Only source-qualified names are returned, such as model-hub/xxx, image-studio/xxx, registered/xxx, manual/xxx and ai.ictrek.com/xxx.",
           "example": "curl http://<vos-host>:22888/v1/models",
           "method": "GET",
           "path": "/v1/models",
@@ -352,7 +352,7 @@
         },
         {
           "auth": "manage",
-          "desc": "Supports ollama automatic capabilities and the native typesafe/Jev protocol. Omit models for discovery; explicit model/models subsets also detect Ollama capabilities. Precedence: discovery, top-level capabilities/endpoints, individual models, then model_capabilities/model_endpoints maps. Heartbeats renew leases only; re-register the same service_id for metadata changes. Registration does not grant scheduler or budget approval. Requires a gateway key or VOS identity. A stable service_id produces registered-<service_id>; the same ID updates the same instance, replicas need distinct IDs. Public services are visible to all callers; private services only to the registrant. Register a base_url/models API or explicitly supply model/models. Explicit specialized models should declare endpoints; ordinary chat defaults are inferred from the protocol; capabilities/model_kind supports capability filtering. model_endpoints/model_capabilities can override individual models. ttl_seconds defaults to 90. Registration accepts access_key (true/string/null) for all submitted models and model_access_keys keyed by native model ID for per-model overrides. These require the owner’s VOS token; provider api_key remains separate. Omission preserves existing model keys. Change existing model keys using PUT /api/v1/models/access-key.",
+          "desc": "Supports ollama automatic capabilities and the native typesafe/Jev protocol. Omit models for discovery; explicit model/models subsets also detect Ollama capabilities. Precedence: discovery, top-level capabilities/endpoints, individual models, then model_capabilities/model_endpoints maps. Heartbeats renew leases only; re-register the same service_id for metadata changes. Registration does not grant scheduler or budget approval. Requires a gateway key or VOS identity. A stable service_id produces registered-<service_id>; the same ID updates the same instance, replicas need distinct IDs. Public services are visible to all callers; private services only to the registrant. Register a base_url/models API or explicitly supply model/models. Explicit specialized models should declare endpoints; ordinary chat defaults are inferred from the protocol; capabilities/model_kind supports capability filtering. model_endpoints/model_capabilities can override individual models. ttl_seconds defaults to 90. Registration accepts access_key (true/string/null) for all submitted models and model_access_keys keyed by native model ID for per-model overrides. These require the owner’s VOS token; provider api_key remains separate. Omission preserves existing model keys. Change existing model keys using PUT /api/v1/models/access-key. scheduler.mode accepts cloud, permit, delegated and direct. Administrators can send \"scheduler\": {\"mode\": \"direct\"} to skip resource admission. Omission still requires approved resource bindings; registration is not budget approval.",
           "method": "POST",
           "path": "/api/v1/registrations",
           "summary": "Register or update an inference backend"
@@ -497,6 +497,14 @@
           "summary": "Set, rotate or revoke a model access key",
           "desc": "Requires the model owner’s or administrator’s VOS token. access_key=true generates a key, a string sets a 16..512 printable ASCII secret, null revokes it. Authorizes only this model; replaces its previous key. Does not change public/private visibility or the upstream provider api_key.",
           "example": "curl -X PUT \"$GATEWAY/api/v1/models/access-key\" -H \"Authorization: Bearer $VOS_TOKEN\" -H \"Content-Type: application/json\" -d '{\"upstream_id\":\"deepseek\",\"model\":\"api.deepseek.com/deepseek-flash\",\"access_key\":true}'"
+        },
+        {
+          "method": "PUT",
+          "path": "/api/v1/model-routing",
+          "auth": "admin",
+          "summary": "Set per-model direct admission",
+          "desc": "Administrator VOS identity required. model_id is the internal upstream ID + / + native model ID, not the public qualified catalog ID. direct=false removes this override; upstream-wide direct still applies.",
+          "example": "curl -X PUT \"$GATEWAY/api/v1/model-routing\" -H \"Authorization: Bearer $VOS_TOKEN\" -H \"Content-Type: application/json\" -d '{\"model_id\":\"registered-my-infer/chat-a\",\"direct\":true}'"
         }
       ],
       "id": "manage",

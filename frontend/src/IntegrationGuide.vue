@@ -9,7 +9,7 @@ const guide = ref<HTMLElement>()
 const contents = [
   ['addresses','接入地址'], ['keys','API Key 设置与修改'], ['deepseek','DeepSeek Flash 调用'], ['auto','Auto 自动选型'],
   ['providers','模型与上游'], ['register','模型注册 API 与自动能力识别'],
-  ['nodes','节点注册与资源查询'], ['lifecycle','节点、应用、预算与停止的统一流程'],
+  ['scheduling','注册调度模式与直接放行'], ['reference','完整 API 索引与错误处理'], ['nodes','节点注册与资源查询'], ['lifecycle','节点、应用、预算与停止的统一流程'],
   ['controls','计算启动与停止 API'], ['queue','推理等待队列'],
   ['residency','模型驻留与卸载'], ['diagnostics','诊断日志'],
 ]
@@ -67,7 +67,7 @@ curl -fsS "$GATEWAY/v1/messages" -H "x-api-key: $GATEWAY_KEY" -H 'anthropic-vers
 # The same model ID via OpenAI Chat Completions
 curl -fsS "$GATEWAY/v1/chat/completions" -H "Authorization: Bearer $GATEWAY_KEY" -H 'Content-Type: application/json' -d '{"model":"api.deepseek.com/deepseek-flash","max_tokens":64,"messages":[{"role":"user","content":"Say hello."}]}'`
 const autoExamples=`# GATEWAY: http://v-scheduler:8080
-# VOS_TOKEN: VOS administrator token / gateway administrator key
+# VOS_TOKEN: VOS administrator account token (not an inference API key)
 curl -fsS "$GATEWAY/api/v1/auto-routing/candidates" -H "Authorization: Bearer $VOS_TOKEN"
 curl -fsS "$GATEWAY/api/v1/auto-routing" -H "Authorization: Bearer $VOS_TOKEN" > auto-config.json
 # Edit candidates (model + upstream_id), tiers and policy; keep current revision.
@@ -155,6 +155,26 @@ curl -i "$GATEWAY/v1/chat/completions" -H "Authorization: Bearer $VOS_TOKEN" -H 
   <p>{{t('V-Voice 就绪后会主动接入调度器，自动绑定已校准的执行器与模型映射。外部云端服务可在上游页面配置。')}}</p>
   <p>{{t('自动绑定必须收到 configured=true 且 binding_revision 与当前下发版本一致的回执；HTTP 200 或绑定文件存在不代表已接入。应用升级或重启后自动重试，原身份和资源校准继续核验。')}}</p>
   <p>{{t('V-Voice 0.0.27 保留 ONNX、声纹与 audio.cpp GGUF，移除四个 PyTorch 原生音乐模型；绑定以实际就绪模型和匹配审批为准。')}}</p>
+  <h3 id="integration-scheduling" tabindex="-1">{{t('注册调度模式与直接放行')}}</h3>
+  <p>{{t('注册只让模型可被发现，不代表资源预算和执行器已获批。自管的外部推理服务可由管理员在注册时声明 scheduler.mode=direct；需要资源调度的服务应完成节点、执行器、模型预算审批与绑定。不要用直接放行掩盖缺失的资源绑定。')}}</p>
+  <p>{{t('scheduler 策略需要管理员 VOS 身份。direct 跳过资源许可；cloud 声明远程云端计算；permit 需要 executor_id 和 completion=synchronous；delegated 由应用承担任务完成与停止回执。省略 scheduler 时按受管服务处理，不会自动获得预算。')}}</p>
+  <p>{{t('注册策略和路由直接放行不同：scheduler.mode=direct 保留路由并发与熔断检查；上游 routing.direct=true 或模型级 direct=true 还会跳过这些检查。模型级修改需管理员，使用内部 upstream_id/native_model_id；公开调用仍使用模型目录返回的完整 id。')}}</p>
+  <pre>GATEWAY=http://v-scheduler:8080
+# Administrator VOS token; not a personal/model inference key.
+# Save the full snapshot as registration.json for recovery heartbeats.
+curl -fsS "$GATEWAY/api/v1/registrations" -H "Authorization: Bearer $VOS_TOKEN" -H 'Content-Type: application/json' -d '{"service_id":"my-infer","base_url":"http://my-infer:8000/v1","protocol":"chat_completions","visibility":"private","models":[{"id":"chat-a","capabilities":["chat","completion"],"endpoints":["chat_completions"]}],"scheduler": {"mode": "direct"},"heartbeat_timeout_seconds":90}'
+# For metadata/policy changes, POST the same service_id again.
+# Heartbeats renew health; a full snapshot restores a missing registration.
+curl -fsS "$GATEWAY/api/v1/registrations/my-infer/heartbeat" -H "Authorization: Bearer $VOS_TOKEN" -H 'Content-Type: application/json' --data-binary @registration.json
+# Upstream-wide direct routing: send ALL routing fields (full replacement).
+curl -fsS -X PUT "$GATEWAY/api/v1/upstreams/registered-my-infer/routing" -H "Authorization: Bearer $VOS_TOKEN" -H 'Content-Type: application/json' -d '{"weight":1,"max_inflight":0,"disabled":false,"direct":true}'
+# Per-model override. false removes it; upstream direct still applies.
+curl -fsS -X PUT "$GATEWAY/api/v1/model-routing" -H "Authorization: Bearer $VOS_TOKEN" -H 'Content-Type: application/json' -d '{"model_id":"registered-my-infer/chat-a","direct":true}'
+</pre>
+  <h3 id="integration-reference" tabindex="-1">{{t('完整 API 索引与错误处理')}}</h3>
+  <p>{{t('模型与网关 API、调度管理 API、模型管理 API 三个页签分别列出全部接口、参数、请求和响应。下面的完整参考按服务列出接口索引，包含 Key、可见范围、能力、Auto、节点心跳、资源查询、下载选文件和模型停止。')}}</p>
+  <p>{{t('401/403 检查 VOS 身份、所有者与管理员权限；推理 Key 不能修改配置。503 SCHEDULER_BINDING_MISSING/INVALID 表示缺失或无效的资源绑定，MODEL_RESOURCE_POLICY_NOT_APPROVED 表示模型预算尚未批准；查看高级控制中的接入状态与日志。429 按 Retry-After 重试或设置队列等待；不要自动重放已经开始的计算。上游 400 上下文超限应缩短输入或修改上游配置，不是资源预算不足。')}}</p>
+  <p><a href="https://github.com/ictrektech/V-Scheduler/blob/main/docs/api-reference.md" target="_blank" rel="noopener">{{t('按服务查看完整 API 参考')}}</a></p>
   <h3 id="integration-nodes" tabindex="-1">{{t('节点注册与资源查询')}}</h3>
   <ol>
    <li>{{t('管理员创建一次性节点邀请。VOS App 的组件用邀请登记节点并安全保存 worker 凭据。管理员批准节点容量后，组件可上报资源、提交执行器申请和查询本节点。')}}</li>

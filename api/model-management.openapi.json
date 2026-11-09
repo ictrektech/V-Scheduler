@@ -7,6 +7,10 @@
   },
   "servers": [
     {
+      "url": "http://v-scheduler:6005",
+      "description": "Canonical container alias / 正式容器地址"
+    },
+    {
       "url": "/api/com.ictrek.v-scheduler/model-hub",
       "description": "Unified VOS proxy; VOS account or gateway management key required"
     },

@@ -565,3 +565,6 @@ pub(crate) async fn yield_idle_model() {
 }
 
 pub(crate) use weights::{forget_builtin_model, prepare_model_change};
+
+#[cfg(test)]
+mod documentation_tests;

@@ -211,8 +211,15 @@ pub(super) async fn call_authorized(g: &Gateway, token: &str, path: &str, body: 
     Ok(value["data"].clone())
 }
 fn bounded_config(_g: &Gateway, path: &Path) -> Api<Value> {
-    private_json(path, 262144)
-        .map_err(|_| Failure::new(503, "local scheduler binding is unavailable or invalid"))
+    private_json(path, 262144).map_err(|_| {
+        let mut failure = if path.exists() {
+            Failure::new(503, "scheduler resource binding is invalid; check integration status and rebind the service")
+        } else {
+            Failure::new(503, "scheduler resource binding is missing; approve and bind node, executor and model resources before managed inference")
+        };
+        failure.code = Some(if path.exists() { "SCHEDULER_BINDING_INVALID" } else { "SCHEDULER_BINDING_MISSING" }.into());
+        failure
+    })
 }
 pub(super) async fn classify_cloud(u: &mut Upstream) -> Api<()> {
     if env("V_ROUTER_SCHEDULER_REQUIRED", "") != "true" || u.kind != "cloud" {
@@ -393,10 +400,9 @@ pub(super) fn approval(
     let model_policy = config["models"].get(&key).cloned();
     let strict = config["require_model_policy"] == true || required;
     if strict && model_policy.is_none() && (method != "GET" || websocket) && method != "DELETE" {
-        return Err(Failure::new(
-            503,
-            "local model resource policy not approved",
-        ));
+        let mut failure = Failure::new(503, "model resource policy is not approved; approve this model's resource budget and refresh its binding");
+        failure.code = Some("MODEL_RESOURCE_POLICY_NOT_APPROVED".into());
+        return Err(failure);
     }
     let policy = model_policy
         .or_else(|| config["upstreams"].get(&u.id).cloned())
@@ -782,5 +788,23 @@ pub(super) fn resume(
         evidence: "transport_closed_without_stop_confirmation",
         release_on_drop: true,
         request_slot: None,
+    }
+}
+
+#[cfg(test)]
+mod binding_error_tests {
+    use super::*;
+    #[test]
+    fn missing_and_invalid_bindings_have_actionable_distinct_codes() {
+        let root = super::super::tests::temp();
+        let g = super::super::tests::gateway(&root, Router::new());
+        let path = root.join("missing-binding.json");
+        let error = bounded_config(&g, &path).err().unwrap();
+        assert_eq!(error.status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(error.code.as_deref(), Some("SCHEDULER_BINDING_MISSING"));
+        std::fs::write(&path, b"not JSON").unwrap();
+        let error = bounded_config(&g, &path).err().unwrap();
+        assert_eq!(error.code.as_deref(), Some("SCHEDULER_BINDING_INVALID"));
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

@@ -396,3 +396,7 @@ Auto 选用 Ollama 时默认关闭隐式思考，让输出 token 用于正文。
 界面顶栏「API Key」支持生成、列出和撤销个人 Key；模型设置中的「模型访问 Key」支持生成、自选设置、轮换和撤销模型专用 Key，无需重新安装。外部 Agent 仅填写 V-Scheduler 的 Key 即可推理；VOS token 鉴权继续支持。个人 Key 跟随所属 VOS 用户的模型权限，模型 Key 仅授权指定模型；Key 不能管理配置。
 
 public 模型支持无 Key、有效 Key 和任意 Key；无效凭据只获得匿名 public 权限。private 模型仍须有效用户身份或被授权的 Key。`POST/GET /api/v1/api-keys`、`DELETE /api/v1/api-keys/{id}`、`PUT /api/v1/models/access-key` 均使用 VOS 账户 token。注册模型时可通过 `access_key` 和 `model_access_keys` 同时配置模型访问 Key；厂商 `api_key` 仍只供访问上游。完整示例见[统一接入指南](docs/application-integration.md#api-key安装后的生成设置与修改)和应用内「API 文档 → 应用接入 → API Key 设置与修改」。
+
+### Complete API documentation
+
+[Full API index](docs/api-reference.md) and [unified application integration](docs/application-integration.md) cover registration, scheduling/direct admission, node heartbeats and resource budgets, model visibility/capabilities, personal/model keys, Auto configuration, selected-file downloads and stop receipts. The application API tabs ship the same contracts. Missing/invalid resource bindings now return specific 503 business codes; registration alone does not approve a model budget.

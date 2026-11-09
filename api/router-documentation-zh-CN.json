@@ -44,7 +44,7 @@
           "method": "GET",
           "path": "/v1/models",
           "summary": "模型列表",
-          "desc": "合并所有健康上游的模型。只返回带来源前缀的模型名，例如 model-hub/xxx、image-studio/xxx、registered/xxx、manual/xxx、com.ictrek.ai/xxx。",
+          "desc": "合并所有健康上游的模型。只返回带来源前缀的模型名，例如 model-hub/xxx、image-studio/xxx、registered/xxx、manual/xxx、ai.ictrek.com/xxx。",
           "auth": "inference",
           "example": "curl http://<vos-host>:22888/v1/models"
         },
@@ -354,7 +354,7 @@
           "method": "POST",
           "path": "/api/v1/registrations",
           "summary": "推理后端主动注册 / 更新",
-          "desc": "支持 ollama 自动能力识别和 typesafe/Jev 原生协议。省略 models 发现全部模型；model 或 models 指定子集时同样自动识别 Ollama。覆盖优先级为自动识别、顶层 capabilities/endpoints、models 逐模型声明、model_capabilities/model_endpoints；后者优先。心跳仅续租，能力变更使用同一 service_id 重注册。注册不授予调度或预算审批。 需网关 Key 或 VOS 身份。稳定 service_id 生成 registered-<service_id>；相同 ID 更新同一实例，副本须不同 ID。可注册 public 或 private 服务；private 只对注册者身份可见，public 对所有调用者可见。可注册 base_url/models 模型 API，也可提交 model 或 models 显式注册单个/多个模型；显式专用模型应声明 endpoints，普通聊天模型缺省时按协议补全，capabilities/model_kind 用于接口能力过滤；model_endpoints 和 model_capabilities 可逐模型覆盖；ttl_seconds 默认90。 注册可同时提交 access_key（true/字符串/null），或 model_access_keys 按原生模型 ID 逐项设置，需所属 VOS 用户 token。省略时保留已有模型访问 Key；api_key 仍仅是上游厂商凭据。已有模型用 PUT /api/v1/models/access-key 修改。",
+          "desc": "支持 ollama 自动能力识别和 typesafe/Jev 原生协议。省略 models 发现全部模型；model 或 models 指定子集时同样自动识别 Ollama。覆盖优先级为自动识别、顶层 capabilities/endpoints、models 逐模型声明、model_capabilities/model_endpoints；后者优先。心跳仅续租，能力变更使用同一 service_id 重注册。注册不授予调度或预算审批。 需网关 Key 或 VOS 身份。稳定 service_id 生成 registered-<service_id>；相同 ID 更新同一实例，副本须不同 ID。可注册 public 或 private 服务；private 只对注册者身份可见，public 对所有调用者可见。可注册 base_url/models 模型 API，也可提交 model 或 models 显式注册单个/多个模型；显式专用模型应声明 endpoints，普通聊天模型缺省时按协议补全，capabilities/model_kind 用于接口能力过滤；model_endpoints 和 model_capabilities 可逐模型覆盖；ttl_seconds 默认90。 注册可同时提交 access_key（true/字符串/null），或 model_access_keys 按原生模型 ID 逐项设置，需所属 VOS 用户 token。省略时保留已有模型访问 Key；api_key 仍仅是上游厂商凭据。已有模型用 PUT /api/v1/models/access-key 修改。 scheduler.mode 支持 cloud、permit、delegated、direct；管理员可用 \"scheduler\": {\"mode\": \"direct\"} 跳过资源许可。省略时仍需有效绑定和审批，注册不等于预算获批。",
           "auth": "manage"
         },
         {
@@ -497,6 +497,14 @@
           "summary": "设置、轮换或撤销模型 Key",
           "desc": "仅模型所属 VOS 用户或管理员凭 VOS token 可修改。access_key=true 生成，字符串设置（16..512 位可打印 ASCII），null 撤销。只授权该模型，旧 Key 立即失效；不改变 public/private，不修改上游厂商 api_key。",
           "example": "curl -X PUT \"$GATEWAY/api/v1/models/access-key\" -H \"Authorization: Bearer $VOS_TOKEN\" -H \"Content-Type: application/json\" -d '{\"upstream_id\":\"deepseek\",\"model\":\"api.deepseek.com/deepseek-flash\",\"access_key\":true}'"
+        },
+        {
+          "method": "PUT",
+          "path": "/api/v1/model-routing",
+          "auth": "admin",
+          "summary": "设置单个模型直接放行",
+          "desc": "管理员使用内部 upstream_id/native_model_id 设置模型级直接放行；direct=false 删除该覆盖，不会清除上游级直接放行。",
+          "example": "curl -X PUT \"$GATEWAY/api/v1/model-routing\" -H \"Authorization: Bearer $VOS_TOKEN\" -H \"Content-Type: application/json\" -d '{\"model_id\":\"registered-my-infer/chat-a\",\"direct\":true}'"
         }
       ],
       "id": "manage",

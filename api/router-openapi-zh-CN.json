@@ -2,13 +2,13 @@
   "components": {
     "securitySchemes": {
       "apiKeyAuth": {
-        "description": "Anthropic SDK 可使用网关 Key 或 VOS token；与 Bearer 同时提供时须相同",
+        "description": "Anthropic SDK 可使用网关 Key 或 VOS token；与 Bearer 同时提供时须相同 Inference accepts a VOS user token, personal key or model-scoped access key. Key management and configuration require a VOS identity with the corresponding owner/admin permission; inference keys do not grant management rights.",
         "in": "header",
         "name": "x-api-key",
         "type": "apiKey"
       },
       "bearerAuth": {
-        "description": "VOS OIDC token 或网关 Key",
+        "description": "VOS OIDC token 或网关 Key Inference accepts a VOS user token, personal key or model-scoped access key. Key management and configuration require a VOS identity with the corresponding owner/admin permission; inference keys do not grant management rights.",
         "scheme": "bearer",
         "type": "http"
       }
@@ -25,7 +25,7 @@
             "interactive",
             "high"
           ],
-          "default": "background"
+          "default": "interactive"
         },
         "description": "优先级每等待 30 秒提升一级；单独设置不会中断已有任务。"
       },
@@ -237,6 +237,21 @@
                   },
                   "metadata_override": {
                     "type": "boolean"
+                  },
+                  "visibility": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "enum": [
+                      "public",
+                      "private",
+                      null
+                    ],
+                    "description": "null inherits upstream visibility; requires upstream_id and owner/admin VOS identity."
+                  },
+                  "owned_by": {
+                    "type": "string"
                   }
                 }
               },
@@ -294,16 +309,23 @@
                 "additionalProperties": true,
                 "properties": {
                   "api_key": {
-                    "type": "string"
+                    "type": "string",
+                    "writeOnly": true
                   },
                   "base_url": {
                     "type": "string"
                   },
                   "capabilities": {
-                    "type": "array"
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
                   },
                   "endpoints": {
-                    "type": "array"
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
                   },
                   "model": {
                     "type": "string"
@@ -359,6 +381,9 @@
                           "items": {
                             "type": "string"
                           }
+                        },
+                        "owned_by": {
+                          "type": "string"
                         }
                       }
                     }
@@ -368,7 +393,20 @@
                   },
                   "protocol": {
                     "type": "string",
-                    "description": "ollama | typesafe | openai | chat_completions | anthropic | offline_asr | image_studio | async_task"
+                    "enum": [
+                      "openai",
+                      "chat_completions",
+                      "anthropic",
+                      "typesafe",
+                      "openai_decisions",
+                      "ollama",
+                      "pi",
+                      "offline_asr",
+                      "image_studio",
+                      "async_task",
+                      "ml_server"
+                    ],
+                    "default": "openai"
                   },
                   "scheduler": {
                     "type": "object",
@@ -378,7 +416,8 @@
                         "enum": [
                           "cloud",
                           "permit",
-                          "delegated"
+                          "delegated",
+                          "direct"
                         ]
                       },
                       "executor_id": {
@@ -413,17 +452,26 @@
                           "type": "string"
                         }
                       }
-                    }
+                    },
+                    "description": "Administrator-only policy. Omit for managed admission. direct skips resource admission but retains routing limits; cloud declares remote compute. permit requires an approved executor_id, completion=synchronous and a matching model resource policy; delegated uses an application-owned task lifecycle. Registration alone never grants resource approval."
                   },
                   "service_id": {
-                    "type": "string"
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 96,
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
                   },
                   "ttl_seconds": {
                     "type": "integer",
                     "deprecated": true
                   },
                   "visibility": {
-                    "type": "string"
+                    "type": "string",
+                    "enum": [
+                      "public",
+                      "private"
+                    ],
+                    "default": "public"
                   },
                   "provider": {
                     "type": "string",
@@ -560,7 +608,7 @@
     },
     "/api/v1/registrations/{id}/heartbeat": {
       "post": {
-        "description": "按响应的 heartbeat_after_seconds 发送心跳。heartbeat_timeout_seconds 默认 90，兼容旧 ttl_seconds。healthy:false 立即移除；心跳中断后自动移除上游与模型，不释放运行中资源预约。携带完整注册快照（service_id、base_url、模型及原凭据）时，缺失服务可按原权限自动重新登记；普通心跳收到 REGISTRATION_REQUIRED/404 应自动重新注册。现存服务的心跳不更新模型元数据，配置变更仍重新注册。",
+        "description": "按响应的 heartbeat_after_seconds 发送心跳。heartbeat_timeout_seconds 默认 90，兼容旧 ttl_seconds。healthy:false 立即移除；心跳中断后自动移除上游与模型，不释放运行中资源预约。携带完整注册快照（service_id、base_url、模型及原凭据）时，缺失服务可按原权限自动重新登记；普通心跳收到 REGISTRATION_REQUIRED/404 应自动重新注册。现存服务的心跳不更新模型元数据，配置变更仍重新注册。 Existing entries only renew health/timeout; full snapshot fields restore a missing entry. Re-register to change metadata, scheduling policy or model access keys.",
         "parameters": [
           {
             "in": "path",
@@ -590,16 +638,23 @@
                     "description": "仅写入的私有原生凭据：api_key + env 或已授权的 OAuth access/refresh/expires（Unix 毫秒）；编辑省略/null 保留，不回显。"
                   },
                   "api_key": {
-                    "type": "string"
+                    "type": "string",
+                    "writeOnly": true
                   },
                   "base_url": {
                     "type": "string"
                   },
                   "capabilities": {
-                    "type": "array"
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
                   },
                   "endpoints": {
-                    "type": "array"
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
                   },
                   "model": {
                     "type": "string"
@@ -655,6 +710,9 @@
                           "items": {
                             "type": "string"
                           }
+                        },
+                        "owned_by": {
+                          "type": "string"
                         }
                       }
                     }
@@ -664,7 +722,20 @@
                   },
                   "protocol": {
                     "type": "string",
-                    "description": "ollama | typesafe | openai | chat_completions | anthropic | offline_asr | image_studio | async_task"
+                    "enum": [
+                      "openai",
+                      "chat_completions",
+                      "anthropic",
+                      "typesafe",
+                      "openai_decisions",
+                      "ollama",
+                      "pi",
+                      "offline_asr",
+                      "image_studio",
+                      "async_task",
+                      "ml_server"
+                    ],
+                    "default": "openai"
                   },
                   "scheduler": {
                     "type": "object",
@@ -674,7 +745,8 @@
                         "enum": [
                           "cloud",
                           "permit",
-                          "delegated"
+                          "delegated",
+                          "direct"
                         ]
                       },
                       "executor_id": {
@@ -709,13 +781,22 @@
                           "type": "string"
                         }
                       }
-                    }
+                    },
+                    "description": "Administrator-only policy. Omit for managed admission. direct skips resource admission but retains routing limits; cloud declares remote compute. permit requires an approved executor_id, completion=synchronous and a matching model resource policy; delegated uses an application-owned task lifecycle. Registration alone never grants resource approval."
                   },
                   "service_id": {
-                    "type": "string"
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 96,
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
                   },
                   "visibility": {
-                    "type": "string"
+                    "type": "string",
+                    "enum": [
+                      "public",
+                      "private"
+                    ],
+                    "default": "public"
                   },
                   "heartbeat_timeout_seconds": {
                     "type": "integer",
@@ -885,16 +966,73 @@
                     "type": "boolean"
                   },
                   "api_key": {
-                    "type": "string"
+                    "type": "string",
+                    "writeOnly": true
                   },
                   "async_task": {
-                    "type": "string"
+                    "type": "object",
+                    "required": [
+                      "create_path",
+                      "query_path",
+                      "task_id_path",
+                      "status_path",
+                      "result_path",
+                      "success_states",
+                      "failure_states",
+                      "poll_interval_ms",
+                      "timeout_seconds"
+                    ],
+                    "properties": {
+                      "create_path": {
+                        "type": "string"
+                      },
+                      "query_path": {
+                        "type": "string"
+                      },
+                      "task_id_path": {
+                        "type": "string"
+                      },
+                      "status_path": {
+                        "type": "string"
+                      },
+                      "result_path": {
+                        "type": "string"
+                      },
+                      "success_states": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "failure_states": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "poll_interval_ms": {
+                        "type": "integer",
+                        "minimum": 100,
+                        "maximum": 60000
+                      },
+                      "timeout_seconds": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 3600
+                      }
+                    }
                   },
                   "base_url": {
                     "type": "string"
                   },
                   "kind": {
-                    "type": "string"
+                    "type": "string",
+                    "enum": [
+                      "manual",
+                      "cloud"
+                    ],
+                    "default": "manual",
+                    "description": "manual participates in local resource admission when required; cloud is remote and consumes no local permit."
                   },
                   "model": {
                     "type": "string"
@@ -903,13 +1041,32 @@
                     "type": "string"
                   },
                   "protocol": {
-                    "type": "string"
+                    "type": "string",
+                    "enum": [
+                      "openai",
+                      "chat_completions",
+                      "anthropic",
+                      "typesafe",
+                      "openai_decisions",
+                      "ollama",
+                      "pi",
+                      "offline_asr",
+                      "image_studio",
+                      "async_task",
+                      "ml_server"
+                    ],
+                    "default": "openai"
                   },
                   "test_model": {
                     "type": "string"
                   },
                   "visibility": {
-                    "type": "string"
+                    "type": "string",
+                    "enum": [
+                      "public",
+                      "private"
+                    ],
+                    "default": "public"
                   },
                   "provider": {
                     "type": "string",
@@ -919,6 +1076,54 @@
                     "type": "object",
                     "writeOnly": true,
                     "description": "仅写入的私有原生凭据：api_key + env 或已授权的 OAuth access/refresh/expires（Unix 毫秒）；编辑省略/null 保留，不回显。"
+                  },
+                  "models": {
+                    "type": "array",
+                    "items": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "chat",
+                                "embedding",
+                                "unknown"
+                              ]
+                            },
+                            "owned_by": {
+                              "type": "string"
+                            },
+                            "capabilities": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "endpoints": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "metadata_override": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "id"
+                          ]
+                        }
+                      ]
+                    },
+                    "description": "Optional discovery subset with per-model metadata. Omit for all discovered models; [] selects none."
                   }
                 },
                 "required": [
@@ -929,7 +1134,7 @@
               }
             }
           },
-          "required": false
+          "required": true
         },
         "responses": {
           "200": {
@@ -962,11 +1167,176 @@
             "application/json": {
               "schema": {
                 "additionalProperties": true,
+                "properties": {
+                  "allow_probe_failure": {
+                    "type": "boolean"
+                  },
+                  "api_key": {
+                    "type": "string",
+                    "writeOnly": true
+                  },
+                  "async_task": {
+                    "type": "object",
+                    "required": [
+                      "create_path",
+                      "query_path",
+                      "task_id_path",
+                      "status_path",
+                      "result_path",
+                      "success_states",
+                      "failure_states",
+                      "poll_interval_ms",
+                      "timeout_seconds"
+                    ],
+                    "properties": {
+                      "create_path": {
+                        "type": "string"
+                      },
+                      "query_path": {
+                        "type": "string"
+                      },
+                      "task_id_path": {
+                        "type": "string"
+                      },
+                      "status_path": {
+                        "type": "string"
+                      },
+                      "result_path": {
+                        "type": "string"
+                      },
+                      "success_states": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "failure_states": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "poll_interval_ms": {
+                        "type": "integer",
+                        "minimum": 100,
+                        "maximum": 60000
+                      },
+                      "timeout_seconds": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 3600
+                      }
+                    }
+                  },
+                  "base_url": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "manual",
+                      "cloud"
+                    ],
+                    "default": "manual",
+                    "description": "manual participates in local resource admission when required; cloud is remote and consumes no local permit."
+                  },
+                  "model": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "protocol": {
+                    "type": "string",
+                    "enum": [
+                      "openai",
+                      "chat_completions",
+                      "anthropic",
+                      "typesafe",
+                      "openai_decisions",
+                      "ollama",
+                      "pi",
+                      "offline_asr",
+                      "image_studio",
+                      "async_task",
+                      "ml_server"
+                    ],
+                    "default": "openai"
+                  },
+                  "test_model": {
+                    "type": "string"
+                  },
+                  "visibility": {
+                    "type": "string",
+                    "enum": [
+                      "public",
+                      "private"
+                    ],
+                    "default": "public"
+                  },
+                  "provider": {
+                    "type": "string",
+                    "description": "protocol=pi 使用原生 pi-ai Provider ID；兼容协议可选填 Models.dev ID，用于补充模型元数据。"
+                  },
+                  "provider_credentials": {
+                    "type": "object",
+                    "writeOnly": true,
+                    "description": "仅写入的私有原生凭据：api_key + env 或已授权的 OAuth access/refresh/expires（Unix 毫秒）；编辑省略/null 保留，不回显。"
+                  },
+                  "models": {
+                    "type": "array",
+                    "items": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "chat",
+                                "embedding",
+                                "unknown"
+                              ]
+                            },
+                            "owned_by": {
+                              "type": "string"
+                            },
+                            "capabilities": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "endpoints": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "metadata_override": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "id"
+                          ]
+                        }
+                      ]
+                    },
+                    "description": "Optional discovery subset with per-model metadata. Omit for all discovered models; [] selects none."
+                  }
+                },
                 "type": "object"
               }
             }
           },
-          "required": false
+          "required": true
         },
         "responses": {
           "200": {
@@ -1048,16 +1418,73 @@
                     "type": "boolean"
                   },
                   "api_key": {
-                    "type": "string"
+                    "type": "string",
+                    "writeOnly": true
                   },
                   "async_task": {
-                    "type": "string"
+                    "type": "object",
+                    "required": [
+                      "create_path",
+                      "query_path",
+                      "task_id_path",
+                      "status_path",
+                      "result_path",
+                      "success_states",
+                      "failure_states",
+                      "poll_interval_ms",
+                      "timeout_seconds"
+                    ],
+                    "properties": {
+                      "create_path": {
+                        "type": "string"
+                      },
+                      "query_path": {
+                        "type": "string"
+                      },
+                      "task_id_path": {
+                        "type": "string"
+                      },
+                      "status_path": {
+                        "type": "string"
+                      },
+                      "result_path": {
+                        "type": "string"
+                      },
+                      "success_states": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "failure_states": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "poll_interval_ms": {
+                        "type": "integer",
+                        "minimum": 100,
+                        "maximum": 60000
+                      },
+                      "timeout_seconds": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 3600
+                      }
+                    }
                   },
                   "base_url": {
                     "type": "string"
                   },
                   "kind": {
-                    "type": "string"
+                    "type": "string",
+                    "enum": [
+                      "manual",
+                      "cloud"
+                    ],
+                    "default": "manual",
+                    "description": "manual participates in local resource admission when required; cloud is remote and consumes no local permit."
                   },
                   "model": {
                     "type": "string"
@@ -1066,13 +1493,32 @@
                     "type": "string"
                   },
                   "protocol": {
-                    "type": "string"
+                    "type": "string",
+                    "enum": [
+                      "openai",
+                      "chat_completions",
+                      "anthropic",
+                      "typesafe",
+                      "openai_decisions",
+                      "ollama",
+                      "pi",
+                      "offline_asr",
+                      "image_studio",
+                      "async_task",
+                      "ml_server"
+                    ],
+                    "default": "openai"
                   },
                   "test_model": {
                     "type": "string"
                   },
                   "visibility": {
-                    "type": "string"
+                    "type": "string",
+                    "enum": [
+                      "public",
+                      "private"
+                    ],
+                    "default": "public"
                   },
                   "provider": {
                     "type": "string",
@@ -1082,6 +1528,54 @@
                     "type": "object",
                     "writeOnly": true,
                     "description": "仅写入的私有原生凭据：api_key + env 或已授权的 OAuth access/refresh/expires（Unix 毫秒）；编辑省略/null 保留，不回显。"
+                  },
+                  "models": {
+                    "type": "array",
+                    "items": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "chat",
+                                "embedding",
+                                "unknown"
+                              ]
+                            },
+                            "owned_by": {
+                              "type": "string"
+                            },
+                            "capabilities": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "endpoints": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "metadata_override": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "id"
+                          ]
+                        }
+                      ]
+                    },
+                    "description": "Optional discovery subset with per-model metadata. Omit for all discovered models; [] selects none."
                   }
                 },
                 "required": [
@@ -1092,7 +1586,7 @@
               }
             }
           },
-          "required": false
+          "required": true
         },
         "responses": {
           "200": {
@@ -1178,35 +1672,45 @@
           }
         ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": true,
+                "type": "object",
                 "properties": {
-                  "disabled": {
-                    "type": "boolean"
+                  "weight": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000,
+                    "default": 1,
+                    "description": "Zero is normalized to one."
                   },
                   "max_inflight": {
-                    "type": "integer"
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 100000,
+                    "default": 0,
+                    "description": "Zero means unlimited."
                   },
-                  "weight": {
-                    "type": "integer"
+                  "disabled": {
+                    "type": "boolean",
+                    "default": false
                   },
-                  "provider": {
-                    "type": "string",
-                    "description": "protocol=pi 使用原生 pi-ai Provider ID；兼容协议可选填 Models.dev ID，用于补充模型元数据。"
-                  },
-                  "provider_credentials": {
-                    "type": "object",
-                    "writeOnly": true,
-                    "description": "仅写入的私有原生凭据：api_key + env 或已授权的 OAuth access/refresh/expires（Unix 毫秒）；编辑省略/null 保留，不回显。"
+                  "direct": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Bypasses resource admission, routing concurrency and circuit-breaker checks. Managed upstreams require an administrator; API-created upstreams allow their owner."
                   }
-                },
-                "type": "object"
+                }
+              },
+              "example": {
+                "weight": 1,
+                "max_inflight": 0,
+                "disabled": false,
+                "direct": false
               }
             }
-          },
-          "required": false
+          }
         },
         "responses": {
           "200": {
@@ -12076,7 +12580,213 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object"
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "enabled": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Legacy field. Auto remains published; false is normalized to true."
+                  },
+                  "policy": {
+                    "type": "string",
+                    "enum": [
+                      "balanced",
+                      "fast",
+                      "quality",
+                      "economy"
+                    ],
+                    "default": "balanced"
+                  },
+                  "allow_cloud": {
+                    "type": "boolean",
+                    "default": false
+                  },
+                  "candidates": {
+                    "type": "array",
+                    "maxItems": 256,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "model": {
+                          "type": "string"
+                        },
+                        "upstream_id": {
+                          "type": "string"
+                        },
+                        "tier": {
+                          "type": "string",
+                          "enum": [
+                            "simple",
+                            "standard",
+                            "complex"
+                          ],
+                          "default": "standard"
+                        },
+                        "tasks": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "general",
+                              "code",
+                              "translation",
+                              "summary",
+                              "reasoning"
+                            ]
+                          },
+                          "default": []
+                        },
+                        "context_tokens": {
+                          "type": "integer",
+                          "minimum": 512,
+                          "maximum": 2097152,
+                          "default": 32768
+                        },
+                        "max_output_tokens": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "default": 4096,
+                          "description": "Must be less than context_tokens."
+                        },
+                        "image_tokens": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "minimum": 1,
+                          "default": null
+                        },
+                        "input_price": {
+                          "type": [
+                            "number",
+                            "null"
+                          ],
+                          "minimum": 0,
+                          "maximum": 1000000,
+                          "default": null
+                        },
+                        "output_price": {
+                          "type": [
+                            "number",
+                            "null"
+                          ],
+                          "minimum": 0,
+                          "maximum": 1000000,
+                          "default": null
+                        },
+                        "cold_start_ms": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 600000,
+                          "default": 10000
+                        }
+                      }
+                    },
+                    "default": []
+                  },
+                  "classifier": {
+                    "type": "string",
+                    "enum": [
+                      "rules",
+                      "request_type",
+                      "context_size",
+                      "llm",
+                      "jev",
+                      "systemone"
+                    ],
+                    "default": "rules",
+                    "description": "OpenAI Decisions uses systemone with a model registered as protocol=openai_decisions; Jev uses jev/typesafe. Select jev_model and jev_upstream_id for model classifiers."
+                  },
+                  "jev_model": {
+                    "type": "string",
+                    "default": ""
+                  },
+                  "jev_upstream_id": {
+                    "type": "string",
+                    "default": ""
+                  },
+                  "allow_cloud_classifier": {
+                    "type": "boolean",
+                    "default": false
+                  },
+                  "classifier_timeout_ms": {
+                    "type": "integer",
+                    "minimum": 100,
+                    "maximum": 120000,
+                    "default": 1000
+                  },
+                  "request_type_tiers": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "general": {
+                        "type": "string",
+                        "enum": [
+                          "simple",
+                          "standard",
+                          "complex"
+                        ],
+                        "default": "standard"
+                      },
+                      "code": {
+                        "type": "string",
+                        "enum": [
+                          "simple",
+                          "standard",
+                          "complex"
+                        ],
+                        "default": "standard"
+                      },
+                      "translation": {
+                        "type": "string",
+                        "enum": [
+                          "simple",
+                          "standard",
+                          "complex"
+                        ],
+                        "default": "simple"
+                      },
+                      "summary": {
+                        "type": "string",
+                        "enum": [
+                          "simple",
+                          "standard",
+                          "complex"
+                        ],
+                        "default": "standard"
+                      },
+                      "reasoning": {
+                        "type": "string",
+                        "enum": [
+                          "simple",
+                          "standard",
+                          "complex"
+                        ],
+                        "default": "complex"
+                      }
+                    }
+                  },
+                  "context_simple_max_tokens": {
+                    "type": "integer",
+                    "minimum": 512,
+                    "default": 2048,
+                    "description": "Classification threshold, below context_standard_max_tokens; not a provider context limit."
+                  },
+                  "context_standard_max_tokens": {
+                    "type": "integer",
+                    "maximum": 2097152,
+                    "default": 8192,
+                    "description": "Classification threshold only; does not impose an 8192-token request limit."
+                  },
+                  "revision": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "default": 0,
+                    "description": "GET the current configuration first and preserve revision when saving. A stale revision returns 409."
+                  }
+                }
               }
             }
           }
@@ -12370,6 +13080,57 @@
                 "access_key": true
               }
             }
+          }
+        }
+      }
+    },
+    "/api/v1/model-routing": {
+      "put": {
+        "tags": [
+          "manage"
+        ],
+        "summary": "设置单个模型直接放行",
+        "description": "Administrator VOS identity required. model_id is the internal upstream ID + / + native model ID, not the public qualified catalog ID. direct=false removes this override; upstream-wide direct still applies.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "model_id",
+                  "direct"
+                ],
+                "properties": {
+                  "model_id": {
+                    "type": "string"
+                  },
+                  "direct": {
+                    "type": "boolean"
+                  }
+                }
+              },
+              "example": {
+                "model_id": "registered-my-infer/chat-a",
+                "direct": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated override"
+          },
+          "403": {
+            "description": "Administrator required"
+          },
+          "404": {
+            "description": "Unknown model"
           }
         }
       }

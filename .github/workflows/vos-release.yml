@@ -41,6 +41,9 @@ jobs:
           CARGO_TARGET_DIR: ${{ runner.temp }}/v-scheduler-target
         run: cargo test --locked --manifest-path backend/Cargo.toml
 
+      - name: Verify API documentation coverage
+        run: python3 scripts/check_api_documentation.py
+
       - name: Write Feishu component credentials
         run: |
           cat > "$HOME/.feishu.components.json" <<EOF

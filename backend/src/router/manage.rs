@@ -1,4 +1,5 @@
 use super::*;
+pub(super) const REGISTRATION_SCHEDULER_MODES: &[&str] = &["cloud", "permit", "delegated", "direct"];
 use axum::Json;
 fn view(r: &Registry, u: &Upstream, id: &Identity) -> Value {
     let mut v = serde_json::to_value(u).unwrap();
@@ -1080,7 +1081,7 @@ async fn register(g: &Gateway, id: &Identity, p: Value) -> Api<Response> {
             ));
         }
         let mut policy = policy.clone();
-        if !["cloud", "permit", "delegated", "direct"].contains(&text(&policy, "mode")) {
+        if !REGISTRATION_SCHEDULER_MODES.contains(&text(&policy, "mode")) {
             return Err(Failure::new(400, "invalid scheduler mode"));
         }
         if policy["mode"] == "permit"

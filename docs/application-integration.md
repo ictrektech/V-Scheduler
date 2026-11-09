@@ -1,5 +1,7 @@
 # V-Scheduler 统一接入指南
 
+> **Complete API index / 完整 API 索引:** [api-reference.md](api-reference.md) covers registration scheduling modes (including `"scheduler": {"mode": "direct"}`), permission boundaries and every shipped gateway/controller/weights operation. The three application API tabs display the same OpenAPI contracts.
+
 本文是应用和模型服务的统一操作入口，覆盖原 V-Router 模型调用、V-Scheduler 调度接管、vLLM 主动注册，以及是否由本 Scheduler 调度。VOS 安装统一应用 `com.ictrek.v-scheduler`；网关、调度器和模型仓库均由该应用提供。
 
 - [Auto 自动选模型、界面勾选与配置 API](auto-routing.md)
