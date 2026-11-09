@@ -608,7 +608,7 @@
     },
     "/api/v1/registrations/{id}/heartbeat": {
       "post": {
-        "description": "Send heartbeats at heartbeat_after_seconds. heartbeat_timeout_seconds defaults to 90; ttl_seconds remains compatible. healthy:false removes the catalog entry immediately. Stale heartbeats remove upstreams and models without releasing running reservations. Include the full registration snapshot to restore a missing service with normal ownership and approval checks. Legacy short heartbeats should re-register on REGISTRATION_REQUIRED/404. Existing records only refresh liveness; re-register to change metadata. Existing entries only renew health/timeout; full snapshot fields restore a missing entry. Re-register to change metadata, scheduling policy or model access keys.",
+        "description": "Send heartbeats at heartbeat_after_seconds. heartbeat_timeout_seconds defaults to 90; ttl_seconds remains compatible. healthy:false removes the catalog entry immediately. Stale heartbeats remove upstreams and models without releasing running reservations. Include the full registration snapshot to restore a missing service with normal ownership and approval checks. Legacy short heartbeats should re-register on REGISTRATION_REQUIRED/404. Existing records only refresh liveness; re-register to change metadata. Existing entries only renew health/timeout; full snapshot fields restore a missing entry. Re-register to change metadata, scheduling policy or model access keys. Recovery preserves persisted routing settings and model keys: it never regenerates/revokes keys from an older snapshot or returns an existing secret. Use explicit registration/configuration/key APIs for changes.",
         "parameters": [
           {
             "in": "path",

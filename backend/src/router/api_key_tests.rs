@@ -134,6 +134,11 @@ async fn registration_sets_preserves_and_rotates_model_credentials() {
     let response=dispatch(g.clone(),req).await.unwrap();assert_eq!(response.headers()["cache-control"],"no-store");
     let result=value(response).await;let key=result["model_access_keys"][0]["api_key"].as_str().unwrap();
     let identity=api_keys::authenticate(&g,key).await.unwrap();assert_eq!(g.registry.lock().unwrap().list_models(&identity).len(),1);
+    *g.registry.lock().unwrap()=Registry::open(&g.state_path).unwrap();
+    let mut recovery=request("POST","/api/v1/registrations/registered-my-infer/heartbeat",payload.clone());recovery.headers_mut().insert("authorization","Bearer vos-fixture".parse().unwrap());
+    let recovered=value(dispatch(g.clone(),recovery).await.unwrap()).await;
+    assert!(recovered["model_access_keys"].is_null(), "recovery must not generate or return a replacement key");
+    assert!(api_keys::authenticate(&g,key).await.is_ok(), "a saved key must survive a full recovery heartbeat");
     let mut again=payload;again.as_object_mut().unwrap().remove("access_key");
     let mut req=request("POST","/api/v1/registrations",again);req.headers_mut().insert("authorization","Bearer vos-fixture".parse().unwrap());
     assert!(dispatch(g.clone(),req).await.is_ok());assert!(api_keys::authenticate(&g,key).await.is_ok());

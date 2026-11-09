@@ -608,7 +608,7 @@
     },
     "/api/v1/registrations/{id}/heartbeat": {
       "post": {
-        "description": "按响应的 heartbeat_after_seconds 发送心跳。heartbeat_timeout_seconds 默认 90，兼容旧 ttl_seconds。healthy:false 立即移除；心跳中断后自动移除上游与模型，不释放运行中资源预约。携带完整注册快照（service_id、base_url、模型及原凭据）时，缺失服务可按原权限自动重新登记；普通心跳收到 REGISTRATION_REQUIRED/404 应自动重新注册。现存服务的心跳不更新模型元数据，配置变更仍重新注册。 Existing entries only renew health/timeout; full snapshot fields restore a missing entry. Re-register to change metadata, scheduling policy or model access keys.",
+        "description": "按响应的 heartbeat_after_seconds 发送心跳。heartbeat_timeout_seconds 默认 90，兼容旧 ttl_seconds。healthy:false 立即移除；心跳中断后自动移除上游与模型，不释放运行中资源预约。携带完整注册快照（service_id、base_url、模型及原凭据）时，缺失服务可按原权限自动重新登记；普通心跳收到 REGISTRATION_REQUIRED/404 应自动重新注册。现存服务的心跳不更新模型元数据，配置变更仍重新注册。 Existing entries only renew health/timeout; full snapshot fields restore a missing entry. Re-register to change metadata, scheduling policy or model access keys. Recovery preserves persisted routing settings and model keys: it never regenerates/revokes keys from an older snapshot or returns an existing secret. Use explicit registration/configuration/key APIs for changes.",
         "parameters": [
           {
             "in": "path",

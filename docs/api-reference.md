@@ -483,3 +483,7 @@ GET /api/v1/api-keys lists only the current owner’s metadata such as id, name,
 curl -fsS "$GATEWAY/api/v1/api-keys" -H "Authorization: Bearer $VOS_TOKEN"
 # Model registration uses the same response entries for access_key/model_access_keys.
 ```
+
+普通心跳和重启后的完整快照恢复不会覆盖已保存的放行设置，也不会重新生成或撤销模型 Key。需要修改设置或轮换 Key 时，明确调用配置 API；恢复响应不返回原 Key。
+
+Ordinary heartbeats and full-snapshot recovery after restart preserve saved direct settings and model keys; they do not regenerate or revoke keys. Use an explicit configuration/key API to change settings or rotate keys. Recovery never returns the existing secret.

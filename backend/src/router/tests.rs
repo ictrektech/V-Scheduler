@@ -2382,6 +2382,10 @@ async fn registration_direct_and_ui_routing_share_one_persisted_setting() {
     // A normal heartbeat must not silently restore the old registration value.
     manage::handle(&g,&admin,request("POST","/api/v1/registrations/registered-parity/heartbeat",registration.clone())).await.unwrap();
     assert!(!g.registry.lock().unwrap().routing["registered-parity"].direct);
+    // A restart removes ephemeral discovery but retains the routing choice.
+    *g.registry.lock().unwrap() = Registry::open(&root.join("state.json")).unwrap();
+    manage::handle(&g,&admin,request("POST","/api/v1/registrations/registered-parity/heartbeat",registration.clone())).await.unwrap();
+    assert!(!g.registry.lock().unwrap().routing["registered-parity"].direct, "recovery snapshot must preserve the saved UI choice");
     // Explicit re-registration and API/UI routing edits are both authoritative.
     manage::handle(&g,&admin,request("POST","/api/v1/registrations",registration.clone())).await.unwrap();
     assert!(g.registry.lock().unwrap().routing["registered-parity"].direct);

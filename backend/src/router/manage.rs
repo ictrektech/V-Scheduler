@@ -759,7 +759,7 @@ pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) ->
         return model_routing(g, id, payload);
     }
     if path == "/api/v1/registrations" && method == "POST" {
-        return register(g, id, payload).await;
+        return register(g, id, payload, false).await;
     }
     if path == "/api/v1/upstreams" && method == "POST"
         || path == "/api/v1/upstreams/probe" && method == "POST"
@@ -1003,7 +1003,7 @@ pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) ->
             if let Some(response)=heartbeat(g,id,key,&payload)? {return Ok(response);}
             if payload["healthy"]==false {return Ok(Json(json!({"upstream_id":key,"status":"removed","registration_required":true})).into_response());}
             if !text(&payload,"service_id").is_empty() && !text(&payload,"base_url").is_empty() {
-                return register(g,id,payload).await;
+                return register(g,id,payload,true).await;
             }
             let mut error=Failure::new(404,"service is offline; register again or send a complete registration heartbeat");error.code=Some("REGISTRATION_REQUIRED".into());return Err(error);
         }
@@ -1045,7 +1045,7 @@ fn ttl(v: &Value) -> Api<i64> {
     if !(30..=3600).contains(&timeout) {Err(Failure::new(400,"heartbeat timeout must be 30..3600 seconds"))} else {Ok(timeout)}
 }
 
-async fn register(g: &Gateway, id: &Identity, p: Value) -> Api<Response> {
+async fn register(g: &Gateway, id: &Identity, p: Value, recovery: bool) -> Api<Response> {
     let service = text(&p, "service_id");
     if service.is_empty()
         || service.len() > 96
@@ -1198,8 +1198,11 @@ async fn register(g: &Gateway, id: &Identity, p: Value) -> Api<Response> {
             return Err(Failure::new(400, "invalid registered model kind"));
         }
     }
+    // A recovery snapshot restores discovery, not an old configuration over
+    // persisted UI/API edits (including a generated model key).
+    let restoring = recovery && g.registry.lock().unwrap().registration_owners.contains_key(&u.id);
     let mut access_settings=vec![];
-    for model in &models {
+    for model in models.iter().filter(|_| !restoring) {
         if let Some(value)=p.get("model_access_keys").and_then(|keys|keys.get(&model.id)).or_else(||p.get("access_key")) {
             access_settings.push((format!("{}/{}",u.id,model.id),value.clone()));
         }
@@ -1217,8 +1220,13 @@ async fn register(g: &Gateway, id: &Identity, p: Value) -> Api<Response> {
     let key = u.id.clone();
     // An explicit registration scheduling choice updates the same flag edited
     // by PUT upstreams/{id}/routing. An omitted choice retains that flag.
-    if let Some(policy) = p.get("scheduler").filter(|p| !p.is_null()) {
-        r.routing.entry(key.clone()).or_default().direct = policy["mode"] == "direct";
+    if !(recovery && r.routing.contains_key(&key)) {
+        if let Some(policy) = p.get("scheduler").filter(|p| !p.is_null()) {
+            r.routing.entry(key.clone()).or_default().direct = policy["mode"] == "direct";
+        }
+    }
+    if u.scheduler.as_ref().is_some_and(|policy| policy["mode"] == "direct") {
+        u.scheduler = None;
     }
     r.put(u, models);
     r.breaker.remove(&key);
