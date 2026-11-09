@@ -1747,7 +1747,7 @@
   },
   {
     "auth": "manage",
-    "desc": "支持 ollama 自动识别能力：省略 models 自动发现，显式 model/models 同样读取 /api/show；typesafe 使用 decision/systemone。覆盖顺序为自动识别、顶层声明、models 内声明、逐模型映射；心跳只续租，能力变更以同一 service_id 重注册。需网关 Key 或 VOS 身份。稳定 service_id 生成 registered-\u003cservice_id\u003e；相同 ID 更新同一实例，副本须不同 ID。可注册 public 或 private 服务；private 只对注册者身份可见，public 对所有调用者可见。可注册 base_url/models 模型 API，也可提交 model 或 models 显式注册单个/多个模型；显式专用模型应声明 endpoints，普通聊天模型缺省时按协议补全，capabilities/model_kind 用于接口能力过滤；model_endpoints 和 model_capabilities 可逐模型覆盖；ttl_seconds 默认90。",
+    "desc": "支持 ollama 自动识别能力：省略 models 自动发现，显式 model/models 同样读取 /api/show；typesafe 使用 decision/systemone。覆盖顺序为自动识别、顶层声明、models 内声明、逐模型映射；心跳只续租，能力变更以同一 service_id 重注册。需网关 Key 或 VOS 身份。稳定 service_id 生成 registered-<service_id>；相同 ID 更新同一实例，副本须不同 ID。可注册 public 或 private 服务；private 只对注册者身份可见，public 对所有调用者可见。可注册 base_url/models 模型 API，也可提交 model 或 models 显式注册单个/多个模型；显式专用模型应声明 endpoints，普通聊天模型缺省时按协议补全，capabilities/model_kind 用于接口能力过滤；model_endpoints 和 model_capabilities 可逐模型覆盖；ttl_seconds 默认90。 注册可同时提交 access_key（true/字符串/null），或 model_access_keys 按原生模型 ID 逐项设置，需所属 VOS 用户 token。省略时保留已有模型访问 Key；api_key 仍仅是上游厂商凭据。已有模型用 PUT /api/v1/models/access-key 修改。",
     "example": "",
     "group": "manage",
     "method": "POST",
@@ -1847,5 +1847,41 @@
     "summary": "供应商模型与能力元数据",
     "desc": "返回模型 ID、有限能力、接口、上下文限制、价格及状态；不会改写已保存的上游、模型和手工覆盖。",
     "example": "curl http://v-scheduler:8080/api/v1/provider-catalog/deepinfra -H \"Authorization: Bearer <vos-token>\""
+  },
+  {
+    "auth": "manage",
+    "group": "manage",
+    "method": "GET",
+    "path": "/api/v1/api-keys",
+    "summary": "我的 API Key",
+    "desc": "仅 VOS 账户 token 可列出本人的个人和模型 Key 元数据；不返回密钥或哈希。",
+    "example": "curl -X GET \"$GATEWAY/api/v1/api-keys\" -H \"Authorization: Bearer $VOS_TOKEN\""
+  },
+  {
+    "auth": "manage",
+    "group": "manage",
+    "method": "POST",
+    "path": "/api/v1/api-keys",
+    "summary": "生成个人 API Key",
+    "desc": "仅 VOS 账户 token 可生成。权限跟随账户；完整 Key 只返回一次。expires_in_days=0 默认永不过期，1..3650 为有效天数。",
+    "example": "curl -X POST \"$GATEWAY/api/v1/api-keys\" -H \"Authorization: Bearer $VOS_TOKEN\" -H \"Content-Type: application/json\" -d '{\"name\":\"External Agent\",\"expires_in_days\":0}'"
+  },
+  {
+    "auth": "manage",
+    "group": "manage",
+    "method": "DELETE",
+    "path": "/api/v1/api-keys/{id}",
+    "summary": "撤销 API Key",
+    "desc": "仅 VOS 账户 token 可撤销自己的 Key；下一次私有模型请求失效。public 模型仍可匿名调用。",
+    "example": "curl -X DELETE \"$GATEWAY/api/v1/api-keys/{id}\" -H \"Authorization: Bearer $VOS_TOKEN\""
+  },
+  {
+    "auth": "manage",
+    "group": "manage",
+    "method": "PUT",
+    "path": "/api/v1/models/access-key",
+    "summary": "设置、轮换或撤销模型 Key",
+    "desc": "仅模型所属 VOS 用户或管理员凭 VOS token 可修改。access_key=true 生成，字符串设置（16..512 位可打印 ASCII），null 撤销。只授权该模型，旧 Key 立即失效；不改变 public/private，不修改上游厂商 api_key。",
+    "example": "curl -X PUT \"$GATEWAY/api/v1/models/access-key\" -H \"Authorization: Bearer $VOS_TOKEN\" -H \"Content-Type: application/json\" -d '{\"upstream_id\":\"deepseek\",\"model\":\"api.deepseek.com/deepseek-flash\",\"access_key\":true}'"
   }
 ]

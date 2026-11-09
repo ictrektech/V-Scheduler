@@ -7,7 +7,7 @@ onMounted(async()=>{try{endpoints.value=(await request('/api/v1/integration')).e
 defineProps<{t:(value:string)=>string}>()
 const guide = ref<HTMLElement>()
 const contents = [
-  ['addresses','接入地址'], ['deepseek','DeepSeek Flash 调用'], ['auto','Auto 自动选型'],
+  ['addresses','接入地址'], ['keys','API Key 设置与修改'], ['deepseek','DeepSeek Flash 调用'], ['auto','Auto 自动选型'],
   ['providers','模型与上游'], ['register','模型注册 API 与自动能力识别'],
   ['nodes','节点注册与资源查询'], ['lifecycle','节点、应用、预算与停止的统一流程'],
   ['controls','计算启动与停止 API'], ['queue','推理等待队列'],
@@ -18,6 +18,22 @@ function jump(id: string) {
   section?.focus({preventScroll:true})
   section?.scrollIntoView({block:'start'})
 }
+const keyExamples = `# VOS_TOKEN is your signed-in VOS account token.
+GATEWAY=http://<vos-host>:22888
+# Create a personal key (returned once), list and revoke.
+curl -fsS "$GATEWAY/api/v1/api-keys" -H "Authorization: Bearer $VOS_TOKEN" -H 'Content-Type: application/json' -d '{"name":"External Agent","expires_in_days":0}'
+curl -fsS "$GATEWAY/api/v1/api-keys" -H "Authorization: Bearer $VOS_TOKEN"
+curl -fsS -X DELETE "$GATEWAY/api/v1/api-keys/KEY_ID" -H "Authorization: Bearer $VOS_TOKEN"
+# Generate / replace an existing model's access key. To revoke, use null.
+curl -fsS -X PUT "$GATEWAY/api/v1/models/access-key" -H "Authorization: Bearer $VOS_TOKEN" -H 'Content-Type: application/json' -d '{"upstream_id":"deepseek","model":"api.deepseek.com/deepseek-flash","access_key":true}'
+# External agent: use its KEY only; no VOS token required.
+curl -fsS "$GATEWAY/v1/chat/completions" -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' -d '{"model":"api.deepseek.com/deepseek-flash","max_tokens":128,"messages":[{"role":"user","content":"Hello"}]}'
+curl -fsS "$GATEWAY/v1/messages" -H "x-api-key: $KEY" -H 'anthropic-version: 2023-06-01' -H 'Content-Type: application/json' -d '{"model":"api.deepseek.com/deepseek-flash","max_tokens":128,"messages":[{"role":"user","content":"Hello"}]}'`
+const registrationKeys = `curl -fsS "$GATEWAY/api/v1/registrations" -H "Authorization: Bearer $VOS_TOKEN" -H 'Content-Type: application/json' -d '{"service_id":"my-infer","base_url":"http://my-infer:8000/v1","protocol":"chat_completions","visibility":"private","models":[{"id":"chat-a","endpoints":["chat_completions"]}],"access_key":true,"heartbeat_timeout_seconds":90}'
+# Per-model override for multiple submitted models:
+# "model_access_keys":{"chat-a":"your-strong-model-access-key","chat-b":true}
+# Existing models: PUT /api/v1/models/access-key
+# {"upstream_id":"registered-my-infer","model":"registered/chat-a","access_key":"replacement-secret-at-least-16-chars"}`
 const deepseekSetup = `GATEWAY=http://v-scheduler:8080
 MODEL=api.deepseek.com/deepseek-flash
 BODY='{"model":"'$MODEL'","messages":[{"role":"user","content":"Say hello."}],"max_tokens":128}'
@@ -75,6 +91,14 @@ curl -i "$GATEWAY/v1/chat/completions" -H "Authorization: Bearer $VOS_TOKEN" -H 
   <p>{{t('正式别名由当前 V-Scheduler 安装声明；兼容别名仅供旧客户端使用。新应用优先使用正式别名；与旧 V-Router 共存时不要向兼容别名发送私有凭据。所有别名均指向现有容器，不新增服务。')}}</p>
   <h3>{{t('本地与云端模型')}}</h3>
   <p>{{t('本地和纳管远端模型先取得资源许可；云端供应商模型不占本地资源预约。资源忙时遵守重试提示，不能绕过网关直接启动同一次计算。')}}</p>
+  <h3 id="integration-keys" tabindex="-1">{{t('API Key 设置与修改')}}</h3>
+  <p>{{t('安装后点击语言旁的 API Key，生成个人 Key；也可在模型设置中打开「模型访问 Key」，生成、设置或撤销单个模型的 Key。无需重新安装应用。完整 Key 只显示一次，请立即保存。')}}</p>
+  <p>{{t('个人 Key 继承所属 VOS 用户的模型权限；模型专用 Key 仅授权指定模型。两者只允许推理和模型发现。创建、设置与撤销 Key 使用 VOS 账户 token，不能使用另一把 Key 代替。VOS 用户鉴权继续支持，不需要同时发送 token 和 Key。')}}</p>
+  <p>{{t('public 模型接受无 Key、有效 Key 或任意填写的 Key；无效凭据仅获得匿名公开权限，不能访问 private 模型。private 模型需要有权限的 VOS 账户、个人 Key 或该模型的专用 Key。切换 public/private 不会修改已有 Key。')}}</p>
+  <pre>{{keyExamples}}</pre>
+  <h4>{{t('注册模型时同时设置 Key')}}</h4>
+  <p>{{t('access_key=true 自动生成，字符串设置自己的 Key（16 至 512 个可打印 ASCII 字符），null 撤销。model_access_keys 可按原生模型 ID 逐项覆盖；省略时保留已有设置。上游 api_key 只用于请求上游，与 V-Scheduler 的访问 Key 分开。')}}</p>
+  <pre>{{registrationKeys}}</pre>
   <h3 id="integration-deepseek" tabindex="-1">{{t('DeepSeek Flash 调用')}}</h3>
   <p>{{t('在模型与上游打开 DeepSeek Flash 的模型设置，选择公开、私有或继承上游。仅所有者和管理员可改可见范围。私有模型仅对所有者和管理员可见可调用。')}}</p>
   <pre>PATCH /api/v1/models
@@ -84,7 +108,7 @@ curl -i "$GATEWAY/v1/chat/completions" -H "Authorization: Bearer $VOS_TOKEN" -H 
   <p>{{t('用已登录用户的 VOS access token 设置 VOS_TOKEN。应用内通过 VOS 登录或 fastpath 获取当前用户 token。外部客户端使用 VOS 登录或 OAuth 签发的 access token。')}}</p>
   <pre>{{deepseekPrivate}}</pre>
   <h4>{{t('公开模型 · 直接调用')}}</h4>
-  <p>{{t('关闭网关强制鉴权时，公开模型可以不带凭据调用。若开启网关强制鉴权，OpenAI 使用 Authorization: Bearer，Anthropic 使用 x-api-key，填写 VOS access token 或网关 Key。上游 DeepSeek 密钥由网关保存。')}}</p>
+  <p>{{t('公开模型可以不带 Key、带有效 Key 或带任意 Key 调用；无效 Key 不授予私有权限。上游 DeepSeek 密钥只由网关用于请求上游。')}}</p>
   <pre>{{deepseekPublic}}</pre>
   <h4>Anthropic Messages / Auto</h4>
   <p>{{t('使用网关 Key 设置 GATEWAY_KEY。局域网调用时，GATEWAY 填上表的网关宿主机地址。同一个聊天模型 ID（包括 Auto）可以通过 Chat Completions 或 Anthropic Messages 调用。网关按上游协议转换请求、普通响应和流式输出。')}}</p>

@@ -678,6 +678,9 @@ async fn probe_model(g: &Gateway, u: &Upstream, model: &str) -> Api<()> {
     Ok(())
 }
 pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) -> Api<Response> {
+    if id.api_key_id.is_some() && !(request.method()=="GET" && ["/api/v1/models","/api/v1/auth/me"].contains(&request.uri().path())) {
+        return Err(Failure::new(403,"API keys permit inference and model discovery only"));
+    }
     g.registry.lock().unwrap().prune_services(Utc::now());
     let path = request.uri().path().to_string();
     let method = request.method().as_str().to_string();
@@ -721,7 +724,7 @@ pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) ->
         let catalog_readiness = readiness::snapshot(g);
         let r = g.registry.lock().unwrap();
         match path.as_str() {
-            "/api/v1/auth/me"=>return Ok(Json(json!({"identity":{"sub":id.owner,"username":id.username,"email":id.email,"admin":id.admin},"auth_method":if env("V_ROUTER_AUTH_DISABLED","")=="true"{"auth_disabled"}else if id.admin{"gateway_key"}else{"vos_oidc"},"permissions":["inference","management","upstream_resources"],"resource_isolation":true,"registration_scopes":["public","private"]})).into_response()),
+            "/api/v1/auth/me"=>return Ok(Json(json!({"identity":{"sub":id.owner,"username":id.username,"email":id.email,"admin":id.admin},"auth_method":if env("V_ROUTER_AUTH_DISABLED","")=="true"{"auth_disabled"}else if id.api_key_id.is_some(){"api_key"}else if id.vos_user{"vos_oidc"}else if id.admin{"gateway_key"}else{"anonymous"},"permissions":if id.api_key_id.is_some(){vec!["inference","model_discovery"]}else{vec!["inference","management","upstream_resources"]},"resource_isolation":true,"registration_scopes":["public","private"]})).into_response()),
             "/api/v1/upstreams"=>return Ok(Json(json!({"upstreams":upstream_views(&r,id)})).into_response()),
             "/api/v1/models"=>return Ok(Json(json!({"models":model_views(&r,id)})).into_response()),
             "/api/v1/status"=>return Ok(Json(json!({"version":version(),"upstreams_total":r.upstreams.values().filter(|u|u.visible(id)).count(),"upstreams_healthy":r.upstreams.values().filter(|u|u.visible(id)&&u.live()).count(),"models":r.list_models(id).len(),"requests_total":g.usage.lock().unwrap().len(),"key_required":env("V_ROUTER_REQUIRE_KEY","")=="true","oidc_enabled":true,"user":id.username,"is_admin":id.admin,"base_urls":gateway_base_urls(),"catalog_readiness":catalog_readiness})).into_response()),
@@ -1194,15 +1197,29 @@ async fn register(g: &Gateway, id: &Identity, p: Value) -> Api<Response> {
             return Err(Failure::new(400, "invalid registered model kind"));
         }
     }
+    let mut access_settings=vec![];
+    for model in &models {
+        if let Some(value)=p.get("model_access_keys").and_then(|keys|keys.get(&model.id)).or_else(||p.get("access_key")) {
+            access_settings.push((format!("{}/{}",u.id,model.id),value.clone()));
+        }
+    }
+    if !access_settings.is_empty() {
+        if !id.vos_user {return Err(Failure::new(403,"registering access keys requires a VOS account token"));}
+        api_keys::owner(g,&id.owner).await?;
+    }
     let mut r = g.registry.lock().unwrap();
+    // Recheck ownership after discovery and account verification, which await I/O.
+    if r.registration_owners.get(&u.id).is_some_and(|owner|owner!=&id.owner) && !id.admin {
+        return Err(Failure::new(409,"service_id belongs to another owner"));
+    }
+    let access=if access_settings.is_empty(){json!({})}else{api_keys::configure_models(g,&id.owner,access_settings)?};
     let key = u.id.clone();
     r.put(u, models);
     r.breaker.remove(&key);
     r.persist(&g.state_path).map_err(|_|Failure::new(500,"cannot persist service ownership"))?;
-    Ok(
-        Json(json!({"upstream":view(&r,&r.upstreams[&key],id),"upstream_id":key,"status":"online","heartbeat_timeout_seconds":ttl,"heartbeat_after_seconds":ttl/3}))
-            .into_response(),
-    )
+    let mut response=Json(json!({"upstream":view(&r,&r.upstreams[&key],id),"upstream_id":key,"status":"online","heartbeat_timeout_seconds":ttl,"heartbeat_after_seconds":ttl/3,"model_access_keys":access["model_access_keys"]})).into_response();
+    response.headers_mut().insert("cache-control","no-store".parse().unwrap());
+    Ok(response)
 }
 fn gateway_base_urls() -> Value {
     json!({

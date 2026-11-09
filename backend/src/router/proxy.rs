@@ -481,7 +481,14 @@ async fn handle_inner(g: Arc<Gateway>, id: Identity, request: Request, classifie
         resolved
     } else { requested };
     if !pinned.is_empty() && !classifier {
-        auth::identity(&g, &headers, true).await?;
+        let listed_inference=method=="POST" && route(&path,method.as_str()).is_some_and(|r|r["auth"]=="inference") && {
+            let r=g.registry.lock().unwrap();
+            r.upstreams.get(&pinned).is_some_and(|u|r.model_by_id(u,&requested,&id).is_some()
+                || r.models.get(&u.id).is_some_and(|rows|rows.iter().any(|m|m.id==requested && m.visible(u,&id))))
+        };
+        // Selecting a listed model's source does not add management privileges.
+        // Legacy arbitrary pinned passthrough still requires verified identity.
+        if !listed_inference {auth::identity(&g, &headers, true).await?;}
     }
     let suffix = path.strip_prefix("/v1").unwrap_or(&path).to_string();
     let (mut u, native) = if business {

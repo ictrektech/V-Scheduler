@@ -390,3 +390,9 @@ Auto 卡片提供「配置候选与策略」入口，作为内置路由显示，
 Auto 支持 Anthropic Messages（`POST /v1/messages`），可选原生 Anthropic 或由网关转换到 Chat Completions 的候选模型。普通和流式请求示例见应用内「API 文档 → 应用接入」。
 
 Auto 选用 Ollama 时默认关闭隐式思考，让输出 token 用于正文。OpenAI Chat Completions 客户端可显式传入 `reasoning_effort` 以使用模型支持的思考模式。
+
+## 安装后管理个人和模型 API Key
+
+界面顶栏「API Key」支持生成、列出和撤销个人 Key；模型设置中的「模型访问 Key」支持生成、自选设置、轮换和撤销模型专用 Key，无需重新安装。外部 Agent 仅填写 V-Scheduler 的 Key 即可推理；VOS token 鉴权继续支持。个人 Key 跟随所属 VOS 用户的模型权限，模型 Key 仅授权指定模型；Key 不能管理配置。
+
+public 模型支持无 Key、有效 Key 和任意 Key；无效凭据只获得匿名 public 权限。private 模型仍须有效用户身份或被授权的 Key。`POST/GET /api/v1/api-keys`、`DELETE /api/v1/api-keys/{id}`、`PUT /api/v1/models/access-key` 均使用 VOS 账户 token。注册模型时可通过 `access_key` 和 `model_access_keys` 同时配置模型访问 Key；厂商 `api_key` 仍只供访问上游。完整示例见[统一接入指南](docs/application-integration.md#api-key安装后的生成设置与修改)和应用内「API 文档 → 应用接入 → API Key 设置与修改」。

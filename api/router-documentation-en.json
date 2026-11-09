@@ -352,7 +352,7 @@
         },
         {
           "auth": "manage",
-          "desc": "Supports ollama automatic capabilities and the native typesafe/Jev protocol. Omit models for discovery; explicit model/models subsets also detect Ollama capabilities. Precedence: discovery, top-level capabilities/endpoints, individual models, then model_capabilities/model_endpoints maps. Heartbeats renew leases only; re-register the same service_id for metadata changes. Registration does not grant scheduler or budget approval. Requires a gateway key or VOS identity. A stable service_id produces registered-<service_id>; the same ID updates the same instance, replicas need distinct IDs. Public services are visible to all callers; private services only to the registrant. Register a base_url/models API or explicitly supply model/models. Explicit specialized models should declare endpoints; ordinary chat defaults are inferred from the protocol; capabilities/model_kind supports capability filtering. model_endpoints/model_capabilities can override individual models. ttl_seconds defaults to 90.",
+          "desc": "Supports ollama automatic capabilities and the native typesafe/Jev protocol. Omit models for discovery; explicit model/models subsets also detect Ollama capabilities. Precedence: discovery, top-level capabilities/endpoints, individual models, then model_capabilities/model_endpoints maps. Heartbeats renew leases only; re-register the same service_id for metadata changes. Registration does not grant scheduler or budget approval. Requires a gateway key or VOS identity. A stable service_id produces registered-<service_id>; the same ID updates the same instance, replicas need distinct IDs. Public services are visible to all callers; private services only to the registrant. Register a base_url/models API or explicitly supply model/models. Explicit specialized models should declare endpoints; ordinary chat defaults are inferred from the protocol; capabilities/model_kind supports capability filtering. model_endpoints/model_capabilities can override individual models. ttl_seconds defaults to 90. Registration accepts access_key (true/string/null) for all submitted models and model_access_keys keyed by native model ID for per-model overrides. These require the owner’s VOS token; provider api_key remains separate. Omission preserves existing model keys. Change existing model keys using PUT /api/v1/models/access-key.",
           "method": "POST",
           "path": "/api/v1/registrations",
           "summary": "Register or update an inference backend"
@@ -461,6 +461,42 @@
           "summary": "Provider model and capability metadata",
           "desc": "Model IDs, finite capabilities, API endpoints, context limits, prices and status. Existing upstreams, models and manual overrides are never overwritten.",
           "example": "curl http://v-scheduler:8080/api/v1/provider-catalog/deepinfra -H \"Authorization: Bearer <vos-token>\""
+        },
+        {
+          "auth": "manage",
+          "group": "manage",
+          "method": "GET",
+          "path": "/api/v1/api-keys",
+          "summary": "My API keys",
+          "desc": "A VOS account token lists only its own personal and model key metadata; never returns secrets or hashes.",
+          "example": "curl -X GET \"$GATEWAY/api/v1/api-keys\" -H \"Authorization: Bearer $VOS_TOKEN\""
+        },
+        {
+          "auth": "manage",
+          "group": "manage",
+          "method": "POST",
+          "path": "/api/v1/api-keys",
+          "summary": "Create a personal API key",
+          "desc": "Requires a VOS account token. Inherits the owner’s model permissions. The full key is returned once. expires_in_days defaults to 0 (no expiry), or 1..3650 days.",
+          "example": "curl -X POST \"$GATEWAY/api/v1/api-keys\" -H \"Authorization: Bearer $VOS_TOKEN\" -H \"Content-Type: application/json\" -d '{\"name\":\"External Agent\",\"expires_in_days\":0}'"
+        },
+        {
+          "auth": "manage",
+          "group": "manage",
+          "method": "DELETE",
+          "path": "/api/v1/api-keys/{id}",
+          "summary": "Revoke an API key",
+          "desc": "A VOS account token revokes its own key. Subsequent private-model access is denied; public models remain anonymously accessible.",
+          "example": "curl -X DELETE \"$GATEWAY/api/v1/api-keys/{id}\" -H \"Authorization: Bearer $VOS_TOKEN\""
+        },
+        {
+          "auth": "manage",
+          "group": "manage",
+          "method": "PUT",
+          "path": "/api/v1/models/access-key",
+          "summary": "Set, rotate or revoke a model access key",
+          "desc": "Requires the model owner’s or administrator’s VOS token. access_key=true generates a key, a string sets a 16..512 printable ASCII secret, null revokes it. Authorizes only this model; replaces its previous key. Does not change public/private visibility or the upstream provider api_key.",
+          "example": "curl -X PUT \"$GATEWAY/api/v1/models/access-key\" -H \"Authorization: Bearer $VOS_TOKEN\" -H \"Content-Type: application/json\" -d '{\"upstream_id\":\"deepseek\",\"model\":\"api.deepseek.com/deepseek-flash\",\"access_key\":true}'"
         }
       ],
       "id": "manage",
@@ -1554,19 +1590,19 @@
   ],
   "identity": [
     {
-      "channel": "VOS applications / management UI",
-      "effect": "Calls are attributed to the corresponding VOS user. Management APIs require this identity or a gateway key. Other VOS applications can use their own Fastpath token on the same-origin /api/com.ictrek.v-scheduler/v1/* path; calls are attributed to their current user without registering with V-Router.",
-      "method": "Authorization: Bearer <VOS OIDC access_token>"
+      "channel": "VOS account",
+      "method": "Authorization: Bearer <VOS access_token>",
+      "effect": "Existing VOS authentication remains supported for inference and authorized management. Use it to create, set, rotate and revoke keys."
     },
     {
-      "channel": "LAN / external clients",
-      "effect": "Calls use the gateway-admin identity and count towards administrator usage.",
-      "method": "Authorization: Bearer <V_ROUTER_API_KEY> (when authentication is enforced)"
+      "channel": "External Agent",
+      "method": "Authorization: Bearer <KEY> / x-api-key: <KEY>",
+      "effect": "Personal keys follow their active VOS owner; model keys authorize only specified private models. No VOS token is needed for key-based inference. API keys cannot manage configuration or create other keys."
     },
     {
-      "channel": "Anonymous VOS internal calls",
-      "effect": "Anonymous model inference is available only when REQUIRE_KEY is disabled and is attributed to internal. Management and pinned resource APIs reject anonymous callers.",
-      "method": "No credentials"
+      "channel": "Public models",
+      "method": "No key / valid key / arbitrary key",
+      "effect": "Public inference accepts missing, valid and invalid keys. Invalid credentials grant anonymous public-only access. Private models still require a permitted VOS identity or valid key. Upstream provider keys are never client credentials."
     }
   ],
   "integration": [

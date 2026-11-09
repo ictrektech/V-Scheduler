@@ -2,7 +2,7 @@
 
 # V-Router 用户鉴权与外部调用
 
-V-Router 直接验证 VOS OIDC access token，不额外签发本地 JWT。浏览器在 VOS 同域 iframe 内通过自身 `oauth2.client` 的 Fastpath（PKCE authorize → token）取得 token；其他应用也可用自己的 Fastpath token 调用，无须共享 V-Router 的网关 Key。外部客户端使用 VOS 官方授权流程取得 token，再发送 Bearer 头。Anthropic SDK 也可通过 x-api-key 发送同一凭证；同时提供两个头时必须一致，无效凭证不会降级匿名。
+V-Router 直接验证 VOS OIDC access token，不额外签发本地 JWT。浏览器在 VOS 同域 iframe 内通过自身 `oauth2.client` 的 Fastpath（PKCE authorize → token）取得 token；其他应用也可用自己的 Fastpath token 调用，无须共享 V-Router 的网关 Key。外部客户端使用 VOS 官方授权流程取得 token，再发送 Bearer 头。Anthropic SDK 也可通过 x-api-key 发送同一凭证；推荐只发送一种凭据；public 模型接受无凭据、有效 Key 或任意 Key。无效凭据仅得到匿名 public 权限，不能访问 private 模型；管理接口仍拒绝无效凭据。
 
 ## 先验证当前身份
 
@@ -13,20 +13,22 @@ curl "$BASE/api/v1/auth/me" \
   -H "Authorization: Bearer $VOS_TOKEN"
 ```
 
-响应包含 `identity.sub`、`identity.username`、`auth_method`、`permissions` 和 `resource_isolation`。`auth_method=vos_oidc` 表示当前 VOS 用户；`gateway_key` 表示共享网关凭证；`auth_disabled` 仅用于独立调试。不要把 `/healthz` 或匿名 `/v1/models` 成功当成用户登录成功。
+响应包含 `identity.sub`、`identity.username`、`auth_method`、`permissions` 和 `resource_isolation`。`auth_method=api_key` 表示个人或模型访问 Key；`auth_method=vos_oidc` 表示当前 VOS 用户；`gateway_key` 表示共享网关凭证；`auth_disabled` 仅用于独立调试。不要把 `/healthz` 或匿名 `/v1/models` 成功当成用户登录成功。
 
 ## 权限与凭证
 
 | 凭证 | 模型推理 | 管理 API / 指定上游资源 | 用量归属 |
 | --- | --- | --- | --- |
-| 有效 VOS OIDC token | 允许 | 允许；当前所有已登录用户共享管理权限 | 验证后的 VOS 用户 |
+| 有效 VOS OIDC token | 按用户模型权限 | 按所有者和管理员权限 | 验证后的 VOS 用户 |
+| 个人 API Key | 跟随所属 VOS 用户 | 403（仅推理和模型发现） | 所属 VOS 用户 |
+| 模型专用 Key | 指定私有模型及 public 模型 | 403（仅推理和模型发现） | 所属 VOS 用户 |
 | 共享网关 Key（REQUIRE_KEY=true 且配置非空） | 允许 | 允许 | gateway-admin |
-| 无凭证 | 仅 REQUIRE_KEY=false 时允许 | 401 | internal |
-| 无效/过期 token | 401，不降级为匿名 | 401 | 不计为匿名成功请求 |
+| 无凭证 | 仅 public 模型 | 401 | internal |
+| 无效/过期 token 或错误 Key | 仅匿名 public 权限；private 拒绝 | 401 | anonymous |
 
-REQUIRE_KEY 默认 false，对容器网络、宿主机端口是同一策略。开启而未填写 Key 时，无凭证调用仍被拒绝，有效 OIDC token 可用。VOS 用户名由 `/v1000/oauth2/userinfo` 校验结果确定，不信任客户端自报的 `X-External-User-ID` 等用户头。成功验证缓存最多 60 秒，撤销可能在缓存到期后生效。
+REQUIRE_KEY 默认 false，对容器网络、宿主机端口是同一策略。该选项保留共享管理员 Key 的兼容入口；public 模型仍可匿名调用，private 则需被授权的 VOS token 或访问 Key。VOS 用户名由 `/v1000/oauth2/userinfo` 校验结果确定，不信任客户端自报的 `X-External-User-ID` 等用户头。VOS token 的成功验证缓存最多 60 秒。个人与模型 Key 不借用此缓存，每次调用检查当前账户状态，并在推理准入前检查是否撤销。
 
-当前没有个人 Key 发放或模型级配额。`resource_isolation=true` 表示注册模型服务支持 public/private 可见范围；文件和任务仍使用共享上游账户，已登录且可访问该上游的用户可访问该账户资源。WeKnora 的个人 Key、知识库范围及 token exchange 是其自身功能，不能视为 V-Router 已提供的接口。
+安装后可在顶栏「API Key」或模型设置中生成、设置、轮换、撤销 Key；API 与完整示例见[统一接入指南](../../docs/application-integration.md#api-key安装后的生成设置与修改)。Key 不授权修改资源预算或跳过调度。`resource_isolation=true` 表示注册模型服务支持 public/private 可见范围；文件和任务仍使用共享上游账户，已登录且可访问该上游的用户可访问该账户资源。WeKnora 的个人 Key、知识库范围及 token exchange 是其自身功能，不能视为 V-Router 已提供的接口。
 
 ## 其他 VOS 应用的推荐接入方式
 

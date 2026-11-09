@@ -1,5 +1,8 @@
 "use strict";
 export const VRouterMessages = {
+"示例已指定当前上游；ACCESS_TOKEN 可用 VOS token 或 V-Scheduler Key，模型使用上游原生 ID。":{"en":"This example pins the current upstream. Set ACCESS_TOKEN to a VOS token or V-Scheduler key; the model uses its native upstream ID.","zh-TW":"範例已指定目前上游；ACCESS_TOKEN 可用 VOS token 或 V-Scheduler Key，模型使用上游原生 ID。"},
+"模型访问 Key":{"en":"Model access key","zh-TW":"模型存取 Key"},
+"ACCESS_TOKEN 可填写 VOS 账户 token、个人 Key 或模型访问 Key；public 模型也接受不带 Key 或任意 Key。":{"en":"ACCESS_TOKEN accepts a VOS account token, personal key or model access key. Public models also accept no key or an arbitrary key.","zh-TW":"ACCESS_TOKEN 可填寫 VOS 帳戶 token、個人 Key 或模型存取 Key；public 模型也接受不帶 Key 或任意 Key。"},
 "供应商目录来自 Models.dev，原生调用继续使用 pi-ai，其他兼容供应商复用现有代理；目录可离线使用，不代表账号已授权。":{"en": "The provider catalog comes from Models.dev. Native calls keep pi-ai; other compatible providers reuse existing proxy protocols. The catalog works offline and does not grant account access.", "zh-TW": "供應商目錄來自 Models.dev，原生呼叫繼續使用 pi-ai，其他相容供應商沿用現有代理；目錄可離線使用，不代表帳號已授權。"},
 "视频结构化 · 场景检测": {"en":"Video structure · Scene detection","zh-TW":"影片結構化 · 場景偵測"},
 "视频结构化 · 结构化与描述": {"en":"Video structure · Analysis and description","zh-TW":"影片結構化 · 結構化與描述"},

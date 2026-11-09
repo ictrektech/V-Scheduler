@@ -470,6 +470,9 @@ const app = {
             if (m.upstream_source === "api" && m.upstream_manageable !== false) {
               actions.push(`<button class="btn" onclick="app.openModelDialog(${jsArg(m.qualified)}, ${jsArg(m.upstream_id)})">${VRouterI18n.t("编辑元数据")}</button>`);
             }
+            if (m.visibility_manageable && !m.virtual && m.kind !== "service") {
+              actions.push(`<button class="btn" onclick="app.openModelKey(${jsArg(m.upstream_id)}, ${jsArg(m.id)})">${VRouterI18n.t("模型访问 Key")}</button>`);
+            }
             if (admin && !m.virtual && !m.upstream_direct && m.kind !== "service") {
               if (m.direct) {
                 actions.push(`<button class="btn" onclick="app.setModelDirect(${jsArg(m.upstream_id)}, ${jsArg(m.id)}, false)">${VRouterI18n.t("取消放行")}</button>`);
@@ -494,6 +497,7 @@ const app = {
     });
   },
 
+  openModelKey(upstreamId, model) { options.manageKey?.(upstreamId, model); },
   openModelCall(qualified, upstreamId) {
     const model = this.state.models.find(m => m.qualified === qualified && m.upstream_id === upstreamId);
     if (!model) return;
@@ -544,8 +548,8 @@ const app = {
     output.replaceChildren();
     for (const path of methods) {
       const headers = path === "/messages"
-        ? ['-H "x-api-key: $VOS_TOKEN"', "-H 'anthropic-version: 2023-06-01'"]
-        : ['-H "Authorization: Bearer $VOS_TOKEN"'];
+        ? ['-H "x-api-key: $ACCESS_TOKEN"', "-H 'anthropic-version: 2023-06-01'"]
+        : ['-H "Authorization: Bearer $ACCESS_TOKEN"'];
       if (pinned) headers.push("-H " + shell("X-VRouter-Upstream: " + upstreamId));
       const data = multipart[path]
         ? ["model=" + native, ...multipart[path]].map(value => "-F " + shell(value))
@@ -570,7 +574,7 @@ const app = {
     $("modelCallLAN").textContent = lanBaseURL(bases);
     $("modelCallDeclared").textContent = !methods.length ? (model.endpoints || []).join(" · ") : "";
     VRouterI18n.bind($("modelCallHint"), "textContent", () => VRouterI18n.t(pinned
-      ? "示例已指定当前上游，使用 VOS access token 和该上游的原生模型 ID。"
+      ? "示例已指定当前上游；ACCESS_TOKEN 可用 VOS token 或 V-Scheduler Key，模型使用上游原生 ID。"
       : "示例使用目录中的完整模型 ID，由网关选路。"));
     $("modelCallNoExample").hidden = methods.length > 0;
     $("modelCallDialog").showModal();

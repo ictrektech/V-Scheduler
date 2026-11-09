@@ -286,7 +286,7 @@
     },
     "/api/v1/registrations": {
       "post": {
-        "description": "Supports ollama automatic capabilities and the native typesafe/Jev protocol. Omit models for discovery; explicit model/models subsets also detect Ollama capabilities. Precedence: discovery, top-level capabilities/endpoints, individual models, then model_capabilities/model_endpoints maps. Heartbeats renew leases only; re-register the same service_id for metadata changes. Registration does not grant scheduler or budget approval. Requires a gateway key or VOS identity. A stable service_id produces registered-<service_id>; the same ID updates the same instance, replicas need distinct IDs. Public services are visible to all callers; private services only to the registrant. Register a base_url/models API or explicitly supply model/models. Explicit specialized models should declare endpoints; ordinary chat defaults are inferred from the protocol; capabilities/model_kind supports capability filtering. model_endpoints/model_capabilities can override individual models. ttl_seconds defaults to 90. Native protocol=pi accepts provider and write-only provider_credentials; serves chat, Responses and Messages through the existing admission path. Existing protocols and endpoints retain their behavior. See docs/application-integration.md#native-provider-runtime. Send heartbeats at heartbeat_after_seconds. Stale entries are removed automatically. A full registration snapshot heartbeat restores the same service after a restart or disconnect.",
+        "description": "Supports ollama automatic capabilities and the native typesafe/Jev protocol. Omit models for discovery; explicit model/models subsets also detect Ollama capabilities. Precedence: discovery, top-level capabilities/endpoints, individual models, then model_capabilities/model_endpoints maps. Heartbeats renew leases only; re-register the same service_id for metadata changes. Registration does not grant scheduler or budget approval. Requires a gateway key or VOS identity. A stable service_id produces registered-<service_id>; the same ID updates the same instance, replicas need distinct IDs. Public services are visible to all callers; private services only to the registrant. Register a base_url/models API or explicitly supply model/models. Explicit specialized models should declare endpoints; ordinary chat defaults are inferred from the protocol; capabilities/model_kind supports capability filtering. model_endpoints/model_capabilities can override individual models. ttl_seconds defaults to 90. Native protocol=pi accepts provider and write-only provider_credentials; serves chat, Responses and Messages through the existing admission path. Existing protocols and endpoints retain their behavior. See docs/application-integration.md#native-provider-runtime. Send heartbeats at heartbeat_after_seconds. Stale entries are removed automatically. A full registration snapshot heartbeat restores the same service after a restart or disconnect. Registration accepts access_key (true/string/null) for all submitted models and model_access_keys keyed by native model ID for per-model overrides. These require the owner’s VOS token; provider api_key remains separate. Omission preserves existing model keys. Change existing model keys using PUT /api/v1/models/access-key.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -440,6 +440,39 @@
                     "maximum": 3600,
                     "default": 90,
                     "description": "Service heartbeat timeout; ttl_seconds remains a legacy alias."
+                  },
+                  "access_key": {
+                    "oneOf": [
+                      {
+                        "type": "string",
+                        "minLength": 16,
+                        "maxLength": 512
+                      },
+                      {
+                        "type": "boolean",
+                        "const": true
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "model_access_keys": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "boolean",
+                          "const": true
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
                   }
                 },
                 "required": [
@@ -12168,6 +12201,177 @@
             }
           }
         ]
+      }
+    },
+    "/api/v1/api-keys": {
+      "get": {
+        "summary": "My API keys",
+        "description": "A VOS account token lists only its own personal and model key metadata; never returns secrets or hashes.",
+        "tags": [
+          "manage"
+        ],
+        "x-gateway-auth": "manage",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Gateway error"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a personal API key",
+        "description": "Requires a VOS account token. Inherits the owner’s model permissions. The full key is returned once. expires_in_days defaults to 0 (no expiry), or 1..3650 days.",
+        "tags": [
+          "manage"
+        ],
+        "x-gateway-auth": "manage",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Gateway error"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "expires_in_days": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 3650
+                  }
+                },
+                "required": [
+                  "name"
+                ]
+              },
+              "example": {
+                "name": "External Agent",
+                "expires_in_days": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/api-keys/{id}": {
+      "delete": {
+        "summary": "Revoke an API key",
+        "description": "A VOS account token revokes its own key. Subsequent private-model access is denied; public models remain anonymously accessible.",
+        "tags": [
+          "manage"
+        ],
+        "x-gateway-auth": "manage",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Gateway error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/models/access-key": {
+      "put": {
+        "summary": "Set, rotate or revoke a model access key",
+        "description": "Requires the model owner’s or administrator’s VOS token. access_key=true generates a key, a string sets a 16..512 printable ASCII secret, null revokes it. Authorizes only this model; replaces its previous key. Does not change public/private visibility or the upstream provider api_key.",
+        "tags": [
+          "manage"
+        ],
+        "x-gateway-auth": "manage",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Gateway error"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "upstream_id": {
+                    "type": "string"
+                  },
+                  "model": {
+                    "type": "string"
+                  },
+                  "access_key": {
+                    "oneOf": [
+                      {
+                        "type": "string",
+                        "minLength": 16,
+                        "maxLength": 512
+                      },
+                      {
+                        "type": "boolean",
+                        "const": true
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "upstream_id",
+                  "model",
+                  "access_key"
+                ]
+              },
+              "example": {
+                "upstream_id": "deepseek",
+                "model": "api.deepseek.com/deepseek-flash",
+                "access_key": true
+              }
+            }
+          }
+        }
       }
     }
   },

@@ -74,7 +74,7 @@ async fn model_visibility_changes_are_independent_and_survive_refresh() {
         assert_eq!(r.list_models(&bob).iter().map(|m| m.id.as_str()).collect::<Vec<_>>(), ["flash"]);
         assert!(r.acquire("manual/flash", "/messages", "", &bob).is_ok());
         assert!(r.acquire("manual/sibling", "/chat/completions", "", &bob).is_err());
-        assert!(r.acquire("flash", "/chat/completions", "fixture", &bob).is_err());
+        assert!(r.acquire("flash", "/chat/completions", "fixture", &bob).is_ok());
     }
     manage::handle(&g, &alice, change(json!("private"))).await.unwrap();
     {
@@ -355,6 +355,7 @@ pub(super) fn temp() -> PathBuf {
 pub(super) fn gateway(root: &Path, controller: Router) -> Arc<Gateway> {
     Arc::new(Gateway {
         registry: Mutex::new(Registry::default()),
+        api_keys: Mutex::new(api_keys::Store::open(&root.join("state.json")).unwrap()),
         models_dev: Default::default(),
         auto_runtime: Default::default(),
         queue: Mutex::new(Default::default()),

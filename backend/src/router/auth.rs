@@ -8,7 +8,7 @@ pub(super) async fn administrator(client: &reqwest::Client, userinfo: &str, toke
     let Ok(value) = read_json(response, 1 << 20).await else { return false; };
     crate::identity::administrator(&value)
 }
-fn userinfo() -> Option<String> {
+pub(super) fn userinfo() -> Option<String> {
     let explicit = env("VOS_OIDC_USERINFO_URL", "");
     if !explicit.is_empty() {
         return Some(explicit);
@@ -38,6 +38,12 @@ pub(super) async fn probe(g: &Gateway) -> Api<Response> {
     Ok(axum::Json(json!({"version":version(),"oidc_enabled":userinfo().is_some() && env("V_ROUTER_AUTH_DISABLED","")!="true","oidc_reachable":reachable,"oidc_error":error})).into_response())
 }
 pub(super) async fn identity(g: &Gateway, h: &HeaderMap, management: bool) -> Api<Identity> {
+    match verified_identity(g, h, management).await {
+        Err(error) if !management && matches!(error.status, StatusCode::UNAUTHORIZED | StatusCode::SERVICE_UNAVAILABLE) => Ok(Identity { username: "anonymous".into(), auth_failure:Some(error.status.as_u16()), ..Default::default() }),
+        result => result,
+    }
+}
+async fn verified_identity(g: &Gateway, h: &HeaderMap, management: bool) -> Api<Identity> {
     if env("V_ROUTER_AUTH_DISABLED", "") == "true" && management {
         return Ok(Identity {
             owner: "auth-disabled".into(),
@@ -81,6 +87,9 @@ pub(super) async fn identity(g: &Gateway, h: &HeaderMap, management: bool) -> Ap
             admin: true,
             ..Default::default()
         });
+    }
+    if token.starts_with("vs-key-") || api_keys::known(g, token) {
+        return api_keys::authenticate(g, token).await;
     }
     if token.starts_with("vs-app-") {
         if management {
@@ -158,6 +167,7 @@ pub(super) async fn identity(g: &Gateway, h: &HeaderMap, management: bool) -> Ap
         username: if username.is_empty() { owner } else { username }.into(),
         email: text(value, "email").into(),
         admin: administrator(&g.client, &url, token).await,
+        vos_user: true,
         ..Default::default()
     };
     {

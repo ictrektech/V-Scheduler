@@ -113,6 +113,11 @@ impl Model {
     }
 
     pub fn visible(&self, upstream: &Upstream, identity: &Identity) -> bool {
+        if let Some(models) = &identity.key_models {
+            if self.visibility.as_deref().unwrap_or(&upstream.visibility)=="private" {
+                return (identity.admin || upstream.owner==identity.owner) && models.contains(&format!("{}/{}",upstream.id,self.id));
+            }
+        }
         match self.visibility.as_deref() {
             Some("public") => true,
             Some("private") => identity.admin || (!upstream.owner.is_empty() && upstream.owner == identity.owner),
@@ -379,13 +384,15 @@ impl Registry {
                 continue;
             }
             let model = if !pinned.is_empty() {
-                if !u.visible(id) || self.models.get(&u.id).is_some_and(|models| models.iter().any(|m| !m.visible(u, id))) {
-                    continue;
+                let listed=self.model_by_id(u,requested,id).or_else(||self.models.get(&u.id)?.iter().find(|m|m.id==requested && m.visible(u,id)));
+                if let Some(model)=listed { Some(model.clone()) } else {
+                    // Legacy pinned calls may name an undiscovered model only
+                    // with full upstream visibility; scoped keys never may.
+                    if id.key_models.is_some() || !u.visible(id) || self.models.get(&u.id).is_some_and(|models| models.iter().any(|m| !m.visible(u, id))) {
+                        continue;
+                    }
+                    Some(Model {id:requested.into(),..Model::default()})
                 }
-                Some(Model {
-                    id: self.model_by_id(u, requested, id).map_or_else(|| requested.into(), |m| m.id.clone()),
-                    ..Model::default()
-                })
             } else {
                 self.model_by_id(u, requested, id).cloned()
             };

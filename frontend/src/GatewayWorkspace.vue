@@ -16,7 +16,7 @@ onMounted(async()=>{
  const legacyAbout=root.querySelector<HTMLButtonElement>('button[onclick="app.openAbout()"]');if(legacyAbout)legacyAbout.style.display='none'
  const footer=root.querySelector('.side-footer');if(footer)root.querySelector('.top-actions')?.prepend(footer)
  const apiBase=apiBases(location.pathname).gateway
- workspace=mountGateway(root,{apiBase,token:getVOSBearerToken,clearToken:clearCachedVOSBearerToken,locale:()=>props.locale,visible:()=>props.visible,administrator:()=>props.administrator,select:(tab:string)=>emit('select',tab)})
+ workspace=mountGateway(root,{apiBase,manageKey:(upstreamId:string,model:string)=>window.dispatchEvent(new CustomEvent('vscheduler:model-key',{detail:upstreamId+'/'+model})),token:getVOSBearerToken,clearToken:clearCachedVOSBearerToken,locale:()=>props.locale,visible:()=>props.visible,administrator:()=>props.administrator,select:(tab:string)=>emit('select',tab)})
  workspace.select(props.tab)
  await workspace.started
 })

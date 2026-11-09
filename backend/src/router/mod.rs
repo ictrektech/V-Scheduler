@@ -5,6 +5,9 @@ mod auto;
 #[cfg(test)]
 mod auto_tests;
 mod auth;
+mod api_keys;
+#[cfg(test)]
+mod api_key_tests;
 mod anthropic_bridge;
 mod bridge;
 mod discovery;
@@ -62,6 +65,10 @@ struct Identity {
     email: String,
     admin: bool,
     service_app: String,
+    vos_user: bool,
+    api_key_id: Option<String>,
+    key_models: Option<Vec<String>>,
+    auth_failure: Option<u16>,
 }
 #[derive(Debug)]
 struct Failure {
@@ -130,6 +137,7 @@ type Api<T> = Result<T, Failure>;
 static MANAGED_GATEWAY: std::sync::OnceLock<std::sync::Weak<Gateway>> = std::sync::OnceLock::new();
 struct Gateway {
     registry: Mutex<Registry>,
+    api_keys: Mutex<api_keys::Store>,
     models_dev: models_dev::Store,
     auto_runtime: auto::Runtime,
     queue: Mutex<queue::Queue>,
@@ -270,6 +278,7 @@ pub(crate) async fn start(
     let state_path = PathBuf::from(env("V_ROUTER_STATE_PATH", "/gateway-data/state.json"));
     let state = Arc::new(Gateway {
         registry: Mutex::new(Registry::open(&state_path)?),
+        api_keys: Mutex::new(api_keys::Store::open(&state_path)?),
         models_dev: models_dev::Store::open(&state_path),
         auto_runtime: Default::default(),
         queue: Mutex::new(Default::default()),
@@ -414,6 +423,16 @@ async fn dispatch(g: Arc<Gateway>, mut request: Request) -> Api<Response> {
     let management =
         spec.as_ref().is_some_and(|r| r["auth"] == "manage") || path.starts_with("/model-hub/api/");
     let id = auth::identity(&g, request.headers(), management).await?;
+    if id.api_key_id.is_some() && !(spec.as_ref().is_some_and(|r| r["auth"] == "inference")
+        || request.method() == "GET" && ["/api/v1/models", "/api/v1/auth/me"].contains(&path.as_str())) {
+        return Err(Failure::new(403, "API keys permit inference and model discovery only"));
+    }
+    if path == "/api/v1/models/access-key" {
+        return api_keys::model_access(&g, &id, request).await;
+    }
+    if path == "/api/v1/api-keys" || path.starts_with("/api/v1/api-keys/") {
+        return api_keys::handle(&g, &id, request).await;
+    }
     if spec.as_ref().is_some_and(|r| r["group"] == "resource")
         && !request.headers().contains_key("x-vrouter-upstream")
     {
@@ -447,7 +466,12 @@ async fn dispatch(g: Arc<Gateway>, mut request: Request) -> Api<Response> {
                 "application credential does not permit this endpoint",
             ));
         }
-        return proxy::handle(g, id, request).await;
+        let auth_failure=id.auth_failure;
+        return proxy::handle(g, id, request).await.map_err(|error| {
+            if error.status==StatusCode::NOT_FOUND && auth_failure.is_some() {
+                Failure::new(auth_failure.unwrap(),"valid credentials are required for private model access")
+            }else{error}
+        });
     }
     if path.starts_with("/api/") {
         return Err(Failure::new(404, "unknown API endpoint"));

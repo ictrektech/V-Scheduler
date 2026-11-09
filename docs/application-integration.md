@@ -82,13 +82,71 @@ VOS 本机资源采集内置于应用，无需应用开发者部署独立 Agent�
 | vLLM 自身 API Key | 网关访问上游 vLLM，放入受保护注册配置的 `api_key` | 网关调用者凭据 |
 | 专用后台推理身份 | 如 HybRAG 的受限后台模型调用 | 注册、网关管理、调度管理员权限 |
 
-不同应用使用各自的服务身份；私钥不进入浏览器、discovery、共享模型目录或日志。无效 Bearer 返回 401，不能填写任意占位 Key。注册 `scheduler` 策略需要管理员权限；普通身份提交该字段返回 403。私有模型由注册请求的真实身份决定 owner；系统级管理员注册器不能代替另一个用户创建其私有身份。后台可信交接见 [HybRAG 身份参考](hybrag-gateway-identity.md)。
+不同应用使用各自的服务身份；私钥不进入浏览器、discovery、共享模型目录或日志。管理接口仍拒绝无效 Bearer；模型推理对无效 Key 仅给予匿名 public 权限，不能读取或调用 private 模型。注册 `scheduler` 策略需要管理员权限；普通身份提交该字段返回 403。私有模型由注册请求的真实身份决定 owner；系统级管理员注册器不能代替另一个用户创建其私有身份。后台可信交接见 [HybRAG 身份参考](hybrag-gateway-identity.md)。
+
+## API Key：安装后的生成、设置与修改
+
+VOS 账户鉴权继续支持。应用已安装后，点击语言选择器旁的 **API Key**：
+
+1. **个人 Key**：填写名称，默认不设到期时间，生成后立即复制。完整 Key 只返回一次，服务端只保存哈希，列表不回显。可在「我的 Key」撤销。
+2. **模型专用 Key**：在模型的「模型设置 → 模型访问 Key」进入，或从顶栏选择模型。可生成、设置自己的 Key（16–512 个可打印 ASCII 字符）、替换或撤销。模型 Key 只授权该模型的 private 访问，不授予管理权限；轮换后旧 Key 立即失效。
+3. **调用**：外部 Agent 的 Base URL 填 `http://<vos-host>:22888/v1`，API Key 填生成的 Key，不需要另外填写 VOS token。OpenAI 使用 `Authorization: Bearer KEY`，Anthropic 使用 `x-api-key: KEY`。VOS 内容器 Base URL 为 `http://v-scheduler:8080/v1`。
+
+| 模型范围 | 无 Key / 乱写 Key | 有效个人 Key | 有效模型 Key / VOS token |
+|---|---|---|---|
+| public（含继承上游 public） | 可以调用；无效凭据仅视为匿名 | 可以调用 | 可以调用 |
+| private（含继承上游 private） | 不可见、不可调用 | 按所属 VOS 用户当前权限 | 模型 Key 仅授权指定模型；VOS token 按原有用户权限 |
+
+个人与模型 Key 都只用于模型发现和推理，不能修改上游、资源预算、public/private 或创建其他 Key。Key 所属账户被禁用或删除后，私有访问停止；VOS 身份服务不可用时也不会放行私有访问。管理 Key 的 API 必须使用 VOS 账户 token，API Key 不能代替它。public/private 的修改不自动轮换 Key。上游配置的 `api_key` 是厂商凭据，**客户端使用的是 V-Scheduler 的访问 Key**。
+
+```bash
+GATEWAY=http://<vos-host>:22888
+# VOS_TOKEN: 当前 VOS 账户 token，不要写入共享配置或日志。
+# 创建个人 Key：只在本次响应的 api_key 字段返回完整 Key。
+curl -fsS "$GATEWAY/api/v1/api-keys" -H "Authorization: Bearer $VOS_TOKEN" \
+  -H 'Content-Type: application/json' -d '{"name":"External Agent","expires_in_days":0}'
+# 只列出本人 Key 的元数据；用响应中的 id 撤销。
+curl -fsS "$GATEWAY/api/v1/api-keys" -H "Authorization: Bearer $VOS_TOKEN"
+curl -fsS -X DELETE "$GATEWAY/api/v1/api-keys/KEY_ID" -H "Authorization: Bearer $VOS_TOKEN"
+# 为已有模型生成并替换 Key。access_key 字符串为设置自选 Key，null 为撤销。
+curl -fsS -X PUT "$GATEWAY/api/v1/models/access-key" -H "Authorization: Bearer $VOS_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"upstream_id":"deepseek","model":"api.deepseek.com/deepseek-flash","access_key":true}'
+# 将生成结果中的 Key 安全设置为 KEY，外部 Agent 仅发送该 Key。
+curl -fsS "$GATEWAY/v1/chat/completions" -H "Authorization: Bearer $KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"api.deepseek.com/deepseek-flash","max_tokens":128,"messages":[{"role":"user","content":"Hello"}]}'
+curl -fsS "$GATEWAY/v1/messages" -H "x-api-key: $KEY" -H 'anthropic-version: 2023-06-01' \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"api.deepseek.com/deepseek-flash","max_tokens":128,"messages":[{"role":"user","content":"Hello"}]}'
+```
+
+### 应用注册时设置模型访问 Key
+
+`POST /api/v1/registrations` 可在原有注册数据中加入 `access_key`，应用到本次提交的全部模型。`model_access_keys` 以原生模型 ID 为键，逐模型覆盖。值为 `true` 自动生成，字符串设置，`null` 撤销；省略时保留现有 Key。需要所属 VOS 用户 token。仍应按原有心跳契约续报；心跳不轮换 Key。
+
+```bash
+curl -fsS "$GATEWAY/api/v1/registrations" -H "Authorization: Bearer $VOS_TOKEN" \
+  -H 'Content-Type: application/json' -d '{
+    "service_id":"my-infer","base_url":"http://my-infer:8000/v1",
+    "protocol":"chat_completions","visibility":"private",
+    "models":[{"id":"chat-a","endpoints":["chat_completions"]}],
+    "access_key":true,"heartbeat_timeout_seconds":90
+  }'
+# 多模型逐项覆盖示例：
+# "model_access_keys":{"chat-a":"your-strong-model-key","chat-b":true}
+# 新生成 Key 仅在响应 model_access_keys[].api_key 中返回一次。
+# 日后修改：PUT /api/v1/models/access-key
+# {"upstream_id":"registered-my-infer","model":"registered/chat-a","access_key":null}
+```
+
+请用实际模型目录返回的 `upstream_id` 和 `qualified` 替换示例。Key 不改变上游的调度、并发或资源预算策略，也不能绕过许可。
 
 ## DeepSeek Flash 的私有与公开调用
 
 在「模型与上游」打开已添加模型的设置，选择公开、私有或继承上游。修改由模型所属上游的所有者或管理员操作。单模型设置覆盖上游默认值，同一上游其他模型继续使用自己的设置。接口为 `PATCH /api/v1/models`，使用 VOS Bearer，提交 `{"upstream_id":"deepseek","model":"api.deepseek.com/deepseek-flash","visibility":"private"}`。设为 `"public"` 切换公开，`null` 恢复继承。用实际目录返回的 `upstream_id` 与 `qualified` 替换示例。
 
-容器内使用 `http://v-scheduler:8080`。局域网使用宿主机映射端口，默认 `22888`。VOS 同源客户端可用 `/api/com.ictrek.v-scheduler`。私有调用使用当前登录账号的 VOS access token，应用可由 VOS 登录桥接或 fastpath 获取。公开模型在网关未要求强制鉴权时可直接调用；启用强制鉴权时，公开调用也传 VOS access token 或网关 Key。上游 DeepSeek Key 由网关保存。
+容器内使用 `http://v-scheduler:8080`。局域网使用宿主机映射端口，默认 `22888`。VOS 同源客户端可用 `/api/com.ictrek.v-scheduler`。私有调用使用当前登录账号的 VOS access token，应用可由 VOS 登录桥接或 fastpath 获取。公开模型始终接受不带 Key、有效 Key 或任意占位 Key。私有模型接受有权限的 VOS token、个人 Key 或对应模型专用 Key。上游 DeepSeek Key 只由网关用于访问上游。
 
 ```bash
 GATEWAY=http://v-scheduler:8080
