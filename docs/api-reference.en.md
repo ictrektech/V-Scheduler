@@ -455,3 +455,15 @@ Transient VOS login expiry is automatically renewed where the app bridge support
 | POST | `/api/v1/ollama/runtime/stop` | Unload model |
 | GET | `/api/v1/integration` | Configured internal endpoints and host port mappings |
 | GET | `/api/v1/version` | Installed VOS app version, profile and every service image/tag |
+
+## Model domains and per-step Auto routing
+
+See [Model domains](model-domains.md#model-domains) for complete UI workflows, fields, permissions, responses, errors and examples. UI and API share one reusable domain catalog. Auto domains restrict specialist candidates and optionally allow General fallback. Each fresh step reranks by domain, complexity and existing capability/resource constraints. Unfinished tool turns retain their model and require the same session ID.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/api/v1/model-domains` | Read built-in/custom categories; returns domains array |
+| POST | `/api/v1/model-domains` | VOS user creates a shared category; duplicates reuse the existing ID |
+| PATCH | `/api/v1/models/domains` | Atomically replace domains of 1–200 models; administrators may include auto/auto |
+
+Single-model changes use domains in PATCH `/api/v1/models`. Registration accepts top-level domain defaults and models[].domains overrides. GET/PUT `/api/v1/auto-routing` also configures Auto domains using the latest revision. POST `/api/v1/auto-routing/test` exposes this step’s classification and selection reasons. Omission preserves stored domains, [] resets General, and unknown IDs/null are rejected. The linked guide details custom category IDs, batch atomicity, classifier confidence fallback and tool-session boundaries.

@@ -509,3 +509,15 @@ The in-app operation details now include path/query/header parameters, required 
 Additional `/v1/*` resource routes are transparent native forwarding. Their availability, methods, request/response fields and success codes are owned by the selected upstream/version; a routed path does not promise that upstream supports all methods. Their contract uses `default` responses to preserve native JSON, files and SSE instead of falsely promising HTTP200 or a Scheduler wrapper. Read the native provider/resource OpenAPI for those extensions. For managed API operations the response data is described specifically; a reserved node-control operation returns 501 and is not documented as successful execution.
 
 额外 `/v1/*` 资源是透明原生转发，是否可用、方法、字段和成功码由所选上游及版本决定，不因网关有路由就保证全部方法可用。此类契约使用 default 保留原生JSON/文件/SSE，不虚构HTTP200或统一调度包络，扩展字段应查所属协议。自有管理接口则提供具体数据结构；预留节点控制返回501，不能当作已执行。
+
+## 模型适用领域与 Auto 每步选型
+
+模型注册、编辑和批量设置领域的完整字段、权限、返回值和错误处理，见[模型适用领域](model-domains.md)。界面和 API 使用同一个共享分类目录，Auto 配置中的 domains 允许限定专业池及通用回退；每次新步骤按领域、复杂度及现有能力/资源条件重新选型，未完成工具续轮保留模型并要求同一会话 ID。
+
+| 方法 | 路径 | 功能 |
+| --- | --- | --- |
+| GET | `/api/v1/model-domains` | 读取内置/自定义共享分类；返回 domains 数组 |
+| POST | `/api/v1/model-domains` | VOS 用户新增共享分类；同名返回已有 ID |
+| PATCH | `/api/v1/models/domains` | 原子替换 1–200 个模型的领域；支持管理员设置 auto/auto |
+
+单个设置沿用 PATCH `/api/v1/models` 的 domains 字段；注册使用顶层 domains 默认值和 models[].domains 覆盖。Auto 也可通过 GET/PUT `/api/v1/auto-routing` 设置 domains（先读取最新 revision），POST `/api/v1/auto-routing/test` 查看本步骤分类及选择原因。省略 domains 保留已有值，[] 重置通用，未知 ID/null 拒绝。详见链接中的中英文示例及限制。
