@@ -1,5 +1,23 @@
 "use strict";
 export const VRouterMessages = {
+"适用领域": {"en":"Applicable domains"},
+"适用领域（可多选）": {"en":"Applicable domains (multiple selections)"},
+"默认通用；领域仅用于分类，不改变模型能力或调度。": {"en":"Defaults to General. Domains classify models without changing capabilities or scheduling."},
+"新增共享分类名称": {"en":"New shared category name"},
+"新增分类": {"en":"Add category"},
+"通用": {"en":"General"},
+"法律": {"en":"Law"},
+"数学": {"en":"Mathematics"},
+"物理": {"en":"Physics"},
+"医药": {"en":"Medicine"},
+"化学": {"en":"Chemistry"},
+"生物": {"en":"Biology"},
+"工程": {"en":"Engineering"},
+"计算机": {"en":"Computing"},
+"金融": {"en":"Finance"},
+"教育": {"en":"Education"},
+"人文": {"en":"Humanities"},
+
 "示例已指定当前上游；ACCESS_TOKEN 可用 VOS token 或 V-Scheduler Key，模型使用上游原生 ID。":{"en":"This example pins the current upstream. Set ACCESS_TOKEN to a VOS token or V-Scheduler key; the model uses its native upstream ID.","zh-TW":"範例已指定目前上游；ACCESS_TOKEN 可用 VOS token 或 V-Scheduler Key，模型使用上游原生 ID。"},
 "模型访问 Key":{"en":"Model access key","zh-TW":"模型存取 Key"},
 "ACCESS_TOKEN 可填写 VOS 账户 token、个人 Key 或模型访问 Key；public 模型也接受不带 Key 或任意 Key。":{"en":"ACCESS_TOKEN accepts a VOS account token, personal key or model access key. Public models also accept no key or an arbitrary key.","zh-TW":"ACCESS_TOKEN 可填寫 VOS 帳戶 token、個人 Key 或模型存取 Key；public 模型也接受不帶 Key 或任意 Key。"},

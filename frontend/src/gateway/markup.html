@@ -285,6 +285,7 @@
         <label class="check"><input type="checkbox" id="ufAllowProbeFailure" /> 模型列表探测失败也允许保存</label>
         <div class="hint">适合暂时没有 key、协议模型列表不标准，或想先保存后运行时看上游错误的云端 API。</div>
       </div>
+      <div class="field" id="ufDomainsField"><label>适用领域（可多选）</label><div id="ufDomains" class="metadata-choices" role="group" aria-label="适用领域"></div><div class="hint">默认通用；领域仅用于分类，不改变模型能力或调度。</div><div class="form-actions"><input id="ufDomainsName" maxlength="80" placeholder="新增共享分类名称" /><button type="button" class="btn" onclick="app.addDomain('ufDomains')">新增分类</button></div></div>
       <div class="field" id="ufModelsField" hidden>
         <label>添加模型
           <span class="spacer"></span>
@@ -377,12 +378,14 @@
         <div id="modelEditEndpoints" class="metadata-choices" role="group" aria-label="支持接口"></div>
         <div class="hint">选择实际支持的接口；普通聊天上游默认 Chat Completions，Jev 使用 System One。</div>
       </div>
+      <div class="field" id="modelEditDomainsField"><label>适用领域（可多选）</label><div id="modelEditDomains" class="metadata-choices" role="group" aria-label="适用领域"></div><div class="hint">默认通用；领域仅用于分类，不改变模型能力或调度。</div><div class="form-actions"><input id="modelEditDomainsName" maxlength="80" placeholder="新增共享分类名称" /><button type="button" class="btn" onclick="app.addDomain('modelEditDomains')">新增分类</button></div></div>
       <div class="form-error" id="modelEditError"></div>
       <button type="button" class="btn" onclick="app.rediscoverModelMetadata()">重新识别上游能力</button>
       <div class="form-actions"><button type="button" class="btn" onclick="app.element('modelDialog').close()">取消</button><button type="submit" class="btn primary">保存</button></div>
     </form>
   </dialog>
 
+  <dialog id="modelDomainsDialog"><h3>适用领域</h3><form onsubmit="return app.saveModelDomains(event)"><input id="domainModel" type="hidden"/><input id="domainUpstream" type="hidden"/><div class="field" id="managedDomainsField"><label>适用领域（可多选）</label><div id="managedDomains" class="metadata-choices" role="group" aria-label="适用领域"></div><div class="hint">默认通用；领域仅用于分类，不改变模型能力或调度。</div><div class="form-actions"><input id="managedDomainsName" maxlength="80" placeholder="新增共享分类名称" /><button type="button" class="btn" onclick="app.addDomain('managedDomains')">新增分类</button></div></div><div class="form-error" id="domainError"></div><div class="form-actions"><button type="button" class="btn" onclick="app.element('modelDomainsDialog').close()">取消</button><button class="btn primary" type="submit">保存</button></div></form></dialog>
   <!-- 注册模型服务对话框 -->
   <dialog id="registrationDialog">
     <h3>注册模型服务</h3>
@@ -404,6 +407,7 @@
         <div class="field"><label for="regCapabilities">模型能力（可选）</label><div id="regCapabilities" class="metadata-choices" role="group" aria-label="模型能力"></div></div>
         <div class="field"><label for="regModelKind">模型类型兜底</label><select id="regModelKind"><option value="unknown">由接口/能力决定</option><option value="chat">对话</option><option value="embedding">Embedding</option></select></div>
       </div>
+      <div class="field" id="regDomainsField"><label>适用领域（可多选）</label><div id="regDomains" class="metadata-choices" role="group" aria-label="适用领域"></div><div class="hint">默认通用；领域仅用于分类，不改变模型能力或调度。</div><div class="form-actions"><input id="regDomainsName" maxlength="80" placeholder="新增共享分类名称" /><button type="button" class="btn" onclick="app.addDomain('regDomains')">新增分类</button></div></div>
       <div class="field"><label for="regTTL">心跳超时秒数</label><input id="regTTL" type="number" min="30" max="3600" value="90" /><div class="hint">服务心跳中断或报告不可用时自动移除，恢复后重新注册。完整注册快照可随心跳发送，支持网关重启或短暂掉线后自动恢复。</div></div>
       <div class="probe-result" id="regProbeResult" hidden></div>
       <div class="form-error" id="regError"></div>

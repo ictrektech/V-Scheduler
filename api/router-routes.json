@@ -1883,5 +1883,32 @@
     "summary": "设置、轮换或撤销模型 Key",
     "desc": "仅模型所属 VOS 用户或管理员凭 VOS token 可修改。access_key=true 生成，字符串设置（16..512 位可打印 ASCII），null 撤销。只授权该模型，旧 Key 立即失效；不改变 public/private，不修改上游厂商 api_key。",
     "example": "curl -X PUT \"$GATEWAY/api/v1/models/access-key\" -H \"Authorization: Bearer $VOS_TOKEN\" -H \"Content-Type: application/json\" -d '{\"upstream_id\":\"deepseek\",\"model\":\"api.deepseek.com/deepseek-flash\",\"access_key\":true}'"
+  },
+  {
+    "auth": "manage",
+    "desc": "共享领域分类及持久模型标注；修改要求 VOS 用户和模型管理权限，批量操作全部成功或全部不修改。",
+    "example": "",
+    "group": "manage",
+    "method": "GET",
+    "path": "/api/v1/model-domains",
+    "summary": "列出共享模型领域"
+  },
+  {
+    "auth": "manage",
+    "desc": "共享领域分类及持久模型标注；修改要求 VOS 用户和模型管理权限，批量操作全部成功或全部不修改。",
+    "example": "",
+    "group": "manage",
+    "method": "POST",
+    "path": "/api/v1/model-domains",
+    "summary": "新增共享模型领域"
+  },
+  {
+    "auth": "manage",
+    "desc": "共享领域分类及持久模型标注；修改要求 VOS 用户和模型管理权限，批量操作全部成功或全部不修改。",
+    "example": "",
+    "group": "manage",
+    "method": "PATCH",
+    "path": "/api/v1/models/domains",
+    "summary": "原子批量设置模型领域"
   }
 ]

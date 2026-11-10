@@ -408,3 +408,7 @@ Registration `scheduler.mode=direct` is now an input alias for the same persiste
 推理 API 同时补全 OpenAI/Anthropic 普通与流式、Responses、embedding、rerank、决策、图像和音频的公共请求/返回契约；原生资源透传明确标注上游依赖及原始状态/媒体，不承诺不存在的统一成功包络。文档门禁校验本地 Schema 引用、中英结构及主协议字段覆盖。Key 的生成/自定义/轮换/撤销、公开任意 Key、私有隔离和 VOS 身份另以临时服务真实调用验证，测试后清除临时注册和 Key。
 
 English readers can use the [complete API integration handbook](docs/api-reference.en.md) for canonical/compatibility addresses, VOS and Key permissions, full Key lifecycle, registration policies, nodes/resources/heartbeats, queue priority, confirmed stopping, weight management and both chat protocols. Field-level contracts remain in the in-app explorer and the linked versioned OpenAPI documents.
+
+## 模型适用领域
+
+模型注册、编辑与 API 支持共享的多选适用领域，默认通用；可新增自定义分类，并通过原子批量 API 设置多个模型。Auto 每次按步骤领域和复杂度重新选型，保留资源准入与工具续轮连续性；领域不改变能力或访问权限。刷新/重新注册省略字段时保留已有设置。[界面及 API 示例](docs/model-domains.md)。

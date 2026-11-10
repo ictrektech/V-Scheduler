@@ -189,6 +189,7 @@ const app = {
         ...this.state,
         status,
         models: models.models,
+        domainCatalog: models.domain_catalog || [],
         upstreams: upstreams.upstreams,
         usage,
         budgets: admin ? this.state.budgets : [],
@@ -471,6 +472,9 @@ const app = {
             if (m.upstream_source === "api" && m.upstream_manageable !== false) {
               actions.push(`<button class="btn" onclick="app.openModelDialog(${jsArg(m.qualified)}, ${jsArg(m.upstream_id)})">${VRouterI18n.t("编辑元数据")}</button>`);
             }
+            if (!m.virtual && m.kind !== "service" && m.upstream_source !== "api" && m.upstream_manageable) {
+              actions.push(`<button class="btn" onclick="app.openModelDomains(${jsArg(m.qualified)}, ${jsArg(m.upstream_id)})">${VRouterI18n.t("适用领域")}</button>`);
+            }
             if (m.visibility_manageable && !m.virtual && m.kind !== "service") {
               actions.push(`<button class="btn" onclick="app.openModelKey(${jsArg(m.upstream_id)}, ${jsArg(m.id)})">${VRouterI18n.t("模型访问 Key")}</button>`);
             }
@@ -488,7 +492,7 @@ const app = {
               }
             }
             return [
-              `<span class="mono model-identifier">${esc(m.short ? m.id : (m.name || m.qualified))}</span><div class="model-capability-tags">${(m.capabilities || []).slice(0,4).map(c=>`<span class="capability-tag">${esc(VRouterI18n.t(CAPABILITIES.find(([id])=>id===c)?.[1] || c))}</span>`).join('')}</div>${m.short ? ` <span class="pill kind">${VRouterI18n.t("短名")}</span>` : ""}`,
+              `<span class="mono model-identifier">${esc(m.short ? m.id : (m.name || m.qualified))}</span><div class="model-capability-tags">${(m.capabilities || []).slice(0,4).map(c=>`<span class="capability-tag">${esc(VRouterI18n.t(CAPABILITIES.find(([id])=>id===c)?.[1] || c))}</span>`).join('')}</div><div class="hint">${(m.domains || ['general']).map(id => esc(VRouterI18n.t((this.state.domainCatalog || []).find(d => d.id === id)?.name || id))).join(' · ')}</div>${m.short ? ` <span class="pill kind">${VRouterI18n.t("短名")}</span>` : ""}`,
               ({embedding:"Embedding",chat:VRouterI18n.t("对话"),unknown:VRouterI18n.t("由上游决定"),service:VRouterI18n.t("服务接口")})[m.kind] || esc(m.kind),
               `<span class="pill ${m.upstream_kind}">${kindLabel(m.upstream_kind)}</span>`,
               esc(VRouterI18n.t(m.upstream_name)),
@@ -754,9 +758,45 @@ const app = {
     if (restored) $("budgetDialog").close();
   },
 
+  domainChoices(target, values = ['general']) {
+    const rows = (this.state.domainCatalog || []).map(d => [d.id, d.name]);
+    setChoices($(target), rows.length ? rows : [['general', '通用']], values.length ? values : ['general']);
+  },
+  async addDomain(target) {
+    const name = $(target + 'Name').value.trim();
+    if (!name) return;
+    try {
+      const result = await this.api('POST', '/api/v1/model-domains', {name});
+      const catalog = await this.api('GET', '/api/v1/model-domains');
+      this.state.domainCatalog = catalog.domains;
+      for (const field of ['ufDomains','regDomains','modelEditDomains','managedDomains']) {
+        const values = readChoices($(field));
+        if (field === target && !values.includes(result.domain.id)) values.push(result.domain.id);
+        this.domainChoices(field, values);
+      }
+      $(target + 'Name').value = '';
+      this.renderModels();
+    } catch (error) { this.toast(userErrorMessage(error)); }
+  },
+  openModelDomains(qualified, upstreamId) {
+    const model = this.state.models.find(m => m.qualified === qualified && m.upstream_id === upstreamId);
+    if (!model) return;
+    $('domainModel').value = qualified; $('domainUpstream').value = upstreamId;
+    this.domainChoices('managedDomains', model.domains); $('domainError').textContent = '';
+    $('modelDomainsDialog').showModal();
+  },
+  async saveModelDomains(event) {
+    event.preventDefault();
+    try {
+      await this.api('PATCH','/api/v1/models',{model:$('domainModel').value,upstream_id:$('domainUpstream').value,domains:readChoices($('managedDomains'))});
+      $('modelDomainsDialog').close(); await this.refresh();
+    } catch (error) { $('domainError').textContent = userErrorMessage(error); }
+    return false;
+  },
   openModelDialog(qualified, upstreamId) {
     const model = this.state.models.find((item) => item.qualified === qualified && (!upstreamId || item.upstream_id === upstreamId));
     if (!model) return;
+    this.domainChoices("modelEditDomains", model.domains);
     $("modelEditName").textContent = model.name || model.qualified;
     $("modelEditQualified").value = model.qualified;
     $("modelEditUpstream").value = model.upstream_id || "";
@@ -769,6 +809,7 @@ const app = {
     const metadata = effectiveMetadata(model, protocol);
     setChoices($("modelEditCapabilities"), CAPABILITIES, metadata.capabilities);
     setChoices($("modelEditEndpoints"), ENDPOINTS, metadata.endpoints);
+    this.modelEditMetadataBaseline = JSON.stringify([$("modelEditKind").value, readChoices($("modelEditCapabilities")), readChoices($("modelEditEndpoints"))]);
     $("modelEditError").textContent = "";
     $("modelDialog").showModal();
   },
@@ -780,13 +821,17 @@ const app = {
       const payload = {
         model: $("modelEditQualified").value,
         upstream_id: $("modelEditUpstream").value,
-        capabilities: readChoices($("modelEditCapabilities")),
-        endpoints: readChoices($("modelEditEndpoints")),
+        domains: readChoices($("modelEditDomains")),
+
       };
       const visibility = $("modelEditVisibility");
       if (!visibility.disabled && visibility.value !== visibility.dataset.original) payload.visibility = visibility.value || null;
       const kind = $("modelEditKind").value;
-      if (kind) payload.kind = kind;
+      const capabilities = readChoices($("modelEditCapabilities")), endpoints = readChoices($("modelEditEndpoints"));
+      if (JSON.stringify([kind, capabilities, endpoints]) !== this.modelEditMetadataBaseline) {
+        payload.capabilities = capabilities; payload.endpoints = endpoints;
+        if (kind) payload.kind = kind;
+      }
       await this.api("PATCH", "/api/v1/models", payload);
       $("modelDialog").close();
       this.toast(VRouterI18n.t("模型元数据已保存"));
@@ -1034,6 +1079,7 @@ const app = {
   // ---------- registration dialog ----------
   openRegistrationDialog() {
     $("registrationForm").reset();
+    this.domainChoices("regDomains");
     $("regProviderNote").hidden=true;
     $("regProtocol").value = "openai";
     $("regVisibility").value = "public";
@@ -1122,6 +1168,7 @@ const app = {
   registrationPayload() {
     validateProviderAddress($("regBaseURL").value);
     const p = {
+      domains: readChoices($("regDomains")),
       service_id: $("regServiceId").value.trim(),
       name: $("regName").value.trim(),
       visibility: $("regVisibility").value,
@@ -1355,6 +1402,7 @@ const app = {
     this.singleModelAddition=false;
     VRouterI18n.bind(root.querySelector('label[for="ufTestModel"]'),"textContent",()=>VRouterI18n.t("联通测试模型（可选）"));
     const dlg = $("upstreamDialog");
+    $("ufDomainsField").hidden = !!id; this.domainChoices("ufDomains");
     $("ufError").textContent = "";
     $('ufNativeProvider').innerHTML='<option value="">'+esc(VRouterI18n.t('选择原生 Provider'))+'</option>'+NATIVE_PROVIDERS.filter(p=>!['typesafe','qwen-token-plan-individual'].includes(p.id)).map(p=>`<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
     $('ufNativeCredential').value='';$('ufNativeProvider').value='';
@@ -1472,6 +1520,7 @@ const app = {
       test_model: $("ufTestModel").value.trim(),
       allow_probe_failure: $("ufAllowProbeFailure").checked,
     };
+    if (!$("ufId").value) payload.domains = readChoices($("ufDomains"));
     if(payload.protocol==='pi') {
       payload.provider=$('ufNativeProvider').value;
       if(!payload.provider)throw new Error(VRouterI18n.t('选择原生 Provider'));

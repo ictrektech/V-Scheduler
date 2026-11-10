@@ -193,7 +193,7 @@ curl -i "$GATEWAY/v1/chat/completions" \
 
 ## 会话与边界
 
-多轮使用稳定的 `X-VScheduler-Session-ID`（1..96 位 ASCII 字母、数字、`_`、`-`）。绑定按用户/应用隔离，空闲 10 分钟过期，最多保留 512 条，不落盘。仍满足硬约束和质量档位时优先沿用；升级需求或故障可重新选择。
+多轮使用稳定的 `X-VScheduler-Session-ID`（1..96 位 ASCII 字母、数字、`_`、`-`）。绑定按用户/应用隔离，空闲 10 分钟过期，最多保留 512 条，不落盘。普通新步骤按当前领域、复杂度和策略重新排序；仅当原模型仍是首选或处于未完成工具续轮时沿用。
 
 工具结果继续调用 Auto 时必须带原 session ID。若原模型不可用、权限/能力不再满足或会话过期，返回 409，要求调用方明确重启工具轮次，不把工具结果静默交给另一个模型。没有 session ID 的工具续轮返回 422。SSE 已开始后绝不拼接另一个模型的响应。
 
@@ -215,3 +215,6 @@ curl -fsS -X PUT "$GATEWAY/api/v1/auto-routing" -H "Authorization: Bearer $VOS_T
 ```
 
 限定模型时，从 `GET /api/v1/auto-routing/candidates` 获取真实 `qualified` 和 `upstream_id`，写入 `candidates`；同名模型的不同上游实例可以分别配置。OpenAI Decisions 在界面选择「结构化决策分类器（OpenAI Decisions／System One）」，API 仍使用 `classifier=systemone`，不新增不兼容的枚举值：设置 `jev_model` 为已发现的完整决策模型 ID、`jev_upstream_id` 为对应实例 ID，云端分类另设 `allow_cloud_classifier=true`。Jev 同样支持 `systemone`，原 `classifier=jev` 保持兼容。回答候选与分类模型分别配置；分类模型不会自动成为回答候选。
+
+
+领域多选、共享分类及每步专业匹配的完整 UI/API、回退规则与工具会话边界见 [模型适用领域](model-domains.md#auto-按步骤选择领域与复杂度)。

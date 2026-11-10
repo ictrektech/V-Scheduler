@@ -295,12 +295,9 @@ async fn auto_sessions_are_isolated_and_tool_turns_cannot_silently_switch() {
         .await
         .unwrap();
     auto::remember(&g, &user, &h, &d);
-    assert!(
-        auto::resolve(&g, &user, &body("总结"), &h)
-            .await
-            .unwrap()
-            .session_reused
-    );
+    let fresh_step=auto::resolve(&g, &user, &body("总结"), &h).await.unwrap();
+    assert!(!fresh_step.session_reused);
+    assert_eq!(fresh_step.resolved_model,"manual/small");
     assert!(
         !auto::resolve(&g, &principal("bob"), &body("总结"), &h)
             .await
@@ -352,8 +349,8 @@ async fn auto_jev_native_classification_real_chat_sse_and_fallback() {
     let calls = Arc::new(AtomicUsize::new(0));
     let observed = calls.clone();
     let server=Router::new().route("/v1/systemone",post(move|headers:HeaderMap,Json(v):Json<Value>|{let calls=observed.clone();async move {
-        calls.fetch_add(1,Ordering::SeqCst);assert_eq!(headers["authorization"],"Bearer classifier-secret");assert_eq!(v["model"],"jev");assert!(v.get("messages").is_none());
-        Json(json!({"answers":{"task":{"choice":"code","confidence":0.99},"complexity":{"choice":"complex","confidence":0.99}},"usage":{"input_tokens":50,"output_tokens":0}}))
+        calls.fetch_add(1,Ordering::SeqCst);assert_eq!(headers["authorization"],"Bearer classifier-secret");assert_eq!(v["model"],"jev");assert!(v.get("messages").is_none());assert!(v["questions"]["domain"]["criteria"]["law"].is_string());
+        Json(json!({"answers":{"domain":{"choice":"law","confidence":0.99},"task":{"choice":"code","confidence":0.99},"complexity":{"choice":"complex","confidence":0.99}},"usage":{"input_tokens":50,"output_tokens":0}}))
     }})).route("/v1/chat/completions",post(|headers:HeaderMap,Json(v):Json<Value>|async move {
         assert!(headers.get("x-vscheduler-auto-policy").is_none());assert!(headers.get("x-vscheduler-session-id").is_none());assert_eq!(v["model"],"large");
         if v["stream"]==true {(StatusCode::OK,[("content-type","text/event-stream")],"data: {\"model\":\"large\",\"choices\":[{\"delta\":{\"content\":\"auto fixture\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n".to_string()).into_response()}else{Json(json!({"model":"large","choices":[{"message":{"content":"auto fixture"}}]})).into_response()}
@@ -374,6 +371,7 @@ async fn auto_jev_native_classification_real_chat_sse_and_fallback() {
         u.kind = "cloud".into();
         u.api_key = "classifier-secret".into();
         r.put(u, vec![model("jev")]);
+        r.model_domains.insert("l/large".into(),vec!["law".into()]);
     }
     config["classifier"] = json!("jev");
     config["allow_cloud_classifier"] = json!(true);
@@ -385,6 +383,8 @@ async fn auto_jev_native_classification_real_chat_sse_and_fallback() {
     let d = auto::resolve(&g, &user, &body("总结"), &h).await.unwrap();
     assert_eq!(d.resolved_model, "manual/large");
     assert_eq!(json!(d)["classification"]["source"], "jev");
+    assert_eq!(json!(d)["classification"]["domains"],json!(["law"]));
+    assert_eq!(json!(d)["classification"]["domain_source"],"classifier");
     let before = calls.load(Ordering::SeqCst);
     let mut local = h.clone();
     local.insert("x-vscheduler-auto-local-only", "true".parse().unwrap());
@@ -665,7 +665,7 @@ async fn auto_cloud_chat_classifier_uses_registered_key_json_sse_and_safe_fallba
     let native=Router::new().route("/v1/chat/completions",post(move|h:HeaderMap,Json(v):Json<Value>|{let(c,m)=(c.clone(),m.clone());async move{
         if v["model"]=="classifier" {
             c.fetch_add(1,Ordering::SeqCst);assert_eq!(h["authorization"],"Bearer cloud-classifier-test-key");assert_eq!(v["stream"],false);assert_eq!(v["max_tokens"],256);
-            let content=if m.load(Ordering::SeqCst){"not JSON".to_string()}else{json!({"task":"code","complexity":"complex","confidence":0.99}).to_string()};
+            let content=if m.load(Ordering::SeqCst){"not JSON".to_string()}else{json!({"task":"code","complexity":"complex","confidence":0.99,"domains":["computing"]}).to_string()};
             Json(json!({"choices":[{"message":{"content":content}}]})).into_response()
         } else {
             assert!(h.get("x-vscheduler-auto-task").is_none());
@@ -675,11 +675,11 @@ async fn auto_cloud_chat_classifier_uses_registered_key_json_sse_and_safe_fallba
     }}));
     let listener=tokio::net::TcpListener::bind("127.0.0.2:0").await.unwrap();let addr=listener.local_addr().unwrap();let server=tokio::spawn(async move{axum::serve(listener,native).await.unwrap()});
     let g=gateway(&root,Router::new());let mut cfg=setup(&g);
-    {let mut r=g.registry.lock().unwrap();for u in r.upstreams.values_mut(){u.base_url=format!("http://{addr}/v1");}let mut u=upstream("c");u.base_url=format!("http://{addr}/v1");u.kind="cloud".into();u.api_key="cloud-classifier-test-key".into();r.put(u,vec![model("classifier")]);}
+    {let mut r=g.registry.lock().unwrap();for u in r.upstreams.values_mut(){u.base_url=format!("http://{addr}/v1");}let mut u=upstream("c");u.base_url=format!("http://{addr}/v1");u.kind="cloud".into();u.api_key="cloud-classifier-test-key".into();r.put(u,vec![model("classifier")]);r.model_domains.insert("l/large".into(),vec!["computing".into()]);}
     cfg["classifier"]=json!("llm");cfg["jev_model"]=json!("manual/classifier");cfg["jev_upstream_id"]=json!("c");
     assert_eq!(auto::configure(&g,&admin(),cfg.clone()).unwrap_err().status,422);
     cfg["allow_cloud_classifier"]=json!(true);auto::configure(&g,&admin(),cfg).unwrap();
-    let d=auto::resolve(&g,&principal("alice"),&body("Hello"),&HeaderMap::new()).await.unwrap();assert_eq!(d.resolved_model,"manual/large");assert_eq!(json!(d.classification)["source"],"cloud_llm");
+    let d=auto::resolve(&g,&principal("alice"),&body("Hello"),&HeaderMap::new()).await.unwrap();assert_eq!(d.resolved_model,"manual/large");assert_eq!(json!(d.classification)["source"],"cloud_llm");assert_eq!(json!(d.classification)["domains"],json!(["computing"]));assert_eq!(json!(d.classification)["domain_source"],"classifier");
     let before=calls.load(Ordering::SeqCst);let mut local=HeaderMap::new();local.insert("x-vscheduler-auto-local-only","true".parse().unwrap());auto::resolve(&g,&principal("alice"),&body("Hello"),&local).await.unwrap();assert_eq!(calls.load(Ordering::SeqCst),before);
     for stream in [false,true] {
         let mut v=body("Hello");v["stream"]=json!(stream);
@@ -704,8 +704,10 @@ async fn openai_decisions_routes_native_requests_and_converts_auto_answers() {
             assert!(request["input"].as_str().unwrap().contains("debug"));
             assert!(questions.iter().any(|q| q["name"] == "task" && q["choices"]
                 .as_array().unwrap().iter().any(|c| c["value"] == "code")));
+            assert!(questions.iter().any(|q|q["name"]=="domain"));
             let task_confidence = if request["input"].as_str().unwrap().contains("uncertain") { 0.4 } else { 0.91 };
             Json(json!({"answers":[
+                {"name":"domain","type":"choice","choice":"computing","confidence":0.96},
                 {"name":"complexity","type":"choice","choice":"complex","confidence":0.98},
                 {"name":"task","type":"choice","choice":"code","confidence":task_confidence}
             ],"usage":{"input_tokens":34,"output_tokens":0}}))
@@ -722,6 +724,7 @@ async fn openai_decisions_routes_native_requests_and_converts_auto_answers() {
     upstream.base_url = format!("http://{addr}/v1");
     upstream.api_key = "fixture-decisions-key".into();
     g.registry.lock().unwrap().put(upstream, vec![model("gpt-6-luna")]);
+    g.registry.lock().unwrap().model_domains.insert("l/large".into(),vec!["computing".into()]);
     config["classifier"] = json!("systemone");
     config["allow_cloud_classifier"] = json!(true);
     config["jev_model"] = json!("manual/gpt-6-luna");
@@ -735,6 +738,9 @@ async fn openai_decisions_routes_native_requests_and_converts_auto_answers() {
     assert_eq!(classification["task"], "code");
     assert_eq!(classification["complexity"], "complex");
     assert_eq!(classification["confidence"], 0.91);
+    assert_eq!(classification["domains"],json!(["computing"]));
+    assert_eq!(classification["domain_source"],"classifier");
+    assert_eq!(classification["domain_confidence"],0.96);
     let d = auto::resolve(&g, &id, &body("debug uncertain"), &headers).await.unwrap();
     assert_eq!(json!(d.classification)["fallback"], true);
     let request = Request::builder().method("POST").uri("/v1/decisions")
@@ -852,5 +858,60 @@ async fn auto_management_api_accepts_automatic_pool_and_enforces_revision() {
     assert_eq!(manage::handle(&g, &admin(), request("PUT", config)).await.err().unwrap().status,409);
     assert_eq!(auto::model_view()["configuration_url"],"/api/v1/auto-routing");
     assert_eq!(auto::model_view()["candidates_url"],"/api/v1/auto-routing/candidates");
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
+async fn auto_domains_rerank_each_fresh_step_with_quality_floor_and_general_fallback() {
+    let root=temp();let g=gateway(&root,Router::new());let mut config=setup(&g);
+    config["candidates"][0]["tier"]=json!("standard");
+    {
+        let mut r=g.registry.lock().unwrap();
+        r.model_domains.insert("s/small".into(),vec!["law".into()]);
+        r.model_domains.insert("l/large".into(),vec!["mathematics".into()]);
+    }
+    auto::configure(&g,&admin(),config.clone()).unwrap();
+    let mut headers=HeaderMap::new();headers.insert("x-vscheduler-session-id","domain-steps".parse().unwrap());
+    let user=principal("alice");
+    let legal=auto::resolve(&g,&user,&body("Review this legal contract"),&headers).await.unwrap();
+    assert_eq!(legal.resolved_model,"manual/small");
+    assert_eq!(json!(legal)["classification"]["domains"],json!(["law"]));
+    auto::remember(&g,&user,&headers,&legal);
+    // Current user step overrides the previous legal topic; the same session
+    // does not force a stale specialist on a new mathematical step.
+    let mut math=body("Solve this algebra equation");
+    math["messages"]=json!([{"role":"user","content":"Review this legal contract"},{"role":"assistant","content":"Reviewed"},{"role":"user","content":"Solve this algebra equation"}]);
+    let next=auto::resolve(&g,&user,&math,&headers).await.unwrap();
+    assert_eq!(next.resolved_model,"manual/large");assert!(!next.session_reused);
+    assert_eq!(json!(next)["classification"]["domains"],json!(["mathematics"]));
+    // A specialist below the required complexity tier is never selected.
+    let hard=auto::resolve(&g,&user,&body("详细推导这个法律合同的复杂多步骤问题"),&HeaderMap::new()).await.unwrap();
+    assert!(hard.resolved_model.is_empty());
+    assert!(hard.candidates.iter().any(|c|c["reason"]=="quality_tier_below_requirement"));
+    g.registry.lock().unwrap().model_domains.insert("l/large".into(),vec!["general".into()]);
+    let fallback=auto::resolve(&g,&user,&body("Explain quantum physics"),&headers).await.unwrap();
+    assert_eq!(fallback.resolved_model,"manual/large");assert_eq!(fallback.reason,"domain_general_fallback");
+    config["revision"]=json!(1);config["domains"]=json!(["law"]);
+    auto::configure(&g,&admin(),config).unwrap();
+    let restricted=auto::resolve(&g,&user,&body("Explain quantum physics"),&headers).await.unwrap();
+    assert!(restricted.resolved_model.is_empty());
+    assert!(restricted.candidates.iter().any(|c|c["reason"]=="domain_not_configured"));
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn auto_domain_configuration_is_shared_validated_persisted_and_omission_preserves() {
+    let root=temp();let g=gateway(&root,Router::new());let mut config=setup(&g);
+    assert_eq!(auto::configuration(&g,&admin()).unwrap()["domains"],json!(["general"]));
+    config["domains"]=json!(["law","law"]);
+    let saved=auto::configure(&g,&admin(),config).unwrap();
+    assert_eq!(saved["domains"],json!(["law"]));
+    let mut next=saved.clone();next.as_object_mut().unwrap().remove("domains");
+    assert_eq!(auto::configure(&g,&admin(),next).unwrap()["domains"],json!(["law"]));
+    let mut invalid=auto::configuration(&g,&admin()).unwrap();invalid["domains"]=json!(["missing"]);
+    assert_eq!(auto::configure(&g,&admin(),invalid).unwrap_err().status,400);
+    assert_eq!(Registry::open(&g.state_path).unwrap().auto.domains,vec!["law"]);
+    let mut reset=auto::configuration(&g,&admin()).unwrap();reset["domains"]=json!([]);
+    assert_eq!(auto::configure(&g,&admin(),reset).unwrap()["domains"],json!(["general"]));
     std::fs::remove_dir_all(root).unwrap();
 }

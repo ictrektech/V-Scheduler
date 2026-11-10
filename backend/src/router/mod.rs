@@ -11,6 +11,7 @@ mod api_key_tests;
 mod anthropic_bridge;
 mod bridge;
 mod discovery;
+mod domains;
 mod jobs;
 mod lease;
 mod manage;
@@ -424,7 +425,7 @@ async fn dispatch(g: Arc<Gateway>, mut request: Request) -> Api<Response> {
         spec.as_ref().is_some_and(|r| r["auth"] == "manage") || path.starts_with("/model-hub/api/");
     let id = auth::identity(&g, request.headers(), management).await?;
     if id.api_key_id.is_some() && !(spec.as_ref().is_some_and(|r| r["auth"] == "inference")
-        || request.method() == "GET" && ["/api/v1/models", "/api/v1/auth/me"].contains(&path.as_str())) {
+        || request.method() == "GET" && ["/api/v1/models", "/api/v1/model-domains", "/api/v1/auth/me"].contains(&path.as_str())) {
         return Err(Failure::new(403, "API keys permit inference and model discovery only"));
     }
     if path == "/api/v1/models/access-key" {

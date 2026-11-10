@@ -228,6 +228,14 @@
           },
           "protocol": {
             "type": "string"
+          },
+          "domains": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "type": "string"
+            },
+            "description": "共享领域 ID，省略保留，[] 重置通用；未知 ID 和 null 拒绝。Auto 使用领域标注匹配当前步骤；领域不改变能力、权限或资源准入设置。"
           }
         },
         "required": [
@@ -797,6 +805,14 @@
                 },
                 "owned_by": {
                   "type": "string"
+                },
+                "domains": {
+                  "type": "array",
+                  "maxItems": 32,
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "共享领域 ID，省略保留，[] 重置通用；未知 ID 和 null 拒绝。Auto 使用领域标注匹配当前步骤；领域不改变能力、权限或资源准入设置。"
                 }
               },
               "required": [
@@ -950,6 +966,17 @@
           },
           "revision": {
             "type": "integer"
+          },
+          "domains": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "default": [
+              "general"
+            ],
+            "description": "Auto 允许领域。初始 [general] 不限制领域；选专业后按模型标注限制候选，保留 general 允许通用回退。省略保留已存选择，[] 重置 general。ID 来自 GET /api/v1/model-domains。每个新步骤按领域和复杂度重新选型，未结束的工具轮保持会话模型。"
           }
         },
         "required": [
@@ -965,7 +992,8 @@
           "request_type_tiers",
           "context_simple_max_tokens",
           "context_standard_max_tokens",
-          "revision"
+          "revision",
+          "domains"
         ],
         "additionalProperties": true
       },
@@ -996,6 +1024,29 @@
           },
           "elapsed_ms": {
             "type": "integer"
+          },
+          "domains": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "检测到的下一步骤领域 ID；未知为 general。"
+          },
+          "domain_source": {
+            "type": "string",
+            "enum": [
+              "rules",
+              "classifier",
+              "rules_fallback"
+            ]
+          },
+          "domain_confidence": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 1
           }
         },
         "required": [
@@ -1004,7 +1055,10 @@
           "source",
           "confidence",
           "fallback",
-          "elapsed_ms"
+          "elapsed_ms",
+          "domains",
+          "domain_source",
+          "domain_confidence"
         ],
         "additionalProperties": true
       },
@@ -1375,6 +1429,14 @@
           },
           "status": {
             "type": "string"
+          },
+          "domains": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "type": "string"
+            },
+            "description": "共享领域 ID，省略保留，[] 重置通用；未知 ID 和 null 拒绝。Auto 使用领域标注匹配当前步骤；领域不改变能力、权限或资源准入设置。"
           }
         },
         "required": [
@@ -3569,6 +3631,9 @@
                 },
                 "owned_by": {
                   "type": "string"
+                },
+                "domains": {
+                  "$ref": "#/components/schemas/ModelDomainSelection"
                 }
               },
               "additionalProperties": true,
@@ -3775,6 +3840,34 @@
         },
         "additionalProperties": true,
         "required": []
+      },
+      "ModelDomain": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "builtin"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "稳定内置 ID 或创建时返回的 custom-UUID。"
+          },
+          "name": {
+            "type": "string"
+          },
+          "builtin": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ModelDomainSelection": {
+        "type": "array",
+        "maxItems": 32,
+        "items": {
+          "type": "string"
+        },
+        "description": "共享领域 ID，省略保留，[] 重置通用；未知 ID 和 null 拒绝。Auto 使用领域标注匹配当前步骤；领域不改变能力、权限或资源准入设置。"
       }
     }
   },
@@ -3901,6 +3994,12 @@
                       "items": {
                         "$ref": "#/components/schemas/GatewayModel"
                       }
+                    },
+                    "domain_catalog": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ModelDomain"
+                      }
                     }
                   },
                   "required": [
@@ -3939,7 +4038,7 @@
       },
       "patch": {
         "summary": "修改模型元数据",
-        "description": "修改 API 创建上游的模型，model 使用 qualified 名称，可同时传 upstream_id。capabilities 和 endpoints 为字符串数组。手动修改设置 metadata_override=true，刷新保留；传 false 后 POST /api/v1/upstreams/{id}/refresh 恢复 Ollama 自动识别。仅 owner 和管理员可修改；内置、注册、发现模型仍只读。",
+        "description": "修改 API 创建上游的模型，model 使用 qualified 名称，可同时传 upstream_id。capabilities 和 endpoints 为字符串数组。手动修改设置 metadata_override=true，刷新保留；传 false 后 POST /api/v1/upstreams/{id}/refresh 恢复 Ollama 自动识别。仅 owner 和管理员可修改；内置、注册、发现模型仍只读。 修改领域时另需 upstream_id。仅包含 model/upstream_id/domains 时可修改所有可管理来源；混合其他元数据时仍要求 API 创建来源。省略保留，[] 重置通用；成功仍返回原有 {model:...} 结构。 也可用 model=auto、upstream_id=auto 设置 Auto 领域；需管理员身份，实际变更增加 Auto revision。混合批量设置仍为原子操作。",
         "tags": [
           "manage"
         ],
@@ -4006,6 +4105,14 @@
                   },
                   "owned_by": {
                     "type": "string"
+                  },
+                  "domains": {
+                    "type": "array",
+                    "maxItems": 32,
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "共享领域 ID，省略保留，[] 重置通用；未知 ID 和 null 拒绝。Auto 使用领域标注匹配当前步骤；领域不改变能力、权限或资源准入设置。"
                   }
                 }
               },
@@ -4212,6 +4319,14 @@
                         },
                         "owned_by": {
                           "type": "string"
+                        },
+                        "domains": {
+                          "type": "array",
+                          "maxItems": 32,
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "共享领域 ID，省略保留，[] 重置通用；未知 ID 和 null 拒绝。Auto 使用领域标注匹配当前步骤；领域不改变能力、权限或资源准入设置。"
                         }
                       }
                     }
@@ -4349,6 +4464,14 @@
                         }
                       ]
                     }
+                  },
+                  "domains": {
+                    "type": "array",
+                    "maxItems": 32,
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "共享领域 ID，省略保留，[] 重置通用；未知 ID 和 null 拒绝。Auto 使用领域标注匹配当前步骤；领域不改变能力、权限或资源准入设置。"
                   }
                 },
                 "required": [
@@ -4563,6 +4686,14 @@
                         },
                         "owned_by": {
                           "type": "string"
+                        },
+                        "domains": {
+                          "type": "array",
+                          "maxItems": 32,
+                          "items": {
+                            "type": "string"
+                          },
+                          "description": "共享领域 ID，省略保留，[] 重置通用；未知 ID 和 null 拒绝。Auto 使用领域标注匹配当前步骤；领域不改变能力、权限或资源准入设置。"
                         }
                       }
                     }
@@ -4658,6 +4789,14 @@
                   "healthy": {
                     "type": "boolean",
                     "description": "false 立即移除服务目录项，不释放运行中资源。"
+                  },
+                  "domains": {
+                    "type": "array",
+                    "maxItems": 32,
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "仅为恢复快照元数据。已知服务保留持久领域设置；修改请用模型 PATCH、批量 PATCH 或显式注册 POST。"
                   }
                 },
                 "type": "object"
@@ -5052,6 +5191,14 @@
                             },
                             "metadata_override": {
                               "type": "boolean"
+                            },
+                            "domains": {
+                              "type": "array",
+                              "maxItems": 32,
+                              "items": {
+                                "type": "string"
+                              },
+                              "description": "共享领域 ID，省略保留，[] 重置通用；未知 ID 和 null 拒绝。Auto 使用领域标注匹配当前步骤；领域不改变能力、权限或资源准入设置。"
                             }
                           },
                           "required": [
@@ -5061,6 +5208,14 @@
                       ]
                     },
                     "description": "Optional discovery subset with per-model metadata. Omit for all discovered models; [] selects none."
+                  },
+                  "domains": {
+                    "type": "array",
+                    "maxItems": 32,
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "共享领域 ID，省略保留，[] 重置通用；未知 ID 和 null 拒绝。Auto 使用领域标注匹配当前步骤；领域不改变能力、权限或资源准入设置。"
                   }
                 },
                 "required": [
@@ -5541,6 +5696,14 @@
                             },
                             "metadata_override": {
                               "type": "boolean"
+                            },
+                            "domains": {
+                              "type": "array",
+                              "maxItems": 32,
+                              "items": {
+                                "type": "string"
+                              },
+                              "description": "共享领域 ID，省略保留，[] 重置通用；未知 ID 和 null 拒绝。Auto 使用领域标注匹配当前步骤；领域不改变能力、权限或资源准入设置。"
                             }
                           },
                           "required": [
@@ -5550,6 +5713,14 @@
                       ]
                     },
                     "description": "Optional discovery subset with per-model metadata. Omit for all discovered models; [] selects none."
+                  },
+                  "domains": {
+                    "type": "array",
+                    "maxItems": 32,
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "共享领域 ID，省略保留，[] 重置通用；未知 ID 和 null 拒绝。Auto 使用领域标注匹配当前步骤；领域不改变能力、权限或资源准入设置。"
                   }
                 },
                 "required": [
@@ -19872,6 +20043,17 @@
                     "minimum": 0,
                     "default": 0,
                     "description": "GET the current configuration first and preserve revision when saving. A stale revision returns 409."
+                  },
+                  "domains": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "maxItems": 32,
+                    "default": [
+                      "general"
+                    ],
+                    "description": "Auto 允许领域。初始 [general] 不限制领域；选专业后按模型标注限制候选，保留 general 允许通用回退。省略保留已存选择，[] 重置 general。ID 来自 GET /api/v1/model-domains。每个新步骤按领域和复杂度重新选型，未结束的工具轮保持会话模型。"
                   }
                 }
               }
@@ -20012,10 +20194,17 @@
                       "items": {
                         "$ref": "#/components/schemas/GatewayModel"
                       }
+                    },
+                    "domain_catalog": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ModelDomain"
+                      }
                     }
                   },
                   "required": [
-                    "models"
+                    "models",
+                    "domain_catalog"
                   ],
                   "additionalProperties": true
                 }
@@ -20485,6 +20674,254 @@
           }
         },
         "x-contract-source": "backend/src/router/manage.rs"
+      }
+    },
+    "/api/v1/model-domains": {
+      "get": {
+        "summary": "列出共享模型领域",
+        "description": "返回内置及自定义分类；实例内共享，不要把私密信息写入分类名。",
+        "tags": [
+          "Model domains"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "domains"
+                  ],
+                  "properties": {
+                    "domains": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ModelDomain"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid fields or unknown domain ID"
+          },
+          "403": {
+            "description": "VOS user/owner permission required"
+          },
+          "404": {
+            "description": "Model not found or not visible"
+          },
+          "500": {
+            "description": "Persistence failed; no changes committed"
+          }
+        }
+      },
+      "post": {
+        "summary": "新增共享模型领域",
+        "description": "要求 VOS 用户或管理员，推理 Key 不可管理。名称去首尾空白、忽略大小写去重；重复返回 200 及原 ID，新增返回 201。没有重命名/删除接口。",
+        "tags": [
+          "Model domains"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "domain",
+                    "created"
+                  ],
+                  "properties": {
+                    "domain": {
+                      "$ref": "#/components/schemas/ModelDomain"
+                    },
+                    "created": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid fields or unknown domain ID"
+          },
+          "403": {
+            "description": "VOS user/owner permission required"
+          },
+          "404": {
+            "description": "Model not found or not visible"
+          },
+          "500": {
+            "description": "Persistence failed; no changes committed"
+          },
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "domain",
+                    "created"
+                  ],
+                  "properties": {
+                    "domain": {
+                      "$ref": "#/components/schemas/ModelDomain"
+                    },
+                    "created": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/models/domains": {
+      "patch": {
+        "summary": "原子批量设置模型领域",
+        "description": "要求 VOS 身份及全部目标管理权限；权限、校验或存储失败时全部不修改。每项必须提供 upstream_id 区分同名模型。适用于手动及托管/发现模型，不改变能力、可见性、调度。 也可用 model=auto、upstream_id=auto 设置 Auto 领域；需管理员身份，实际变更增加 Auto revision。混合批量设置仍为原子操作。",
+        "tags": [
+          "Model domains"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "updated",
+                    "domains"
+                  ],
+                  "properties": {
+                    "updated": {
+                      "type": "integer"
+                    },
+                    "domains": {
+                      "type": "array",
+                      "maxItems": 32,
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "共享领域 ID，省略保留，[] 重置通用；未知 ID 和 null 拒绝。Auto 使用领域标注匹配当前步骤；领域不改变能力、权限或资源准入设置。"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid fields or unknown domain ID"
+          },
+          "403": {
+            "description": "VOS user/owner permission required"
+          },
+          "404": {
+            "description": "Model not found or not visible"
+          },
+          "500": {
+            "description": "Persistence failed; no changes committed"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "models",
+                  "domains"
+                ],
+                "properties": {
+                  "models": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 200,
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "model",
+                        "upstream_id"
+                      ],
+                      "properties": {
+                        "model": {
+                          "type": "string",
+                          "description": "Qualified catalog ID or native model ID"
+                        },
+                        "upstream_id": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "domains": {
+                    "type": "array",
+                    "maxItems": 32,
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "共享领域 ID，省略保留，[] 重置通用；未知 ID 和 null 拒绝。Auto 使用领域标注匹配当前步骤；领域不改变能力、权限或资源准入设置。"
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     }
   },

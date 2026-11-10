@@ -80,11 +80,12 @@ fn upstream_views(r: &Registry, id: &Identity) -> Vec<Value> {
     rows.extend(business_views(r).0);
     rows
 }
-fn model_view(r: &Registry, m: &Model, id: &Identity) -> Value {
+pub(super) fn model_view(r: &Registry, m: &Model, id: &Identity) -> Value {
     let mut v = json!(m);
     let u = &r.upstreams[&m.upstream_id];
     let catalog_id = r.catalog_id(m, u, id);
     v["name"] = json!(m.display_name(u, id));
+    v["domains"] = json!(domains::effective(r,m));
     v["qualified"] = json!(catalog_id);
 
     v["short"] = json!(false);
@@ -115,7 +116,7 @@ fn model_views(r: &Registry, id: &Identity) -> Vec<Value> {
         .map(|m| model_view(r, m, id))
         .collect::<Vec<_>>();
     rows.extend(business_views(r).1);
-    if auto::advertised(r,id) { rows.push(auto::model_view()); }
+    if auto::advertised(r,id) { let mut model=auto::model_view();model["domains"]=json!(r.auto.domains);rows.push(model); }
     rows
 }
 pub(super) fn normalize(value: &Value) -> Api<Upstream> {
@@ -335,6 +336,9 @@ pub(super) fn select_models(payload: &Value, probed: Vec<Model>) -> Api<Vec<Mode
     Ok(result)
 }
 fn update_model(g: &Arc<Gateway>, id: &Identity, payload: Value) -> Api<Response> {
+    if payload.as_object().is_some_and(|p| p.contains_key("domains") && p.keys().all(|k| ["model","upstream_id","domains"].contains(&k.as_str()))) {
+        return domains::single(g,id,&payload);
+    }
     let visibility = match payload.get("visibility") {
         None => None,
         Some(Value::Null) => Some(None),
@@ -363,6 +367,9 @@ fn update_model(g: &Arc<Gateway>, id: &Identity, payload: Value) -> Api<Response
             return Err(Failure::new(400, format!("{key} must be a list")));
         }
     }
+    if payload.get("domains").is_some() {domains::writer(id)?;}
+    if payload.get("domains").is_some() && text(&payload,"upstream_id").is_empty() {return Err(Failure::new(400,"upstream_id is required for domain changes"));}
+    let selected_domains = payload.get("domains").map(|value|domains::validate(&g.registry.lock().unwrap(),value)).transpose()?;
     let qualified = text(&payload, "model").trim().to_string();
     if qualified.is_empty() {
         return Err(Failure::new(400, "model is required"));
@@ -431,8 +438,11 @@ fn update_model(g: &Arc<Gateway>, id: &Identity, payload: Value) -> Api<Response
     let rows = r.models.get_mut(&upstream_id).expect("model source exists");
     let index = rows.iter().position(|m| m.id == model.id).expect("model exists");
     let previous = std::mem::replace(&mut rows[index], model.clone());
+    let previous_domains=r.model_domains.clone();
+    if let Some(value)=selected_domains {r.model_domains.insert(format!("{upstream_id}/{}",model.id),value);}
     if r.persist(&g.state_path).is_err() {
         r.models.get_mut(&upstream_id).expect("model source exists")[index] = previous;
+        r.model_domains=previous_domains;
         return Err(Failure::new(500, "cannot persist model metadata"));
     }
     Ok(Json(json!({"model": model_view(&r, &model, id)})).into_response())
@@ -679,7 +689,7 @@ async fn probe_model(g: &Gateway, u: &Upstream, model: &str) -> Api<()> {
     Ok(())
 }
 pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) -> Api<Response> {
-    if id.api_key_id.is_some() && !(request.method()=="GET" && ["/api/v1/models","/api/v1/auth/me"].contains(&request.uri().path())) {
+    if id.api_key_id.is_some() && !(request.method()=="GET" && ["/api/v1/models","/api/v1/model-domains","/api/v1/auth/me"].contains(&request.uri().path())) {
         return Err(Failure::new(403,"API keys permit inference and model discovery only"));
     }
     g.registry.lock().unwrap().prune_services(Utc::now());
@@ -718,7 +728,7 @@ pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) ->
         if !id.admin {return Err(Failure::new(403,"Auto candidate management requires an administrator"));}
         let r=g.registry.lock().unwrap();
         let models:Vec<Value>=r.models.values().flatten().filter(|m|r.upstreams.get(&m.upstream_id).is_some_and(|u|u.visible(id))).map(|m|{let mut v=model_view(&r,m,id);v["protocol"]=json!(r.upstreams[&m.upstream_id].protocol);v}).collect();
-        return Ok(Json(json!({"models":models})).into_response());
+        return Ok(Json(json!({"models":models,"domain_catalog":domains::catalog(&r)})).into_response());
     }
     if path=="/api/v1/auto-routing" && method=="GET" { return Ok(Json(auto::configuration(g,id)?).into_response()); }
     if method == "GET" {
@@ -727,7 +737,8 @@ pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) ->
         match path.as_str() {
             "/api/v1/auth/me"=>return Ok(Json(json!({"identity":{"sub":id.owner,"username":id.username,"email":id.email,"admin":id.admin},"auth_method":if env("V_ROUTER_AUTH_DISABLED","")=="true"{"auth_disabled"}else if id.api_key_id.is_some(){"api_key"}else if id.vos_user{"vos_oidc"}else if id.admin{"gateway_key"}else{"anonymous"},"permissions":if id.api_key_id.is_some(){vec!["inference","model_discovery"]}else{vec!["inference","management","upstream_resources"]},"resource_isolation":true,"registration_scopes":["public","private"]})).into_response()),
             "/api/v1/upstreams"=>return Ok(Json(json!({"upstreams":upstream_views(&r,id)})).into_response()),
-            "/api/v1/models"=>return Ok(Json(json!({"models":model_views(&r,id)})).into_response()),
+            "/api/v1/model-domains"=>return Ok(Json(json!({"domains":domains::catalog(&r)})).into_response()),
+            "/api/v1/models"=>return Ok(Json(json!({"models":model_views(&r,id),"domain_catalog":domains::catalog(&r)})).into_response()),
             "/api/v1/status"=>return Ok(Json(json!({"version":version(),"upstreams_total":r.upstreams.values().filter(|u|u.visible(id)).count(),"upstreams_healthy":r.upstreams.values().filter(|u|u.visible(id)&&u.live()).count(),"models":r.list_models(id).len(),"requests_total":g.usage.lock().unwrap().len(),"key_required":env("V_ROUTER_REQUIRE_KEY","")=="true","oidc_enabled":true,"user":id.username,"is_admin":id.admin,"base_urls":gateway_base_urls(),"catalog_readiness":catalog_readiness})).into_response()),
             "/api/v1/usage"=>return Ok(Json(g.usage.lock().unwrap().snapshot(request.uri().query().unwrap_or(""))).into_response()),
             "/api/v1/apidoc"=>{let query=request.uri().query().unwrap_or("");let mut response=Json(documentation(query)).into_response();response.headers_mut().insert("cache-control","no-store".parse().unwrap());response.headers_mut().insert("content-language",if usage::url_query(query,"lang").is_some_and(|s|s.to_ascii_lowercase().starts_with("en")){"en"}else{"zh-CN"}.parse().unwrap());return Ok(response);},
@@ -744,6 +755,7 @@ pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) ->
     } else {
         serde_json::from_slice(&bytes).map_err(|_| Failure::new(400, "invalid JSON request"))?
     };
+    let domain_declarations=domains::declarations(&g.registry.lock().unwrap(),&payload)?;
     if path=="/api/v1/auto-routing" && method=="PUT" { return Ok(Json(auto::configure(g,id,payload)?).into_response()); }
     if path=="/api/v1/auto-routing/test" && method=="POST" { return Ok(Json(auto::resolve(g,id,&payload,&auto_headers).await?).into_response()); }
     if path=="/api/v1/model-residency" && method=="PUT" {
@@ -752,6 +764,8 @@ pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) ->
         g.residency.configure(g,seconds)?;
         return Ok(Json(g.residency.snapshot().await).into_response());
     }
+    if path=="/api/v1/model-domains" && method=="POST" {return domains::create(g,id,&payload);}
+    if path=="/api/v1/models/domains" && method=="PATCH" {return domains::batch(g,id,&payload);}
     if path == "/api/v1/models" && method == "PATCH" {
         return update_model(g, id, payload);
     }
@@ -850,6 +864,7 @@ pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) ->
         }
         let key = u.id.clone();
         r.put(u, models);
+        domains::apply(&mut r,&key,&domain_declarations);
         r.persist(&g.state_path)
             .map_err(|_| Failure::new(500, "cannot persist upstream"))?;
         return Ok((StatusCode::CREATED, Json(view(&r, &r.upstreams[&key], id))).into_response());
@@ -903,6 +918,7 @@ pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) ->
             let mut r = g.registry.lock().unwrap();
             r.upstreams.remove(key);
             r.models.remove(key);
+            r.model_domains.retain(|model,_|!model.starts_with(&format!("{key}/")));
             r.resources.retain(|v| text(v, "upstream") != key);
             r.persist(&g.state_path)
                 .map_err(|_| Failure::new(500, "cannot persist upstream deletion"))?;
@@ -991,6 +1007,7 @@ pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) ->
         }
         let mut r = g.registry.lock().unwrap();
         r.put(u, models);
+        domains::apply(&mut r,key,&domain_declarations);
         r.persist(&g.state_path)
             .map_err(|_| Failure::new(500, "cannot persist upstream"))?;
         return Ok(Json(view(&r, &r.upstreams[key], id)).into_response());
@@ -1046,6 +1063,7 @@ fn ttl(v: &Value) -> Api<i64> {
 }
 
 async fn register(g: &Gateway, id: &Identity, p: Value, recovery: bool) -> Api<Response> {
+    let domain_declarations=domains::declarations(&g.registry.lock().unwrap(),&p)?;
     let service = text(&p, "service_id");
     if service.is_empty()
         || service.len() > 96
@@ -1229,6 +1247,7 @@ async fn register(g: &Gateway, id: &Identity, p: Value, recovery: bool) -> Api<R
         u.scheduler = None;
     }
     r.put(u, models);
+    if !restoring {domains::apply(&mut r,&key,&domain_declarations);}
     r.breaker.remove(&key);
     r.persist(&g.state_path).map_err(|_|Failure::new(500,"cannot persist service ownership"))?;
     let mut response=Json(json!({"upstream":view(&r,&r.upstreams[&key],id),"upstream_id":key,"status":"online","heartbeat_timeout_seconds":ttl,"heartbeat_after_seconds":ttl/3,"model_access_keys":access["model_access_keys"]})).into_response();

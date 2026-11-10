@@ -162,6 +162,8 @@ pub(super) struct Disk {
     pub routing: BTreeMap<String, Routing>,
     #[serde(deserialize_with = "null_default")]
     pub model_routing: BTreeMap<String, ModelRouting>,
+    pub domain_catalog: BTreeMap<String, String>,
+    pub model_domains: BTreeMap<String, Vec<String>>,
     #[serde(deserialize_with = "null_default")]
     pub resources: Vec<Value>,
 }
@@ -172,6 +174,8 @@ pub(super) struct Registry {
     pub models: BTreeMap<String, Vec<Model>>,
     pub routing: BTreeMap<String, Routing>,
     pub model_routing: BTreeMap<String, ModelRouting>,
+    pub domain_catalog: BTreeMap<String, String>,
+    pub model_domains: BTreeMap<String, Vec<String>>,
     pub inflight: BTreeMap<String, usize>,
     pub fair: BTreeMap<String, BTreeMap<String, i64>>,
     pub breaker: BTreeMap<String, (u32, DateTime<Utc>)>,
@@ -193,6 +197,8 @@ impl Registry {
             models: disk.models,
             routing: disk.routing,
             model_routing: disk.model_routing,
+            domain_catalog: disk.domain_catalog,
+            model_domains: disk.model_domains,
             resources: disk.resources,
             ..Self::default()
         };
@@ -239,6 +245,8 @@ impl Registry {
             upstreams,
             routing: self.routing.clone(),
             model_routing: self.model_routing.clone(),
+            domain_catalog: self.domain_catalog.clone(),
+            model_domains: self.model_domains.clone(),
             resources: self.resources.clone(),
         };
         let parent = path.parent().unwrap_or(std::path::Path::new("."));

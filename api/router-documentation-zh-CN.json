@@ -269,7 +269,7 @@
           "method": "GET",
           "path": "/api/v1/models",
           "summary": "模型列表（含元数据）",
-          "desc": "管理视图：每个模型带上游名称、上游类型、是否短名别名等元数据。",
+          "desc": "管理视图：每个模型带上游名称、上游类型、是否短名别名等元数据。 适用领域：共享分类、注册默认值、单个/批量编辑、Auto 每步匹配及权限详见“模型适用领域”分组。",
           "auth": "manage"
         },
         {
@@ -354,7 +354,7 @@
           "method": "POST",
           "path": "/api/v1/registrations",
           "summary": "推理后端主动注册 / 更新",
-          "desc": "支持 ollama 自动能力识别和 typesafe/Jev 原生协议。省略 models 发现全部模型；model 或 models 指定子集时同样自动识别 Ollama。覆盖优先级为自动识别、顶层 capabilities/endpoints、models 逐模型声明、model_capabilities/model_endpoints；后者优先。心跳仅续租，能力变更使用同一 service_id 重注册。注册不授予调度或预算审批。 需网关 Key 或 VOS 身份。稳定 service_id 生成 registered-<service_id>；相同 ID 更新同一实例，副本须不同 ID。可注册 public 或 private 服务；private 只对注册者身份可见，public 对所有调用者可见。可注册 base_url/models 模型 API，也可提交 model 或 models 显式注册单个/多个模型；显式专用模型应声明 endpoints，普通聊天模型缺省时按协议补全，capabilities/model_kind 用于接口能力过滤；model_endpoints 和 model_capabilities 可逐模型覆盖；ttl_seconds 默认90。 注册可同时提交 access_key（true/字符串/null），或 model_access_keys 按原生模型 ID 逐项设置，需所属 VOS 用户 token。省略时保留已有模型访问 Key；api_key 仍仅是上游厂商凭据。已有模型用 PUT /api/v1/models/access-key 修改。 scheduler.mode 支持 cloud、permit、delegated、direct；管理员可用 \"scheduler\": {\"mode\": \"direct\"} 跳过资源许可。省略时仍需有效绑定和审批，注册不等于预算获批。",
+          "desc": "支持 ollama 自动能力识别和 typesafe/Jev 原生协议。省略 models 发现全部模型；model 或 models 指定子集时同样自动识别 Ollama。覆盖优先级为自动识别、顶层 capabilities/endpoints、models 逐模型声明、model_capabilities/model_endpoints；后者优先。心跳仅续租，能力变更使用同一 service_id 重注册。注册不授予调度或预算审批。 需网关 Key 或 VOS 身份。稳定 service_id 生成 registered-<service_id>；相同 ID 更新同一实例，副本须不同 ID。可注册 public 或 private 服务；private 只对注册者身份可见，public 对所有调用者可见。可注册 base_url/models 模型 API，也可提交 model 或 models 显式注册单个/多个模型；显式专用模型应声明 endpoints，普通聊天模型缺省时按协议补全，capabilities/model_kind 用于接口能力过滤；model_endpoints 和 model_capabilities 可逐模型覆盖；ttl_seconds 默认90。 注册可同时提交 access_key（true/字符串/null），或 model_access_keys 按原生模型 ID 逐项设置，需所属 VOS 用户 token。省略时保留已有模型访问 Key；api_key 仍仅是上游厂商凭据。已有模型用 PUT /api/v1/models/access-key 修改。 scheduler.mode 支持 cloud、permit、delegated、direct；管理员可用 \"scheduler\": {\"mode\": \"direct\"} 跳过资源许可。省略时仍需有效绑定和审批，注册不等于预算获批。 适用领域：共享分类、注册默认值、单个/批量编辑、Auto 每步匹配及权限详见“模型适用领域”分组。",
           "auth": "manage"
         },
         {
@@ -411,7 +411,7 @@
           "method": "PATCH",
           "path": "/api/v1/models",
           "summary": "修改模型元数据",
-          "desc": "修改 API 创建上游的模型，model 使用 qualified 名称，可同时传 upstream_id。capabilities 和 endpoints 为字符串数组。手动修改设置 metadata_override=true，刷新保留；传 false 后 POST /api/v1/upstreams/{id}/refresh 恢复 Ollama 自动识别。仅 owner 和管理员可修改；内置、注册、发现模型仍只读。",
+          "desc": "修改 API 创建上游的模型，model 使用 qualified 名称，可同时传 upstream_id。capabilities 和 endpoints 为字符串数组。手动修改设置 metadata_override=true，刷新保留；传 false 后 POST /api/v1/upstreams/{id}/refresh 恢复 Ollama 自动识别。仅 owner 和管理员可修改；内置、注册、发现模型仍只读。 适用领域：共享分类、注册默认值、单个/批量编辑、Auto 每步匹配及权限详见“模型适用领域”分组。",
           "example": "PATCH /api/v1/models {\"model\":\"manual/model\",\"upstream_id\":\"ollama\",\"metadata_override\":false}"
         },
         {
@@ -419,7 +419,7 @@
           "method": "GET",
           "path": "/api/v1/auto-routing",
           "summary": "Auto 配置",
-          "desc": "管理员读取持久化 Auto 配置、候选实例和 revision。",
+          "desc": "管理员读取持久化 Auto 配置、候选实例和 revision。 适用领域：共享分类、注册默认值、单个/批量编辑、Auto 每步匹配及权限详见“模型适用领域”分组。",
           "example": "curl -fsS http://v-scheduler:8080/api/v1/auto-routing -H \"Authorization: Bearer $VOS_TOKEN\""
         },
         {
@@ -427,7 +427,7 @@
           "method": "PUT",
           "path": "/api/v1/auto-routing",
           "summary": "设置 Auto 候选与策略",
-          "desc": "管理员完整替换 Auto 配置，必须携带最新 GET 返回的 revision，冲突返回 409。candidates=[] 表示自动候选池；指定候选使用 qualified model 与 upstream_id。policy 支持 balanced/fast/quality/economy；默认 balanced 与 rules。OpenAI Decisions 和 Jev 均可用 classifier=systemone，配置 jev_model、jev_upstream_id、classifier_timeout_ms；云端分类需 allow_cloud_classifier=true，回答模型的 allow_cloud 独立控制。enabled 仅兼容旧客户端，恒为 true，不控制模型发现。",
+          "desc": "管理员完整替换 Auto 配置，必须携带最新 GET 返回的 revision，冲突返回 409。candidates=[] 表示自动候选池；指定候选使用 qualified model 与 upstream_id。policy 支持 balanced/fast/quality/economy；默认 balanced 与 rules。OpenAI Decisions 和 Jev 均可用 classifier=systemone，配置 jev_model、jev_upstream_id、classifier_timeout_ms；云端分类需 allow_cloud_classifier=true，回答模型的 allow_cloud 独立控制。enabled 仅兼容旧客户端，恒为 true，不控制模型发现。 适用领域：共享分类、注册默认值、单个/批量编辑、Auto 每步匹配及权限详见“模型适用领域”分组。",
           "example": "curl -fsS http://v-scheduler:8080/api/v1/auto-routing -H \"Authorization: Bearer $VOS_TOKEN\" -X PUT -H \"Content-Type: application/json\" --data-binary @auto-config.json"
         },
         {
@@ -435,7 +435,7 @@
           "method": "POST",
           "path": "/api/v1/auto-routing/test",
           "summary": "测试 Auto 选型",
-          "desc": "与实际 model=auto 共用选型，不运行回答模型。配置 Jev 时可能调用收费分类器。",
+          "desc": "与实际 model=auto 共用选型，不运行回答模型。配置 Jev 时可能调用收费分类器。 适用领域：共享分类、注册默认值、单个/批量编辑、Auto 每步匹配及权限详见“模型适用领域”分组。",
           "example": "curl -fsS http://v-scheduler:8080/api/v1/auto-routing/test -H \"Authorization: Bearer $VOS_TOKEN\" -H \"Content-Type: application/json\" -d '{\"model\":\"auto\",\"messages\":[{\"role\":\"user\",\"content\":\"Summarize this text\"}],\"max_tokens\":256}'"
         },
         {
@@ -1592,6 +1592,36 @@
           "method": "POST",
           "path": "/v1/systemone",
           "summary": "Jev / System One 结构化决策"
+        }
+      ]
+    },
+    {
+      "id": "model-domains",
+      "title": "模型适用领域",
+      "endpoints": [
+        {
+          "path": "/api/v1/model-domains",
+          "method": "GET",
+          "summary": "列出共享模型领域",
+          "auth": "manage",
+          "desc": "模型适用领域是独立于模型能力、协议和调度策略的多选分类。现有模型默认 `general`（通用）；内置分类包括法律、数学、物理、医药、化学、生物、工程、计算机、金融、教育和人文。可保留通用并同时选择专业领域。\n\n在“模型与上游”添加单个模型、添加上游所选模型或注册模型时，展开“适用领域（可多选）”。已添加的手动模型在“编辑元数据”中修改；托管/发现模型在“模型设置 → 适用领域”中修改。填写“新增共享分类名称”并点“新增分类”，创建后自动勾选，其他模型可立即复用。自定义分类在该 V-Scheduler 实例内共享，名称不要包含私密信息。领域不是对模型真实专业水平的认证，Auto 会使用这些标注匹配当前步骤；领域不改变模型能力或访问权限。\n\nAPI 地址仍使用 `http://v-scheduler:8080`，VOS 前端同域为 `/api/com.ictrek.v-scheduler`，外部访问使用实际宿主机映射端口（默认 22888）。管理操作使用 VOS 用户 token，个人/模型推理 Key 不授予修改权限。只能修改自己可管理的模型，管理员可管理其他模型。\n\n先通过 `GET /api/v1/model-domains` 获取 `{domains:[{id,name,builtin}]}`。新增分类用 `POST /api/v1/model-domains` 和 `{name:\"专利\"}`，新增返回 201 `{domain:{id,name,builtin:false},created:true}`，同名分类去空白并忽略大小写去重，返回 200 和已有 ID。自定义 ID 为稳定的 `custom-...`，后续使用 ID 而不是名称；名称长度 1–80 字符，无控制字符，最多 1000 个自定义分类。当前不提供重命名或删除分类接口。\n\n模型编辑 `PATCH /api/v1/models` 支持 `domains`，可与手动模型的其他元数据一起提交；只提交 model、upstream_id、domains 时也适用于已发现或应用托管模型，不改变其能力。注册 `POST /api/v1/registrations` 以及手动上游创建/编辑均支持顶层 domains 作为本次所选模型默认值；`models[].domains` 可逐模型覆盖。字段省略时保留已有设置，即使刷新上游、心跳恢复或重新注册也不丢失；`[]` 明确重置为通用，null、未知 ID 或非字符串元素返回 400。每个模型最多 32 个领域，重复 ID 去重。恢复心跳不会用旧注册快照覆盖已持久化的用户编辑。\n\n批量操作使用 `PATCH /api/v1/models/domains`，完整替换全部目标的领域。每批 1–200 项，逐项提供 upstream_id 和 model（目录 ID 或原生 ID）。即使两个上游具有同名模型，也按上游分别设置。服务先校验全部目标及管理权限，再一次提交；任一目标无权限、不存在、分类非法或持久化失败时全部不修改。成功返回 `{updated:2,domains:[\"law\"]}`，updated 是去重后的目标数量。\n\n`GET /api/v1/models` 在每个模型上返回 domains，并在顶层返回 domain_catalog；`GET /v1/models` 的真实模型条目也包含 domains。领域及共享分类持久保存在原注册表内，不需要迁移现有模型文件或更改调用 model ID。401/403 分别处理登录/管理权限，400 修正输入，404 核对模型及上游；存储失败返回 500，不应当作成功。\n\n未知分类示例：HTTP 400，响应的 `error.code` 为 `INVALID_REQUEST`，`error.message` 为 `unknown domain ID; create the category first`；先创建分类并使用返回的 ID，再重试。缺少管理权限为 HTTP 403 / FORBIDDEN；完整错误信封沿用现有网关契约，保留 request_id 用于排查，不记录 token。对模型领域的写操作要求 upstream_id；其他旧版元数据修改请求不因此改变必填规则。共享分类读取沿用网关发现鉴权（包括允许的推理 Key），写操作仍要求 VOS 用户/管理员身份。\n\n自动发现和注册模型也可编辑领域，但该操作不授予修改托管服务能力或配置的权限。统一 `/v1/models` 目录的 domains 扩展针对没有 X-VRouter-Upstream 的目录请求；显式透传某个上游的原生 `/models` 响应不保证带此扩展。Auto 虚拟入口可由管理员设置领域；业务操作条目不是领域设置目标。\n\n心跳的领域字段只是完整恢复快照中的元数据：普通心跳及已知服务恢复均保留持久设置，不用于修改领域；首次创建未知服务的完整心跳才采用快照领域。修改现有模型请使用 PATCH /api/v1/models、批量接口或重新 POST /api/v1/registrations。内置分类的 API name 为规范名称，界面会本地化显示；自定义名称保留创建者填写的文字。\n\n在 Auto 配置页的“适用领域（可多选）”选择允许使用的领域，也可直接新增共享分类。只选 `general` 时不限制候选模型领域，兼容原默认候选池；选择专业后，候选至少有一个所选领域才合格，同时保留 `general` 可使用标注通用的回退模型。所有候选仍需通过身份可见性、协议/工具/视觉能力、上下文上限、复杂度档位和资源准入检查，领域匹配不会绕过这些条件。\n\n每次请求都会对当前步骤重新分类：规则读取最新用户消息，工具续轮参考最近消息及工具名/参数；不确定则为通用。规则按内置关键词及自定义分类名称匹配，是启发式判断。启用聊天模型或 Jev/OpenAI Decisions/System One 分类器时，会向分类器提供当前可见候选使用的领域词表（最多 64 类）；有效且置信度至少 0.7 的领域结果优先使用，缺失/非法/低置信度的领域结果回退规则。旧分类器只返回任务/复杂度也能继续使用。整体分类失败/超时仍使用既有规则回退，分类费用/云端许可保持原配置。\n\n先匹配当前专业，再按均衡/速度/质量/成本策略排序；没有合格专业模型时，仅能回退到允许的通用模型；若也没有通用模型，返回既有“无合格候选”结果，不强行调用不匹配的专业模型。显式手工候选的复杂度档位仍有效；自动候选池不会凭模型名字猜测质量档位。领域标签由用户维护，不能代替真实模型能力验证。\n\n例如 Harness 先请求法律分析、下一次请求数学推导，仍发送 `model=auto`，即可分别选择合格法律模型和数学模型。每次推理选型都基于当前上下文，应用要提供完整必要上下文。稳定会话 ID 不再固定整段对话：普通新步骤重新排序；但未完成的工具调用续轮沿用原模型，避免破坏工具上下文。工具续轮必须沿用 `X-VScheduler-Session-ID`（1–96 个 ASCII 字母、数字、下划线或连字符），按调用身份隔离、空闲 10 分钟到期。若原模型不可用/会话过期返回 409，缺少此头返回 422，由调用方明确重启工具轮。SSE 开始后不会拼接另一模型的响应。客户端只会重复请求 endpoint 并不等于已实现工具会话头转发，接入时需单独确认。\n\n管理员可用下列两种 API 修改同一个 Auto 领域选择。最小 PATCH 仅改领域，不覆盖其他 Auto 配置；批量接口也接受同样的 auto/auto 目标，批内出现 Auto 时要求管理员。实际改变会递增 revision 并清除旧的会话选型缓存，工具回合进行中应避免修改全局配置。\n\nGET/PUT `/api/v1/auto-routing` 和 GET `/api/v1/auto-routing/candidates` 仅管理员可用。PUT 先读取完整配置、保留 revision 和其他字段后修改提交，revision 冲突为 409，重新读取再编辑；省略 domains 保留原选择，[] 重置通用。目录候选返回 `models[].domains` 和顶层 `domain_catalog`。POST `/api/v1/auto-routing/test` 允许已验证的模型调用身份，返回 `classification.domains`、`domain_source`（rules/classifier/rules_fallback）、可空的 `domain_confidence`，以及任务、复杂度、实际模型和候选排除原因。`domain_not_configured` 表示不在允许领域，`domain_mismatch` 表示不匹配本步骤，`domain_general_fallback` 表示选用了通用回退。测试选型不执行回答模型，但启用模型分类器仍可能产生分类费用。普通和流式实际推理沿用 `/v1/chat/completions`、`/v1/messages`，请求 model=auto，不新增专业请求头。",
+          "example": "curl --fail-with-body \"$GATEWAY/api/v1/model-domains\" -H \"Authorization: Bearer $VOS_TOKEN\""
+        },
+        {
+          "path": "/api/v1/model-domains",
+          "method": "POST",
+          "summary": "新增共享模型领域",
+          "auth": "manage",
+          "desc": "完整流程参见本分组的分类目录接口。默认 general（通用）。GET /api/v1/model-domains 列出共享 ID，POST 新增后所有模型可复用。手动添加、注册 models[] 和 PATCH /api/v1/models 均支持 domains；注册时逐模型字段覆盖顶层默认。省略会跨发现刷新/重新注册保留，[] 重置通用。PATCH /api/v1/models/domains 原子替换 1–200 个 model/upstream_id 目标的领域。分类新增要求 VOS 用户/管理员，模型修改限所有者/管理员，推理 Key 不可修改。领域独立于能力与调度。",
+          "example": "curl -X POST http://v-scheduler:8080/api/v1/model-domains -H \"Authorization: Bearer $VOS_TOKEN\" -H \"Content-Type: application/json\" -d '{\"name\":\"Patent law\"}'"
+        },
+        {
+          "path": "/api/v1/models/domains",
+          "method": "PATCH",
+          "summary": "原子批量设置模型领域",
+          "auth": "manage",
+          "desc": "完整流程参见本分组的分类目录接口。默认 general（通用）。GET /api/v1/model-domains 列出共享 ID，POST 新增后所有模型可复用。手动添加、注册 models[] 和 PATCH /api/v1/models 均支持 domains；注册时逐模型字段覆盖顶层默认。省略会跨发现刷新/重新注册保留，[] 重置通用。PATCH /api/v1/models/domains 原子替换 1–200 个 model/upstream_id 目标的领域。分类新增要求 VOS 用户/管理员，模型修改限所有者/管理员，推理 Key 不可修改。领域独立于能力与调度。",
+          "example": "curl -X PATCH http://v-scheduler:8080/api/v1/models/domains -H \"Authorization: Bearer $VOS_TOKEN\" -H \"Content-Type: application/json\" -d '{\"models\":[{\"upstream_id\":\"my-provider\",\"model\":\"my-model\"}],\"domains\":[\"law\",\"mathematics\"]}'"
         }
       ]
     }
