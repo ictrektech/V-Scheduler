@@ -417,3 +417,19 @@ summary:focus-visible, #nav button:focus-visible { outline: 2px solid var(--prim
 .provider-note{padding:12px 16px;border:1px solid #d4e7eb;border-radius:8px;background:#f1f8fa;color:#3b6575;font-size:14px;line-height:20px}:host{font-family:Manrope,system-ui,'PingFang SC',sans-serif}
 
 .model-call-examples pre{white-space:pre-wrap;overflow-wrap:anywhere;padding:12px;background:#f6f9fb;border-radius:8px}.model-call-examples h4{margin:16px 0 8px}#modelCallDialog{width:min(680px,calc(100vw - 32px))}#modelCallName{overflow-wrap:anywhere}
+
+#modelSpeedDialog { width: min(850px, calc(100vw - 32px)); max-height: 90vh; overflow: auto; }
+.speed-graph { --speed-color: #087e8b; margin-block: 16px; }
+.speed-ttft { --speed-color: #8454b4; }
+.speed-graph h4 { margin: 0 0 5px; }
+.speed-graph h4 small { color: var(--muted, #62748a); font-weight: normal; }
+.speed-chart-area { display: flex; align-items: stretch; gap: 8px; }
+.speed-chart-area svg { display: block; width: 100%; min-width: 0; }
+.speed-y { display: flex; flex-direction: column; justify-content: space-between; padding-block: 2px; text-align: right; }
+.speed-y, .speed-times { font-size: .75rem; color: var(--muted, #62748a); }
+.speed-times { display: flex; justify-content: space-between; gap: 8px; padding-inline-start: 28px; }
+.speed-axis { stroke: currentColor; opacity: .15; fill: none; }
+.speed-graph polyline { fill: none; stroke: var(--speed-color); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.speed-graph circle { fill: var(--speed-color); cursor: help; }
+.speed-details summary { cursor: pointer; }
+.speed-rows { max-height: 16rem; overflow: auto; }

@@ -354,6 +354,14 @@
     <div class="form-actions"><button type="button" class="btn" onclick="app.element('modelCallDialog').close()">关闭</button></div>
   </dialog>
 
+  <dialog id="modelSpeedDialog" aria-labelledby="modelSpeedTitle">
+    <h3 id="modelSpeedTitle">速度趋势</h3>
+    <p class="mono" id="modelSpeedName"></p>
+    <p class="hint">最近 200 次可测量的流式调用。生成速度不含首 Token 等待；未报告用量或片段同时到达时，速度留空。</p>
+    <div id="modelSpeedBody"></div>
+    <div class="form-actions"><button type="button" class="btn" onclick="app.element('modelSpeedDialog').close()">关闭</button></div>
+  </dialog>
+
   <!-- 模型元数据对话框 -->
   <dialog id="modelDialog">
     <h3>模型元数据</h3>

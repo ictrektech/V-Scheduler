@@ -15,6 +15,10 @@ pub(super) struct Exchange {
     pub native: String,
     pub path: String,
     start: Instant,
+    speed_started: Option<Instant>,
+    ttft_ms: Option<f64>,
+    generation_ms: Option<f64>,
+    speed_completed_at: Option<DateTime<Utc>>,
     pub status: u16,
     stream: bool,
     _slot: Option<tokio::sync::OwnedSemaphorePermit>,
@@ -25,6 +29,21 @@ pub(super) struct Exchange {
     pub usage: Value,
     bridge_request: Value,
     pub async_job: Option<Value>,
+}
+impl Exchange {
+    fn measure_output(&mut self, decoder: &bridge::Stream) {
+        if !(200..300).contains(&self.status) || self.ttft_ms.is_some()
+            || !decoder.terminal || decoder.failed || decoder.usage_failed
+        { return; }
+        if let (Some(start), Some(first), Some(last)) =
+            (self.speed_started, decoder.first_output, decoder.last_output)
+        {
+            self.speed_completed_at = Some(Utc::now());
+            self.ttft_ms = Some(first.duration_since(start).as_secs_f64() * 1000.0);
+            let elapsed = last.duration_since(first).as_secs_f64() * 1000.0;
+            self.generation_ms = (elapsed > 0.0).then_some(elapsed);
+        }
+    }
 }
 impl Drop for Exchange {
     fn drop(&mut self) {
@@ -41,7 +60,7 @@ impl Drop for Exchange {
             .as_i64()
             .or(self.usage["output_tokens"].as_i64())
             .unwrap_or(0);
-        self.g.usage.lock().unwrap().record(json!({"time":Utc::now(),"user":if self.id.admin{"gateway-admin"}else{&self.id.username},"model":self.model,"native_id":self.native,"upstream_id":self.u.id,"upstream_name":self.u.name,"endpoint":self.path.trim_start_matches('/'),"status":self.status,"latency_ms":self.start.elapsed().as_millis()as u64,"stream":self.stream,"usage_reported":self.usage.is_object(),"input_tokens":input,"output_tokens":output,"total_tokens":self.usage["total_tokens"].as_i64().unwrap_or(input+output),"cached_tokens":self.usage["prompt_tokens_details"]["cached_tokens"].as_i64().unwrap_or(0),"reasoning_tokens":self.usage["completion_tokens_details"]["reasoning_tokens"].as_i64().unwrap_or(0),"auto_routing":self.auto_decision}));
+        self.g.usage.lock().unwrap().record(json!({"time":Utc::now(),"user":if self.id.admin{"gateway-admin"}else{&self.id.username},"model":self.model,"native_id":self.native,"upstream_id":self.u.id,"upstream_name":self.u.name,"endpoint":self.path.trim_start_matches('/'),"status":self.status,"latency_ms":self.start.elapsed().as_millis()as u64,"stream":self.stream,"usage_reported":self.usage.is_object(),"input_tokens":input,"output_tokens":output,"total_tokens":self.usage["total_tokens"].as_i64().unwrap_or(input+output),"cached_tokens":self.usage["prompt_tokens_details"]["cached_tokens"].as_i64().unwrap_or(0),"reasoning_tokens":self.usage["completion_tokens_details"]["reasoning_tokens"].as_i64().unwrap_or(0),"auto_routing":self.auto_decision,"ttft_ms":self.ttft_ms,"generation_ms":self.generation_ms,"speed_completed_at":self.speed_completed_at}));
     }
 }
 fn clean_headers(headers: &HeaderMap) -> HeaderMap {
@@ -583,6 +602,10 @@ async fn handle_inner(g: Arc<Gateway>, id: Identity, request: Request, classifie
         native: native.clone(),
         path: suffix.clone(),
         start: Instant::now(),
+        speed_started: None,
+        ttft_ms: None,
+        generation_ms: None,
+        speed_completed_at: None,
         status: 499,
         stream: value["stream"] == true,
         _slot: slot,
@@ -783,6 +806,7 @@ async fn handle_inner(g: Arc<Gateway>, id: Identity, request: Request, classifie
             return Err(Failure::new(400,"native provider supports Chat Completions, Responses and Messages only"));
         }
         if let Some(lease)=exchange.lease.as_ref(){lease.begin();}
+        exchange.speed_started = Some(Instant::now());
         let response=lease::guard(exchange.lease.as_ref(),provider_runtime::response(&g,&u,"chat",value)).await?;
         exchange.status=response.status().as_u16();
         g.registry.lock().unwrap().result(&u.id,response.status().is_success());
@@ -798,6 +822,7 @@ async fn handle_inner(g: Arc<Gateway>, id: Identity, request: Request, classifie
             return Ok(response);
         }
     }
+    let measure_speed = method == axum::http::Method::POST && !asynchronous;
     let mut builder = outgoing(&g, &u, method, url, &headers, exchange.lease.as_ref());
     if is_query {
         // Query-routed audio and business requests retain streaming uploads.
@@ -815,6 +840,7 @@ async fn handle_inner(g: Arc<Gateway>, id: Identity, request: Request, classifie
     if let Some(lease) = exchange.lease.as_ref() {
         lease.begin();
     }
+    if measure_speed { exchange.speed_started = Some(Instant::now()); }
     let response = match lease::guard(exchange.lease.as_ref(), async {
         builder
             .send()
@@ -1083,6 +1109,10 @@ impl Stream for ResponseStream {
                     };
                     let terminal = self.decoder.terminal;
                     let usage = self.decoder.usage.clone();
+                    if let Some(mut exchange) = self.exchange.take() {
+                        exchange.measure_output(&self.decoder);
+                        self.exchange = Some(exchange);
+                    }
                     if terminal {
                         self.renewal = None;
                     }
@@ -1113,6 +1143,10 @@ impl Stream for ResponseStream {
                     let final_events = if sse { self.decoder.eof() } else { vec![] };
                     let terminal = self.decoder.terminal;
                     if let Some(mut exchange) = self.exchange.take() {
+                        if sse {
+                            exchange.usage = self.decoder.usage.clone();
+                            exchange.measure_output(&self.decoder);
+                        }
                         if !sse || terminal {
                             if let Some(lease) = exchange.lease.take() {
                                 self.finished = true;

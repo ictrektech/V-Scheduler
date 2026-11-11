@@ -1588,6 +1588,30 @@
                 },
                 "latency_ms": {
                   "type": "integer"
+                },
+                "ttft_ms": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "description": "发送请求到收到首个输出片段（毫秒）。"
+                },
+                "generation_ms": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "exclusiveMinimum": 0,
+                  "description": "末个与首个输出片段的间隔（毫秒）。"
+                },
+                "speed_completed_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time",
+                  "description": "有计时时的流完成时间；旧记录可省略。"
                 }
               },
               "required": [],
@@ -3868,6 +3892,84 @@
           "type": "string"
         },
         "description": "共享领域 ID，省略保留，[] 重置通用；未知 ID 和 null 拒绝。Auto 使用领域标注匹配当前步骤；领域不改变能力、权限或资源准入设置。"
+      },
+      "ModelSpeedPoint": {
+        "type": "object",
+        "properties": {
+          "time": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC 完成时间。"
+          },
+          "upstream_id": {
+            "type": "string",
+            "description": "实际上游 ID。"
+          },
+          "model": {
+            "type": "string",
+            "description": "实际原生模型 ID。"
+          },
+          "output_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "description": "上游报告的输出 token 数。"
+          },
+          "generation_ms": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "exclusiveMinimum": 0,
+            "description": "末个与首个输出片段的间隔（毫秒）。"
+          },
+          "tokens_per_second": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "exclusiveMinimum": 0,
+            "description": "(输出 token 数 − 1) × 1000 ÷ generation_ms；不可测量为 null。"
+          },
+          "ttft_ms": {
+            "type": "number",
+            "minimum": 0,
+            "description": "发送请求到收到首个输出片段（毫秒）。"
+          }
+        },
+        "required": [
+          "time",
+          "upstream_id",
+          "model",
+          "output_tokens",
+          "generation_ms",
+          "tokens_per_second",
+          "ttft_ms"
+        ],
+        "additionalProperties": false
+      },
+      "ModelSpeedHistory": {
+        "type": "object",
+        "properties": {
+          "points": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModelSpeedPoint"
+            },
+            "maxItems": 200
+          },
+          "limit": {
+            "type": "integer",
+            "const": 200
+          }
+        },
+        "required": [
+          "points",
+          "limit"
+        ],
+        "additionalProperties": false
       }
     }
   },
@@ -20922,6 +21024,175 @@
             }
           }
         }
+      }
+    },
+    "/api/v1/model-speed": {
+      "get": {
+        "summary": "模型速度趋势",
+        "description": "打开「模型与上游」，展开来源，在模型所在行点「速度趋势」。横轴是每次调用的完成时间，两个纵轴独立显示生成速度（token/s）和首 Token 等待（ms）。悬停看单点，展开「逐次调用数据」看明细；关闭再打开会重新读取。Auto 的明细还显示实际模型及上游，样本也计入对应实际模型的趋势。\n\n- 首 Token 等待：从网关开始向上游发出请求到收到首个带输出的流式片段。输出包括文本、推理内容和工具调用输出；角色声明、空片段、心跳、用量以及结束标志不算输出。\n- 生成速度：`(上游报告的输出 token 数 − 1) ÷ (末个输出片段时间 − 首个输出片段时间，单位秒)`。从分子扣掉首个 token，不计入首 Token 等待。片段可能包含多个 token，因此这是网关观测的近似值，受网络和缓冲影响，并非模型内部解码计时。两个指标均排除 Scheduler 的排队和许可释放时间。\n- 正常结束且观察到输出的流式调用才进入图表。缺少输出 token 数、输出不超过 1 token、或全部输出在同一批次到达时，生成速度留空，但仍可记录首 Token 等待。OpenAI 兼容上游支持时，调用端可传 `stream_options: {\"include_usage\":true}`；内置 Ollama 的流式 Chat Completions 试聊会请求该字段。\n- 非流式响应、失败或中断的流，以及没有独立计时的旧记录不补成 0；历史用量仍照常保留。每个模型与上游组合最多返回最近 200 次可测量调用，从旧到新排列。已写入原用量日志的样本在重启后保留。\n\n`GET /api/v1/model-speed?upstream_id=UPSTREAM_ID&model=MODEL_ID` 无请求体。两个查询参数均为非空字符串，需 URL 编码，无默认值；`upstream_id` 取自 `GET /api/v1/models` 的 `upstream_id`，`model` 可用 `id` 或 `qualified`。Auto 用 `upstream_id=auto&model=auto`。不支持分页、排序参数或额外筛选；重复参数取首值。VOS 应用内同源前缀为 `/api/com.ictrek.v-scheduler`，容器直连为 `http://v-scheduler:8080`，宿主机直连默认 `http://VOS_HOST:22888`。使用 VOS 应用登录得到的访问令牌（`Authorization: Bearer`），或启用校验后配置的网关管理 Key（Bearer 或 `X-API-Key`）；个人、模型及应用推理 Key 无权读取。只返回当前身份可见模型的数据；Auto 隐藏不可见的实际目标，不返回调用者、请求或响应正文。\n\n200 返回 `application/json`，`Cache-Control: private, no-store`。响应必有 `limit`（整数 200）和 `points`（数组，可为空）。每个样本必含下表字段：\n\n成功示例：`{\"limit\":200,\"points\":[{\"time\":\"2026-11-11T08:00:00Z\",\"upstream_id\":\"my-upstream\",\"model\":\"my-model\",\"output_tokens\":41,\"generation_ms\":800,\"tokens_per_second\":50,\"ttft_ms\":320}]}`。没有样本时仍为 200：`{\"limit\":200,\"points\":[]}`。\n\n错误为 JSON：顶层 `code`（稳定错误码）、`category=\"v-scheduler\"`、`version=\"1\"`、`data={}`、`msg`（诊断文字）、`request_id`（请求标识，与响应头 `X-Request-ID` 相同）；`error` 含 `code`、`message`（同 msg）、`type`（400 为 invalid_request_error、401 为 authentication_error、403 为 permission_error、其他为 api_error）。401 另带 `WWW-Authenticate: Bearer`。 400 `INVALID_REQUEST` 补齐查询参数；401 `UNAUTHENTICATED` 重新登录或核对网关 Key；403 `FORBIDDEN` 换用管理身份；404 `NOT_FOUND` 核对模型/上游及可见性；405 `METHOD_NOT_ALLOWED` 改用 GET；503 `TEMPORARILY_UNAVAILABLE`（身份服务暂不可用）待身份服务恢复后重试。应用内可在「API 文档 → 模型与网关 API → 模型速度趋势」展开完整契约。既有 `GET /api/v1/usage` 的 recent 条目可附加 `ttft_ms`、`generation_ms`、`speed_completed_at`，不可测量时为 null，升级前历史记录可省略。",
+        "parameters": [
+          {
+            "name": "upstream_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "上游 ID，Auto 使用 auto。"
+          },
+          {
+            "name": "model",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "原生或限定模型 ID，Auto 使用 auto。"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "按时间升序的样本，可为空。",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "private, no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelSpeedHistory"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "查询参数缺失或为空。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "缺少有效身份。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "WWW-Authenticate": {
+                "schema": {
+                  "type": "string",
+                  "const": "Bearer"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "凭证仅限推理。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "模型不存在或不可见。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "身份服务不可用。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "必须使用 GET。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            },
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "tags": [
+          "manage"
+        ],
+        "x-gateway-auth": "manage",
+        "x-contract-source": "backend/src/router/manage.rs"
       }
     }
   },

@@ -9,11 +9,15 @@ struct Aggregate {
     upstreams: BTreeMap<String, Value>,
     users: BTreeMap<String, Value>,
 }
+pub(super) const SPEED_LIMIT: usize = 200;
+
 pub(super) struct Usage {
     root: PathBuf,
     since: DateTime<Utc>,
     buckets: BTreeMap<String, Aggregate>,
     recent: VecDeque<Value>,
+    speed: BTreeMap<(String, String), VecDeque<Value>>,
+    auto_speed: VecDeque<Value>,
 }
 fn user_file(user: &str) -> String {
     let prefix = user
@@ -96,6 +100,8 @@ impl Usage {
                 since: Utc::now(),
                 buckets: Default::default(),
                 recent: Default::default(),
+                speed: Default::default(),
+                auto_speed: Default::default(),
             });
         }
         let stem = if path.with_extension("") == path {
@@ -129,6 +135,8 @@ impl Usage {
             since: Utc::now(),
             buckets: Default::default(),
             recent: Default::default(),
+                speed: Default::default(),
+                auto_speed: Default::default(),
         };
         let mut records = vec![];
         for entry in std::fs::read_dir(&result.root)? {
@@ -146,7 +154,7 @@ impl Usage {
                 }
             }
         }
-        records.sort_by(|a, b| text(a, "time").cmp(text(b, "time")));
+        records.sort_by_cached_key(|row| DateTime::parse_from_rfc3339(text(row, "time")).ok());
         for record in records {
             result.add(record);
         }
@@ -189,8 +197,45 @@ impl Usage {
                 &record,
             );
         }
+        self.add_speed(&record, at);
         self.recent.push_front(record);
         self.recent.truncate(200);
+    }
+    fn add_speed(&mut self, record: &Value, at: DateTime<Utc>) {
+        let Some(ttft) = record["ttft_ms"].as_f64().filter(|ms| ms.is_finite() && *ms >= 0.0) else { return };
+        if record["stream"] != true
+            || !record["status"].as_u64().is_some_and(|status| (200..300).contains(&status))
+        {
+            return;
+        }
+        let model = text(record, "native_id");
+        let upstream = text(record, "upstream_id");
+        if model.is_empty() || upstream.is_empty() { return; }
+        let elapsed = record["generation_ms"].as_f64().filter(|ms| ms.is_finite() && *ms > 0.0);
+        let tokens = record["output_tokens"].as_u64().filter(|n| *n > 0 && record["usage_reported"] == true);
+        let rate = tokens.filter(|n| *n > 1).zip(elapsed)
+            .map(|(n, ms)| (n - 1) as f64 * 1000.0 / ms).filter(|n| n.is_finite());
+        let at = DateTime::parse_from_rfc3339(text(record, "speed_completed_at")).map(|v| v.with_timezone(&Utc)).unwrap_or(at);
+        let point = json!({"time":at,"model":model,"upstream_id":upstream,
+            "output_tokens":tokens,"generation_ms":elapsed,"tokens_per_second":rate,"ttft_ms":ttft});
+        let insert = |series: &mut VecDeque<Value>, point| {
+            let index = series.partition_point(|previous|
+                DateTime::parse_from_rfc3339(text(previous, "time")).is_ok_and(|v| v <= at));
+            series.insert(index, point);
+            if series.len() > SPEED_LIMIT { series.pop_front(); }
+        };
+        insert(self.speed.entry((upstream.into(), model.into())).or_default(), point.clone());
+        if record["auto_routing"]["requested_model"] == "auto" {
+            insert(&mut self.auto_speed, point);
+        }
+    }
+    pub fn speed(&self, upstream: &str, model: &str, visible: impl Fn(&Value) -> bool) -> Value {
+        let points: Vec<_> = if upstream == "auto" && model == "auto" {
+            self.auto_speed.iter().filter(|p| visible(p)).collect()
+        } else {
+            self.speed.get(&(upstream.into(), model.into())).into_iter().flatten().collect()
+        };
+        json!({"points":points,"limit":SPEED_LIMIT})
     }
     pub fn record(&mut self, record: Value) {
         if !self.root.as_os_str().is_empty()

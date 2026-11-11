@@ -353,6 +353,10 @@ pub(super) struct Stream {
     pub terminal: bool,
     pub failed: bool,
     pub usage: Value,
+    pub usage_failed: bool,
+    pub first_output: Option<std::time::Instant>,
+    pub last_output: Option<std::time::Instant>,
+    last_read: Option<std::time::Instant>,
     id: String,
     model: String,
     finish_reason: String,
@@ -376,6 +380,10 @@ impl Stream {
             terminal: false,
             failed: false,
             usage: Value::Null,
+            usage_failed: false,
+            first_output: None,
+            last_output: None,
+            last_read: None,
             finish_reason: String::new(),
             id: format!("resp_{}", uuid::Uuid::new_v4().simple()),
             model: model.into(),
@@ -518,7 +526,37 @@ impl Stream {
         Ok(self.chat_chunk(json!([{"index":0,"delta":delta,"finish_reason":null}]), None))
     }
 
+    fn observe_output(&mut self, event: &Value, at: std::time::Instant) {
+        let nonempty = |value: &Value| value.as_str().is_some_and(|s| !s.is_empty());
+        let generated = match text(event, "type") {
+            "content_block_delta" => ["text", "thinking", "partial_json"].iter()
+                .any(|key| nonempty(&event["delta"][key])),
+            "content_block_start" => ["text", "thinking", "name"].iter()
+                .any(|key| nonempty(&event["content_block"][key])),
+            "response.output_text.delta" | "response.refusal.delta" | "response.reasoning_text.delta"
+            | "response.reasoning_summary_text.delta" | "response.function_call_arguments.delta" =>
+                nonempty(&event["delta"]),
+            _ => event["choices"].as_array().into_iter().flatten().any(|choice| {
+                let delta = &choice["delta"];
+                nonempty(&choice["text"])
+                    || ["content", "reasoning_content", "reasoning", "refusal"].iter()
+                        .any(|key| nonempty(&delta[key]))
+                    || ["name", "arguments"].iter().any(|key| nonempty(&delta["function_call"][key]))
+                    || delta["tool_calls"].as_array().into_iter().flatten().any(|tool|
+                        ["name", "arguments"].iter().any(|key| nonempty(&tool["function"][key])))
+            }),
+        };
+        if generated {
+            self.first_output.get_or_insert(at);
+            self.last_output = Some(at);
+        }
+    }
     pub fn feed(&mut self, bytes: &[u8]) -> Api<Vec<u8>> {
+        let at = std::time::Instant::now();
+        self.last_read = Some(at);
+        self.feed_at(bytes, at)
+    }
+    fn feed_at(&mut self, bytes: &[u8], at: std::time::Instant) -> Api<Vec<u8>> {
         if self.terminal || self.failed {
             return Ok(if self.protocol.is_empty() {
                 bytes.to_vec()
@@ -561,7 +599,7 @@ impl Stream {
                 } else {
                     serde_json::from_slice(&frame)
                         .map_err(|_| Failure::new(502, "invalid upstream SSE JSON"))
-                        .and_then(|chunk| self.anthropic_chunk(&chunk))
+                        .and_then(|chunk| { self.observe_output(&chunk, at); self.anthropic_chunk(&chunk) })
                 };
                 match translated {
                     Ok(events) => output.extend(events),
@@ -591,6 +629,7 @@ impl Stream {
                     break;
                 }
             };
+            self.observe_output(&chunk, at);
             if [
                 "message_stop",
                 "response.completed",
@@ -603,8 +642,15 @@ impl Stream {
             {
                 self.terminal = true;
             }
-            if let Some(usage) = chunk.get("usage").filter(|u| !u.is_null()) {
-                self.usage = usage.clone();
+            self.usage_failed |= matches!(text(&chunk, "type"), "response.failed" | "response.incomplete" | "error")
+                || !chunk["error"].is_null();
+            if let Some(usage) = chunk.get("usage").filter(|u| u.is_object())
+                .or_else(|| chunk["response"].get("usage").filter(|u| u.is_object()))
+                .or_else(|| chunk["message"].get("usage").filter(|u| u.is_object()))
+            {
+                for (key, value) in usage.as_object().unwrap() {
+                    self.usage[key] = value.clone();
+                }
             }
             if let Some(reason) = chunk["choices"][0]["finish_reason"].as_str() {
                 self.finish_reason = reason.into();
@@ -716,7 +762,7 @@ impl Stream {
         }
         let mut output = vec![];
         if !self.buffer.is_empty() || !self.data.is_empty() {
-            match self.feed(b"\n\n") {
+            match self.feed_at(b"\n\n", self.last_read.unwrap_or_else(std::time::Instant::now)) {
                 Ok(events) if !self.protocol.is_empty() => output.extend(events),
                 Err(_) => output.extend(self.fail()),
                 _ => {}

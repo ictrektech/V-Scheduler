@@ -1,3 +1,4 @@
+import { speedSeries } from './model-speed.js';
 import {renderOperationContract} from '../api-contract.js';
 import {NATIVE_PROVIDERS} from './native-providers.js';
 import { groupCatalog, sourceLabel } from './model-catalog.js';
@@ -497,9 +498,53 @@ const app = {
               `<span class="pill ${m.upstream_kind}">${kindLabel(m.upstream_kind)}</span>`,
               esc(VRouterI18n.t(m.upstream_name)),
               this.budgetCell(m, budget),
-              `<div class="model-row-actions">${!m.short && m.kind !== 'service' ? actions.shift() : ''}<button type="button" class="btn" onclick="app.openModelCall(${jsArg(m.qualified)}, ${jsArg(m.upstream_id)})">${VRouterI18n.t("调用方式")}</button>${actions.length ? `<details class="catalog-actions" ${this.catalogActionOpen.has(m.qualified)?'open':''} ontoggle="app.rememberCatalogAction(${jsArg(m.qualified)},this.open)"><summary>${VRouterI18n.t('模型设置')}</summary><div>${actions.join('')}</div></details>` : ''}</div>`,
+              `<div class="model-row-actions">${!m.short && m.kind !== 'service' ? actions.shift() : ''}<button type="button" class="btn" onclick="app.openModelCall(${jsArg(m.qualified)}, ${jsArg(m.upstream_id)})">${VRouterI18n.t("调用方式")}</button>${!m.short && m.kind !== "service" ? `<button type="button" class="btn" onclick="app.openModelSpeed(${jsArg(m.id)}, ${jsArg(m.upstream_id || 'auto')}, ${jsArg(m.name || m.qualified)})">${VRouterI18n.t("速度趋势")}</button>` : ''}${actions.length ? `<details class="catalog-actions" ${this.catalogActionOpen.has(m.qualified)?'open':''} ontoggle="app.rememberCatalogAction(${jsArg(m.qualified)},this.open)"><summary>${VRouterI18n.t('模型设置')}</summary><div>${actions.join('')}</div></details>` : ''}</div>`,
             ];
     });
+  },
+
+  async openModelSpeed(model, upstream, name) {
+    const dialog = $("modelSpeedDialog");
+    const request = Symbol();
+    this.speedRequest = request;
+    $("modelSpeedName").textContent = name;
+    VRouterI18n.bind($("modelSpeedBody"), "innerHTML", () => `<p role="status">${VRouterI18n.t("正在加载速度趋势…")}</p>`);
+    if (!dialog.open) dialog.showModal();
+    try {
+      const params = new URLSearchParams({model, upstream_id: upstream});
+      const result = await this.api("GET", "/api/v1/model-speed?" + params);
+      if (this.speedRequest !== request || !dialog.open) return;
+      const points = result.points || [];
+      VRouterI18n.bind($("modelSpeedBody"), "innerHTML", () => this.renderModelSpeed(points, upstream === "auto"));
+    } catch (error) {
+      if (this.speedRequest === request && dialog.open) {
+        $("modelSpeedBody").innerHTML = `<p role="alert">${esc(userErrorMessage(error))}</p>`;
+      }
+    }
+  },
+  renderModelSpeed(points, auto) {
+    const t = VRouterI18n.t;
+    if (!points.length) return `<p class="empty">${t("暂无可测量的流式调用。发起一次流式请求后再查看。")}</p>`;
+    const fmt = value => Number.isFinite(value) ? new Intl.NumberFormat(VRouterI18n.locale, {maximumFractionDigits: 2}).format(value) : "—";
+    const time = value => new Date(value).toLocaleString(VRouterI18n.locale);
+    const source = p => [p.upstream_id, p.model].join(" / ");
+    const chart = (metric, title, unit, css) => {
+      const {dots, segments, max} = speedSeries(points, metric);
+      return `<section class="speed-graph ${css}"><h4>${t(title)} <small>${unit}</small></h4>${dots.length ? `
+        <div class="speed-chart-area"><div class="speed-y"><span>${fmt(max)}</span><span>0</span></div>
+        <svg viewBox="0 0 700 130" role="img" aria-label="${esc(t(title))}">
+          <path class="speed-axis" d="M8 8H692 M8 65H692 M8 122H692"/>
+          ${segments.filter(segment => segment.length > 1).map(segment => `<polyline points="${segment.map(dot => dot.x + ',' + dot.y).join(' ')}"/>`).join('')}
+          ${dots.map(dot => `<circle cx="${dot.x}" cy="${dot.y}" r="4"><title>${esc(time(points[dot.index].time))} · ${fmt(dot.value)} ${unit}${auto ? ' · ' + esc(source(points[dot.index])) : ''}</title></circle>`).join('')}
+        </svg></div><div class="speed-times"><span>${esc(time(points[0].time))}</span><span>${esc(time(points.at(-1).time))}</span></div>
+      ` : `<p class="empty">${t("暂无此指标的数据。")}</p>`}</section>`;
+    };
+    return chart("tokens_per_second", "生成速度", "token/s", "speed-tps")
+      + chart("ttft_ms", "首 Token 等待", "ms", "speed-ttft")
+      + `<details class="speed-details"><summary>${t("逐次调用数据")} · ${points.length}</summary><div class="speed-rows">${table(
+        [t("完成时间"), ...(auto ? [t("实际模型")] : []), t("输出 Token"), "token/s", t("首 Token 等待") + " (ms)"],
+        [...points].reverse().map(p => [esc(time(p.time)), ...(auto ? [esc(source(p))] : []), fmt(p.output_tokens), fmt(p.tokens_per_second), fmt(p.ttft_ms)])
+      )}</div></details>`;
   },
 
   openModelKey(upstreamId, model) { options.manageKey?.(upstreamId, model); },
@@ -1816,6 +1861,11 @@ const app = {
       headers["X-VScheduler-Force-Admission"] = String($("pgForceAdmission").checked);
       headers["X-VScheduler-Request-ID"] = queueId;
       const body = this.playgroundRequestBody(endpoint.id, native, text, stream);
+      const selectedUpstream = this.state.upstreams.find(u => u.id === pinned);
+      if (stream && endpoint.id === "chat" && model !== "auto"
+          && selectedUpstream?.source === "v-scheduler" && selectedUpstream.protocol === "ollama") {
+        body.stream_options = {include_usage: true};
+      }
       const res = await fetch(API + "/v1" + endpoint.path, {
         method: "POST",
         headers,

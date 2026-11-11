@@ -1079,6 +1079,14 @@ async fn native_anthropic_upstream_serves_chat_completions_for_named_models_and_
             }
         }
     }
+    let usage = g.usage.lock().unwrap();
+    let history = usage.speed("fixture", "echo", |_| true);
+    let points = history["points"].as_array().unwrap();
+    assert_eq!(points.len(), 2);
+    assert!(points.iter().all(|p| p["ttft_ms"].is_number() && p["output_tokens"] == 3 && p["tokens_per_second"].is_null()));
+    assert_eq!(usage.speed("auto", "auto", |_| true)["points"], json!([points[1]]));
+    assert_eq!(usage.speed("auto", "auto", |_| false)["points"], json!([]));
+    drop(usage);
     server.abort();
     std::fs::remove_dir_all(root).unwrap();
 }
@@ -2393,5 +2401,66 @@ async fn registration_direct_and_ui_routing_share_one_persisted_setting() {
     manage::handle(&g,&admin,request("POST","/api/v1/registrations",registration)).await.unwrap();
     let r = Registry::open(&root.join("state.json")).unwrap();
     assert!(!r.routing["registered-parity"].direct);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
+async fn model_speed_measures_first_and_last_payload_separately_and_filters_failures() {
+    use futures_util::stream;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let fixture = Router::new().route("/v1/chat/completions", post(|Json(request): Json<Value>| async move {
+        if request["stream"] != true {
+            return Json(json!({"choices":[{"message":{"content":"once"}}],"usage":{"completion_tokens":5}})).into_response();
+        }
+        let prompt = request["messages"][0]["content"].as_str().unwrap();
+        let usage = if prompt == "no usage" { "" } else { "data: {\"choices\":[],\"usage\":{\"completion_tokens\":5}}\n\n" };
+        let end = if prompt == "error" { "data: {\"error\":{\"message\":\"failed\"}}\n\n" } else { "data: [DONE]\n\n" };
+        let frames = vec![
+            (0, "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\",\"content\":\"\"}}]}\n\n"),
+            (35, "data: {\"choices\":[{\"delta\":{\"content\":\"first\"}}]}\n\n"),
+            (15, "data: {\"choices\":[{\"delta\":{\"content\":\"last\"}}]}\n\n"),
+            (5, usage), (5, end),
+        ];
+        let chunks = stream::iter(frames).then(|(delay, frame)| async move {
+            tokio::time::sleep(Duration::from_millis(delay)).await;
+            Ok::<_, std::io::Error>(frame)
+        });
+        ([( "content-type", "text/event-stream")], Body::from_stream(chunks)).into_response()
+    }));
+    let task = tokio::spawn(async move { axum::serve(listener, fixture).await.unwrap() });
+    let root = temp();
+    let g = gateway(&root, Router::new());
+    let mut u = upstream("fixture");
+    u.base_url = format!("http://{address}/v1");
+    g.registry.lock().unwrap().put(u, vec![model("echo")]);
+    let mut other = upstream("other");
+    other.visibility = "private".into();
+    other.owner = "bob".into();
+    g.registry.lock().unwrap().put(other, vec![model("echo")]);
+    let identity = principal("alice");
+    for (prompt, stream) in [("success", true), ("no usage", true), ("error", true), ("ordinary", false)] {
+        let request = Request::builder().method("POST").uri("/v1/chat/completions")
+            .header("content-type", "application/json").header("x-vrouter-upstream", "fixture")
+            .body(Body::from(json!({"model":"echo","stream":stream,"messages":[{"role":"user","content":prompt}]}).to_string())).unwrap();
+        let response = proxy::handle(g.clone(), identity.clone(), request).await.unwrap();
+        axum::body::to_bytes(response.into_body(), 1 << 20).await.unwrap();
+    }
+    let path = "/api/v1/model-speed?upstream_id=fixture&model=echo";
+    let response = manage::handle(&g, &identity, Request::builder().uri(path).body(Body::empty()).unwrap()).await.unwrap();
+    let data: Value = serde_json::from_slice(&axum::body::to_bytes(response.into_body(), 1 << 20).await.unwrap()).unwrap();
+    let points = data["points"].as_array().unwrap();
+    assert_eq!(points.len(), 2);
+    assert!(points[0]["ttft_ms"].as_f64().unwrap() >= 30.0);
+    let generation = points[0]["generation_ms"].as_f64().unwrap();
+    assert!(generation >= 10.0);
+    assert!((points[0]["tokens_per_second"].as_f64().unwrap() - 4000.0 / generation).abs() < 1e-8);
+    assert!(points[1]["tokens_per_second"].is_null() && points[1]["ttft_ms"].is_number());
+    assert!(points.iter().all(|point| point.get("user").is_none()));
+    let private = Request::builder().uri("/api/v1/model-speed?upstream_id=other&model=echo").body(Body::empty()).unwrap();
+    assert_eq!(manage::handle(&g, &identity, private).await.unwrap_err().status, StatusCode::NOT_FOUND);
+    let restored = usage::Usage::open(&root.join("usage.jsonl")).unwrap();
+    assert_eq!(restored.speed("fixture", "echo", |_| true), data);
+    task.abort();
     std::fs::remove_dir_all(root).unwrap();
 }

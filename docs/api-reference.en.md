@@ -467,3 +467,7 @@ See [Model domains](model-domains.md#model-domains) for complete UI workflows, f
 | PATCH | `/api/v1/models/domains` | Atomically replace domains of 1–200 models; administrators may include auto/auto |
 
 Single-model changes use domains in PATCH `/api/v1/models`. Registration accepts top-level domain defaults and models[].domains overrides. GET/PUT `/api/v1/auto-routing` also configures Auto domains using the latest revision. POST `/api/v1/auto-routing/test` exposes this step’s classification and selection reasons. Omission preserves stored domains, [] resets General, and unknown IDs/null are rejected. The linked guide details custom category IDs, batch atomicity, classifier confidence fallback and tool-session boundaries.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/api/v1/model-speed` | [Model speed trends: generation speed, first-token wait and per-call data](model-speed.md) |

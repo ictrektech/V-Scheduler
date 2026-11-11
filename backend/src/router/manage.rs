@@ -740,6 +740,28 @@ pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) ->
             "/api/v1/model-domains"=>return Ok(Json(json!({"domains":domains::catalog(&r)})).into_response()),
             "/api/v1/models"=>return Ok(Json(json!({"models":model_views(&r,id),"domain_catalog":domains::catalog(&r)})).into_response()),
             "/api/v1/status"=>return Ok(Json(json!({"version":version(),"upstreams_total":r.upstreams.values().filter(|u|u.visible(id)).count(),"upstreams_healthy":r.upstreams.values().filter(|u|u.visible(id)&&u.live()).count(),"models":r.list_models(id).len(),"requests_total":g.usage.lock().unwrap().len(),"key_required":env("V_ROUTER_REQUIRE_KEY","")=="true","oidc_enabled":true,"user":id.username,"is_admin":id.admin,"base_urls":gateway_base_urls(),"catalog_readiness":catalog_readiness})).into_response()),
+            "/api/v1/model-speed" => {
+                let query = request.uri().query().unwrap_or("");
+                let required = |name| usage::url_query(query, name).filter(|v| !v.is_empty())
+                    .ok_or_else(|| Failure::new(400, "upstream_id and model are required"));
+                let upstream = required("upstream_id")?;
+                let model = required("model")?;
+                let find = |upstream: &str, model: &str| {
+                    let u = r.upstreams.get(upstream)?;
+                    r.models.get(upstream)?.iter().find(|m| m.id == model && m.visible(u, id))
+                        .or_else(|| r.model_by_id(u, model, id))
+                };
+                let native = if upstream == "auto" && model == "auto" {
+                    model.as_str()
+                } else {
+                    &find(&upstream, &model).ok_or_else(|| Failure::new(404, "model not found"))?.id
+                };
+                let mut response = Json(g.usage.lock().unwrap().speed(&upstream, native, |p|
+                    find(text(p, "upstream_id"), text(p, "model")).is_some()
+                )).into_response();
+                response.headers_mut().insert("cache-control", "private, no-store".parse().unwrap());
+                return Ok(response);
+            },
             "/api/v1/usage"=>return Ok(Json(g.usage.lock().unwrap().snapshot(request.uri().query().unwrap_or(""))).into_response()),
             "/api/v1/apidoc"=>{let query=request.uri().query().unwrap_or("");let mut response=Json(documentation(query)).into_response();response.headers_mut().insert("cache-control","no-store".parse().unwrap());response.headers_mut().insert("content-language",if usage::url_query(query,"lang").is_some_and(|s|s.to_ascii_lowercase().starts_with("en")){"en"}else{"zh-CN"}.parse().unwrap());return Ok(response);},
             "/api/v1/openapi.json"=>return Ok(Json(openapi(request.uri().query().unwrap_or(""))).into_response()),

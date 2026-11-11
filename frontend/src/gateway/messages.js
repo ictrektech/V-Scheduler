@@ -1,5 +1,16 @@
 "use strict";
 export const VRouterMessages = {
+"速度趋势": {"en": "Speed trends"},
+"正在加载速度趋势…": {"en": "Loading speed trends…"},
+"最近 200 次可测量的流式调用。生成速度不含首 Token 等待；未报告用量或片段同时到达时，速度留空。": {"en": "Latest 200 measurable streaming calls. Generation speed excludes time to first token. Speed is unavailable if usage is missing or output arrives in a single batch."},
+"暂无可测量的流式调用。发起一次流式请求后再查看。": {"en": "No measurable streaming calls yet. Send a streaming request and reopen this view."},
+"首 Token 等待": {"en": "Time to first token"},
+"生成速度": {"en": "Generation speed"},
+"逐次调用数据": {"en": "Per-call data"},
+"完成时间": {"en": "Completion time"},
+"暂无此指标的数据。": {"en": "No data for this metric yet."},
+"实际模型": {"en": "Resolved model"},
+"输出 Token": {"en": "Output tokens"},
 "适用领域": {"en":"Applicable domains"},
 "适用领域（可多选）": {"en":"Applicable domains (multiple selections)"},
 "默认通用；领域仅用于分类，不改变模型能力或调度。": {"en":"Defaults to General. Domains classify models without changing capabilities or scheduling."},

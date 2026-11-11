@@ -1910,5 +1910,14 @@
     "method": "PATCH",
     "path": "/api/v1/models/domains",
     "summary": "原子批量设置模型领域"
+  },
+  {
+    "auth": "manage",
+    "desc": "读取按调用时间排列的模型生成速度与首 Token 等待。",
+    "example": "",
+    "group": "manage",
+    "method": "GET",
+    "path": "/api/v1/model-speed",
+    "summary": "模型速度趋势"
   }
 ]

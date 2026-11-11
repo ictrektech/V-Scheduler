@@ -521,3 +521,7 @@ Additional `/v1/*` resource routes are transparent native forwarding. Their avai
 | PATCH | `/api/v1/models/domains` | 原子替换 1–200 个模型的领域；支持管理员设置 auto/auto |
 
 单个设置沿用 PATCH `/api/v1/models` 的 domains 字段；注册使用顶层 domains 默认值和 models[].domains 覆盖。Auto 也可通过 GET/PUT `/api/v1/auto-routing` 设置 domains（先读取最新 revision），POST `/api/v1/auto-routing/test` 查看本步骤分类及选择原因。省略 domains 保留已有值，[] 重置通用，未知 ID/null 拒绝。详见链接中的中英文示例及限制。
+
+| 方法 | 路径 | 功能 |
+| --- | --- | --- |
+| GET | `/api/v1/model-speed` | [模型速度趋势：生成速度、首 Token 等待及逐次调用数据](model-speed.md) |
