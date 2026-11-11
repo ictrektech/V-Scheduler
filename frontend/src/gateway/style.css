@@ -423,13 +423,17 @@ summary:focus-visible, #nav button:focus-visible { outline: 2px solid var(--prim
 .speed-ttft { --speed-color: #8454b4; }
 .speed-graph h4 { margin: 0 0 5px; }
 .speed-graph h4 small { color: var(--muted, #62748a); font-weight: normal; }
-.speed-chart-area { display: flex; align-items: stretch; gap: 8px; }
+.speed-chart-area { position: relative; display: flex; align-items: stretch; gap: 8px; }
 .speed-chart-area svg { display: block; width: 100%; min-width: 0; }
 .speed-y { display: flex; flex-direction: column; justify-content: space-between; padding-block: 2px; text-align: right; }
 .speed-y, .speed-times { font-size: .75rem; color: var(--muted, #62748a); }
 .speed-times { display: flex; justify-content: space-between; gap: 8px; padding-inline-start: 28px; }
 .speed-axis { stroke: currentColor; opacity: .15; fill: none; }
 .speed-graph polyline { fill: none; stroke: var(--speed-color); stroke-width: 2; vector-effect: non-scaling-stroke; }
-.speed-graph circle { fill: var(--speed-color); cursor: help; }
+.speed-graph circle { fill: var(--speed-color); stroke: transparent; stroke-width: 10; vector-effect: non-scaling-stroke; paint-order: stroke; cursor: help; }
+.speed-graph circle[data-active-point] { filter: brightness(1.35) drop-shadow(0 0 2px var(--speed-color)); }
+.speed-tooltip { position: absolute; z-index: 1; max-width: min(24rem, 100%); box-sizing: border-box; padding: 6px 9px; border-radius: 6px; background: #172b42; color: #fff; pointer-events: none; overflow-wrap: anywhere; }
+.speed-tooltip strong, .speed-tooltip span { display: block; }
+.speed-tooltip span { font-size: .75rem; }
 .speed-details summary { cursor: pointer; }
 .speed-rows { max-height: 16rem; overflow: auto; }

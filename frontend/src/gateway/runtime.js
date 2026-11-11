@@ -1,4 +1,4 @@
-import { speedSeries } from './model-speed.js';
+import { bindSpeedTooltips, speedSeries } from './model-speed.js';
 import {renderOperationContract} from '../api-contract.js';
 import {NATIVE_PROVIDERS} from './native-providers.js';
 import { groupCatalog, sourceLabel } from './model-catalog.js';
@@ -117,6 +117,7 @@ const app = {
 
   // ---------- lifecycle ----------
   async start() {
+    bindSpeedTooltips($("modelSpeedBody"));
     this.renderProviderPresets($("ufPreset"));
     this.renderProviderPresets($("regPreset"));
     $("apiKeyInput").addEventListener("change", (e) => {
@@ -532,11 +533,18 @@ const app = {
       const {dots, segments, max} = speedSeries(points, metric);
       return `<section class="speed-graph ${css}"><h4>${t(title)} <small>${unit}</small></h4>${dots.length ? `
         <div class="speed-chart-area"><div class="speed-y"><span>${fmt(max)}</span><span>0</span></div>
-        <svg viewBox="0 0 700 130" role="img" aria-label="${esc(t(title))}">
+        <svg viewBox="0 0 700 130" role="group" aria-label="${esc(t(title))}">
           <path class="speed-axis" d="M8 8H692 M8 65H692 M8 122H692"/>
           ${segments.filter(segment => segment.length > 1).map(segment => `<polyline points="${segment.map(dot => dot.x + ',' + dot.y).join(' ')}"/>`).join('')}
-          ${dots.map(dot => `<circle cx="${dot.x}" cy="${dot.y}" r="4"><title>${esc(time(points[dot.index].time))} · ${fmt(dot.value)} ${unit}${auto ? ' · ' + esc(source(points[dot.index])) : ''}</title></circle>`).join('')}
-        </svg></div><div class="speed-times"><span>${esc(time(points[0].time))}</span><span>${esc(time(points.at(-1).time))}</span></div>
+          ${dots.map(dot => {
+            const point = points[dot.index];
+            const value = fmt(dot.value) + " " + unit;
+            const context = time(point.time) + (auto ? " · " + source(point) : "");
+            return `<circle cx="${dot.x}" cy="${dot.y}" r="4" tabindex="0" role="img"
+              aria-label="${esc(t(title) + ": " + value + " · " + context)}"
+              data-speed-point="${esc(value)}" data-speed-context="${esc(context)}"/>`;
+          }).join('')}
+        </svg><div class="speed-tooltip" aria-hidden="true" hidden><strong></strong><span></span></div></div><div class="speed-times"><span>${esc(time(points[0].time))}</span><span>${esc(time(points.at(-1).time))}</span></div>
       ` : `<p class="empty">${t("暂无此指标的数据。")}</p>`}</section>`;
     };
     return chart("tokens_per_second", "生成速度", "token/s", "speed-tps")

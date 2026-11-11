@@ -1,6 +1,6 @@
 ### 模型速度趋势：生成速度和首 Token 等待
 
-打开「模型与上游」，展开来源，在模型所在行点「速度趋势」。横轴是每次调用的完成时间，两个纵轴独立显示生成速度（token/s）和首 Token 等待（ms）。悬停看单点，展开「逐次调用数据」看明细；关闭再打开会重新读取。Auto 的明细还显示实际模型及上游，样本也计入对应实际模型的趋势。
+打开「模型与上游」，展开来源，在模型所在行点「速度趋势」。横轴是每次调用的完成时间，两个纵轴独立显示生成速度（token/s）和首 Token 等待（ms）。悬停、用键盘聚焦或轻触图上的点，即可看到数值、单位和完成时间，展开「逐次调用数据」看明细；关闭再打开会重新读取。Auto 的明细还显示实际模型及上游，样本也计入对应实际模型的趋势。
 
 - 首 Token 等待：从网关开始向上游发出请求到收到首个带输出的流式片段。输出包括文本、推理内容和工具调用输出；角色声明、空片段、心跳、用量以及结束标志不算输出。
 - 生成速度：`(上游报告的输出 token 数 − 1) ÷ (末个输出片段时间 − 首个输出片段时间，单位秒)`。从分子扣掉首个 token，不计入首 Token 等待。片段可能包含多个 token，因此这是网关观测的近似值，受网络和缓冲影响，并非模型内部解码计时。两个指标均排除 Scheduler 的排队和许可释放时间。
@@ -37,7 +37,7 @@ curl -fsS -G "$GATEWAY/api/v1/model-speed" \
 
 ### Model speed trends: generation speed and time to first token
 
-Open Models & Upstreams, expand a source and choose Speed trends on a model row. Both charts use request completion time on the horizontal axis. Their vertical axes show generation speed (tokens/s) and time to first token (ms) separately. Hover over a point or expand Per-call data for details. Reopen to refresh. The Auto view lists the resolved model and upstream; the same point also appears under the resolved model.
+Open Models & Upstreams, expand a source and choose Speed trends on a model row. Both charts use request completion time on the horizontal axis. Their vertical axes show generation speed (tokens/s) and time to first token (ms) separately. Hover over, focus, or tap a point to see its value, unit and completion time. Expand Per-call data for the table. Reopen to refresh. The Auto view lists the resolved model and upstream; the same point also appears under the resolved model.
 
 - Time to first token: from gateway dispatch to the first streamed output fragment. Text, reasoning and tool output count; role declarations, empty fragments, heartbeats, usage and termination markers do not.
 - Generation speed: `(upstream-reported output tokens − 1) ÷ (last output fragment time − first output fragment time, in seconds)`. It excludes the first token and the wait for it. This is a gateway-observed estimate, not engine decode timing; network buffering and batching can affect it. Both metrics exclude Scheduler queueing and permit release.
