@@ -419,11 +419,12 @@ const app = {
   catalogOpen: new Set(),
   catalogActionOpen: new Set(),
   rememberCatalogAction(key,open) {open?this.catalogActionOpen.add(key):this.catalogActionOpen.delete(key);},
-  rememberCatalogGroup(key, open) { open ? this.catalogOpen.add(key) : this.catalogOpen.delete(key); },
+  rememberCatalogGroup(key, open) {
+    if (this.catalogQuery.trim()) return;
+    open ? this.catalogOpen.add(key) : this.catalogOpen.delete(key);
+  },
   updateCatalogQuery(value) { this.catalogQuery = value; this.renderModels(); },
-  updateCatalogGrouping(value) { this.catalogGrouping = value;
-    if(![...this.catalogOpen].some(key=>key.startsWith(value+':'))){const first=groupCatalog(this.state.upstreams,this.state.models,value,this.catalogQuery,label=>VRouterI18n.t(label))[0];if(first)this.catalogOpen.add(first.key);}
-    this.renderModels(); },
+  updateCatalogGrouping(value) { this.catalogGrouping = value; this.renderModels(); },
   upstreamCatalogActions(u) {
     if (u.virtual) return `<button class="btn primary" onclick="app.openAutoRouting()">${VRouterI18n.t('配置候选与策略')}</button>`;
     if (u.manageable === false) return `<span class="hint">${VRouterI18n.t('由所属应用管理')} · ${VRouterI18n.t('只读')}</span>`;
@@ -451,10 +452,9 @@ const app = {
   },
   renderModels() {
     const groups=groupCatalog(this.state.upstreams,this.state.models,this.catalogGrouping,this.catalogQuery,label=>VRouterI18n.t(label));
-    if(!this.catalogInitialized && groups.length) { this.catalogOpen.add(groups[0].key);this.catalogInitialized=true; }
     VRouterI18n.bind($('catalogCount'),'textContent',()=>`${groups.length} ${VRouterI18n.t('个来源')} · ${groups.reduce((sum,g)=>sum+g.count,0)} ${VRouterI18n.t('个模型')}`);
     VRouterI18n.bind($('modelsTable'),'innerHTML',()=>groups.length ? groups.map(group=>`
-      <details class="catalog-group" data-group="${esc(group.key)}" ${this.catalogOpen.has(group.key)||this.catalogQuery ? 'open' : ''} ontoggle="app.rememberCatalogGroup(${jsArg(group.key)},this.open)">
+      <details class="catalog-group" data-group="${esc(group.key)}" ${this.catalogOpen.has(group.key)||this.catalogQuery.trim() ? 'open' : ''} ontoggle="if(this.isConnected) app.rememberCatalogGroup(${jsArg(group.key)},this.open)">
         <summary><span class="source-mark">${esc(VRouterI18n.t(group.name).slice(0,1).toUpperCase())}</span><span class="source-heading"><strong>${esc(VRouterI18n.t(group.name))}</strong><small>${group.upstreams.length===1 ? esc(group.upstreams[0].base_url || VRouterI18n.t(sourceLabel(group.upstreams[0].source))) : `${group.upstreams.length} ${VRouterI18n.t('个上游')}`}</small></span><span class="source-count">${group.count} ${VRouterI18n.t('个模型')}</span>${group.upstreams.length===1 ? this.upstreamStatusPill(group.upstreams[0]) : ''}</summary>
         <div class="catalog-group-body">${group.upstreams.map(u=>`<section class="catalog-upstream"><div class="source-toolbar"><div><strong>${esc(VRouterI18n.t(u.name||u.id))}</strong><span class="pill">${esc(VRouterI18n.t(sourceLabel(u.source)))}</span>${u.virtual ? `<p class="hint">${VRouterI18n.t('Auto 根据候选模型与策略选型，无需独立服务地址。候选留空时自动选择；指定后仅使用已选模型。')}</p>` : `<code>${esc(u.base_url||VRouterI18n.t('来源未提供地址'))}</code><small>${esc(u.protocol||'')} · ${u.routing?.direct ? VRouterI18n.t('直接放行') : `${VRouterI18n.t('路由权重')} ${u.routing?.weight||1} · ${VRouterI18n.t('并发上限')} ${u.routing?.max_inflight||VRouterI18n.t('不限')}`}</small>`}</div><div class="source-actions">${this.upstreamCatalogActions(u)}</div></div>${u.catalogModels.length ? table([VRouterI18n.t('模型与能力'),VRouterI18n.t('类型'),VRouterI18n.t('位置'),VRouterI18n.t('上游'),VRouterI18n.t('资源预算'),VRouterI18n.t('操作')],this.modelCatalogRows(u.catalogModels)) : `<p class="empty">${VRouterI18n.t('尚未发现模型，可编辑上游或刷新模型列表。')}</p>`}</section>`).join('')}</div>
       </details>`).join('') : `<div class="catalog-empty"><h3>${VRouterI18n.t(this.catalogQuery?'没有匹配的来源或模型':'先连接一个模型来源')}</h3><p>${VRouterI18n.t('一处配置，VOS 内应用按权限共享使用。')}</p><button class="btn primary" onclick="app.openUpstreamDialog()">${VRouterI18n.t('添加上游')}</button></div>`);

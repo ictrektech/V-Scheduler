@@ -136,6 +136,7 @@ curl -i "$GATEWAY/v1/chat/completions" -H "Authorization: Bearer $VOS_TOKEN" -H 
   <h3 id="integration-providers" tabindex="-1">{{t('模型与上游')}}</h3>
   <p>{{t('一处配置，VOS 内应用按权限共享使用。')}}</p>
   <p>{{t('从首页「去配置上游模型」进入统一工作区，按上游或应用来源分组。来源网址、编辑、放行和路由在来源卡片中，能力、接口和预算在模型设置中；下载和更新位于权重管理。手动添加上游或单个模型为持久配置，不需要心跳。')}}</p>
+  <p>{{t('模型与上游首次打开时卡片默认折叠。点击卡片标题展开；刷新列表会保留手动展开的卡片。搜索会临时展开匹配的卡片，清除搜索后恢复原状态。')}}</p>
   <h3>{{t('原生 Provider')}}</h3>
   <p>{{t('供应商目录来自 Models.dev，原生调用继续使用 pi-ai，其他兼容供应商复用现有代理；目录可离线使用，不代表账号已授权。')}}</p>
   <p>{{t('protocol=pi 复用 pi-ai 1.1.0 处理厂商协议与鉴权；provider 选择原生供应商，provider_credentials 为仅写入的私有凭据，可填写区域、项目及已授权 OAuth 凭据。原生模式对外仍提供 Chat Completions、Responses 和 Messages，不增加容器或端口。旧透明代理、Ollama、Jev 和业务适配保留；目录外模型与供应商扩展仍可使用原有协议。')}}</p>
