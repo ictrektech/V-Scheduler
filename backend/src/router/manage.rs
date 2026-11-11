@@ -8,6 +8,7 @@ fn view(r: &Registry, u: &Upstream, id: &Identity) -> Value {
     v["provider_credentials"] = Value::Null;
     v["has_provider_credentials"] = json!(!u.provider_credentials.is_null());
     v["has_key"] = json!(!u.api_key.is_empty());
+    v["effective_auth_mode"] = json!(u.effective_auth_mode());
     let visible_models =
         r.models
             .get(&u.id)
@@ -226,7 +227,16 @@ pub(super) fn normalize(value: &Value) -> Api<Upstream> {
     if protocol == "async_task" {
         validate_async(value)?;
     }
+    let auth_mode = match value.get("auth_mode").filter(|v| !v.is_null()) {
+        None => registry::UpstreamAuth::Auto,
+        Some(v) => serde_json::from_value(v.clone())
+            .map_err(|_| Failure::new(400, "auth_mode must be auto, bearer or x_api_key"))?,
+    };
+    if protocol != "anthropic" && auth_mode != registry::UpstreamAuth::Auto {
+        return Err(Failure::new(400, "auth_mode overrides are only supported for Anthropic-compatible upstreams"));
+    }
     Ok(Upstream {
+        auth_mode,
         name: text(value, "name").trim().into(),
         kind: kind.into(),
         base_url: base,
@@ -487,6 +497,10 @@ fn model_routing(g: &Arc<Gateway>, id: &Identity, payload: Value) -> Api<Respons
     Ok(Json(json!({"model_id":model_id,"direct":direct})).into_response())
 }
 pub(super) async fn models(g: &Gateway, u: &Upstream) -> Api<Vec<Model>> {
+    configured_models(g, &mut u.clone()).await
+}
+
+async fn configured_models(g: &Gateway, u: &mut Upstream) -> Api<Vec<Model>> {
     if u.protocol == "pi" {return provider_runtime::models(g,u).await;}
     if u.protocol == "image_studio" {
         let base = u.base_url.trim_end_matches('/');
@@ -519,19 +533,34 @@ pub(super) async fn models(g: &Gateway, u: &Upstream) -> Api<Vec<Model>> {
         next.push_str("?limit=100");
     }
     let mut result = vec![];
-    for _ in 0..100 {
-        let response = proxy::outgoing(
-            g,
-            u,
-            axum::http::Method::GET,
-            next.clone(),
-            &HeaderMap::new(),
-            None,
-        )
-        .timeout(Duration::from_secs(10))
-        .send()
-        .await
-        .map_err(|_| Failure::new(502, "upstream models endpoint unavailable"))?;
+    let mut probe = u.clone();
+    let mut confirmed = u.detected_auth_mode.is_some();
+    for page in 0..100 {
+        let send = |target: &Upstream| {
+            proxy::outgoing(g, target, axum::http::Method::GET, next.clone(), &HeaderMap::new(), None)
+                .timeout(Duration::from_secs(10)).send()
+        };
+        let unavailable = |_| Failure::new(502, "upstream models endpoint unavailable");
+        let mut response = send(&probe).await.map_err(unavailable)?;
+        if page == 0 && u.detects_auth() && matches!(response.status().as_u16(), 401 | 403) {
+            probe.detected_auth_mode = Some(match probe.effective_auth_mode() {
+                Some(registry::UpstreamAuth::Bearer) => registry::UpstreamAuth::XApiKey,
+                _ => registry::UpstreamAuth::Bearer,
+            });
+            response = send(&probe).await.map_err(unavailable)?;
+            confirmed = response.status().is_success();
+        } else if page == 0 && u.detects_auth() && !confirmed && response.status().is_success() {
+            // A public catalog cannot prove how the inference endpoint authenticates.
+            let mut anonymous = probe.clone();
+            anonymous.api_key.clear();
+            confirmed = proxy::outgoing(
+                g, &anonymous, axum::http::Method::GET, next.clone(), &HeaderMap::new(), None,
+            )
+            .timeout(Duration::from_secs(3))
+            .send()
+            .await
+            .is_ok_and(|r| matches!(r.status().as_u16(), 401 | 403));
+        }
         if !response.status().is_success() {
             if [404,405,501].contains(&response.status().as_u16()) {let rows=models_dev::fallback_models(g,u);if !rows.is_empty(){eprintln!("provider models endpoint unsupported; Models.dev metadata retained without account verification");return Ok(rows);}}
             return Err(Failure::new(
@@ -573,6 +602,9 @@ pub(super) async fn models(g: &Gateway, u: &Upstream) -> Api<Vec<Model>> {
             result.push(model);
         }
         if u.protocol != "anthropic" || value["has_more"] != true {
+            if u.detects_auth() && confirmed {
+                u.detected_auth_mode = probe.effective_auth_mode();
+            }
             enrich_ollama_models(g, u, &mut result).await;
             return Ok(result);
         }
@@ -811,6 +843,14 @@ pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) ->
                 }
                 u.api_key = saved.api_key.clone();
             }
+            if u.protocol == "anthropic" && u.protocol == saved.protocol && u.base_url == saved.base_url {
+                if payload["auth_mode"].is_null() {
+                    u.auth_mode = saved.auth_mode;
+                }
+                if u.auth_mode == saved.auth_mode && u.api_key == saved.api_key {
+                    u.detected_auth_mode = saved.detected_auth_mode;
+                }
+            }
         }
         if probe && u.protocol == "pi" && !text(&payload,"upstream_id").is_empty() {
             let saved=writable(&g.registry.lock().unwrap(),text(&payload,"upstream_id"),id)?;
@@ -832,11 +872,11 @@ pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) ->
             }
             Ok(async_models(&payload))
         } else {
-            models(g, &u).await
+            configured_models(g, &mut u).await
         };
         if probe {
             let details = fetched.as_ref().map(|ms| ms.iter().map(|m| json!({"id":m.id,"kind":m.kind,"capabilities":m.capabilities,"endpoints":m.endpoints,"owned_by":m.owned_by})).collect::<Vec<_>>()).unwrap_or_default();
-            let mut report = json!({"ok":fetched.is_ok(),"base_url":u.base_url,"model_prefix":u.display_prefix(),"protocol":u.protocol,"models":fetched.as_ref().map(|ms|ms.iter().map(|m|m.id.clone()).collect::<Vec<_>>()).unwrap_or_default(),"model_details":details,"error":fetched.err().map(|e|e.message).unwrap_or_default()});
+            let mut report = json!({"ok":fetched.is_ok(),"base_url":u.base_url,"model_prefix":u.display_prefix(),"protocol":u.protocol,"auth_mode":u.auth_mode,"detected_auth_mode":u.detected_auth_mode,"effective_auth_mode":u.effective_auth_mode(),"models":fetched.as_ref().map(|ms|ms.iter().map(|m|m.id.clone()).collect::<Vec<_>>()).unwrap_or_default(),"model_details":details,"error":fetched.err().map(|e|e.message).unwrap_or_default()});
             let test = text(&payload, "test_model");
             if !test.is_empty() {
                 match probe_model(g, &u, test).await {
@@ -971,8 +1011,20 @@ pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) ->
             replacement.owner = u.owner.clone();
             replacement.source = u.source.clone();
             replacement.created_at = u.created_at;
+            let auth_target_changed = replacement.base_url != u.base_url || replacement.protocol != u.protocol;
             if replacement.api_key.is_empty() && !native_target_changed {
-                replacement.api_key = u.api_key;
+                if auth_target_changed && !u.api_key.is_empty()
+                    && (u.protocol == "anthropic" || replacement.protocol == "anthropic")
+                {
+                    return Err(Failure::new(400, "upstream address or protocol changed; enter an API key"));
+                }
+                replacement.api_key = u.api_key.clone();
+            }
+            if !auth_target_changed && replacement.protocol == "anthropic" {
+                if payload["auth_mode"].is_null() { replacement.auth_mode = u.auth_mode; }
+                if replacement.auth_mode == u.auth_mode && replacement.api_key == u.api_key {
+                    replacement.detected_auth_mode = u.detected_auth_mode;
+                }
             }
             u = replacement;
         } else if !(method == "POST" && action == "refresh") {
@@ -991,7 +1043,7 @@ pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) ->
                 async_models(&payload)
             }
         } else {
-            match models(g, &u).await {
+            match configured_models(g, &mut u).await {
                 Ok(rows) => rows,
                 Err(error) if payload["allow_probe_failure"] == true => {
                     u.last_error = error.message;
@@ -1149,6 +1201,15 @@ async fn register(g: &Gateway, id: &Identity, p: Value, recovery: bool) -> Api<R
             }
         }
     }
+    if u.detects_auth() {
+        let r = g.registry.lock().unwrap();
+        if let Some(previous) = r.upstreams.get(&u.id).filter(|old|
+            old.base_url == u.base_url && old.protocol == u.protocol && old.api_key == u.api_key)
+        {
+            if p["auth_mode"].is_null() { u.auth_mode = previous.auth_mode; }
+            if u.auth_mode == previous.auth_mode { u.detected_auth_mode = previous.detected_auth_mode; }
+        }
+    }
     let mut items = p["models"].as_array().cloned().unwrap_or_default();
     if !text(&p, "model").is_empty() {
         items.push(json!({"id":p["model"],"model_kind":p["model_kind"]}));
@@ -1177,8 +1238,12 @@ async fn register(g: &Gateway, id: &Identity, p: Value, recovery: bool) -> Api<R
             })
             .collect()
     } else {
-        models(g, &u).await?
+        configured_models(g, &mut u).await?
     };
+    if explicit && u.detects_auth() && u.detected_auth_mode.is_none() {
+        // Explicit declarations still work when the server has no model-list API.
+        let _ = configured_models(g, &mut u).await;
+    }
     let declared = models.clone();
     if explicit && u.protocol == "ollama" {
         enrich_ollama_models(g, &u, &mut models).await;

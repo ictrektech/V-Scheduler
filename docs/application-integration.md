@@ -86,6 +86,25 @@ VOS 本机资源采集内置于应用，无需应用开发者部署独立 Agent�
 
 不同应用使用各自的服务身份；私钥不进入浏览器、discovery、共享模型目录或日志。管理接口仍拒绝无效 Bearer；模型推理对无效 Key 仅给予匿名 public 权限，不能读取或调用 private 模型。注册 `scheduler` 策略需要管理员权限；普通身份提交该字段返回 403。私有模型由注册请求的真实身份决定 owner；系统级管理员注册器不能代替另一个用户创建其私有身份。后台可信交接见 [HybRAG 身份参考](hybrag-gateway-identity.md)。
 
+<a id="anthropic-upstream-auth"></a>
+
+## Anthropic 兼容上游：探测并保存鉴权方式
+
+在 **模型与上游 → 添加上游／编辑上游** 选 **Anthropic 原生**，填上游 Base URL 和它自己的 API Key。**上游鉴权方式**默认是 **自动探测**；点击 **测试** 可看结果，点击 **保存** 才会写入配置。只接受 Bearer 的 vLLM 和使用 `x-api-key` 的 Anthropic 兼容服务都可接入。
+
+- 网关端 **POST /v1/messages** 接受 `Authorization: Bearer <V-Scheduler Key 或 VOS token>` 或 `x-api-key: <同一凭据>`。同时提供两个头时，要获得有效身份，两者必须一致。网关使用单独配置的上游 `api_key`，不会转发客户端凭据；public/private 权限照常生效。
+- 配置 API 接受 `auth_mode`：`auto`（缺省）、`bearer`、`x_api_key`。适用 `POST /api/v1/upstreams`、`POST /api/v1/upstreams/probe`、`PUT /api/v1/upstreams/{id}`、`POST /api/v1/registrations` 和缺失服务恢复时的完整心跳快照。用有权限的 VOS 身份设置。查看配置或测试结果时，`auth_mode` 是策略，`detected_auth_mode` 是确认的探测结果，`effective_auth_mode` 是实际使用的头；后两者可能为 `null`。接口不回显上游密钥。
+- 自动探测只请求上游 `GET /models`，首个头返回 401/403 才尝试另一个。列表无需认证、不可用或与 `/messages` 要求不同时，请手动选择对应的头。未确认时沿用已确认结果，否则默认 `x-api-key`；未填密钥则不发鉴权头。推理请求不会换头重试。保存新地址或协议时，已有密钥的 Anthropic 配置要重新填写上游密钥。
+- 现有上游可通过 **编辑上游 → 测试 → 保存** 或 `POST /api/v1/upstreams/{id}/refresh` 探测并记录；只测试不落盘。配置字段、错误和完整请求见应用内 **API 文档 → 应用接入／模型与网关 API**。
+
+```sh
+curl -sS http://v-scheduler:8080/api/v1/upstreams/probe \
+  -H "Authorization: Bearer $VOS_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"name":"vLLM","base_url":"https://inference.example.com/v1","protocol":"anthropic","auth_mode":"auto","api_key":"<upstream-key>"}'
+```
+
+容器外将地址换成 `http://<vos-host>:22888`（默认映射端口）；VOS 同域页面使用 `/api/com.ictrek.v-scheduler` 前缀。确认返回 `ok: true` 及 `detected_auth_mode: "bearer"` 后，用相同请求字段发 `POST /api/v1/upstreams` 保存。若上游只能手动确定，改填 `"auth_mode":"bearer"` 或 `"x_api_key"`；无模型列表的服务可显式注册模型。
+
 ## API Key：安装后的生成、设置与修改
 
 VOS 账户鉴权继续支持。应用已安装后，点击语言选择器旁的 **API Key**：

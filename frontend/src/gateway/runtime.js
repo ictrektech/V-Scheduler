@@ -1135,6 +1135,7 @@ const app = {
     this.domainChoices("regDomains");
     $("regProviderNote").hidden=true;
     $("regProtocol").value = "openai";
+    $("regAuthField").hidden = true;
     $("regVisibility").value = "public";
     $("regMode").value = "api";
     $("regCapabilityPreset").value = "chat";
@@ -1155,6 +1156,7 @@ const app = {
     if (single && !readChoices($("regEndpoints")).length) this.applyRegistrationPreset();
   },
   updateRegistrationProtocol() {
+    $("regAuthField").hidden = $("regProtocol").value !== "anthropic";
     if (["typesafe", "openai_decisions"].includes($("regProtocol").value)) {
       $("regCapabilityPreset").value = "decision";
       this.applyRegistrationPreset();
@@ -1230,6 +1232,7 @@ const app = {
       api_key: $("regAPIKey").value,
       heartbeat_timeout_seconds: Number($("regTTL").value || 90),
     };
+    if (p.protocol === "anthropic") p.auth_mode = $("regAuthMode").value;
     if (this.state.status?.is_admin && $("regScheduler").value === "direct") {
       p.scheduler = { mode: "direct" };
     }
@@ -1251,7 +1254,7 @@ const app = {
         this.renderRegistrationResult({ ok: true, models: [p.model], note: VRouterI18n.t("单模型声明完整；保存后会按 endpoints 过滤可访问接口。") });
         return;
       }
-      const result = await this.api("POST", "/api/v1/upstreams/probe", { name: p.name || p.service_id || "registration", base_url: p.base_url, api_key: p.api_key, protocol: p.protocol, kind: "manual" });
+      const result = await this.api("POST", "/api/v1/upstreams/probe", { name: p.name || p.service_id || "registration", base_url: p.base_url, api_key: p.api_key, protocol: p.protocol, auth_mode: p.auth_mode, kind: "manual" });
       this.setRegistrationModelChoices(result.ok ? result.models || [] : []);
       this.renderRegistrationResult(result);
     } catch (err) {
@@ -1267,9 +1270,9 @@ const app = {
     if (result.pending) { el.className = "probe-result"; VRouterI18n.bind(el, "textContent", () => VRouterI18n.t("正在测试…")); return; }
     el.className = "probe-result " + (result.ok ? "ok" : "bad");
     const models = result.models || [];
-    VRouterI18n.bind(el, "innerHTML", () => result.ok
+    VRouterI18n.bind(el, "innerHTML", () => (result.ok
       ? `<strong>${VRouterI18n.t("测试通过")}</strong><div class="hint">${esc(result.note || (models.length ? `${VRouterI18n.t("发现")} ${models.length} ${VRouterI18n.t("个模型")}：${models.slice(0, 12).map(esc).join(", ")}${models.length > 12 ? " …" : ""}` : VRouterI18n.t("模型列表为空")))}</div><div class="hint">${VRouterI18n.t("注册整个")} API ${VRouterI18n.t("时模型默认按上游协议可用")}；${VRouterI18n.t("也可以在下拉里选择一个模型")}，${VRouterI18n.t("再按该模型的真实能力注册单模型")}。</div>`
-      : `<strong>${VRouterI18n.t("测试未通过")}</strong><div class="hint">${esc(result.error || VRouterI18n.t("未知错误"))}</div><div class="hint">${VRouterI18n.t("仍可保存单模型声明")}；${VRouterI18n.t("模型")} API ${VRouterI18n.t("模式需要")} /models ${VRouterI18n.t("可访问")}。</div>`);
+      : `<strong>${VRouterI18n.t("测试未通过")}</strong><div class="hint">${esc(result.error || VRouterI18n.t("未知错误"))}</div><div class="hint">${VRouterI18n.t("仍可保存单模型声明")}；${VRouterI18n.t("模型")} API ${VRouterI18n.t("模式需要")} /models ${VRouterI18n.t("可访问")}。</div>`) + (result.protocol === "anthropic" ? `<div class="hint">${esc(this.upstreamAuthStatus(result))}</div>` : ""));
   },
   async submitRegistration(event) {
     event.preventDefault();
@@ -1474,6 +1477,8 @@ const app = {
       $("ufName").value = u.name;
       $("ufBaseURL").value = u.base_url;
       $("ufProtocol").value = u.protocol || "openai";
+      $("ufAuthMode").value = u.auth_mode || "auto";
+      this.showUpstreamAuthStatus(u);
       if(u.provider&&!NATIVE_PROVIDERS.some(p=>p.id===u.provider))$("ufNativeProvider").add(new Option(u.provider,u.provider));
       $("ufNativeProvider").value=u.provider||"";
       $("ufNativeCredential").placeholder=u.has_provider_credentials?VRouterI18n.t("已保存，留空保留原生凭据"):"{\"type\":\"api_key\",\"env\":{}}";
@@ -1510,6 +1515,7 @@ const app = {
       $("ufPresetField").hidden = false;
       $("ufPreset").value = "";
       $("ufProtocol").value = "openai";
+      this.showUpstreamAuthStatus(null);
       $("ufVisibility").value = "public";
       VRouterI18n.bind($("ufKeyHint"), "textContent", () => VRouterI18n.t("密钥保存在本机状态文件中，接口永不回显。"));
       if (kind === "cloud") {
@@ -1545,7 +1551,21 @@ const app = {
     $("upstreamDialog").close();
   },
 
+  upstreamAuthStatus(result) {
+    const mode = result?.detected_auth_mode;
+    if (mode === "bearer" || mode === "x_api_key") {
+      return VRouterI18n.t("已探测的鉴权方式") + "： " + (mode === "bearer" ? "Authorization: Bearer" : "x-api-key");
+    }
+    return result?.auth_mode === "auto" && (result?.has_key || result?.effective_auth_mode)
+      ? VRouterI18n.t("尚未确认鉴权方式") : "";
+  },
+
+  showUpstreamAuthStatus(result) {
+    VRouterI18n.bind($("ufAuthStatus"), "textContent", () => this.upstreamAuthStatus(result));
+  },
+
   updateUpstreamProtocol(fromUser=false) {
+    $("ufAuthField").hidden = $("ufProtocol").value !== "anthropic";
     const native=$("ufProtocol").value==="pi";
     $("ufNativeFields").hidden=!native;
     if(native)VRouterI18n.bind($("ufBaseHint"),"textContent",()=>VRouterI18n.t("默认地址由原生目录按模型选择协议路径；修改地址可接入兼容的中转。区域与项目配置见原生凭据及 API 文档。"));
@@ -1573,6 +1593,7 @@ const app = {
       test_model: $("ufTestModel").value.trim(),
       allow_probe_failure: $("ufAllowProbeFailure").checked,
     };
+    if (payload.protocol === "anthropic") payload.auth_mode = $("ufAuthMode").value;
     if (!$("ufId").value) payload.domains = readChoices($("ufDomains"));
     if(payload.protocol==='pi') {
       payload.provider=$('ufNativeProvider').value;
@@ -1635,6 +1656,7 @@ const app = {
   },
 
   renderProbeResult(result) {
+    if (result?.protocol === "anthropic") this.showUpstreamAuthStatus(result);
     const el = $("ufProbeResult");
     if (!result) { el.hidden = true; el.className = "probe-result"; el.innerHTML = ""; return; }
     el.hidden = false;

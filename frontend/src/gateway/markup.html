@@ -246,6 +246,12 @@
         <input type="password" id="ufAPIKey" autocomplete="off" placeholder="sk-..." />
         <div class="hint" id="ufKeyHint">密钥保存在本机状态文件中，接口永不回显。</div>
       </div>
+      <div class="field" id="ufAuthField" hidden>
+        <label for="ufAuthMode">上游鉴权方式</label>
+        <select id="ufAuthMode"><option value="auto">自动探测</option><option value="bearer">Authorization: Bearer</option><option value="x_api_key">x-api-key</option></select>
+        <div class="hint">自动探测使用模型列表，不发送推理请求。列表不验证密钥时，可手动指定。</div>
+        <div class="hint" id="ufAuthStatus"></div>
+      </div>
       <div id="ufNativeFields" hidden class="field">
         <label for="ufNativeProvider">原生 Provider</label><select id="ufNativeProvider" onchange="app.applyNativeProvider(true)"></select>
         <p class="hint">复用厂商原生协议、工具调用和鉴权。现有透明代理接口继续保留；原生模式提供对话、Responses 和 Messages。</p>
@@ -405,6 +411,11 @@
       <div class="field"><label for="regProtocol">上游协议</label><select id="regProtocol" onchange="app.updateRegistrationProtocol()"><option value="openai">OpenAI 原生透传</option><option value="chat_completions">仅 Chat Completions（转换 Responses / Messages）</option><option value="anthropic">Anthropic 原生</option><option value="ollama">Ollama（自动识别能力）</option><option value="openai_decisions">OpenAI Decisions</option><option value="typesafe">TypeSafe / Jev（System One 决策）</option><option value="offline_asr">离线 ASR（/transcribe 适配）</option><option value="image_studio">Image Studio（生图/生视频适配）</option></select></div>
       <div class="field"><label for="regBaseURL">Base URL</label><input id="regBaseURL" type="text" required placeholder="http://host:8000/v1" /></div>
       <div class="field"><label for="regAPIKey">上游 API Key（可选）</label><input id="regAPIKey" type="password" autocomplete="off" placeholder="供应商或模型服务自己的 key" /></div>
+      <div class="field" id="regAuthField" hidden>
+        <label for="regAuthMode">上游鉴权方式</label>
+        <select id="regAuthMode"><option value="auto">自动探测</option><option value="bearer">Authorization: Bearer</option><option value="x_api_key">x-api-key</option></select>
+        <div class="hint">自动探测使用模型列表，不发送推理请求。列表不验证密钥时，可手动指定。</div>
+      </div>
       <div class="field" id="regSchedulerField" hidden><label for="regScheduler">调度方式</label><select id="regScheduler"><option value="scheduled">由 V-Scheduler 调度（默认）</option><option value="direct">直接放行（不主动调度）</option></select><div class="hint">直接放行会让该服务跳过调度准入与模型预算，仅管理员可设置；默认按本机模型调度策略处理。</div></div>
       <div class="field"><label for="regMode">注册方式</label><select id="regMode" onchange="app.updateRegistrationMode()"><option value="api">模型 API：从 /models 拉取列表（默认按上游协议放开接口）</option><option value="single">单个模型：选择模型能力和接口</option></select></div>
       <div class="field" id="regModelPickField" hidden><label for="regModelPick">从探测列表选择模型</label><select id="regModelPick" onchange="app.pickRegistrationModel()"></select><div class="hint">先点“测试”获取模型列表；选择后会切换到单模型注册，可再选择能力预设。</div></div>

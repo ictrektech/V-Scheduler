@@ -2,6 +2,8 @@
 
 统一入口、身份与调度责任见[统一接入指南](docs/application-integration.md)，各 profile 的实际发布与验收范围见[验收记录](docs/validation.md)。
 
+Anthropic 兼容上游可[自动探测并保存鉴权方式](docs/application-integration.md#anthropic-upstream-auth)，也可指定 Bearer 或 `x-api-key`。客户端使用自己的 V-Scheduler Key 或 VOS token，网关按上游设置单独发出上游凭据。
+
 本轮新增：资源页的「推理等待队列」、试聊有界排队和取消、交互/后台优先级与等待老化；模型仓库的「模型接入状态」统一关联权重、推理服务、网关和调度绑定。自带 Ollama 默认保留空闲模型 60 秒，跨 QA、Embedding、Rerank 调用可保留多个模型；空闲时保留已确认内存，调用前恢复完整计算预算，资源不足才按空闲先后确认卸载，到期仍卸载。管理员可设置 0..600 秒，0 保留每次卸载的行为。已验证身份调用自带 Ollama 且开启驻留时，未提供排队头会自动等待最多 30 秒，协调旧客户端并发与模型切换；显式 0、关闭驻留和其他后端仍立即准入或返回 429。使用方式、内外地址和边界见[排队与驻留接入](docs/application-integration.md#inference-queue-residency)。
 
 原仓库的[文件选择下载 API](docs/file-download-api.md)、[网关协议](gateway/docs/api-protocols.md)、[注册与路由](gateway/docs/routing.md)、[鉴权](gateway/docs/auth.md)及其他网关指南已集中到本仓库；各文档标明统一应用入口与历史验证内容。

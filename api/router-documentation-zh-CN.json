@@ -249,7 +249,7 @@
           "method": "POST",
           "path": "/v1/messages",
           "summary": "Anthropic Messages",
-          "desc": "支持指定模型或 model=auto。原生 Anthropic 上游直接转发。支持 Chat Completions 的 openai、chat_completions 等上游可转换文本、图片输入和函数工具，支持 SSE。Auto Messages 使用可转换字段，转换模式不支持 thinking、提示缓存或服务端工具。图片与工具能力取决于实际模型。支持 x-api-key 网关身份。",
+          "desc": "支持指定模型或 model=auto。原生 Anthropic 上游直接转发。支持 Chat Completions 的 openai、chat_completions 等上游可转换文本、图片输入和函数工具，支持 SSE。Auto Messages 使用可转换字段，转换模式不支持 thinking、提示缓存或服务端工具。图片与工具能力取决于实际模型。支持 x-api-key 网关身份。 请求可用 Authorization: Bearer <V-Scheduler Key 或 VOS token> 或 x-api-key: <同一凭据>。同时发送两个头时，有效身份要求两个值一致。两种头只验证网关身份，不转发给上游。",
           "auth": "inference"
         }
       ],
@@ -298,14 +298,14 @@
           "method": "POST",
           "path": "/api/v1/upstreams/probe",
           "summary": "测试云端/手动上游",
-          "desc": "按当前表单参数探测模型列表；可提交 test_model 做一次轻量联通测试。失败只返回诊断结果，不保存上游。",
+          "desc": "按当前表单参数探测模型列表；可提交 test_model 做一次轻量联通测试。失败只返回诊断结果，不保存上游。 仅用于 protocol=anthropic。可选：auto（默认，探测并保存）、bearer（Authorization: Bearer）、x_api_key（x-api-key）。发送的是配置中的上游 api_key；未配密钥时两个头都不发。空字符串或未知值返回 400。其他协议不接受显式 bearer/x_api_key。 只测试，不保存；指定 upstream_id 测试原地址和协议时，省略或 null 沿用已保存的方式，留空 api_key 沿用已保存的密钥。 自动探测仅在首次模型列表请求返回 401/403 时尝试另一种请求头；列表无需鉴权或无法验证时不会记录新结果。探测未确认时沿用既有结果，否则默认 x-api-key。不会因推理返回 401/403 而换头重试。",
           "auth": "manage"
         },
         {
           "method": "POST",
           "path": "/api/v1/upstreams",
           "summary": "添加云端或手动上游",
-          "desc": "新增 ollama（自动读取 /api/show 能力）与 typesafe（Jev System One）协议；普通聊天未声明接口时保守补全 Chat Completions，专用能力仍按实际接口隔离。登记上游，kind 支持 manual/cloud，protocol 支持 openai（原生）、chat_completions（转换 Responses/Messages）、anthropic（原生）、offline_asr（离线 ASR /transcribe 适配）、image_studio（Image Studio 生图/生视频适配）、async_task（通用异步图片任务创建/轮询适配）。云端模型前缀按域名反转生成，例如 ai.ictrek.com -> com.ictrek.ai。默认保存前探测模型列表；async_task 改为校验单模型及任务字段，不创建付费任务。visibility 支持 public（共享，默认，所有调用者可见可用）和 private（仅创建者与管理员可见可用）；创建者身份记录为 owner，之后只有 owner 和管理员能修改、刷新、删除该上游或配置调度。历史存量上游 owner 为空，升级后保持共享且所有登录用户可管理。",
+          "desc": "新增 ollama（自动读取 /api/show 能力）与 typesafe（Jev System One）协议；普通聊天未声明接口时保守补全 Chat Completions，专用能力仍按实际接口隔离。登记上游，kind 支持 manual/cloud，protocol 支持 openai（原生）、chat_completions（转换 Responses/Messages）、anthropic（原生）、offline_asr（离线 ASR /transcribe 适配）、image_studio（Image Studio 生图/生视频适配）、async_task（通用异步图片任务创建/轮询适配）。云端模型前缀按域名反转生成，例如 ai.ictrek.com -> com.ictrek.ai。默认保存前探测模型列表；async_task 改为校验单模型及任务字段，不创建付费任务。visibility 支持 public（共享，默认，所有调用者可见可用）和 private（仅创建者与管理员可见可用）；创建者身份记录为 owner，之后只有 owner 和管理员能修改、刷新、删除该上游或配置调度。历史存量上游 owner 为空，升级后保持共享且所有登录用户可管理。 仅用于 protocol=anthropic。可选：auto（默认，探测并保存）、bearer（Authorization: Bearer）、x_api_key（x-api-key）。发送的是配置中的上游 api_key；未配密钥时两个头都不发。空字符串或未知值返回 400。其他协议不接受显式 bearer/x_api_key。 缺省或 null 使用 auto。",
           "auth": "manage",
           "example": "curl -X POST http://<vos-host>:22888/api/v1/upstreams \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"kind\":\"cloud\",\"name\":\"ICTrek AI\",\"base_url\":\"https://ai.ictrek.com/v1\",\"api_key\":\"sk-...\",\"visibility\":\"public\"}'"
         },
@@ -313,14 +313,14 @@
           "method": "PUT",
           "path": "/api/v1/upstreams/{id}",
           "summary": "更新云端或手动上游",
-          "desc": "修改名称、地址、协议、密钥或可见范围；api_key 留空表示保留原密钥。云端上游会按新 base_url 重新计算模型前缀。仅 owner 和管理员可调用：非 owner 修改他人 public 上游返回 403，访问他人 private 上游返回 404。owner 不可转移。",
+          "desc": "修改名称、地址、协议、密钥或可见范围；api_key 留空表示保留原密钥。云端上游会按新 base_url 重新计算模型前缀。仅 owner 和管理员可调用：非 owner 修改他人 public 上游返回 403，访问他人 private 上游返回 404。owner 不可转移。 仅用于 protocol=anthropic。可选：auto（默认，探测并保存）、bearer（Authorization: Bearer）、x_api_key（x-api-key）。发送的是配置中的上游 api_key；未配密钥时两个头都不发。空字符串或未知值返回 400。其他协议不接受显式 bearer/x_api_key。 同一地址和协议时，省略或 null 沿用已保存的方式；显式 auto 可改回自动探测。更换地址或协议时重新探测；已有上游密钥时，涉及 Anthropic 的此类修改必须重新填写 api_key，否则 400。",
           "auth": "manage"
         },
         {
           "method": "POST",
           "path": "/api/v1/upstreams/{id}/refresh",
           "summary": "刷新上游模型",
-          "desc": "重新探测 API 创建的云端/手动上游并刷新其模型列表。仅 owner 和管理员可调用。",
+          "desc": "重新探测 API 创建的云端/手动上游并刷新其模型列表。仅 owner 和管理员可调用。 自动探测仅在首次模型列表请求返回 401/403 时尝试另一种请求头；列表无需鉴权或无法验证时不会记录新结果。探测未确认时沿用既有结果，否则默认 x-api-key。不会因推理返回 401/403 而换头重试。",
           "auth": "manage"
         },
         {
@@ -362,14 +362,14 @@
           "method": "POST",
           "path": "/api/v1/registrations",
           "summary": "推理后端主动注册 / 更新",
-          "desc": "支持 ollama 自动能力识别和 typesafe/Jev 原生协议。省略 models 发现全部模型；model 或 models 指定子集时同样自动识别 Ollama。覆盖优先级为自动识别、顶层 capabilities/endpoints、models 逐模型声明、model_capabilities/model_endpoints；后者优先。心跳仅续租，能力变更使用同一 service_id 重注册。注册不授予调度或预算审批。 需网关 Key 或 VOS 身份。稳定 service_id 生成 registered-<service_id>；相同 ID 更新同一实例，副本须不同 ID。可注册 public 或 private 服务；private 只对注册者身份可见，public 对所有调用者可见。可注册 base_url/models 模型 API，也可提交 model 或 models 显式注册单个/多个模型；显式专用模型应声明 endpoints，普通聊天模型缺省时按协议补全，capabilities/model_kind 用于接口能力过滤；model_endpoints 和 model_capabilities 可逐模型覆盖；ttl_seconds 默认90。 注册可同时提交 access_key（true/字符串/null），或 model_access_keys 按原生模型 ID 逐项设置，需所属 VOS 用户 token。省略时保留已有模型访问 Key；api_key 仍仅是上游厂商凭据。已有模型用 PUT /api/v1/models/access-key 修改。 scheduler.mode 支持 cloud、permit、delegated、direct；管理员可用 \"scheduler\": {\"mode\": \"direct\"} 跳过资源许可。省略时仍需有效绑定和审批，注册不等于预算获批。 适用领域：共享分类、注册默认值、单个/批量编辑、Auto 每步匹配及权限详见“模型适用领域”分组。",
+          "desc": "支持 ollama 自动能力识别和 typesafe/Jev 原生协议。省略 models 发现全部模型；model 或 models 指定子集时同样自动识别 Ollama。覆盖优先级为自动识别、顶层 capabilities/endpoints、models 逐模型声明、model_capabilities/model_endpoints；后者优先。心跳仅续租，能力变更使用同一 service_id 重注册。注册不授予调度或预算审批。 需网关 Key 或 VOS 身份。稳定 service_id 生成 registered-<service_id>；相同 ID 更新同一实例，副本须不同 ID。可注册 public 或 private 服务；private 只对注册者身份可见，public 对所有调用者可见。可注册 base_url/models 模型 API，也可提交 model 或 models 显式注册单个/多个模型；显式专用模型应声明 endpoints，普通聊天模型缺省时按协议补全，capabilities/model_kind 用于接口能力过滤；model_endpoints 和 model_capabilities 可逐模型覆盖；ttl_seconds 默认90。 注册可同时提交 access_key（true/字符串/null），或 model_access_keys 按原生模型 ID 逐项设置，需所属 VOS 用户 token。省略时保留已有模型访问 Key；api_key 仍仅是上游厂商凭据。已有模型用 PUT /api/v1/models/access-key 修改。 scheduler.mode 支持 cloud、permit、delegated、direct；管理员可用 \"scheduler\": {\"mode\": \"direct\"} 跳过资源许可。省略时仍需有效绑定和审批，注册不等于预算获批。 适用领域：共享分类、注册默认值、单个/批量编辑、Auto 每步匹配及权限详见“模型适用领域”分组。 仅用于 protocol=anthropic。可选：auto（默认，探测并保存）、bearer（Authorization: Bearer）、x_api_key（x-api-key）。发送的是配置中的上游 api_key；未配密钥时两个头都不发。空字符串或未知值返回 400。其他协议不接受显式 bearer/x_api_key。 缺省或 null 默认 auto；同一服务 ID、地址、协议和密钥保持不变时，沿用已保存的方式。显式声明模型时探测失败仍可注册。",
           "auth": "manage"
         },
         {
           "method": "POST",
           "path": "/api/v1/registrations/{id}/heartbeat",
           "summary": "续期注册租约",
-          "desc": "提交 JSON {ttl_seconds:90}，建议每30秒续期。404 表示租约过期或网关重启，须重新注册。心跳不刷新模型目录；模型变动请重新注册。",
+          "desc": "提交 JSON {ttl_seconds:90}，建议每30秒续期。404 表示租约过期或网关重启，须重新注册。心跳不刷新模型目录；模型变动请重新注册。 仅用于 protocol=anthropic。可选：auto（默认，探测并保存）、bearer（Authorization: Bearer）、x_api_key（x-api-key）。发送的是配置中的上游 api_key；未配密钥时两个头都不发。空字符串或未知值返回 400。其他协议不接受显式 bearer/x_api_key。 只用于恢复缺失服务的完整注册快照；已存在服务的普通心跳忽略此字段。",
           "auth": "manage"
         },
         {
@@ -1726,6 +1726,11 @@
       "title": "Models.dev 目录与 pi-ai 运行时",
       "note": "Models.dev 提供供应商与模型元数据；protocol=pi 保留固定版本 pi-ai，负责原生协议、OAuth 与特殊鉴权。其他兼容供应商复用现有 OpenAI/Anthropic 代理；尚无现成实现的专用协议需提供明确的兼容网关。目录不代表账号授权或全部供应商已实测。现有配置、凭据、端口、共享权重和调度保留。",
       "example": "{\n  \"name\": \"DeepInfra\",\n  \"kind\": \"cloud\",\n  \"provider\": \"deepinfra\",\n  \"protocol\": \"chat_completions\",\n  \"base_url\": \"https://api.deepinfra.com/v1/openai\",\n  \"api_key\": \"<provider-key>\"\n}"
+    },
+    {
+      "title": "Anthropic 兼容上游：探测并保存鉴权方式",
+      "note": "在「模型与上游 → 添加上游／编辑上游」选择「Anthropic 原生」，填写上游密钥，选择「自动探测」，测试后保存。缺少受保护的 /models，或 /messages 与列表要求不同，手动选择对应请求头。 自动探测仅在首次模型列表请求返回 401/403 时尝试另一种请求头；列表无需鉴权或无法验证时不会记录新结果。探测未确认时沿用既有结果，否则默认 x-api-key。不会因推理返回 401/403 而换头重试。 请求可用 Authorization: Bearer <V-Scheduler Key 或 VOS token> 或 x-api-key: <同一凭据>。同时发送两个头时，有效身份要求两个值一致。两种头只验证网关身份，不转发给上游。",
+      "example": "curl -sS http://v-scheduler:8080/api/v1/upstreams/probe \\\n  -H \"Authorization: Bearer $VOS_TOKEN\" -H 'Content-Type: application/json' \\\n  -d '{\"name\":\"vLLM\",\"base_url\":\"https://inference.example.com/v1\",\"protocol\":\"anthropic\",\"auth_mode\":\"auto\",\"api_key\":\"<upstream-key>\"}'"
     }
   ],
   "key_required": false,

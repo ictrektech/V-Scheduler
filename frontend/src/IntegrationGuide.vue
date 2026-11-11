@@ -8,7 +8,7 @@ defineProps<{t:(value:string)=>string}>()
 const guide = ref<HTMLElement>()
 const contents = [
   ['addresses','接入地址'], ['keys','API Key 设置与修改'], ['key-responses','模型 Key 的请求与响应'], ['deepseek','DeepSeek Flash 调用'], ['auto','Auto 自动选型'],
-  ['providers','模型与上游'], ['register','模型注册 API 与自动能力识别'],
+  ['providers','模型与上游'], ['anthropic-auth','Anthropic 上游鉴权'], ['register','模型注册 API 与自动能力识别'],
   ['scheduling','注册调度模式与直接放行'], ['reference','完整 API 索引与错误处理'], ['nodes','节点注册与资源查询'], ['lifecycle','节点、应用、预算与停止的统一流程'],
   ['controls','计算启动与停止 API'], ['queue','推理等待队列'],
   ['residency','模型驻留与卸载'], ['diagnostics','诊断日志'],
@@ -147,6 +147,11 @@ curl -i "$GATEWAY/v1/chat/completions" -H "Authorization: Bearer $VOS_TOKEN" -H 
   <p>{{t('TypeSafe / Jev 使用 typesafe 协议和 https://api.typesafe.ai/v1，也可使用实现同协议的自有中转。模型列表读取 models[].name；能力为 decision，接口为 systemone，不会冒充 Harness 聊天模型。工作台选择 System One 后输入包含 state、questions 的 JSON 测试。')}}</p>
   <p><code>POST http://v-scheduler:8080/v1/systemone</code> · <code>http://{{locationHost}}:22888/v1/systemone</code></p>
   <p>{{t('局域网端口以安装配置为准。同域入口为 /api/com.ictrek.v-scheduler/v1/systemone；鉴权沿用本人 VOS token 或网关 Key，受限应用凭据保留原白名单。供应商密钥保存在网关，请求仅重写模型 ID，保留 state、questions、assets、功能头及原生 answers、概率、置信度和 usage；不支持 SSE。')}}</p>
+  <h3 id="integration-anthropic-auth" tabindex="-1">{{t('Anthropic 上游鉴权')}}</h3>
+  <p>{{t('在模型与上游添加或编辑上游，选择 Anthropic 原生并填写上游 API Key。上游鉴权方式默认自动探测，测试后保存。仅通过受保护的模型列表确认；列表公开、不可用或与推理接口的要求不同时，请手动选择 Bearer 或 x-api-key。')}}</p>
+  <p>{{t('配置 API 使用 auth_mode：auto、bearer、x_api_key。探测结果 detected_auth_mode 可为 null，实际请求头见 effective_auth_mode。客户端调用 /v1/messages 可以用 Bearer 或 x-api-key 传 V-Scheduler 凭据；网关不会把它转发给上游。完整字段和示例见「模型与网关 API」。')}}</p>
+  <pre>POST /api/v1/upstreams/probe
+{"name":"vLLM","base_url":"https://inference.example.com/v1","protocol":"anthropic","auth_mode":"auto","api_key":"&lt;upstream-key&gt;"}</pre>
   <h3 id="integration-register" tabindex="-1">{{t('模型注册 API 与自动能力识别')}}</h3>
   <p>{{t('POST /api/v1/registrations 支持 ollama、typesafe 及现有协议。Ollama 可省略 models 自动发现，也可用 model 或 models 指定子集；两种方式均读取 /api/show，自动识别 vision、tools、thinking、embedding、rerank、decision。能力与接口覆盖顺序为自动识别、顶层 capabilities/endpoints、models 内逐模型声明、model_capabilities/model_endpoints 映射；后者优先，声明能力而未声明接口时重新推断接口，避免专用模型误带聊天接口。普通聊天无声明默认 Chat Completions；Jev 为 decision/systemone。心跳维护服务在线状态，失联后自动移除，完整注册快照心跳支持自动恢复；模型或能力变更时使用相同 service_id 重新注册。')}}</p>
   <p>{{t('能力和接口数组省略或为空时保留自动识别或默认值；注册只声明模型，不自动授予资源预算、执行器审批或强制放行权限。')}}</p>

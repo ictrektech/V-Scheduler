@@ -126,12 +126,18 @@ pub(super) fn outgoing(
     }
     let has_version = headers.contains_key("anthropic-version");
     let mut builder = g.client.request(method, url).headers(headers);
-    if !u.api_key.is_empty() {
-        if u.protocol == "anthropic" {
-            builder = builder.header("x-api-key", &u.api_key);
-        } else {
-            builder = builder.bearer_auth(&u.api_key);
+    match u.effective_auth_mode() {
+        Some(registry::UpstreamAuth::XApiKey) => {
+            if let Ok(mut value) = axum::http::HeaderValue::from_str(&u.api_key) {
+                value.set_sensitive(true);
+                builder = builder.header("x-api-key", value);
+            } else {
+                // Preserve the request builder's invalid-header error.
+                builder = builder.header("x-api-key", &u.api_key);
+            }
         }
+        Some(_) => builder = builder.bearer_auth(&u.api_key),
+        None => {}
     }
     if u.protocol == "anthropic" && !has_version {
         builder = builder.header("anthropic-version", "2023-06-01");

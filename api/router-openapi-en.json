@@ -356,6 +356,39 @@
           },
           "manageable": {
             "type": "boolean"
+          },
+          "auth_mode": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "bearer",
+              "x_api_key"
+            ],
+            "description": "Selected authentication policy."
+          },
+          "detected_auth_mode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "bearer",
+              "x_api_key",
+              null
+            ],
+            "description": "Confirmed automatic result; null if unconfirmed or manually set."
+          },
+          "effective_auth_mode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "bearer",
+              "x_api_key",
+              null
+            ],
+            "description": "Header applied when forwarding; null when no upstream api_key is configured."
           }
         },
         "required": [
@@ -833,6 +866,39 @@
           },
           "test_error": {
             "type": "string"
+          },
+          "auth_mode": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "bearer",
+              "x_api_key"
+            ],
+            "description": "Selected authentication policy."
+          },
+          "detected_auth_mode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "bearer",
+              "x_api_key",
+              null
+            ],
+            "description": "Confirmed automatic result; null if unconfirmed or manually set."
+          },
+          "effective_auth_mode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "bearer",
+              "x_api_key",
+              null
+            ],
+            "description": "Header applied when forwarding; null when no upstream api_key is configured."
           }
         },
         "required": [
@@ -842,7 +908,10 @@
           "protocol",
           "models",
           "model_details",
-          "error"
+          "error",
+          "auth_mode",
+          "detected_auth_mode",
+          "effective_auth_mode"
         ],
         "additionalProperties": true
       },
@@ -4338,7 +4407,7 @@
     },
     "/api/v1/registrations": {
       "post": {
-        "description": "Supports ollama automatic capabilities and the native typesafe/Jev protocol. Omit models for discovery; explicit model/models subsets also detect Ollama capabilities. Precedence: discovery, top-level capabilities/endpoints, individual models, then model_capabilities/model_endpoints maps. Heartbeats renew leases only; re-register the same service_id for metadata changes. Registration does not grant scheduler or budget approval. Requires a gateway key or VOS identity. A stable service_id produces registered-<service_id>; the same ID updates the same instance, replicas need distinct IDs. Public services are visible to all callers; private services only to the registrant. Register a base_url/models API or explicitly supply model/models. Explicit specialized models should declare endpoints; ordinary chat defaults are inferred from the protocol; capabilities/model_kind supports capability filtering. model_endpoints/model_capabilities can override individual models. ttl_seconds defaults to 90. Native protocol=pi accepts provider and write-only provider_credentials; serves chat, Responses and Messages through the existing admission path. Existing protocols and endpoints retain their behavior. See docs/application-integration.md#native-provider-runtime. Send heartbeats at heartbeat_after_seconds. Stale entries are removed automatically. A full registration snapshot heartbeat restores the same service after a restart or disconnect. Registration accepts access_key (true/string/null) for all submitted models and model_access_keys keyed by native model ID for per-model overrides. These require the owner’s VOS token; provider api_key remains separate. Omission preserves existing model keys. Change existing model keys using PUT /api/v1/models/access-key.",
+        "description": "Supports ollama automatic capabilities and the native typesafe/Jev protocol. Omit models for discovery; explicit model/models subsets also detect Ollama capabilities. Precedence: discovery, top-level capabilities/endpoints, individual models, then model_capabilities/model_endpoints maps. Heartbeats renew leases only; re-register the same service_id for metadata changes. Registration does not grant scheduler or budget approval. Requires a gateway key or VOS identity. A stable service_id produces registered-<service_id>; the same ID updates the same instance, replicas need distinct IDs. Public services are visible to all callers; private services only to the registrant. Register a base_url/models API or explicitly supply model/models. Explicit specialized models should declare endpoints; ordinary chat defaults are inferred from the protocol; capabilities/model_kind supports capability filtering. model_endpoints/model_capabilities can override individual models. ttl_seconds defaults to 90. Native protocol=pi accepts provider and write-only provider_credentials; serves chat, Responses and Messages through the existing admission path. Existing protocols and endpoints retain their behavior. See docs/application-integration.md#native-provider-runtime. Send heartbeats at heartbeat_after_seconds. Stale entries are removed automatically. A full registration snapshot heartbeat restores the same service after a restart or disconnect. Registration accepts access_key (true/string/null) for all submitted models and model_access_keys keyed by native model ID for per-model overrides. These require the owner’s VOS token; provider api_key remains separate. Omission preserves existing model keys. Change existing model keys using PUT /api/v1/models/access-key. Auto tries the alternate header only if the first model-list request returns 401/403. Public or unverifiable catalogs do not produce a new result. Without confirmation it uses the saved result if present, otherwise x-api-key. Inference never retries with the other header.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -4574,6 +4643,19 @@
                       "type": "string"
                     },
                     "description": "Shared domain IDs. Omit to retain current values; [] resets to general. Unknown IDs and null are rejected. Auto consumes these annotations for step matching; they do not change capabilities, permissions or resource-admission settings."
+                  },
+                  "auth_mode": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "enum": [
+                      "auto",
+                      "bearer",
+                      "x_api_key",
+                      null
+                    ],
+                    "description": "Only for protocol=anthropic. Optional: auto (default, detect and save), bearer (Authorization: Bearer), x_api_key (x-api-key). Uses the configured upstream api_key; neither header is sent without a key. Empty or unknown values return 400. Other protocols reject explicit bearer/x_api_key. Omitted or null defaults to auto; preserves the saved mode when the service ID, URL, protocol, and key are unchanged. Explicit model registration can succeed even when discovery cannot verify authentication."
                   }
                 },
                 "required": [
@@ -4683,7 +4765,7 @@
     },
     "/api/v1/registrations/{id}/heartbeat": {
       "post": {
-        "description": "Send heartbeats at heartbeat_after_seconds. heartbeat_timeout_seconds defaults to 90; ttl_seconds remains compatible. healthy:false removes the catalog entry immediately. Stale heartbeats remove upstreams and models without releasing running reservations. Include the full registration snapshot to restore a missing service with normal ownership and approval checks. Legacy short heartbeats should re-register on REGISTRATION_REQUIRED/404. Existing records only refresh liveness; re-register to change metadata. Existing entries only renew health/timeout; full snapshot fields restore a missing entry. Re-register to change metadata, scheduling policy or model access keys. Recovery preserves persisted routing settings and model keys: it never regenerates/revokes keys from an older snapshot or returns an existing secret. Use explicit registration/configuration/key APIs for changes.",
+        "description": "Send heartbeats at heartbeat_after_seconds. heartbeat_timeout_seconds defaults to 90; ttl_seconds remains compatible. healthy:false removes the catalog entry immediately. Stale heartbeats remove upstreams and models without releasing running reservations. Include the full registration snapshot to restore a missing service with normal ownership and approval checks. Legacy short heartbeats should re-register on REGISTRATION_REQUIRED/404. Existing records only refresh liveness; re-register to change metadata. Existing entries only renew health/timeout; full snapshot fields restore a missing entry. Re-register to change metadata, scheduling policy or model access keys. Recovery preserves persisted routing settings and model keys: it never regenerates/revokes keys from an older snapshot or returns an existing secret. Use explicit registration/configuration/key APIs for changes. Auto tries the alternate header only if the first model-list request returns 401/403. Public or unverifiable catalogs do not produce a new result. Without confirmation it uses the saved result if present, otherwise x-api-key. Inference never retries with the other header.",
         "parameters": [
           {
             "in": "path",
@@ -4899,6 +4981,19 @@
                       "type": "string"
                     },
                     "description": "Recovery snapshot only. Existing services retain persisted annotations; use model PATCH, batch PATCH or explicit registration POST to edit domains."
+                  },
+                  "auth_mode": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "enum": [
+                      "auto",
+                      "bearer",
+                      "x_api_key",
+                      null
+                    ],
+                    "description": "Only for protocol=anthropic. Optional: auto (default, detect and save), bearer (Authorization: Bearer), x_api_key (x-api-key). Uses the configured upstream api_key; neither header is sent without a key. Empty or unknown values return 400. Other protocols reject explicit bearer/x_api_key. Used only by a full recovery snapshot for a missing service. Normal heartbeats for an existing service ignore this field."
                   }
                 },
                 "type": "object"
@@ -5133,7 +5228,7 @@
         "x-contract-source": "backend/src/router/manage.rs"
       },
       "post": {
-        "description": "Also supports ollama (automatic /api/show capabilities) and typesafe (Jev System One). Undeclared ordinary chat models default to Chat Completions; specialized models retain their actual endpoints. Registers an upstream. kind: manual/cloud. protocol: openai (native), chat_completions (Responses/Messages conversion), anthropic (native), offline_asr (/transcribe adapter), image_studio (image/video adapter), async_task (generic asynchronous image task creation/polling). Cloud model prefixes reverse the domain, e.g. ai.ictrek.com -> com.ictrek.ai. Models are probed before saving; async_task validates the single-model/task configuration without creating a paid task. visibility: public (default, shared with all callers) or private (owner and administrators only). The creator becomes owner; only the owner and administrators may edit, refresh, delete or configure scheduling. Legacy upstreams with an empty owner remain shared and manageable by all signed-in users. Native protocol=pi accepts provider and write-only provider_credentials; serves chat, Responses and Messages through the existing admission path. Existing protocols and endpoints retain their behavior. See docs/application-integration.md#native-provider-runtime.",
+        "description": "Also supports ollama (automatic /api/show capabilities) and typesafe (Jev System One). Undeclared ordinary chat models default to Chat Completions; specialized models retain their actual endpoints. Registers an upstream. kind: manual/cloud. protocol: openai (native), chat_completions (Responses/Messages conversion), anthropic (native), offline_asr (/transcribe adapter), image_studio (image/video adapter), async_task (generic asynchronous image task creation/polling). Cloud model prefixes reverse the domain, e.g. ai.ictrek.com -> com.ictrek.ai. Models are probed before saving; async_task validates the single-model/task configuration without creating a paid task. visibility: public (default, shared with all callers) or private (owner and administrators only). The creator becomes owner; only the owner and administrators may edit, refresh, delete or configure scheduling. Legacy upstreams with an empty owner remain shared and manageable by all signed-in users. Native protocol=pi accepts provider and write-only provider_credentials; serves chat, Responses and Messages through the existing admission path. Existing protocols and endpoints retain their behavior. See docs/application-integration.md#native-provider-runtime. Auto tries the alternate header only if the first model-list request returns 401/403. Public or unverifiable catalogs do not produce a new result. Without confirmation it uses the saved result if present, otherwise x-api-key. Inference never retries with the other header.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -5318,6 +5413,19 @@
                       "type": "string"
                     },
                     "description": "Shared domain IDs. Omit to retain current values; [] resets to general. Unknown IDs and null are rejected. Auto consumes these annotations for step matching; they do not change capabilities, permissions or resource-admission settings."
+                  },
+                  "auth_mode": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "enum": [
+                      "auto",
+                      "bearer",
+                      "x_api_key",
+                      null
+                    ],
+                    "description": "Only for protocol=anthropic. Optional: auto (default, detect and save), bearer (Authorization: Bearer), x_api_key (x-api-key). Uses the configured upstream api_key; neither header is sent without a key. Empty or unknown values return 400. Other protocols reject explicit bearer/x_api_key. Omitted or null selects auto."
                   }
                 },
                 "required": [
@@ -5370,7 +5478,7 @@
     },
     "/api/v1/upstreams/probe": {
       "post": {
-        "description": "Probes models using the current form parameters. Optional test_model performs a lightweight connectivity test. A failed probe returns diagnostics without saving the upstream. Native protocol=pi accepts provider and write-only provider_credentials; serves chat, Responses and Messages through the existing admission path. Existing protocols and endpoints retain their behavior. See docs/application-integration.md#native-provider-runtime.",
+        "description": "Probes models using the current form parameters. Optional test_model performs a lightweight connectivity test. A failed probe returns diagnostics without saving the upstream. Native protocol=pi accepts provider and write-only provider_credentials; serves chat, Responses and Messages through the existing admission path. Existing protocols and endpoints retain their behavior. See docs/application-integration.md#native-provider-runtime. Auto tries the alternate header only if the first model-list request returns 401/403. Public or unverifiable catalogs do not produce a new result. Without confirmation it uses the saved result if present, otherwise x-api-key. Inference never retries with the other header.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -5539,6 +5647,19 @@
                       ]
                     },
                     "description": "Optional discovery subset with per-model metadata. Omit for all discovered models; [] selects none."
+                  },
+                  "auth_mode": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "enum": [
+                      "auto",
+                      "bearer",
+                      "x_api_key",
+                      null
+                    ],
+                    "description": "Only for protocol=anthropic. Optional: auto (default, detect and save), bearer (Authorization: Bearer), x_api_key (x-api-key). Uses the configured upstream api_key; neither header is sent without a key. Empty or unknown values return 400. Other protocols reject explicit bearer/x_api_key. Tests without saving. For upstream_id at the same URL and protocol, omit or set null to reuse the saved mode; a blank api_key reuses the saved key."
                   }
                 },
                 "type": "object"
@@ -5628,7 +5749,7 @@
         "x-gateway-auth": "manage"
       },
       "put": {
-        "description": "Updates name, URL, protocol, key or visibility. An empty api_key retains the existing key. Cloud model prefixes are recalculated from base_url. Owner and administrators only: editing another user's public upstream returns 403; accessing their private upstream returns 404. Ownership cannot be transferred. Native protocol=pi accepts provider and write-only provider_credentials; serves chat, Responses and Messages through the existing admission path. Existing protocols and endpoints retain their behavior. See docs/application-integration.md#native-provider-runtime.",
+        "description": "Updates name, URL, protocol, key or visibility. An empty api_key retains the existing key. Cloud model prefixes are recalculated from base_url. Owner and administrators only: editing another user's public upstream returns 403; accessing their private upstream returns 404. Ownership cannot be transferred. Native protocol=pi accepts provider and write-only provider_credentials; serves chat, Responses and Messages through the existing admission path. Existing protocols and endpoints retain their behavior. See docs/application-integration.md#native-provider-runtime. Auto tries the alternate header only if the first model-list request returns 401/403. Public or unverifiable catalogs do not produce a new result. Without confirmation it uses the saved result if present, otherwise x-api-key. Inference never retries with the other header.",
         "parameters": [
           {
             "in": "path",
@@ -5823,6 +5944,19 @@
                       "type": "string"
                     },
                     "description": "Shared domain IDs. Omit to retain current values; [] resets to general. Unknown IDs and null are rejected. Auto consumes these annotations for step matching; they do not change capabilities, permissions or resource-admission settings."
+                  },
+                  "auth_mode": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "enum": [
+                      "auto",
+                      "bearer",
+                      "x_api_key",
+                      null
+                    ],
+                    "description": "Only for protocol=anthropic. Optional: auto (default, detect and save), bearer (Authorization: Bearer), x_api_key (x-api-key). Uses the configured upstream api_key; neither header is sent without a key. Empty or unknown values return 400. Other protocols reject explicit bearer/x_api_key. Omitted or null preserves the saved mode at the same URL and protocol; send auto to resume detection. A changed URL or protocol resets detection. When a saved key exists, changes to or from an Anthropic target require re-entering api_key or return 400."
                   }
                 },
                 "required": [
@@ -5875,7 +6009,7 @@
     },
     "/api/v1/upstreams/{id}/refresh": {
       "post": {
-        "description": "Probes and refreshes models for API-created cloud/manual upstreams. Owner and administrators only. Native protocol=pi accepts provider and write-only provider_credentials; serves chat, Responses and Messages through the existing admission path. Existing protocols and endpoints retain their behavior. See docs/application-integration.md#native-provider-runtime.",
+        "description": "Probes and refreshes models for API-created cloud/manual upstreams. Owner and administrators only. Native protocol=pi accepts provider and write-only provider_credentials; serves chat, Responses and Messages through the existing admission path. Existing protocols and endpoints retain their behavior. See docs/application-integration.md#native-provider-runtime. Auto tries the alternate header only if the first model-list request returns 401/403. Public or unverifiable catalogs do not produce a new result. Without confirmation it uses the saved result if present, otherwise x-api-key. Inference never retries with the other header.",
         "parameters": [
           {
             "in": "path",
@@ -13882,7 +14016,7 @@
         "x-native-passthrough": true
       },
       "post": {
-        "description": "Use an explicit model or model=auto. Native Anthropic upstreams receive Messages requests directly. Chat Completions capable OpenAI upstreams receive converted text, image input and function tools, with SSE support. Auto Messages accepts convertible fields. Conversion does not support thinking, prompt caching or server-side tools. Image and tool support depends on the model. The gateway accepts x-api-key.\nNamed message_start/content_block_start/content_block_delta/content_block_stop/message_delta/message_stop events. text_delta/input_json_delta/thinking_delta are distinct. error can occur after HTTP200; message_stop is the terminal success event. Client disconnect requests cancellation; do not assume upstream resources are released until the execution stop is confirmed.",
+        "description": "Use an explicit model or model=auto. Native Anthropic upstreams receive Messages requests directly. Chat Completions capable OpenAI upstreams receive converted text, image input and function tools, with SSE support. Auto Messages accepts convertible fields. Conversion does not support thinking, prompt caching or server-side tools. Image and tool support depends on the model. The gateway accepts x-api-key.\nNamed message_start/content_block_start/content_block_delta/content_block_stop/message_delta/message_stop events. text_delta/input_json_delta/thinking_delta are distinct. error can occur after HTTP200; message_stop is the terminal success event. Client disconnect requests cancellation; do not assume upstream resources are released until the execution stop is confirmed. Send Authorization: Bearer <V-Scheduler key or VOS token> or x-api-key: <same credential>. If you send both, the values must match to establish an identity. Neither client credential is forwarded to the upstream.",
         "parameters": [
           {
             "description": "Pins an upstream ID without fallback; requires identity and native model names. Otherwise matches model, protocol and health, selecting by in-flight requests/weight. Ties use smooth weighted rotation within the current model/interface. Returns 429 if all candidates are full. A prefix limits source; short names span sources, including cloud. Required for resource APIs.",

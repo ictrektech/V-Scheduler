@@ -2464,3 +2464,97 @@ async fn model_speed_measures_first_and_last_payload_separately_and_filters_fail
     task.abort();
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[tokio::test]
+async fn anthropic_upstream_detects_and_persists_auth_independently_of_client_headers() {
+    use sha2::{Digest, Sha256};
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.2:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let seen = Arc::new(Mutex::new(Vec::<String>::new()));
+    let observed = seen.clone();
+    let app = Router::new()
+        .route("/{mode}/models", axum::routing::get(move |
+            axum::extract::Path(mode): axum::extract::Path<String>, h: HeaderMap,
+        | {
+            let observed = observed.clone();
+            async move {
+                let header = if h.get("authorization").is_some_and(|v| v == "Bearer fixture-upstream") && !h.contains_key("x-api-key") {
+                    "bearer"
+                } else if h.get("x-api-key").is_some_and(|v| v == "fixture-upstream") && !h.contains_key("authorization") {
+                    "x_api_key"
+                } else {
+                    "none"
+                };
+                observed.lock().unwrap().push(header.into());
+                match mode.as_str() {
+                    "broken" => (StatusCode::SERVICE_UNAVAILABLE, Json(json!({}))),
+                    "public" => (StatusCode::OK, Json(json!({"data":[{"id":format!("{mode}-echo")}]}))),
+                    _ if mode == header => (StatusCode::OK, Json(json!({"data":[{"id":format!("{mode}-echo")}]}))),
+                    _ => (StatusCode::UNAUTHORIZED, Json(json!({}))),
+                }
+            }
+        }))
+        .route("/{mode}/messages", post(|axum::extract::Path(mode): axum::extract::Path<String>, h: HeaderMap, Json(body): Json<Value>| async move {
+            if mode == "bearer" {
+                assert_eq!(h["authorization"], "Bearer fixture-upstream");
+                assert!(!h.contains_key("x-api-key"));
+            } else {
+                assert_eq!(h["x-api-key"], "fixture-upstream");
+                assert!(!h.contains_key("authorization"));
+            }
+            assert_eq!(h["anthropic-version"], "2023-06-01");
+            assert_eq!(body["model"], format!("{mode}-echo"));
+            Json(json!({"id":"msg_1","type":"message","role":"assistant","model":"echo","content":[{"type":"text","text":"native reply"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":2}}))
+        }));
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let root = temp();
+    let g = gateway(&root, Router::new());
+    let alice = principal("alice");
+    let token = "fixture-downstream";
+    g.identities.lock().unwrap().insert(
+        format!("{:x}", Sha256::digest(token)), (alice.clone(), std::time::Instant::now()),
+    );
+    for (mode, override_mode, expected, headers) in [
+        ("bearer", "auto", Some("bearer"), &["x_api_key", "bearer"][..]),
+        ("x_api_key", "auto", Some("x_api_key"), &["x_api_key", "none"][..]),
+        ("public", "auto", None, &["x_api_key", "none"][..]),
+        ("broken", "auto", None, &["x_api_key"][..]),
+        ("bearer", "x_api_key", None, &["x_api_key"][..]),
+    ] {
+        seen.lock().unwrap().clear();
+        let request = Request::builder().method("POST").uri("/api/v1/upstreams")
+            .header("content-type", "application/json").body(Body::from(json!({
+                "name":mode,"kind":"cloud","base_url":format!("http://{address}/{mode}"),
+                "protocol":"anthropic","visibility":"private","api_key":"fixture-upstream","auth_mode":override_mode,
+            }).to_string())).unwrap();
+        let response = manage::handle(&g, &alice, request).await;
+        assert_eq!(&*seen.lock().unwrap(), headers);
+        if mode == "broken" || override_mode != "auto" {
+            assert_eq!(response.err().unwrap().status, 502);
+            continue;
+        }
+        let bytes = axum::body::to_bytes(response.unwrap().into_body(), 65536).await.unwrap();
+        assert!(!String::from_utf8_lossy(&bytes).contains("fixture-upstream"));
+        let value: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(value["detected_auth_mode"], json!(expected));
+    }
+    let restored = Registry::open(&g.state_path).unwrap();
+    assert_eq!(restored.upstreams["bearer"].detected_auth_mode, Some(registry::UpstreamAuth::Bearer));
+    let model_ids = ["bearer", "x-api-key"].map(|id| restored.models[id][0].qualified.clone());
+    *g.registry.lock().unwrap() = restored;
+    for model_id in model_ids {
+        for (header, value) in [("authorization", format!("Bearer {token}")), ("x-api-key", token.into())] {
+            let req = Request::builder().method("POST").uri("/v1/messages")
+                .header(header, value).header("content-type", "application/json")
+                .body(Body::from(json!({"model":model_id,"max_tokens":8,"messages":[{"role":"user","content":"hello"}]}).to_string())).unwrap();
+            let response = super::handle(State(g.clone()), req).await;
+            let status = response.status();
+            let bytes = axum::body::to_bytes(response.into_body(), 65536).await.unwrap();
+            assert_eq!(status, 200, "{}", String::from_utf8_lossy(&bytes));
+            assert!(String::from_utf8_lossy(&bytes).contains("native reply"));
+        }
+    }
+    server.abort();
+    std::fs::remove_dir_all(root).unwrap();
+}

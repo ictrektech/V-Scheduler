@@ -1,5 +1,11 @@
 "use strict";
 export const VRouterMessages = {
+"上游鉴权方式": {"en": "Upstream authentication", "zh-TW": "上游驗證方式"},
+"Anthropic 原生": {"en": "Native Anthropic", "zh-TW": "Anthropic 原生"},
+"自动探测": {"en": "Detect automatically", "zh-TW": "自動偵測"},
+"自动探测使用模型列表，不发送推理请求。列表不验证密钥时，可手动指定。": {"en": "Detection uses the model list without sending an inference request. Select a method manually if the list does not require authentication."},
+"已探测的鉴权方式": {"en": "Detected authentication", "zh-TW": "已偵測的驗證方式"},
+"尚未确认鉴权方式": {"en": "Authentication method not confirmed", "zh-TW": "尚未確認驗證方式"},
 "速度趋势": {"en": "Speed trends"},
 "正在加载速度趋势…": {"en": "Loading speed trends…"},
 "最近 200 次可测量的流式调用。生成速度不含首 Token 等待；未报告用量或片段同时到达时，速度留空。": {"en": "Latest 200 measurable streaming calls. Generation speed excludes time to first token. Speed is unavailable if usage is missing or output arrives in a single batch."},

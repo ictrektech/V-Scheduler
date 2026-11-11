@@ -9,6 +9,15 @@ where
     Ok(Option::<T>::deserialize(deserializer)?.unwrap_or_default())
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(super) enum UpstreamAuth {
+    #[default]
+    Auto,
+    Bearer,
+    XApiKey,
+}
+
 #[derive(Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub(super) struct Upstream {
@@ -19,6 +28,8 @@ pub(super) struct Upstream {
     pub base_url: String,
     pub model_prefix: String,
     pub api_key: String,
+    pub auth_mode: UpstreamAuth,
+    pub detected_auth_mode: Option<UpstreamAuth>,
     pub protocol: String,
     pub provider: String,
     pub provider_credentials: Value,
@@ -33,6 +44,19 @@ pub(super) struct Upstream {
     pub async_task: Option<Value>,
 }
 impl Upstream {
+    pub fn effective_auth_mode(&self) -> Option<UpstreamAuth> {
+        if self.api_key.is_empty() { return None; }
+        Some(match self.auth_mode {
+            UpstreamAuth::Auto => self.detected_auth_mode.unwrap_or(if self.protocol == "anthropic" {
+                UpstreamAuth::XApiKey
+            } else { UpstreamAuth::Bearer }),
+            mode => mode,
+        })
+    }
+    pub fn detects_auth(&self) -> bool {
+        self.protocol == "anthropic" && !self.api_key.is_empty() && self.auth_mode == UpstreamAuth::Auto
+    }
+
     pub fn display_prefix(&self) -> String {
         if self.kind == "cloud" {
             if let Ok(url) = reqwest::Url::parse(&self.base_url) {

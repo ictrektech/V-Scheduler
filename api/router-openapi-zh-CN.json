@@ -356,6 +356,39 @@
           },
           "manageable": {
             "type": "boolean"
+          },
+          "auth_mode": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "bearer",
+              "x_api_key"
+            ],
+            "description": "所选的鉴权策略。"
+          },
+          "detected_auth_mode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "bearer",
+              "x_api_key",
+              null
+            ],
+            "description": "已确认的自动探测结果；未确认或手动模式时为 null。"
+          },
+          "effective_auth_mode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "bearer",
+              "x_api_key",
+              null
+            ],
+            "description": "实际转发使用的请求头；未配置上游 api_key 时为 null。"
           }
         },
         "required": [
@@ -833,6 +866,39 @@
           },
           "test_error": {
             "type": "string"
+          },
+          "auth_mode": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "bearer",
+              "x_api_key"
+            ],
+            "description": "所选的鉴权策略。"
+          },
+          "detected_auth_mode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "bearer",
+              "x_api_key",
+              null
+            ],
+            "description": "已确认的自动探测结果；未确认或手动模式时为 null。"
+          },
+          "effective_auth_mode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "bearer",
+              "x_api_key",
+              null
+            ],
+            "description": "实际转发使用的请求头；未配置上游 api_key 时为 null。"
           }
         },
         "required": [
@@ -842,7 +908,10 @@
           "protocol",
           "models",
           "model_details",
-          "error"
+          "error",
+          "auth_mode",
+          "detected_auth_mode",
+          "effective_auth_mode"
         ],
         "additionalProperties": true
       },
@@ -4338,7 +4407,7 @@
     },
     "/api/v1/registrations": {
       "post": {
-        "description": "支持 ollama 自动能力识别和 typesafe/Jev 原生协议。省略 models 发现全部模型；model 或 models 指定子集时同样自动识别 Ollama。覆盖优先级为自动识别、顶层 capabilities/endpoints、models 逐模型声明、model_capabilities/model_endpoints；后者优先。心跳仅续租，能力变更使用同一 service_id 重注册。注册不授予调度或预算审批。 需网关 Key 或 VOS 身份。稳定 service_id 生成 registered-<service_id>；相同 ID 更新同一实例，副本须不同 ID。可注册 public 或 private 服务；private 只对注册者身份可见，public 对所有调用者可见。可注册 base_url/models 模型 API，也可提交 model 或 models 显式注册单个/多个模型；显式专用模型应声明 endpoints，普通聊天模型缺省时按协议补全，capabilities/model_kind 用于接口能力过滤；model_endpoints 和 model_capabilities 可逐模型覆盖；ttl_seconds 默认90。 protocol=pi 接受 provider 与仅写入的 provider_credentials，经原资源准入提供对话、Responses 和 Messages。旧协议与地址不变，详见统一接入指南原生 Provider 小节。 按 heartbeat_after_seconds 发送心跳；心跳中断自动移除，不保留租约到期卡片。完整注册快照可随心跳恢复同一服务。 注册可同时提交 access_key（true/字符串/null），或 model_access_keys 按原生模型 ID 逐项设置，需所属 VOS 用户 token。省略时保留已有模型访问 Key；api_key 仍仅是上游厂商凭据。已有模型用 PUT /api/v1/models/access-key 修改。",
+        "description": "支持 ollama 自动能力识别和 typesafe/Jev 原生协议。省略 models 发现全部模型；model 或 models 指定子集时同样自动识别 Ollama。覆盖优先级为自动识别、顶层 capabilities/endpoints、models 逐模型声明、model_capabilities/model_endpoints；后者优先。心跳仅续租，能力变更使用同一 service_id 重注册。注册不授予调度或预算审批。 需网关 Key 或 VOS 身份。稳定 service_id 生成 registered-<service_id>；相同 ID 更新同一实例，副本须不同 ID。可注册 public 或 private 服务；private 只对注册者身份可见，public 对所有调用者可见。可注册 base_url/models 模型 API，也可提交 model 或 models 显式注册单个/多个模型；显式专用模型应声明 endpoints，普通聊天模型缺省时按协议补全，capabilities/model_kind 用于接口能力过滤；model_endpoints 和 model_capabilities 可逐模型覆盖；ttl_seconds 默认90。 protocol=pi 接受 provider 与仅写入的 provider_credentials，经原资源准入提供对话、Responses 和 Messages。旧协议与地址不变，详见统一接入指南原生 Provider 小节。 按 heartbeat_after_seconds 发送心跳；心跳中断自动移除，不保留租约到期卡片。完整注册快照可随心跳恢复同一服务。 注册可同时提交 access_key（true/字符串/null），或 model_access_keys 按原生模型 ID 逐项设置，需所属 VOS 用户 token。省略时保留已有模型访问 Key；api_key 仍仅是上游厂商凭据。已有模型用 PUT /api/v1/models/access-key 修改。 自动探测仅在首次模型列表请求返回 401/403 时尝试另一种请求头；列表无需鉴权或无法验证时不会记录新结果。探测未确认时沿用既有结果，否则默认 x-api-key。不会因推理返回 401/403 而换头重试。",
         "requestBody": {
           "content": {
             "application/json": {
@@ -4574,6 +4643,19 @@
                       "type": "string"
                     },
                     "description": "共享领域 ID，省略保留，[] 重置通用；未知 ID 和 null 拒绝。Auto 使用领域标注匹配当前步骤；领域不改变能力、权限或资源准入设置。"
+                  },
+                  "auth_mode": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "enum": [
+                      "auto",
+                      "bearer",
+                      "x_api_key",
+                      null
+                    ],
+                    "description": "仅用于 protocol=anthropic。可选：auto（默认，探测并保存）、bearer（Authorization: Bearer）、x_api_key（x-api-key）。发送的是配置中的上游 api_key；未配密钥时两个头都不发。空字符串或未知值返回 400。其他协议不接受显式 bearer/x_api_key。 缺省或 null 默认 auto；同一服务 ID、地址、协议和密钥保持不变时，沿用已保存的方式。显式声明模型时探测失败仍可注册。"
                   }
                 },
                 "required": [
@@ -4683,7 +4765,7 @@
     },
     "/api/v1/registrations/{id}/heartbeat": {
       "post": {
-        "description": "按响应的 heartbeat_after_seconds 发送心跳。heartbeat_timeout_seconds 默认 90，兼容旧 ttl_seconds。healthy:false 立即移除；心跳中断后自动移除上游与模型，不释放运行中资源预约。携带完整注册快照（service_id、base_url、模型及原凭据）时，缺失服务可按原权限自动重新登记；普通心跳收到 REGISTRATION_REQUIRED/404 应自动重新注册。现存服务的心跳不更新模型元数据，配置变更仍重新注册。 Existing entries only renew health/timeout; full snapshot fields restore a missing entry. Re-register to change metadata, scheduling policy or model access keys. Recovery preserves persisted routing settings and model keys: it never regenerates/revokes keys from an older snapshot or returns an existing secret. Use explicit registration/configuration/key APIs for changes.",
+        "description": "按响应的 heartbeat_after_seconds 发送心跳。heartbeat_timeout_seconds 默认 90，兼容旧 ttl_seconds。healthy:false 立即移除；心跳中断后自动移除上游与模型，不释放运行中资源预约。携带完整注册快照（service_id、base_url、模型及原凭据）时，缺失服务可按原权限自动重新登记；普通心跳收到 REGISTRATION_REQUIRED/404 应自动重新注册。现存服务的心跳不更新模型元数据，配置变更仍重新注册。 Existing entries only renew health/timeout; full snapshot fields restore a missing entry. Re-register to change metadata, scheduling policy or model access keys. Recovery preserves persisted routing settings and model keys: it never regenerates/revokes keys from an older snapshot or returns an existing secret. Use explicit registration/configuration/key APIs for changes. 自动探测仅在首次模型列表请求返回 401/403 时尝试另一种请求头；列表无需鉴权或无法验证时不会记录新结果。探测未确认时沿用既有结果，否则默认 x-api-key。不会因推理返回 401/403 而换头重试。",
         "parameters": [
           {
             "in": "path",
@@ -4899,6 +4981,19 @@
                       "type": "string"
                     },
                     "description": "仅为恢复快照元数据。已知服务保留持久领域设置；修改请用模型 PATCH、批量 PATCH 或显式注册 POST。"
+                  },
+                  "auth_mode": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "enum": [
+                      "auto",
+                      "bearer",
+                      "x_api_key",
+                      null
+                    ],
+                    "description": "仅用于 protocol=anthropic。可选：auto（默认，探测并保存）、bearer（Authorization: Bearer）、x_api_key（x-api-key）。发送的是配置中的上游 api_key；未配密钥时两个头都不发。空字符串或未知值返回 400。其他协议不接受显式 bearer/x_api_key。 只用于恢复缺失服务的完整注册快照；已存在服务的普通心跳忽略此字段。"
                   }
                 },
                 "type": "object"
@@ -5133,7 +5228,7 @@
         "x-contract-source": "backend/src/router/manage.rs"
       },
       "post": {
-        "description": "新增 ollama（自动读取 /api/show 能力）与 typesafe（Jev System One）协议；普通聊天未声明接口时保守补全 Chat Completions，专用能力仍按实际接口隔离。登记上游，kind 支持 manual/cloud，protocol 支持 openai（原生）、chat_completions（转换 Responses/Messages）、anthropic（原生）、offline_asr（离线 ASR /transcribe 适配）、image_studio（Image Studio 生图/生视频适配）、async_task（通用异步图片任务创建/轮询适配）。云端模型前缀按域名反转生成，例如 ai.ictrek.com -> com.ictrek.ai。默认保存前探测模型列表；async_task 改为校验单模型及任务字段，不创建付费任务。visibility 支持 public（共享，默认，所有调用者可见可用）和 private（仅创建者与管理员可见可用）；创建者身份记录为 owner，之后只有 owner 和管理员能修改、刷新、删除该上游或配置调度。历史存量上游 owner 为空，升级后保持共享且所有登录用户可管理。 protocol=pi 接受 provider 与仅写入的 provider_credentials，经原资源准入提供对话、Responses 和 Messages。旧协议与地址不变，详见统一接入指南原生 Provider 小节。",
+        "description": "新增 ollama（自动读取 /api/show 能力）与 typesafe（Jev System One）协议；普通聊天未声明接口时保守补全 Chat Completions，专用能力仍按实际接口隔离。登记上游，kind 支持 manual/cloud，protocol 支持 openai（原生）、chat_completions（转换 Responses/Messages）、anthropic（原生）、offline_asr（离线 ASR /transcribe 适配）、image_studio（Image Studio 生图/生视频适配）、async_task（通用异步图片任务创建/轮询适配）。云端模型前缀按域名反转生成，例如 ai.ictrek.com -> com.ictrek.ai。默认保存前探测模型列表；async_task 改为校验单模型及任务字段，不创建付费任务。visibility 支持 public（共享，默认，所有调用者可见可用）和 private（仅创建者与管理员可见可用）；创建者身份记录为 owner，之后只有 owner 和管理员能修改、刷新、删除该上游或配置调度。历史存量上游 owner 为空，升级后保持共享且所有登录用户可管理。 protocol=pi 接受 provider 与仅写入的 provider_credentials，经原资源准入提供对话、Responses 和 Messages。旧协议与地址不变，详见统一接入指南原生 Provider 小节。 自动探测仅在首次模型列表请求返回 401/403 时尝试另一种请求头；列表无需鉴权或无法验证时不会记录新结果。探测未确认时沿用既有结果，否则默认 x-api-key。不会因推理返回 401/403 而换头重试。",
         "requestBody": {
           "content": {
             "application/json": {
@@ -5318,6 +5413,19 @@
                       "type": "string"
                     },
                     "description": "共享领域 ID，省略保留，[] 重置通用；未知 ID 和 null 拒绝。Auto 使用领域标注匹配当前步骤；领域不改变能力、权限或资源准入设置。"
+                  },
+                  "auth_mode": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "enum": [
+                      "auto",
+                      "bearer",
+                      "x_api_key",
+                      null
+                    ],
+                    "description": "仅用于 protocol=anthropic。可选：auto（默认，探测并保存）、bearer（Authorization: Bearer）、x_api_key（x-api-key）。发送的是配置中的上游 api_key；未配密钥时两个头都不发。空字符串或未知值返回 400。其他协议不接受显式 bearer/x_api_key。 缺省或 null 使用 auto。"
                   }
                 },
                 "required": [
@@ -5370,7 +5478,7 @@
     },
     "/api/v1/upstreams/probe": {
       "post": {
-        "description": "按当前表单参数探测模型列表；可提交 test_model 做一次轻量联通测试。失败只返回诊断结果，不保存上游。 protocol=pi 接受 provider 与仅写入的 provider_credentials，经原资源准入提供对话、Responses 和 Messages。旧协议与地址不变，详见统一接入指南原生 Provider 小节。",
+        "description": "按当前表单参数探测模型列表；可提交 test_model 做一次轻量联通测试。失败只返回诊断结果，不保存上游。 protocol=pi 接受 provider 与仅写入的 provider_credentials，经原资源准入提供对话、Responses 和 Messages。旧协议与地址不变，详见统一接入指南原生 Provider 小节。 自动探测仅在首次模型列表请求返回 401/403 时尝试另一种请求头；列表无需鉴权或无法验证时不会记录新结果。探测未确认时沿用既有结果，否则默认 x-api-key。不会因推理返回 401/403 而换头重试。",
         "requestBody": {
           "content": {
             "application/json": {
@@ -5539,6 +5647,19 @@
                       ]
                     },
                     "description": "Optional discovery subset with per-model metadata. Omit for all discovered models; [] selects none."
+                  },
+                  "auth_mode": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "enum": [
+                      "auto",
+                      "bearer",
+                      "x_api_key",
+                      null
+                    ],
+                    "description": "仅用于 protocol=anthropic。可选：auto（默认，探测并保存）、bearer（Authorization: Bearer）、x_api_key（x-api-key）。发送的是配置中的上游 api_key；未配密钥时两个头都不发。空字符串或未知值返回 400。其他协议不接受显式 bearer/x_api_key。 只测试，不保存；指定 upstream_id 测试原地址和协议时，省略或 null 沿用已保存的方式，留空 api_key 沿用已保存的密钥。"
                   }
                 },
                 "type": "object"
@@ -5628,7 +5749,7 @@
         "x-gateway-auth": "manage"
       },
       "put": {
-        "description": "修改名称、地址、协议、密钥或可见范围；api_key 留空表示保留原密钥。云端上游会按新 base_url 重新计算模型前缀。仅 owner 和管理员可调用：非 owner 修改他人 public 上游返回 403，访问他人 private 上游返回 404。owner 不可转移。 protocol=pi 接受 provider 与仅写入的 provider_credentials，经原资源准入提供对话、Responses 和 Messages。旧协议与地址不变，详见统一接入指南原生 Provider 小节。",
+        "description": "修改名称、地址、协议、密钥或可见范围；api_key 留空表示保留原密钥。云端上游会按新 base_url 重新计算模型前缀。仅 owner 和管理员可调用：非 owner 修改他人 public 上游返回 403，访问他人 private 上游返回 404。owner 不可转移。 protocol=pi 接受 provider 与仅写入的 provider_credentials，经原资源准入提供对话、Responses 和 Messages。旧协议与地址不变，详见统一接入指南原生 Provider 小节。 自动探测仅在首次模型列表请求返回 401/403 时尝试另一种请求头；列表无需鉴权或无法验证时不会记录新结果。探测未确认时沿用既有结果，否则默认 x-api-key。不会因推理返回 401/403 而换头重试。",
         "parameters": [
           {
             "in": "path",
@@ -5823,6 +5944,19 @@
                       "type": "string"
                     },
                     "description": "共享领域 ID，省略保留，[] 重置通用；未知 ID 和 null 拒绝。Auto 使用领域标注匹配当前步骤；领域不改变能力、权限或资源准入设置。"
+                  },
+                  "auth_mode": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "enum": [
+                      "auto",
+                      "bearer",
+                      "x_api_key",
+                      null
+                    ],
+                    "description": "仅用于 protocol=anthropic。可选：auto（默认，探测并保存）、bearer（Authorization: Bearer）、x_api_key（x-api-key）。发送的是配置中的上游 api_key；未配密钥时两个头都不发。空字符串或未知值返回 400。其他协议不接受显式 bearer/x_api_key。 同一地址和协议时，省略或 null 沿用已保存的方式；显式 auto 可改回自动探测。更换地址或协议时重新探测；已有上游密钥时，涉及 Anthropic 的此类修改必须重新填写 api_key，否则 400。"
                   }
                 },
                 "required": [
@@ -5875,7 +6009,7 @@
     },
     "/api/v1/upstreams/{id}/refresh": {
       "post": {
-        "description": "重新探测 API 创建的云端/手动上游并刷新其模型列表。仅 owner 和管理员可调用。 protocol=pi 接受 provider 与仅写入的 provider_credentials，经原资源准入提供对话、Responses 和 Messages。旧协议与地址不变，详见统一接入指南原生 Provider 小节。",
+        "description": "重新探测 API 创建的云端/手动上游并刷新其模型列表。仅 owner 和管理员可调用。 protocol=pi 接受 provider 与仅写入的 provider_credentials，经原资源准入提供对话、Responses 和 Messages。旧协议与地址不变，详见统一接入指南原生 Provider 小节。 自动探测仅在首次模型列表请求返回 401/403 时尝试另一种请求头；列表无需鉴权或无法验证时不会记录新结果。探测未确认时沿用既有结果，否则默认 x-api-key。不会因推理返回 401/403 而换头重试。",
         "parameters": [
           {
             "in": "path",
@@ -13882,7 +14016,7 @@
         "x-native-passthrough": true
       },
       "post": {
-        "description": "支持指定模型或 model=auto。原生 Anthropic 上游直接转发。支持 Chat Completions 的 openai、chat_completions 等上游可转换文本、图片输入和函数工具，支持 SSE。Auto Messages 使用可转换字段，转换模式不支持 thinking、提示缓存或服务端工具。图片与工具能力取决于实际模型。支持 x-api-key 网关身份。\nNamed message_start/content_block_start/content_block_delta/content_block_stop/message_delta/message_stop events. text_delta/input_json_delta/thinking_delta are distinct. error can occur after HTTP200; message_stop is the terminal success event. Client disconnect requests cancellation; do not assume upstream resources are released until the execution stop is confirmed.",
+        "description": "支持指定模型或 model=auto。原生 Anthropic 上游直接转发。支持 Chat Completions 的 openai、chat_completions 等上游可转换文本、图片输入和函数工具，支持 SSE。Auto Messages 使用可转换字段，转换模式不支持 thinking、提示缓存或服务端工具。图片与工具能力取决于实际模型。支持 x-api-key 网关身份。\nNamed message_start/content_block_start/content_block_delta/content_block_stop/message_delta/message_stop events. text_delta/input_json_delta/thinking_delta are distinct. error can occur after HTTP200; message_stop is the terminal success event. Client disconnect requests cancellation; do not assume upstream resources are released until the execution stop is confirmed. 请求可用 Authorization: Bearer <V-Scheduler Key 或 VOS token> 或 x-api-key: <同一凭据>。同时发送两个头时，有效身份要求两个值一致。两种头只验证网关身份，不转发给上游。",
         "parameters": [
           {
             "description": "指定上游 ID；严格固定，不自动切换，需身份与原生模型名。不指定时按匹配模型、协议及健康状态，以进行中请求/权重选择，平局在当前模型与接口范围内按权重平滑轮换；全满返回429。模型前缀限定来源，短名跨来源（包括云端）。资源接口必须指定。",
