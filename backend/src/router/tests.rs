@@ -2460,7 +2460,21 @@ async fn model_speed_measures_first_and_last_payload_separately_and_filters_fail
     let private = Request::builder().uri("/api/v1/model-speed?upstream_id=other&model=echo").body(Body::empty()).unwrap();
     assert_eq!(manage::handle(&g, &identity, private).await.unwrap_err().status, StatusCode::NOT_FOUND);
     let restored = usage::Usage::open(&root.join("usage.jsonl")).unwrap();
-    assert_eq!(restored.speed("fixture", "echo", |_| true), data);
+    let mut persisted = restored.speed("fixture", "echo", |_| true);
+    let mut expected = data;
+    let persisted_points = persisted["points"].as_array_mut().unwrap();
+    let expected_points = expected["points"].as_array_mut().unwrap();
+    assert_eq!(persisted_points.len(), expected_points.len());
+    for (actual, expected) in persisted_points.iter_mut().zip(expected_points) {
+        for field in ["ttft_ms", "generation_ms", "tokens_per_second"] {
+            if let (Some(a), Some(b)) = (actual[field].as_f64(), expected[field].as_f64()) {
+                // JSON parsing may round a floating-point timing by one ULP.
+                assert!((a - b).abs() <= 4.0 * f64::EPSILON * a.abs().max(b.abs()).max(1.0), "{field}: {a} != {b}");
+                actual[field] = expected[field].clone();
+            }
+        }
+    }
+    assert_eq!(persisted, expected);
     task.abort();
     std::fs::remove_dir_all(root).unwrap();
 }
