@@ -5,7 +5,7 @@ APP_NAME="v_scheduler"
 APP_ID="com.ictrek.v-scheduler"
 ROUTER_PAGE_ID="v-scheduler"
 ROUTER_IFRAME_SRC="/app/com.ictrek.v-scheduler/"
-ROUTER_HASH_PATH="#/app/com.ictrek.v-scheduler/v-scheduler"
+ROUTER_HASH_PATH="#/app/app-drawer/com.ictrek.v-scheduler/v-scheduler"
 FRONTEND_BASE_PATH="/app/com.ictrek.v-scheduler"
 SPREADSHEET_TOKEN="Htotsn3oahO1zxt73YMcaB1zn8e"
 FEISHU_CONFIG_FILE="${FEISHU_CONFIG_FILE:-${HOME}/.feishu.components.json}"
@@ -325,7 +325,7 @@ PYPROFILES
   if printf '%s\n' "$compose_text" | awk '/^[[:space:]]*image:/ {print $2}' | grep -v '^[^/[:space:]]\+\.[^/[:space:]]\+/' | grep -q .; then
     die "docker-compose.yml contains short image reference"
   fi
-  if ! grep -Fq 'HeadersRegexp(`Sec-Fetch-Dest`, `document`)' <<< "$compose_text"; then
+  if ! grep -Fq 'HeaderRegexp(`Sec-Fetch-Dest`, `document`)' <<< "$compose_text"; then
     die "docker-compose.yml must redirect top-level document opens to VOS hash route"
   fi
   if ! grep -Fq "${ROUTER_HASH_PATH}" <<< "$compose_text"; then

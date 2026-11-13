@@ -47,3 +47,5 @@ With idle retention enabled, verified callers to built-in Ollama wait up to 30 s
 ### Unified application integration
 
 Node management now combines application heartbeats, node health, approved budgets and stop requests. Applications register approved executors through the controller `/integrations` API and follow the returned heartbeat interval. Reservations are released only after the original execution identity confirms native exit and weight unloading. VOS App components report node telemetry automatically; users do not deploy Agents or use SSH. Existing automatic bindings remain compatible; applications without the new stop protocol are not presented as fully managed. See API Documentation → Application integration and the repository integration guide.
+
+On VOS with Traefik v3, opening the app root directly in a browser redirects to its VOS page. Embedded pages and API requests use their existing routes.
