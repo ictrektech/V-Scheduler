@@ -444,6 +444,7 @@ export const messages:Record<string,[string,string]>={
 'VOS_LOGIN_REQUIRED':['Open this app from VOS after signing in.','請登入 VOS 後開啟此應用。'],
 'PGV_SETUP_UNAVAILABLE':['PGV setup is unavailable. Check that PGV is installed and healthy, then retry.','PGV 初始化暫不可用，請確認 PGV 已安裝且健康後重試。'],
 'PGV_CREDENTIAL_REQUIRED':['PGV is installed, but its runtime database credential is not available to V-Scheduler. The host installer must prepare the one-use credential handoff.','PGV 已安裝，但 V-Scheduler 無法取得其執行時資料庫憑據。需由主機安裝流程準備一次性憑據交接。'],
+'SCHEDULER_DATABASE_RECOVERY_REQUIRED':['The configured Scheduler database or account is missing or cannot be used. Ask the administrator to restore the database or correct its connection settings.','已設定的調度資料庫或帳號不存在或無法使用。請管理員還原資料庫或修正連線設定。'],
 'VOS_ADMIN_REQUIRED':['A VOS system administrator account is required.','需要 VOS 系統管理員帳戶。'],
 '此接口公开，无需访问令牌。':['This endpoint is public; no access token is required.','此介面公開，無需存取權杖。'],
 '最近结束':['Recently finished','最近結束'],

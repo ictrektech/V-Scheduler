@@ -30,6 +30,13 @@ const t=(source:string)=>locale.value==='zh-CN'?source:messages[source]?.[locale
 const demo=ref(false)
 const appVersion=ref('')
 const errorRequestId=ref('')
+const setupError=ref('')
+const setupMessages:Record<string,string>={
+ SCHEDULER_DATABASE_RECOVERY_REQUIRED:'已配置的调度数据库或账号不存在或无法使用。请管理员恢复数据库或修正连接配置。',
+ PGV_SETUP_UNAVAILABLE:'PGV 初始化暂不可用，请确认 PGV 已安装且健康后重试。',
+ PGV_CREDENTIAL_REQUIRED:'需要交接 PGV 的数据库凭据，请联系安装管理员。',
+ VOS_ADMIN_REQUIRED:'需要使用 VOS 管理员账号完成初始化。',
+}
 const vosEmbedded=window.parent!==window||location.pathname.startsWith('/app/com.ictrek.v-scheduler')
 const initialPage=location.hash.slice(1)
 const page=ref(['models','upstreams','playground','auto','api','resources','nodes','model-hub','logs'].includes(initialPage)?initialPage:'overview'),docMode=ref('gateway'),credential=ref(''),connected=ref(false),busy=ref(false),error=ref(''),tasks=ref<Task[]>([]),nodes=ref<Node[]>([]),reservations=ref<Reservation[]>([]),filter=ref('all'),search=ref(''),selected=ref<Task|null>(null),deleting=ref<Task|null>(null),confirmPermit=ref<Reservation|null>(null),stopEvidence=ref(''),copied=ref(false)
@@ -81,13 +88,31 @@ async function refresh(){
 }
 async function loadMoreTasks(){if(busy.value||!taskCursor.value)return;taskPages.value++;await refresh()}
 function resetFilters(){filter.value='all';search.value='';appFilter.value='';nodeFilter.value=''}
-async function connect(){
+let setupAttempted=false
+async function connect(manual=false){
+ if(busy.value)return
+ if(manual)setupAttempted=false
  demo.value=false;error.value='';busy.value=true
  try{
   credential.value=await getVOSBearerToken()||''
   if(!credential.value){error.value='';return}
-  const state=await (await fetch(apiBase+'setup')).json();appVersion.value=state.data?.version||''
-  if(state.data?.ready===false){await api('setup',{});await new Promise(resolve=>setTimeout(resolve,1000))}
+  const state=(await jsonResponse(await fetch(apiBase+'setup',{cache:'no-store'})))?.data
+  appVersion.value=state?.version||''
+  if(state?.ready===false){
+   if(state.error_code){
+    if(state.error_code==='SCHEDULER_DATABASE_RECOVERY_REQUIRED')setupError.value=state.error_code
+    return
+   }
+   if(!setupAttempted){
+    setupAttempted=true
+    setupError.value=''
+    try{await api('setup',{})}catch(e){
+     setupError.value=(e as {code?:string}).code||'PGV_SETUP_UNAVAILABLE'
+    }
+   }
+   return
+  }
+  setupError.value=''
   tasks.value=[];nodes.value=[];reservations.value=[];taskPages.value=1;taskCursor.value=null;connected.value=true
  }catch(e){showError(e)}finally{busy.value=false}
  await refresh();if(error.value)connected.value=false
@@ -134,6 +159,7 @@ onUnmounted(()=>{clearInterval(timer);language.dispose()})
   <main>
    <header><div><h1>{{t(pageTitle)}}</h1><p>{{t(page==='api'?'接口标准、认证方式与可复制的请求示例。':page==='nodes'?'登记、审批与管理执行节点和服务权限。':page==='resources'?'查看执行资源、预约与排队任务。':'统一管理模型、上游和调用；本地计算经过资源准入。')}}</p></div><div class="header-actions"><label class="locale-control"><Icon name="globe"/><select v-model="preference" :aria-label="t('界面语言')" @change="language.setPreference(preference)"><option value="auto">{{t('跟随 VOS')}}</option><option value="zh-CN">简体中文</option><option value="en">English</option><option value="zh-TW">繁體中文</option></select></label><ApiKeysDialog :t="t"/><AboutDialog :t="t"/></div></header>
    <div v-if="error&&(page==='resources'||page==='nodes')" class="error" role="alert">{{t(errors[error]||error)}}<code v-if="errors[error]">{{error}}</code><code v-if="errorRequestId">{{errorRequestId}}</code></div>
+   <div v-if="setupError" class="error" role="alert">{{locale==='zh-CN'?(setupMessages[setupError]||setupError):t(setupError)}} <button :disabled="busy" @click="connect(true)">{{t('重试连接')}}</button></div>
    <section v-if="page==='overview'" class="overview-entry" :aria-label="t('模型接入与调用')"><div class="overview-entry-tabs"><span aria-current="page">{{t('调用概览')}}</span><button class="configure-models" @click="page='models'"><Icon name="server"/>{{t('去配置上游模型')}}<Icon name="arrow"/></button></div><p>{{t('先连接模型来源，再试聊或接入应用。模型、上游和调度设置集中管理。')}}</p></section>
    <section v-if="page==='overview'&&connected" class="unified-summary panel"><button class="quiet" @click="page='resources'">{{t('就绪节点')}} {{nodes.filter(n=>nodeHealth(n)==='ready').length}} / {{nodes.length}}</button><button class="quiet" @click="page='resources'">{{t('正在执行')}} {{active}}</button><button class="quiet" @click="page='resources'">{{t('等待队列')}} {{queued}}</button><span>{{t('外部云模型不占本地资源预约')}}</span></section>
    <div v-if="page==='api'" class="documentation-tabs"><button :class="{current:docMode==='gateway'}" @click="docMode='gateway'">{{t('模型与网关 API')}}</button><button :class="{current:docMode==='scheduler'}" @click="docMode='scheduler'">{{t('调度管理 API')}}</button><button :class="{current:docMode==='model-hub'}" @click="docMode='model-hub'">{{t('模型管理 API')}}</button><button :class="{current:docMode==='guide'}" @click="docMode='guide'">{{t('应用接入')}}</button></div>
@@ -142,11 +168,11 @@ onUnmounted(()=>{clearInterval(timer);language.dispose()})
    <ModelHub v-if="page==='model-hub'" :locale="locale" :t="t"/>
    <ModelHub v-if="page==='api'&&docMode==='model-hub'" :locale="locale" :t="t" docs-only/>
    <NodeManagement v-if="page==='nodes'&&connected" :request="api" :nodes="nodes" :api-url="managementApiUrl" :t="t" :locale="locale" @refresh="refresh"/>
-   <section v-if="page==='nodes'&&!connected" class="login"><h2>{{t('连接 VOS')}}</h2><button :disabled="busy" @click="connect">{{t('重试连接')}}</button></section>
+   <section v-if="page==='nodes'&&!connected&&!setupError" class="login"><h2>{{t('连接 VOS')}}</h2><button :disabled="busy" @click="connect(true)">{{t('重试连接')}}</button></section>
    <IntegrationGuide v-if="page==='api'&&docMode==='guide'" :t="t"/>
    <GatewayWorkspace v-show="gatewayVisible" :tab="gatewayTab" :locale="locale" :visible="gatewayVisible" :administrator="connected&&!demo&&nodes.length>0" @select="page=$event"/>
    <template v-if="page==='resources'">
-    <section v-if="!connected&&!demo" class="login"><div class="login-mark"><Icon name="shield"/></div><h2>{{t('连接 VOS')}}</h2><p>{{t('使用当前 VOS 管理员身份连接，首次使用自动准备 PGV 数据库。')}}</p><button :disabled="busy" @click="connect">{{t('重试连接')}}</button></section>
+    <section v-if="!connected&&!demo&&!setupError" class="login"><div class="login-mark"><Icon name="shield"/></div><h2>{{t('连接 VOS')}}</h2><p>{{t('使用当前 VOS 管理员身份连接，首次使用自动准备 PGV 数据库。')}}</p><button :disabled="busy" @click="connect(true)">{{t('重试连接')}}</button></section>
 
     <div v-if="demo" class="demo-banner"><div><strong>{{t('演示模式')}}</strong><span>{{t('样例数据；操作只影响当前演示，不会执行计算或修改真实任务。')}}</span></div><button class="quiet" @click="logout">{{t('连接真实调度器')}}</button></div>
     <template v-if="connected||demo">

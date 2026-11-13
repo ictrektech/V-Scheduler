@@ -12,6 +12,12 @@ This index is generated from the shipped OpenAPI documents. Each operation links
 - [Errors / 错误处理](#errors)
 
 <a id="identity"></a>
+## PGV 初始化状态
+
+在 VOS 中打开 V-Scheduler，首次配置由已启用的 VOS 系统管理员触发。页面轮询读取状态，配置请求失败后可按提示重试。正常重启复用现有数据库；旧实例缺库或账号无效时，先恢复原数据库或纠正连接配置。
+
+在网关的 `/scheduler/api/v1` 或 VOS 同源的 `/api/com.ictrek.v-scheduler/scheduler/api/v1` 后附加 `/setup`。无请求参数。GET 无需凭据，HTTP 200 的 JSON 返回 `code: "OK"` 与 `data`，其中 `ready` 和 `database_ready` 是布尔值，`version` 是版本字符串，未就绪时可带 `error_code`（`TEMPORARILY_UNAVAILABLE` 或 `SCHEDULER_DATABASE_RECOVERY_REQUIRED`）。未就绪且无错误码时表示可初始化。POST 使用 `Authorization: Bearer <VOS 管理员令牌>`，可发送空 JSON 对象，仅初始化阶段可用。200 返回 `{"code":"OK","data":{"ready":true}}` 表示建库阶段成功，继续 GET 等待控制器就绪。401、403 或身份服务不可用的 503 返回 `VOS_ADMIN_REQUIRED`。建库失败返回 503 `PGV_SETUP_UNAVAILABLE`，管理员凭据不匹配返回 503 `PGV_CREDENTIAL_REQUIRED`，需要一次性交接。正常运行时 POST 返回 405。等待控制器时 POST 返回 405，客户端应读 GET 状态。
+
 ## Authentication and permissions / 身份与权限
 
 Use `http://v-scheduler:8080` inside VOS or `http://<vos-host>:22888` externally (actual host port is configurable). OpenAI uses `Authorization: Bearer $KEY`; Anthropic accepts `x-api-key: $KEY`. `$KEY` may be an authorized VOS user token, personal inference key or model-scoped key. Public models accept no key or any key; invalid keys grant public-only access. Private models require an authorized identity. Provider `api_key` is never the caller's V-Scheduler access key.

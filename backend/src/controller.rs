@@ -309,8 +309,19 @@ pub async fn serve(
     listen: String,
     ui: Option<PathBuf>,
     gateway: Option<&crate::router::Runtime>,
+    managed_database: bool,
 ) -> anyhow::Result<()> {
     let socket = tokio::net::TcpListener::bind(&listen).await?;
+    let db = PgPoolOptions::new()
+        .max_connections(12)
+        .acquire_timeout(std::time::Duration::from_secs(3))
+        .connect(&url)
+        .await
+        .context("database connection failed")?;
+    if managed_database {
+        // Commit provisioning before the controller writes any application data.
+        crate::bootstrap::finish(&path, &url)?;
+    }
     let embedded = crate::local::prepare(&path, &listen).await?;
     let config: Config = serde_json::from_slice(&std::fs::read(&path)?)?;
     let runtime = crate::voice::Runtime::restore(&path, config)?;
@@ -389,12 +400,6 @@ pub async fn serve(
             );
         }
     }
-    let db = PgPoolOptions::new()
-        .max_connections(12)
-        .acquire_timeout(std::time::Duration::from_secs(3))
-        .connect(&url)
-        .await
-        .context("database connection failed")?;
     sqlx::migrate!().run(&db).await?;
     for n in &config.nodes {
         sqlx::query("INSERT INTO vrs_nodes(id,capacities,resident_baseline,safety_reserve) VALUES($1,$2,$3,$4) ON CONFLICT(id) DO UPDATE SET capacities=excluded.capacities,resident_baseline=excluded.resident_baseline,safety_reserve=excluded.safety_reserve").bind(&n.id).bind(json!(n.capacities)).bind(json!(n.resident_baseline)).bind(json!(n.safety_reserve)).execute(&db).await?;
@@ -429,7 +434,7 @@ pub async fn serve(
         }
     });
     let api = Router::<SharedApp>::new()
-        .route("/setup", get(|| async { ok(json!({"ready":true,"version":std::env::var("VOS_APP_VERSION").unwrap_or_else(|_| env!("CARGO_PKG_VERSION").into())})) }))
+        .route("/setup", get(|| async { crate::bootstrap::status(true, None) }))
         .route("/discovery", get(discovery))
         .route(
             "/openapi.json",

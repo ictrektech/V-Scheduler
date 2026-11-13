@@ -1,5 +1,11 @@
 # V-Scheduler complete API integration
 
+## PGV setup status
+
+Open V-Scheduler in VOS as an enabled system administrator to trigger first-time setup. The page polls status and lets you retry a failed setup request. Restarts reuse the database. If the configured database or account is unavailable, restore the original database or correct its connection settings.
+
+Append `/setup` to the gateway base `/scheduler/api/v1` or the same-origin VOS base `/api/com.ictrek.v-scheduler/scheduler/api/v1`. There are no request parameters. Public GET returns HTTP 200 JSON with `code: "OK"` and `data` containing booleans `ready` and `database_ready`, a string `version`, and an optional `error_code` (`TEMPORARILY_UNAVAILABLE` or `SCHEDULER_DATABASE_RECOVERY_REQUIRED`). A false readiness value without an error code indicates setup can be requested. POST is available during setup and requires `Authorization: Bearer <VOS administrator token>`; an empty JSON object is accepted. HTTP 200 `{"code":"OK","data":{"ready":true}}` means provisioning succeeded; poll GET for controller readiness. The identity check returns `VOS_ADMIN_REQUIRED` with 401, 403, or 503. Provisioning failure returns 503 `PGV_SETUP_UNAVAILABLE`. A credential mismatch returns 503 `PGV_CREDENTIAL_REQUIRED` and requires a one-use handoff. POST returns 405 while the controller starts or after it is ready.
+
 ## Navigation and contract fields
 
 In the application open **API Documentation**. Choose **Model & Gateway API**, **Scheduler Management API**, **Model Management API**, or **Application Integration**. Use the quick index/search and expand an operation to inspect path/query/header parameters, required/default/enum values, nested bodies and every declared response status/content type. OpenAPI download and shared-schema references are supplied in the same view. This is the delivered implementation contract, not an unversioned endpoint list.

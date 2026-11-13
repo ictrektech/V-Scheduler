@@ -20,6 +20,258 @@
     }
   ],
   "paths": {
+    "/setup": {
+      "get": {
+        "operationId": "get_setup_status",
+        "summary": "Read Scheduler database setup status",
+        "x-title": {
+          "zh-CN": "读取数据库初始化状态",
+          "en": "Read database setup status",
+          "zh-TW": "讀取資料庫初始化狀態"
+        },
+        "security": [],
+        "x-role": "public",
+        "responses": {
+          "200": {
+            "description": "When ready is false, an absent error_code means an administrator can initialize. If an error_code is present, wait for startup or restore the configured database.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "ready": {
+                              "type": "boolean"
+                            },
+                            "database_ready": {
+                              "type": "boolean"
+                            },
+                            "version": {
+                              "type": "string"
+                            },
+                            "error_code": {
+                              "type": "string",
+                              "enum": [
+                                "TEMPORARILY_UNAVAILABLE",
+                                "SCHEDULER_DATABASE_RECOVERY_REQUIRED"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "ready",
+                            "database_ready",
+                            "version"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "initialize_scheduler_database",
+        "summary": "Initialize or resume Scheduler database provisioning",
+        "x-title": {
+          "zh-CN": "初始化或继续配置数据库",
+          "en": "Initialize or resume database setup",
+          "zh-TW": "初始化或繼續設定資料庫"
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-role": "VOS system administrator",
+        "responses": {
+          "200": {
+            "description": "Provisioning accepted. Poll GET for controller readiness.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "const": "OK"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "ready": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ready"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or expired VOS identity.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "VOS_ADMIN_REQUIRED"
+                          ]
+                        },
+                        "error": {
+                          "type": "object",
+                          "properties": {
+                            "code": {
+                              "type": "string",
+                              "enum": [
+                                "VOS_ADMIN_REQUIRED"
+                              ]
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "message"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "An enabled VOS system administrator is required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "VOS_ADMIN_REQUIRED"
+                          ]
+                        },
+                        "error": {
+                          "type": "object",
+                          "properties": {
+                            "code": {
+                              "type": "string",
+                              "enum": [
+                                "VOS_ADMIN_REQUIRED"
+                              ]
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "message"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Setup is not available in this state. Read GET setup status."
+          },
+          "503": {
+            "description": "VOS identity unavailable, PGV bootstrap credentials missing or provisioning failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "VOS_ADMIN_REQUIRED",
+                            "PGV_CREDENTIAL_REQUIRED",
+                            "PGV_SETUP_UNAVAILABLE"
+                          ]
+                        },
+                        "error": {
+                          "type": "object",
+                          "properties": {
+                            "code": {
+                              "type": "string",
+                              "enum": [
+                                "VOS_ADMIN_REQUIRED",
+                                "PGV_CREDENTIAL_REQUIRED",
+                                "PGV_SETUP_UNAVAILABLE"
+                              ]
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "message"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "error"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/discovery": {
       "get": {
         "operationId": "get_discovery",

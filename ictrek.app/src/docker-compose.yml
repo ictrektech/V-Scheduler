@@ -146,7 +146,8 @@ x-controller: &controller
     - "traefik.http.middlewares.v-scheduler-model-hub-strip.stripprefix.prefixes=/app/com.ictrek.v-scheduler/model-hub,/api/com.ictrek.v-scheduler/model-hub"
     - "traefik.http.services.v-scheduler-model-hub.loadbalancer.server.port=6005"
   healthcheck:
-    test: [CMD-SHELL, "curl -fsS http://127.0.0.1:38120/health >/dev/null && curl -fsS http://127.0.0.1:8080/healthz >/dev/null && curl -fsS http://127.0.0.1:6005/health >/dev/null"]
+    # Keep the setup/recovery UI reachable when the database-dependent API is not ready.
+    test: [CMD-SHELL, "curl -fsS http://127.0.0.1:8080/healthz >/dev/null && curl -fsS http://127.0.0.1:6005/health >/dev/null"]
     interval: 30s
     timeout: 5s
     start_period: 20s

@@ -188,6 +188,8 @@ controller 中每个 executor 的 `resources` 是单次执行的承诺成本；�
 
 首次安装不要求已有 `database.env`：PGV 与 Scheduler 均读取当前 VOS 主机注入的 `VOS_POSTGRES_PASSWORD`，VOS 管理员打开 Scheduler 时自动创建其专用数据库和随机普通角色，再启动控制器。VOS 应用详情会遮蔽密码，因此不从该接口读取凭据。旧版 PGV 若使用不同密码，可由安装人员在 VOS 主机运行 `python3 ictrek.app/scripts/prepare_pgv.py`，从运行中的 PGV 向 Scheduler 专属 App Storage 写入一次性交接文件；成功后自动删除。PGV 未安装或不可达时保留初始化状态，不回退到 VOS 平台数据库。业务应用和 Agent 使用独立服务身份。
 
+首次初始化中断后，V-Scheduler 会继续使用已记录的专用账号，只补做尚未完成的步骤。正常重启复用现有数据库。已经配置过的实例如果连接配置缺失、数据库不存在或账号被拒绝，应用会保留入口并提示恢复数据库或核对连接配置。首次配置请求失败后，按提示处理，再点「重试连接」。
+
 VOS 侧导航只有一个 `v-scheduler` 页面；资源任务和 API 文档使用应用内部导航。
 
 VOS 登录接入清单必须声明 `oauth2.client: {}`，与 V-Router 相同；该声明使平台注册客户端并提供已有登录桥接接口。界面不提供单独的令牌登录表单。

@@ -57,28 +57,77 @@ async fn main() -> anyhow::Result<()> {
                 } else {
                     None
                 };
-            let gateway = router::start(bootstrap::waiting(), ui_dir.clone()).await?;
-            let mut url = database_url.or_else(|| bootstrap::database(&config));
-            if url.is_none() || !config.exists() {
-                bootstrap::wait(config.clone(), &listen, ui_dir.clone(), gateway.as_ref()).await?;
-                url = bootstrap::database(&config);
+            let gateway = router::start(bootstrap::waiting(None), ui_dir.clone()).await?;
+            let managed = database_url.is_none();
+            let mut url = if managed {
+                bootstrap::database(&config)?
+            } else {
+                database_url
+            };
+            let has_config = config.try_exists()?;
+            if managed && (url.is_none() || !has_config) {
+                let can_setup = match url.as_deref() {
+                    Some(url) => bootstrap::pending_matches(&config, url),
+                    None => !has_config || bootstrap::pending_url(&config).is_some(),
+                };
+                if !can_setup {
+                    if let Some(gateway) = gateway.as_ref() {
+                        gateway.set_controller(
+                            bootstrap::waiting(Some("SCHEDULER_DATABASE_RECOVERY_REQUIRED")),
+                            false,
+                        );
+                    }
+                    eprintln!("Scheduler initialization: SCHEDULER_DATABASE_RECOVERY_REQUIRED");
+                    tokio::signal::ctrl_c().await?;
+                    return Ok(());
+                }
+                tokio::select! {
+                    result = bootstrap::wait(config.clone(), &listen, ui_dir.clone(), gateway.as_ref()) => result?,
+                    _ = tokio::signal::ctrl_c() => return Ok(()),
+                }
+                url = bootstrap::database(&config)?;
             }
             let url = url.ok_or_else(|| anyhow::anyhow!("database setup incomplete"))?;
+            let mut previous_failure = None;
             let result = loop {
                 let result = tokio::select! {
-                    result=controller::serve(config.clone(),url.clone(),listen.clone(),ui_dir.clone(),gateway.as_ref())=>result,
+                    result=controller::serve(config.clone(),url.clone(),listen.clone(),ui_dir.clone(),gateway.as_ref(),managed)=>result,
                     _=tokio::signal::ctrl_c()=>break Ok(()),
                 };
                 if result.is_ok() || gateway.as_ref().is_none_or(router::Runtime::is_ready) {
                     break result;
                 }
-                // Keep cloud routing and model management available while PGV
-                // reconnects. No local execution can pass the pending router.
-                if let Some(gateway) = gateway.as_ref() {
-                    gateway.set_controller(bootstrap::waiting(), false);
+                let error = result.unwrap_err();
+                let credentials_failed = bootstrap::database_credentials_failed(&error);
+                let failure = if credentials_failed {
+                    Some("SCHEDULER_DATABASE_RECOVERY_REQUIRED")
+                } else {
+                    None
+                };
+                if managed && credentials_failed && bootstrap::pending_matches(&config, &url) {
+                    // Only an unfinished setup from this release can recreate its own database.
+                    tokio::select! {
+                        result = bootstrap::wait(config.clone(), &listen, ui_dir.clone(), gateway.as_ref()) => result?,
+                        _ = tokio::signal::ctrl_c() => break Ok(()),
+                    }
+                    if let Some(gateway) = gateway.as_ref() {
+                        gateway.set_controller(bootstrap::waiting(None), false);
+                    }
+                    previous_failure = None;
+                    continue;
                 }
-                eprintln!("Scheduler initialization unavailable; retrying in 5 seconds");
-                tokio::select! {_=tokio::time::sleep(std::time::Duration::from_secs(5))=>{},_=tokio::signal::ctrl_c()=>break Ok(())};
+                if previous_failure != Some(failure) {
+                    if let Some(gateway) = gateway.as_ref() {
+                        gateway.set_controller(bootstrap::waiting(failure), false);
+                    }
+                    eprintln!(
+                        "Scheduler initialization: {}; retrying database startup",
+                        failure.unwrap_or("temporarily unavailable")
+                    );
+                    previous_failure = Some(failure);
+                }
+                let delay = if credentials_failed { 30 } else { 5 };
+                tokio::select! {_=tokio::time::sleep(std::time::Duration::from_secs(delay))=>{},_=tokio::signal::ctrl_c()=>break Ok(())};
             };
             if let Some(gateway) = gateway {
                 gateway.abort();

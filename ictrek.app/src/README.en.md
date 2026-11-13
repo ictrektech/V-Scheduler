@@ -8,6 +8,8 @@ Version __APP_VERSION__
 
 Installation checks the PGV dependency. On first opening, sign in as a VOS administrator to automatically initialize a dedicated database, ordinary database role and internal collector identity. Configuration lives in the private ${VOS_APP_STORAGE_PATH}/config directory. No configuration files or terminal commands are required. The page shows initialization status while PGV is unavailable.
 
+Interrupted first-time setup resumes unfinished work. Restarts reuse the existing database. If an existing database or account is unavailable, the app asks an administrator to restore the database or correct its connection settings. If first-time setup fails, follow the displayed instructions and select Retry connection.
+
 The controller uses administrator-approved node and executor budgets. Sign in with your VOS administrator account. UI language follows VOS by default (English / Simplified Chinese / Traditional Chinese).
 
 Host resource collection is built into this app and starts automatically after installation. No separate Agent, terminal command or collector credential is required. Expand the logical processor count to inspect each processor. Jetson Thor uses one shared system RAM pool for CPU and GPU.
