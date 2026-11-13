@@ -933,6 +933,11 @@ pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) ->
     }
     if let Some(tail) = path.strip_prefix("/api/v1/upstreams/") {
         let (key, action) = tail.split_once('/').unwrap_or((tail, ""));
+        // Split the URL before decoding: a slash inside an ID is not an action separator.
+        let decoded = percent_encoding::percent_decode_str(key)
+            .decode_utf8()
+            .map_err(|_| Failure::new(400, "invalid upstream ID"))?;
+        let key = decoded.as_ref();
         let mut u = {
             let r = g.registry.lock().unwrap();
             writable(&r, key, id)?

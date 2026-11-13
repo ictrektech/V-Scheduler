@@ -67,7 +67,7 @@ The administrator-only `scheduler` policy accepts:
 | permit | Approved `executor_id`, `completion:"synchronous"`, matching per-model resource budget |
 | delegated | Native application owns asynchronous completion and confirmed stopping |
 
-PUT `/api/v1/upstreams/{id}/routing` replaces the whole routing configuration, including `weight,max_inflight,disabled,direct`. Model-level PUT `/api/v1/model-routing` uses internal `upstream_id/native_model_id` plus `direct`; setting false removes the model override but cannot override an upstream-wide direct setting. A normal heartbeat does not overwrite an operator's routing change. Explicit re-registration with a policy is a configuration change. A missing binding is a specific503 error, not an automatic grant of zero budget.
+PUT `/api/v1/upstreams/{id}/routing` replaces the whole routing configuration, including `weight,max_inflight,disabled,direct`. Encode the upstream ID as one URL path segment (for example, `v-scheduler%2Follama-qa`). Model-level PUT `/api/v1/model-routing` uses internal `upstream_id/native_model_id` plus `direct`; setting false removes the model override but cannot override an upstream-wide direct setting. A normal heartbeat does not overwrite an operator's routing change. Explicit re-registration with a policy is a configuration change. A missing binding is a specific503 error, not an automatic grant of zero budget.
 
 ```json
 {"service_id":"my-infer","protocol":"chat_completions","base_url":"http://my-infer:8000/v1","visibility":"private","models":[{"id":"chat-a","capabilities":["chat","completion"],"endpoints":["chat_completions"]}],"scheduler":{"mode":"cloud"},"heartbeat_timeout_seconds":90}

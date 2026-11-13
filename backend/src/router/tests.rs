@@ -2122,14 +2122,14 @@ async fn managed_upstream_direct_routing_requires_an_administrator() {
     let g = gateway(&root, Router::new());
     {
         let mut registry = g.registry.lock().unwrap();
-        let mut u = upstream("vendor");
+        let mut u = upstream("v-scheduler/ollama-qa");
         u.source = "v-scheduler".into();
         registry.put(u, vec![model("echo")]);
     }
     let put = |direct: bool| {
         axum::http::Request::builder()
             .method("PUT")
-            .uri("/api/v1/upstreams/vendor/routing")
+            .uri("/api/v1/upstreams/v-scheduler%2Follama-qa/routing")
             .header("content-type", "application/json")
             .body(Body::from(
                 json!({"weight":1,"max_inflight":0,"disabled":false,"direct":direct}).to_string(),
@@ -2146,6 +2146,9 @@ async fn managed_upstream_direct_routing_requires_an_administrator() {
     root_user.admin = true;
     let response = manage::handle(&g, &root_user, put(true)).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
+    let disk: Value =
+        serde_json::from_slice(&std::fs::read(root.join("state.json")).unwrap()).unwrap();
+    assert_eq!(disk["routing"]["v-scheduler/ollama-qa"]["direct"], true);
 
     // Once an administrator enabled it, owners may still save other fields.
     let response = manage::handle(&g, &principal("alice"), put(true))
