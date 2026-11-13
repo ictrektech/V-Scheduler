@@ -287,6 +287,8 @@ Base: `http://v-scheduler:38120/api/v1`. [Complete OpenAPI](../api/openapi-v1.js
 
 | Method | Path | Purpose / 用途 |
 | --- | --- | --- |
+| GET | `/setup` | 读取数据库初始化状态 |
+| POST | `/setup` | 初始化或继续配置数据库 |
 | GET | `/discovery` | Discover capabilities |
 | GET | `/openapi.json` | Read API specification |
 | GET | `/executors` | Available executors |

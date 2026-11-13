@@ -365,6 +365,8 @@ Transient VOS login expiry is automatically renewed where the app bridge support
 
 | Method | Path | Operation |
 | --- | --- | --- |
+| GET | `/setup` | Read database setup status |
+| POST | `/setup` | Initialize or resume database setup |
 | GET | `/discovery` | Discover capabilities |
 | GET | `/openapi.json` | Read API specification |
 | GET | `/executors` | Available executors |
