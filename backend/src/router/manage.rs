@@ -540,7 +540,7 @@ async fn configured_models(g: &Gateway, u: &mut Upstream) -> Api<Vec<Model>> {
             proxy::outgoing(g, target, axum::http::Method::GET, next.clone(), &HeaderMap::new(), None)
                 .timeout(Duration::from_secs(10)).send()
         };
-        let unavailable = |_| Failure::new(502, "upstream models endpoint unavailable");
+        let unavailable = |error| Failure::upstream_transport(error, &u.id);
         let mut response = send(&probe).await.map_err(unavailable)?;
         if page == 0 && u.detects_auth() && matches!(response.status().as_u16(), 401 | 403) {
             probe.detected_auth_mode = Some(match probe.effective_auth_mode() {
@@ -563,13 +563,7 @@ async fn configured_models(g: &Gateway, u: &mut Upstream) -> Api<Vec<Model>> {
         }
         if !response.status().is_success() {
             if [404,405,501].contains(&response.status().as_u16()) {let rows=models_dev::fallback_models(g,u);if !rows.is_empty(){eprintln!("provider models endpoint unsupported; Models.dev metadata retained without account verification");return Ok(rows);}}
-            return Err(Failure::new(
-                502,
-                format!(
-                    "upstream models endpoint returned HTTP {}",
-                    response.status().as_u16()
-                ),
-            ));
+            return Err(Failure::upstream_http(response.status(), &u.id));
         }
         let value = read_json(response, 1 << 20).await?;
         let rows = value["data"]
@@ -670,6 +664,17 @@ async fn enrich_ollama_models(g: &Gateway, u: &Upstream, rows: &mut [Model]) {
         registry::normalize_upstream_model(row,u);
     }
 }
+fn probe_diagnosis(error: &Failure) -> Value {
+    let reachability = if error.upstream_responded {
+        "reachable"
+    } else if error.code.as_deref() == Some("UPSTREAM_NETWORK_UNREACHABLE") {
+        "unreachable"
+    } else {
+        "unknown"
+    };
+    json!({"code":error.code,"reachability":reachability})
+}
+
 async fn probe_model(g: &Gateway, u: &Upstream, model: &str) -> Api<()> {
     if u.protocol == "pi" {
         let response=provider_runtime::response(g,u,"chat",json!({"model":model,"max_tokens":1,"messages":[{"role":"user","content":"ping"}]})).await?;
@@ -704,12 +709,21 @@ async fn probe_model(g: &Gateway, u: &Upstream, model: &str) -> Api<()> {
     } else { json!({"model":model,"max_tokens":1,"messages":[{"role":"user","content":"ping"}]}) })
     .send()
     .await
-    .map_err(|_| Failure::new(502, "model test connection failed"))?;
+    .map_err(|error| Failure::upstream_transport(error, &u.id))?;
     if !response.status().is_success() {
-        return Err(Failure::new(
-            502,
-            format!("model test returned HTTP {}", response.status().as_u16()),
-        ));
+        let status = response.status();
+        let mut failure = Failure::upstream_http(status, &u.id);
+        if matches!(status.as_u16(), 400 | 404 | 409 | 422 | 503) {
+            if let Ok(payload) = read_json(response, 16 << 10).await {
+                let code = text(&payload["error"], "code");
+                let message = payload["error"].as_str().unwrap_or(text(&payload["error"], "message")).to_ascii_lowercase();
+                if matches!(code, "model_not_loaded" | "model_not_running")
+                    || (message.contains("model") && ["not loaded", "not running", "unloaded"].iter().any(|term| message.contains(term))) {
+                    failure.code = Some("MODEL_NOT_LOADED".into());
+                }
+            }
+        }
+        return Err(failure);
     }
     if u.protocol == "openai_decisions" {
         let value = read_json(response, 64 << 10).await?;
@@ -876,12 +890,24 @@ pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) ->
         };
         if probe {
             let details = fetched.as_ref().map(|ms| ms.iter().map(|m| json!({"id":m.id,"kind":m.kind,"capabilities":m.capabilities,"endpoints":m.endpoints,"owned_by":m.owned_by})).collect::<Vec<_>>()).unwrap_or_default();
-            let mut report = json!({"ok":fetched.is_ok(),"base_url":u.base_url,"model_prefix":u.display_prefix(),"protocol":u.protocol,"auth_mode":u.auth_mode,"detected_auth_mode":u.detected_auth_mode,"effective_auth_mode":u.effective_auth_mode(),"models":fetched.as_ref().map(|ms|ms.iter().map(|m|m.id.clone()).collect::<Vec<_>>()).unwrap_or_default(),"model_details":details,"error":fetched.err().map(|e|e.message).unwrap_or_default()});
+            let mut report = json!({"ok":fetched.is_ok(),"base_url":u.base_url,"model_prefix":u.display_prefix(),"protocol":u.protocol,"auth_mode":u.auth_mode,"detected_auth_mode":u.detected_auth_mode,"effective_auth_mode":u.effective_auth_mode(),"models":fetched.as_ref().map(|ms|ms.iter().map(|m|m.id.clone()).collect::<Vec<_>>()).unwrap_or_default(),"model_details":details,"error":fetched.as_ref().err().map(|e|e.message.as_str()).unwrap_or_default()});
+            if let Err(error) = &fetched {
+                report["diagnosis"] = probe_diagnosis(error);
+            } else if u.protocol != "pi" && u.protocol != "async_task" {
+                report["diagnosis"] = json!({"code":null,"reachability":"reachable"});
+            }
             let test = text(&payload, "test_model");
             if !test.is_empty() {
                 match probe_model(g, &u, test).await {
-                    Ok(()) => report["test_ok"] = json!(true),
-                    Err(error) => report["test_error"] = json!(error.message),
+                    Ok(()) => {
+                        report["test_ok"] = json!(true);
+                        report["test_diagnosis"] = json!({"code":null,"reachability":"reachable"});
+                    }
+                    Err(error) => {
+                        report["test_diagnosis"] = probe_diagnosis(&error);
+                        report["test_error"] = json!(error.message);
+                    }
+
                 }
             }
             return Ok(Json(report).into_response());

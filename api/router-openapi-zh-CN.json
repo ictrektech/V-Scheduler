@@ -899,6 +899,74 @@
               null
             ],
             "description": "实际转发使用的请求头；未配置上游 api_key 时为 null。"
+          },
+          "diagnosis": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "UPSTREAM_NETWORK_UNREACHABLE",
+                      "UPSTREAM_REQUEST_TIMEOUT",
+                      "UPSTREAM_AUTH_FAILED",
+                      "MODEL_NOT_LOADED",
+                      "UPSTREAM_UNAVAILABLE"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "reachability": {
+                "type": "string",
+                "enum": [
+                  "reachable",
+                  "unreachable",
+                  "unknown"
+                ]
+              }
+            },
+            "required": [
+              "code",
+              "reachability"
+            ]
+          },
+          "test_diagnosis": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "UPSTREAM_NETWORK_UNREACHABLE",
+                      "UPSTREAM_REQUEST_TIMEOUT",
+                      "UPSTREAM_AUTH_FAILED",
+                      "MODEL_NOT_LOADED",
+                      "UPSTREAM_UNAVAILABLE"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "reachability": {
+                "type": "string",
+                "enum": [
+                  "reachable",
+                  "unreachable",
+                  "unknown"
+                ]
+              }
+            },
+            "required": [
+              "code",
+              "reachability"
+            ]
           }
         },
         "required": [
@@ -1741,6 +1809,16 @@
             "items": {
               "type": "string"
             }
+          },
+          "model_running": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -1805,6 +1883,30 @@
                   "items": {
                     "type": "string"
                   }
+                },
+                "download": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "phase": {
+                          "type": "string"
+                        },
+                        "progress": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        }
+                      },
+                      "required": [
+                        "phase",
+                        "progress"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 }
               },
               "required": [
@@ -1814,7 +1916,8 @@
                 "download_scope",
                 "selected_files",
                 "deployments",
-                "blockers"
+                "blockers",
+                "download"
               ],
               "additionalProperties": true
             }
@@ -1828,13 +1931,64 @@
           },
           "note": {
             "type": "string"
+          },
+          "upstream_models": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "upstream_id": {
+                  "type": "string"
+                },
+                "native_model": {
+                  "type": "string"
+                },
+                "gateway_model": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "weight_source": {
+                  "type": "string",
+                  "enum": [
+                    "upstream",
+                    "unlinked"
+                  ]
+                },
+                "service_state": {
+                  "type": "string",
+                  "enum": [
+                    "healthy",
+                    "unavailable",
+                    "paused",
+                    "undiscovered",
+                    "auth_failed",
+                    "discovery_failed",
+                    "no_models",
+                    "full",
+                    "circuit_open",
+                    "lease_expired"
+                  ]
+                }
+              },
+              "required": [
+                "upstream_id",
+                "native_model",
+                "gateway_model",
+                "name",
+                "weight_source",
+                "service_state"
+              ]
+            }
           }
         },
         "required": [
           "items",
           "observed_at",
           "admission",
-          "note"
+          "note",
+          "upstream_models"
         ],
         "additionalProperties": true
       },
@@ -10099,7 +10253,7 @@
         "x-native-passthrough": true
       },
       "post": {
-        "description": "OpenAI 兼容。model 必须使用 /v1/models 返回的带来源前缀名称；请求原样透传到上游，stream=true 时逐 token 转发。\ndata: JSON chat.completion.chunk events with choices[].delta; terminal data: [DONE]. Tool arguments and text may arrive in separate fragments; a final usage-only chunk may have empty choices. Client disconnect requests cancellation; do not assume upstream resources are released until the execution stop is confirmed.",
+        "description": "OpenAI 兼容。model 必须使用 /v1/models 返回的带来源前缀名称；请求原样透传到上游，stream=true 时逐 token 转发。\ndata: JSON chat.completion.chunk events with choices[].delta; terminal data: [DONE]. Tool arguments and text may arrive in separate fragments; a final usage-only chunk may have empty choices. Client disconnect requests cancellation; do not assume upstream resources are released until the execution stop is confirmed. 上游 HTTP 响应包含 X-VScheduler-Upstream-Responded: true。网关传输错误返回 502 UPSTREAM_NETWORK_UNREACHABLE 或 UPSTREAM_UNAVAILABLE，超时返回 504 UPSTREAM_REQUEST_TIMEOUT；X-VRouter-Upstream 标识尝试连接的上游。",
         "parameters": [
           {
             "description": "指定上游 ID；严格固定，不自动切换，需身份与原生模型名。不指定时按匹配模型、协议及健康状态，以进行中请求/权重选择，平局在当前模型与接口范围内按权重平滑轮换；全满返回429。模型前缀限定来源，短名跨来源（包括云端）。资源接口必须指定。",
@@ -10499,7 +10653,7 @@
     },
     "/v1/completions": {
       "post": {
-        "description": "按 model 路由并替换原生模型名；支持 application/json，上游响应（含 SSE、二进制和错误）原样转发。上传上限 32 MiB；能力与参数取决于上游。指定 X-VRouter-Upstream 时需登录，使用上游原生请求体，可省略 model。\ndata: JSON completion chunks; terminal data: [DONE]. Client disconnect requests cancellation; do not assume upstream resources are released until the execution stop is confirmed.",
+        "description": "按 model 路由并替换原生模型名；支持 application/json，上游响应（含 SSE、二进制和错误）原样转发。上传上限 32 MiB；能力与参数取决于上游。指定 X-VRouter-Upstream 时需登录，使用上游原生请求体，可省略 model。\ndata: JSON completion chunks; terminal data: [DONE]. Client disconnect requests cancellation; do not assume upstream resources are released until the execution stop is confirmed. 上游 HTTP 响应包含 X-VScheduler-Upstream-Responded: true。网关传输错误返回 502 UPSTREAM_NETWORK_UNREACHABLE 或 UPSTREAM_UNAVAILABLE，超时返回 504 UPSTREAM_REQUEST_TIMEOUT；X-VRouter-Upstream 标识尝试连接的上游。",
         "parameters": [
           {
             "description": "指定上游 ID；严格固定，不自动切换，需身份与原生模型名。不指定时按匹配模型、协议及健康状态，以进行中请求/权重选择，平局在当前模型与接口范围内按权重平滑轮换；全满返回429。模型前缀限定来源，短名跨来源（包括云端）。资源接口必须指定。",
@@ -11711,7 +11865,7 @@
     },
     "/v1/embeddings": {
       "post": {
-        "description": "OpenAI 兼容。路由到 embedding 角色的上游（如 Model Hub 的 bge-m3，或自动发现 ML Server 的 Qwen3/CLIP 文本向量）。ML Server 不报告 tokenizer 用量，因此响应省略 usage，调用仍正常完成。",
+        "description": "OpenAI 兼容。路由到 embedding 角色的上游（如 Model Hub 的 bge-m3，或自动发现 ML Server 的 Qwen3/CLIP 文本向量）。ML Server 不报告 tokenizer 用量，因此响应省略 usage，调用仍正常完成。 上游 HTTP 响应包含 X-VScheduler-Upstream-Responded: true。网关传输错误返回 502 UPSTREAM_NETWORK_UNREACHABLE 或 UPSTREAM_UNAVAILABLE，超时返回 504 UPSTREAM_REQUEST_TIMEOUT；X-VRouter-Upstream 标识尝试连接的上游。",
         "parameters": [
           {
             "description": "指定上游 ID；严格固定，不自动切换，需身份与原生模型名。不指定时按匹配模型、协议及健康状态，以进行中请求/权重选择，平局在当前模型与接口范围内按权重平滑轮换；全满返回429。模型前缀限定来源，短名跨来源（包括云端）。资源接口必须指定。",
@@ -14016,7 +14170,7 @@
         "x-native-passthrough": true
       },
       "post": {
-        "description": "支持指定模型或 model=auto。原生 Anthropic 上游直接转发。支持 Chat Completions 的 openai、chat_completions 等上游可转换文本、图片输入和函数工具，支持 SSE。Auto Messages 使用可转换字段，转换模式不支持 thinking、提示缓存或服务端工具。图片与工具能力取决于实际模型。支持 x-api-key 网关身份。\nNamed message_start/content_block_start/content_block_delta/content_block_stop/message_delta/message_stop events. text_delta/input_json_delta/thinking_delta are distinct. error can occur after HTTP200; message_stop is the terminal success event. Client disconnect requests cancellation; do not assume upstream resources are released until the execution stop is confirmed. 请求可用 Authorization: Bearer <V-Scheduler Key 或 VOS token> 或 x-api-key: <同一凭据>。同时发送两个头时，有效身份要求两个值一致。两种头只验证网关身份，不转发给上游。",
+        "description": "支持指定模型或 model=auto。原生 Anthropic 上游直接转发。支持 Chat Completions 的 openai、chat_completions 等上游可转换文本、图片输入和函数工具，支持 SSE。Auto Messages 使用可转换字段，转换模式不支持 thinking、提示缓存或服务端工具。图片与工具能力取决于实际模型。支持 x-api-key 网关身份。\nNamed message_start/content_block_start/content_block_delta/content_block_stop/message_delta/message_stop events. text_delta/input_json_delta/thinking_delta are distinct. error can occur after HTTP200; message_stop is the terminal success event. Client disconnect requests cancellation; do not assume upstream resources are released until the execution stop is confirmed. 请求可用 Authorization: Bearer <V-Scheduler Key 或 VOS token> 或 x-api-key: <同一凭据>。同时发送两个头时，有效身份要求两个值一致。两种头只验证网关身份，不转发给上游。 上游 HTTP 响应包含 X-VScheduler-Upstream-Responded: true。网关传输错误返回 502 UPSTREAM_NETWORK_UNREACHABLE 或 UPSTREAM_UNAVAILABLE，超时返回 504 UPSTREAM_REQUEST_TIMEOUT；X-VRouter-Upstream 标识尝试连接的上游。",
         "parameters": [
           {
             "description": "指定上游 ID；严格固定，不自动切换，需身份与原生模型名。不指定时按匹配模型、协议及健康状态，以进行中请求/权重选择，平局在当前模型与接口范围内按权重平滑轮换；全满返回429。模型前缀限定来源，短名跨来源（包括云端）。资源接口必须指定。",
@@ -16201,7 +16355,7 @@
         "x-native-passthrough": true
       },
       "post": {
-        "description": "原生上游直接转发；Model Hub/仅 chat_completions 上游由 Go 转换文本、图片输入、function tools、结构化输出和 SSE，须 store=false 或省略。转换不支持 previous_response_id、background、托管工具或服务端状态，不支持的字段返回 400。显式上游仍按配置转换，使用原生模型名。\nNamed Responses API events including response.output_text.delta, response.output_item.added and response.completed; inspect failed/incomplete terminal states instead of assuming all SSE ends successfully. Client disconnect requests cancellation; do not assume upstream resources are released until the execution stop is confirmed.",
+        "description": "原生上游直接转发；Model Hub/仅 chat_completions 上游由 Go 转换文本、图片输入、function tools、结构化输出和 SSE，须 store=false 或省略。转换不支持 previous_response_id、background、托管工具或服务端状态，不支持的字段返回 400。显式上游仍按配置转换，使用原生模型名。\nNamed Responses API events including response.output_text.delta, response.output_item.added and response.completed; inspect failed/incomplete terminal states instead of assuming all SSE ends successfully. Client disconnect requests cancellation; do not assume upstream resources are released until the execution stop is confirmed. 上游 HTTP 响应包含 X-VScheduler-Upstream-Responded: true。网关传输错误返回 502 UPSTREAM_NETWORK_UNREACHABLE 或 UPSTREAM_UNAVAILABLE，超时返回 504 UPSTREAM_REQUEST_TIMEOUT；X-VRouter-Upstream 标识尝试连接的上游。",
         "parameters": [
           {
             "description": "指定上游 ID；严格固定，不自动切换，需身份与原生模型名。不指定时按匹配模型、协议及健康状态，以进行中请求/权重选择，平局在当前模型与接口范围内按权重平滑轮换；全满返回429。模型前缀限定来源，短名跨来源（包括云端）。资源接口必须指定。",
@@ -19220,7 +19374,7 @@
     },
     "/v1/videos/generations": {
       "post": {
-        "description": "按 model 路由并替换原生模型名；支持 application/json，上游响应（含 SSE、二进制和错误）原样转发。上传上限 32 MiB；能力与参数取决于上游。指定 X-VRouter-Upstream 时需登录，使用上游原生请求体，可省略 model。 上游返回 2xx 且含 id 时记录任务创建者；后续经 /v1/videos/{id} 的查询、取消按资源归属拦截跨账户访问。",
+        "description": "按 model 路由并替换原生模型名；支持 application/json，上游响应（含 SSE、二进制和错误）原样转发。上传上限 32 MiB；能力与参数取决于上游。指定 X-VRouter-Upstream 时需登录，使用上游原生请求体，可省略 model。 上游返回 2xx 且含 id 时记录任务创建者；后续经 /v1/videos/{id} 的查询、取消按资源归属拦截跨账户访问。 上游 HTTP 响应包含 X-VScheduler-Upstream-Responded: true。网关传输错误返回 502 UPSTREAM_NETWORK_UNREACHABLE 或 UPSTREAM_UNAVAILABLE，超时返回 504 UPSTREAM_REQUEST_TIMEOUT；X-VRouter-Upstream 标识尝试连接的上游。",
         "parameters": [
           {
             "description": "指定上游 ID；严格固定，不自动切换，需身份与原生模型名。不指定时按匹配模型、协议及健康状态，以进行中请求/权重选择，平局在当前模型与接口范围内按权重平滑轮换；全满返回429。模型前缀限定来源，短名跨来源（包括云端）。资源接口必须指定。",
@@ -19870,7 +20024,7 @@
     "/v1/decisions": {
       "post": {
         "summary": "OpenAI Decisions",
-        "description": "通过已注册的 OpenAI Decisions 上游透传原生决策请求及 answers 数组。使用带前缀的模型 ID。此接口不支持流式响应。",
+        "description": "通过已注册的 OpenAI Decisions 上游透传原生决策请求及 answers 数组。使用带前缀的模型 ID。此接口不支持流式响应。 上游 HTTP 响应包含 X-VScheduler-Upstream-Responded: true。网关传输错误返回 502 UPSTREAM_NETWORK_UNREACHABLE 或 UPSTREAM_UNAVAILABLE，超时返回 504 UPSTREAM_REQUEST_TIMEOUT；X-VRouter-Upstream 标识尝试连接的上游。",
         "requestBody": {
           "required": true,
           "content": {
@@ -19905,7 +20059,7 @@
     },
     "/v1/systemone": {
       "post": {
-        "description": "TypeSafe / Jev 原生结构化决策转发。请求保留 state、questions、assets 等原生字段，仅重写已选模型 ID；供应商密钥由网关保存。返回 answers、概率、置信度及 usage，不转换为聊天文本。支持 TypeSafe 及提供 systemone 接口的 Ollama 模型，不支持 SSE。",
+        "description": "TypeSafe / Jev 原生结构化决策转发。请求保留 state、questions、assets 等原生字段，仅重写已选模型 ID；供应商密钥由网关保存。返回 answers、概率、置信度及 usage，不转换为聊天文本。支持 TypeSafe 及提供 systemone 接口的 Ollama 模型，不支持 SSE。 上游 HTTP 响应包含 X-VScheduler-Upstream-Responded: true。网关传输错误返回 502 UPSTREAM_NETWORK_UNREACHABLE 或 UPSTREAM_UNAVAILABLE，超时返回 504 UPSTREAM_REQUEST_TIMEOUT；X-VRouter-Upstream 标识尝试连接的上游。",
         "parameters": [
           {
             "description": "指定上游 ID；严格固定，不自动切换，需身份与原生模型名。不指定时按匹配模型、协议及健康状态，以进行中请求/权重选择，平局在当前模型与接口范围内按权重平滑轮换；全满返回429。模型前缀限定来源，短名跨来源（包括云端）。资源接口必须指定。",

@@ -1,5 +1,9 @@
 # API reference / API 完整参考
 
+打开「权重管理 → 模型接入状态」，分别查看权重下载进度、推理服务和最近一次测试。远程模型显示「权重由上游管理」。在「模型与上游」点「测试」，从试聊发出请求。失败时查看选中的上游主机、可达性和网络、鉴权、模型未加载或超时原因。测试结果在当前应用页保留，重新加载页面后清空。
+
+GET /api/v1/model-lifecycle 需要 VOS 管理员。download 为 null 或包含 phase 和 0–1 的 progress；model_running 为布尔值或 null；upstream_models 中 weight_source 为 upstream 或 unlinked。POST /api/v1/upstreams/probe 返回可选的 diagnosis 和 test_diagnosis，包含 code 和 reachability（reachable、unreachable、unknown）。试聊通过正常 /v1 接口调用。
+
 This index is generated from the shipped OpenAPI documents. Each operation links to the complete request, response and authentication contract. In the app, open **API Documentation → Model & Gateway API / Scheduler Management API / Model Management API** and search by path. The Application Integration tab explains the end-to-end workflow.
 
 本索引来自随镜像交付的 OpenAPI。每个接口链接到完整的请求、响应及鉴权契约。应用内进入 **API 文档 → 模型与网关 API / 调度管理 API / 模型管理 API**，可按路径搜索；「应用接入」提供完整流程。

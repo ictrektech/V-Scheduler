@@ -87,6 +87,7 @@ fn clean_headers(headers: &HeaderMap) -> HeaderMap {
         "x-vscheduler-execution-token",
         "x-vscheduler-executor-id",
         "x-vrouter-upstream",
+        "x-vscheduler-upstream-responded",
         "x-vscheduler-queue-wait-seconds",
         "x-vscheduler-priority",
         "x-vscheduler-preemptible",
@@ -851,7 +852,7 @@ async fn handle_inner(g: Arc<Gateway>, id: Identity, request: Request, classifie
         builder
             .send()
             .await
-            .map_err(|_| Failure::new(502, "upstream connection failed"))
+            .map_err(|error| Failure::upstream_transport(error, &u.id))
     })
     .await
     {
@@ -860,7 +861,7 @@ async fn handle_inner(g: Arc<Gateway>, id: Identity, request: Request, classifie
             r
         }
         Err(error) => {
-            if error.status == StatusCode::BAD_GATEWAY {
+            if matches!(error.status, StatusCode::BAD_GATEWAY | StatusCode::GATEWAY_TIMEOUT) {
                 g.registry.lock().unwrap().result(&u.id, false);
             }
             exchange.status = error.status.as_u16();
@@ -921,6 +922,7 @@ pub(super) async fn finish_response(
             .map_err(|_| Failure::new(502, "invalid upstream identifier"))?,
     );
     headers.insert("x-vrouter-routing", "least-inflight".parse().unwrap());
+    headers.insert("x-vscheduler-upstream-responded", axum::http::HeaderValue::from_static("true"));
     if let Some(decision)=&exchange.auto_decision {
         headers.insert("x-vrouter-routing","auto".parse().unwrap());
         if let Ok(value)=text(decision,"resolved_model").parse() {headers.insert("x-vscheduler-auto-model",value);}

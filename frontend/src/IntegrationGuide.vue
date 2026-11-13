@@ -238,6 +238,8 @@ curl -fsS -X PUT "$GATEWAY/api/v1/model-routing" -H "Authorization: Bearer $VOS_
   <p>{{t('在模型仓库的「模型接入状态」设置空闲保留秒数，默认 60，范围 0..600；0 表示每次卸载。QA、Embedding、Rerank 可同时驻留，空闲时保留已确认内存；调用前恢复完整计算预算，资源不足才按空闲先后卸载。')}}</p>
   <p><code>GET /api/v1/model-residency</code> · <code>PUT /api/v1/model-residency</code> · <code>{"idle_seconds":60}</code></p>
   <h3>{{t('模型接入状态')}}</h3>
+  <p>{{t('打开「权重管理 → 模型接入状态」，分别查看权重下载进度、推理服务和最近一次测试。远程模型显示「权重由上游管理」。在「模型与上游」点「测试」，从试聊发出请求。失败时查看选中的上游主机、可达性和网络、鉴权、模型未加载或超时原因。测试结果在当前应用页保留，重新加载页面后清空。')}}</p>
+  <p>{{t('GET /api/v1/model-lifecycle 需要 VOS 管理员。download 为 null 或包含 phase 和 0–1 的 progress；model_running 为布尔值或 null；upstream_models 中 weight_source 为 upstream 或 unlinked。POST /api/v1/upstreams/probe 返回可选的 diagnosis 和 test_diagnosis，包含 code 和 reachability（reachable、unreachable、unknown）。试聊通过正常 /v1 接口调用。')}}</p>
   <p>{{t('通过推理服务的 metadata.model_bindings 将后端模型名称关联到仓库模型 ID。状态页统一显示权重、网关路由、后端健康与调度绑定，并说明不可调用原因；配置就绪不代表当前资源一定可用。')}}</p>
   <p><code>GET /api/v1/model-lifecycle</code> · <code>{"metadata":{"model_bindings":{"served-name":"hf://org/repo"}}}</code></p>
   <p>{{t('这些接口属于网关：容器内使用 http://v-scheduler:8080，宿主机使用上表的网关映射端口。驻留设置和完整接入状态需要管理员身份。')}}</p>

@@ -899,6 +899,74 @@
               null
             ],
             "description": "Header applied when forwarding; null when no upstream api_key is configured."
+          },
+          "diagnosis": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "UPSTREAM_NETWORK_UNREACHABLE",
+                      "UPSTREAM_REQUEST_TIMEOUT",
+                      "UPSTREAM_AUTH_FAILED",
+                      "MODEL_NOT_LOADED",
+                      "UPSTREAM_UNAVAILABLE"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "reachability": {
+                "type": "string",
+                "enum": [
+                  "reachable",
+                  "unreachable",
+                  "unknown"
+                ]
+              }
+            },
+            "required": [
+              "code",
+              "reachability"
+            ]
+          },
+          "test_diagnosis": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "UPSTREAM_NETWORK_UNREACHABLE",
+                      "UPSTREAM_REQUEST_TIMEOUT",
+                      "UPSTREAM_AUTH_FAILED",
+                      "MODEL_NOT_LOADED",
+                      "UPSTREAM_UNAVAILABLE"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "reachability": {
+                "type": "string",
+                "enum": [
+                  "reachable",
+                  "unreachable",
+                  "unknown"
+                ]
+              }
+            },
+            "required": [
+              "code",
+              "reachability"
+            ]
           }
         },
         "required": [
@@ -1741,6 +1809,16 @@
             "items": {
               "type": "string"
             }
+          },
+          "model_running": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -1805,6 +1883,30 @@
                   "items": {
                     "type": "string"
                   }
+                },
+                "download": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "phase": {
+                          "type": "string"
+                        },
+                        "progress": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        }
+                      },
+                      "required": [
+                        "phase",
+                        "progress"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 }
               },
               "required": [
@@ -1814,7 +1916,8 @@
                 "download_scope",
                 "selected_files",
                 "deployments",
-                "blockers"
+                "blockers",
+                "download"
               ],
               "additionalProperties": true
             }
@@ -1828,13 +1931,64 @@
           },
           "note": {
             "type": "string"
+          },
+          "upstream_models": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "upstream_id": {
+                  "type": "string"
+                },
+                "native_model": {
+                  "type": "string"
+                },
+                "gateway_model": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "weight_source": {
+                  "type": "string",
+                  "enum": [
+                    "upstream",
+                    "unlinked"
+                  ]
+                },
+                "service_state": {
+                  "type": "string",
+                  "enum": [
+                    "healthy",
+                    "unavailable",
+                    "paused",
+                    "undiscovered",
+                    "auth_failed",
+                    "discovery_failed",
+                    "no_models",
+                    "full",
+                    "circuit_open",
+                    "lease_expired"
+                  ]
+                }
+              },
+              "required": [
+                "upstream_id",
+                "native_model",
+                "gateway_model",
+                "name",
+                "weight_source",
+                "service_state"
+              ]
+            }
           }
         },
         "required": [
           "items",
           "observed_at",
           "admission",
-          "note"
+          "note",
+          "upstream_models"
         ],
         "additionalProperties": true
       },
@@ -10099,7 +10253,7 @@
         "x-native-passthrough": true
       },
       "post": {
-        "description": "OpenAI-compatible. Use a source-qualified model name from /v1/models. Requests are forwarded to the upstream; stream=true forwards tokens as they arrive.\ndata: JSON chat.completion.chunk events with choices[].delta; terminal data: [DONE]. Tool arguments and text may arrive in separate fragments; a final usage-only chunk may have empty choices. Client disconnect requests cancellation; do not assume upstream resources are released until the execution stop is confirmed.",
+        "description": "OpenAI-compatible. Use a source-qualified model name from /v1/models. Requests are forwarded to the upstream; stream=true forwards tokens as they arrive.\ndata: JSON chat.completion.chunk events with choices[].delta; terminal data: [DONE]. Tool arguments and text may arrive in separate fragments; a final usage-only chunk may have empty choices. Client disconnect requests cancellation; do not assume upstream resources are released until the execution stop is confirmed. HTTP upstream responses include X-VScheduler-Upstream-Responded: true. Gateway transport errors use 502 UPSTREAM_NETWORK_UNREACHABLE or UPSTREAM_UNAVAILABLE, or 504 UPSTREAM_REQUEST_TIMEOUT; X-VRouter-Upstream identifies the attempted upstream.",
         "parameters": [
           {
             "description": "Pins an upstream ID without fallback; requires identity and native model names. Otherwise matches model, protocol and health, selecting by in-flight requests/weight. Ties use smooth weighted rotation within the current model/interface. Returns 429 if all candidates are full. A prefix limits source; short names span sources, including cloud. Required for resource APIs.",
@@ -10499,7 +10653,7 @@
     },
     "/v1/completions": {
       "post": {
-        "description": "Routes by model and restores the native model name. Supports application/json; upstream responses (including SSE, binary content and errors) are forwarded unchanged. Upload limit: 32 MiB. Capabilities and parameters depend on the upstream. X-VRouter-Upstream requires authentication and an upstream-native body; model may be omitted.\ndata: JSON completion chunks; terminal data: [DONE]. Client disconnect requests cancellation; do not assume upstream resources are released until the execution stop is confirmed.",
+        "description": "Routes by model and restores the native model name. Supports application/json; upstream responses (including SSE, binary content and errors) are forwarded unchanged. Upload limit: 32 MiB. Capabilities and parameters depend on the upstream. X-VRouter-Upstream requires authentication and an upstream-native body; model may be omitted.\ndata: JSON completion chunks; terminal data: [DONE]. Client disconnect requests cancellation; do not assume upstream resources are released until the execution stop is confirmed. HTTP upstream responses include X-VScheduler-Upstream-Responded: true. Gateway transport errors use 502 UPSTREAM_NETWORK_UNREACHABLE or UPSTREAM_UNAVAILABLE, or 504 UPSTREAM_REQUEST_TIMEOUT; X-VRouter-Upstream identifies the attempted upstream.",
         "parameters": [
           {
             "description": "Pins an upstream ID without fallback; requires identity and native model names. Otherwise matches model, protocol and health, selecting by in-flight requests/weight. Ties use smooth weighted rotation within the current model/interface. Returns 429 if all candidates are full. A prefix limits source; short names span sources, including cloud. Required for resource APIs.",
@@ -11711,7 +11865,7 @@
     },
     "/v1/embeddings": {
       "post": {
-        "description": "OpenAI-compatible. Routes to embedding upstreams, such as Model Hub bge-m3 or discovered ML Server Qwen3/CLIP text embeddings. ML Server does not report tokenizer usage, so usage is omitted without failing the request.",
+        "description": "OpenAI-compatible. Routes to embedding upstreams, such as Model Hub bge-m3 or discovered ML Server Qwen3/CLIP text embeddings. ML Server does not report tokenizer usage, so usage is omitted without failing the request. HTTP upstream responses include X-VScheduler-Upstream-Responded: true. Gateway transport errors use 502 UPSTREAM_NETWORK_UNREACHABLE or UPSTREAM_UNAVAILABLE, or 504 UPSTREAM_REQUEST_TIMEOUT; X-VRouter-Upstream identifies the attempted upstream.",
         "parameters": [
           {
             "description": "Pins an upstream ID without fallback; requires identity and native model names. Otherwise matches model, protocol and health, selecting by in-flight requests/weight. Ties use smooth weighted rotation within the current model/interface. Returns 429 if all candidates are full. A prefix limits source; short names span sources, including cloud. Required for resource APIs.",
@@ -14016,7 +14170,7 @@
         "x-native-passthrough": true
       },
       "post": {
-        "description": "Use an explicit model or model=auto. Native Anthropic upstreams receive Messages requests directly. Chat Completions capable OpenAI upstreams receive converted text, image input and function tools, with SSE support. Auto Messages accepts convertible fields. Conversion does not support thinking, prompt caching or server-side tools. Image and tool support depends on the model. The gateway accepts x-api-key.\nNamed message_start/content_block_start/content_block_delta/content_block_stop/message_delta/message_stop events. text_delta/input_json_delta/thinking_delta are distinct. error can occur after HTTP200; message_stop is the terminal success event. Client disconnect requests cancellation; do not assume upstream resources are released until the execution stop is confirmed. Send Authorization: Bearer <V-Scheduler key or VOS token> or x-api-key: <same credential>. If you send both, the values must match to establish an identity. Neither client credential is forwarded to the upstream.",
+        "description": "Use an explicit model or model=auto. Native Anthropic upstreams receive Messages requests directly. Chat Completions capable OpenAI upstreams receive converted text, image input and function tools, with SSE support. Auto Messages accepts convertible fields. Conversion does not support thinking, prompt caching or server-side tools. Image and tool support depends on the model. The gateway accepts x-api-key.\nNamed message_start/content_block_start/content_block_delta/content_block_stop/message_delta/message_stop events. text_delta/input_json_delta/thinking_delta are distinct. error can occur after HTTP200; message_stop is the terminal success event. Client disconnect requests cancellation; do not assume upstream resources are released until the execution stop is confirmed. Send Authorization: Bearer <V-Scheduler key or VOS token> or x-api-key: <same credential>. If you send both, the values must match to establish an identity. Neither client credential is forwarded to the upstream. HTTP upstream responses include X-VScheduler-Upstream-Responded: true. Gateway transport errors use 502 UPSTREAM_NETWORK_UNREACHABLE or UPSTREAM_UNAVAILABLE, or 504 UPSTREAM_REQUEST_TIMEOUT; X-VRouter-Upstream identifies the attempted upstream.",
         "parameters": [
           {
             "description": "Pins an upstream ID without fallback; requires identity and native model names. Otherwise matches model, protocol and health, selecting by in-flight requests/weight. Ties use smooth weighted rotation within the current model/interface. Returns 429 if all candidates are full. A prefix limits source; short names span sources, including cloud. Required for resource APIs.",
@@ -16201,7 +16355,7 @@
         "x-native-passthrough": true
       },
       "post": {
-        "description": "Native upstreams are forwarded directly. For Model Hub/chat_completions-only upstreams, Go converts text, image input, function tools, structured output and SSE. store must be false or omitted. previous_response_id, background, hosted tools and server-side state are unsupported; unsupported fields return 400. Pinned upstreams still use their configured conversion and native model names.\nNamed Responses API events including response.output_text.delta, response.output_item.added and response.completed; inspect failed/incomplete terminal states instead of assuming all SSE ends successfully. Client disconnect requests cancellation; do not assume upstream resources are released until the execution stop is confirmed.",
+        "description": "Native upstreams are forwarded directly. For Model Hub/chat_completions-only upstreams, Go converts text, image input, function tools, structured output and SSE. store must be false or omitted. previous_response_id, background, hosted tools and server-side state are unsupported; unsupported fields return 400. Pinned upstreams still use their configured conversion and native model names.\nNamed Responses API events including response.output_text.delta, response.output_item.added and response.completed; inspect failed/incomplete terminal states instead of assuming all SSE ends successfully. Client disconnect requests cancellation; do not assume upstream resources are released until the execution stop is confirmed. HTTP upstream responses include X-VScheduler-Upstream-Responded: true. Gateway transport errors use 502 UPSTREAM_NETWORK_UNREACHABLE or UPSTREAM_UNAVAILABLE, or 504 UPSTREAM_REQUEST_TIMEOUT; X-VRouter-Upstream identifies the attempted upstream.",
         "parameters": [
           {
             "description": "Pins an upstream ID without fallback; requires identity and native model names. Otherwise matches model, protocol and health, selecting by in-flight requests/weight. Ties use smooth weighted rotation within the current model/interface. Returns 429 if all candidates are full. A prefix limits source; short names span sources, including cloud. Required for resource APIs.",
@@ -19220,7 +19374,7 @@
     },
     "/v1/videos/generations": {
       "post": {
-        "description": "Routes by model and restores the native model name. Supports application/json; upstream responses (including SSE, binary content and errors) are forwarded unchanged. Upload limit: 32 MiB. Capabilities and parameters depend on the upstream. X-VRouter-Upstream requires authentication and an upstream-native body; model may be omitted. A 2xx response containing id records the task creator. Later queries/cancellation through /v1/videos/{id} enforce ownership and reject cross-account access.",
+        "description": "Routes by model and restores the native model name. Supports application/json; upstream responses (including SSE, binary content and errors) are forwarded unchanged. Upload limit: 32 MiB. Capabilities and parameters depend on the upstream. X-VRouter-Upstream requires authentication and an upstream-native body; model may be omitted. A 2xx response containing id records the task creator. Later queries/cancellation through /v1/videos/{id} enforce ownership and reject cross-account access. HTTP upstream responses include X-VScheduler-Upstream-Responded: true. Gateway transport errors use 502 UPSTREAM_NETWORK_UNREACHABLE or UPSTREAM_UNAVAILABLE, or 504 UPSTREAM_REQUEST_TIMEOUT; X-VRouter-Upstream identifies the attempted upstream.",
         "parameters": [
           {
             "description": "Pins an upstream ID without fallback; requires identity and native model names. Otherwise matches model, protocol and health, selecting by in-flight requests/weight. Ties use smooth weighted rotation within the current model/interface. Returns 429 if all candidates are full. A prefix limits source; short names span sources, including cloud. Required for resource APIs.",
@@ -19870,7 +20024,7 @@
     "/v1/decisions": {
       "post": {
         "summary": "OpenAI Decisions",
-        "description": "Forwards OpenAI Decisions requests and native answers arrays through a registered OpenAI Decisions upstream. Use the qualified model ID. Streaming is unsupported.",
+        "description": "Forwards OpenAI Decisions requests and native answers arrays through a registered OpenAI Decisions upstream. Use the qualified model ID. Streaming is unsupported. HTTP upstream responses include X-VScheduler-Upstream-Responded: true. Gateway transport errors use 502 UPSTREAM_NETWORK_UNREACHABLE or UPSTREAM_UNAVAILABLE, or 504 UPSTREAM_REQUEST_TIMEOUT; X-VRouter-Upstream identifies the attempted upstream.",
         "requestBody": {
           "required": true,
           "content": {
@@ -19905,7 +20059,7 @@
     },
     "/v1/systemone": {
       "post": {
-        "description": "Proxies the native TypeSafe System One request, preserving state, questions and assets while rewriting the selected model ID. Provider credentials remain server-side. Returns native answers, probabilities, confidence and usage without a chat conversion. Supports TypeSafe and Ollama models exposing the systemone endpoint; SSE is not supported.",
+        "description": "Proxies the native TypeSafe System One request, preserving state, questions and assets while rewriting the selected model ID. Provider credentials remain server-side. Returns native answers, probabilities, confidence and usage without a chat conversion. Supports TypeSafe and Ollama models exposing the systemone endpoint; SSE is not supported. HTTP upstream responses include X-VScheduler-Upstream-Responded: true. Gateway transport errors use 502 UPSTREAM_NETWORK_UNREACHABLE or UPSTREAM_UNAVAILABLE, or 504 UPSTREAM_REQUEST_TIMEOUT; X-VRouter-Upstream identifies the attempted upstream.",
         "parameters": [
           {
             "description": "Pins an upstream ID without fallback; requires identity and native model names. Otherwise matches model, protocol and health, selecting by in-flight requests/weight. Ties use smooth weighted rotation within the current model/interface. Returns 429 if all candidates are full. A prefix limits source; short names span sources, including cloud. Required for resource APIs.",

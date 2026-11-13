@@ -1,5 +1,9 @@
 # V-Scheduler 资源调度
 
+打开「权重管理 → 模型接入状态」，分别查看权重下载进度、推理服务和最近一次测试。远程模型显示「权重由上游管理」。在「模型与上游」点「测试」，从试聊发出请求。失败时查看选中的上游主机、可达性和网络、鉴权、模型未加载或超时原因。测试结果在当前应用页保留，重新加载页面后清空。
+
+GET /api/v1/model-lifecycle 需要 VOS 管理员。download 为 null 或包含 phase 和 0–1 的 progress；model_running 为布尔值或 null；upstream_models 中 weight_source 为 upstream 或 unlinked。POST /api/v1/upstreams/probe 返回可选的 diagnosis 和 test_diagnosis，包含 code 和 reachability（reachable、unreachable、unknown）。试聊通过正常 /v1 接口调用。
+
 新增「推理等待队列」及「模型仓库 → 模型接入状态」。试聊默认有界等待 120 秒，支持查看位置和取消；应用可通过网关排队请求头选择交互或后台优先级。自带 Ollama 默认空闲保留 60 秒，同模型连续调用可复用；保留期间继续占完整资源预约，切换、到期或手动停止后先确认卸载再释放。管理员可设置 0..600 秒，0 为每次卸载。服务注册支持 metadata.model_bindings 精确关联仓库权重与后端模型名称，状态页统一显示路由、后端健康和调度绑定。现有模型目录、九组端口、host alias 和四个容器保持兼容。
 
 统一包包含模型网关与调度控制器。模型调用使用宿主端口 22888 的 /v1；调度管理使用 /scheduler/api/v1。Router 直接连接应用自带的三个 Ollama 后端，不依赖 Model Hub 发现；同时自动发现 Image Studio、V-Voice、V-Music、ML Server 和视频结构化服务的可用模型。V-Voice 就绪后主动接入，自动绑定已校准的执行器与模型映射；详见界面的“应用接入”。

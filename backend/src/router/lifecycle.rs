@@ -68,9 +68,10 @@ async fn inspect(g: &Gateway, id: &Identity) -> Api<Value> {
             "model lifecycle inspection requires an administrator",
         ));
     }
-    let (weights, services) = tokio::try_join!(
+    let (weights, services, tasks) = tokio::try_join!(
         hub(g, "/api/v1/models?status=all"),
-        hub(g, "/api/v1/inference-services?include_builtin=true")
+        hub(g, "/api/v1/inference-services?include_builtin=true"),
+        hub(g, "/api/v1/tasks")
     )?;
     let (catalog, upstreams) = {
         let r = g.registry.lock().unwrap();
@@ -83,6 +84,7 @@ async fn inspect(g: &Gateway, id: &Identity) -> Api<Value> {
                         .get(&u.id)
                         .into_iter()
                         .flatten()
+                        .filter(|m| m.visible(u, id))
                         .map(|m| (u.clone(), m.clone(), r.status(u)))
                 })
                 .collect::<Vec<_>>(),
@@ -93,7 +95,25 @@ async fn inspect(g: &Gateway, id: &Identity) -> Api<Value> {
                 .collect::<Vec<_>>(),
         )
     };
+    // Ollama /api/ps reports residency without loading weights. Read each
+    // built-in service once per snapshot, including when several models share it.
+    let running = futures_util::future::join_all(
+        services.as_array().into_iter().flatten()
+            .filter(|s| s["metadata"]["builtin"] == true && s["kind"] == "ollama")
+            .map(|service| async move {
+                let result = tokio::time::timeout(Duration::from_secs(2), async {
+                    let response = g.client.get(format!("{}/api/ps", text(service,"base_url").trim_end_matches('/')))
+                        .send().await.ok()?.error_for_status().ok()?;
+                    let data = read_json(response, 1 << 20).await.ok()?;
+                    Some(data["models"].as_array()?.iter().filter_map(|m| {
+                        m["name"].as_str().or(m["model"].as_str()).map(ollama_name)
+                    }).collect::<std::collections::HashSet<_>>())
+                }).await.ok().flatten();
+                (text(service, "service_id"), result)
+            })
+    ).await.into_iter().collect::<std::collections::HashMap<_,_>>();
     let mut items = Vec::new();
+    let mut linked_models = std::collections::HashSet::new();
     for weight in weights.as_array().into_iter().flatten() {
         let mut deployments = Vec::new();
         for (u, m, status) in &catalog {
@@ -142,9 +162,12 @@ async fn inspect(g: &Gateway, id: &Identity) -> Api<Value> {
                         "pending"
                     }
                 };
+                linked_models.insert((&u.id, &m.id));
+                let model_running = running.get(text(service, "service_id"))
+                    .and_then(Option::as_ref).map(|names| names.contains(&ollama_name(&m.id)));
                 deployments.push(json!({"service_id":service["service_id"],"upstream_id":u.id,"gateway_model":m.qualified,
                     "native_model":m.id,"endpoints":m.endpoints,"route_state":status["state"],"scheduler_state":binding,
-                    "configured_callable":blockers.is_empty(),"blockers":blockers}));
+                    "model_running":model_running,"configured_callable":blockers.is_empty(),"blockers":blockers}));
             }
         }
         // A failed discovery must not erase the association or disguise an
@@ -183,12 +206,25 @@ async fn inspect(g: &Gateway, id: &Identity) -> Api<Value> {
         } else {
             vec![]
         };
-        items.push(json!({"model_id":weight["model_id"],"name":weight["name"],"weight_state":weight["status"],
+        let download = tasks.as_array().into_iter().flatten()
+            .find(|task| task["model_id"] == weight["model_id"])
+            .map(|task| json!({"phase":task["phase"],"progress":task["progress"]}));
+        items.push(json!({"model_id":weight["model_id"],"name":weight["name"],"weight_state":weight["status"],"download":download,
             "download_scope":weight["download_scope"],"selected_files":weight["files"],
             "deployments":deployments,"blockers":blockers}));
     }
+    let upstream_models: Vec<_> = catalog.iter()
+        .filter(|(u, m, _)| !linked_models.contains(&(&u.id, &m.id)) && m.kind != "service")
+        .map(|(u, m, status)| json!({
+            "upstream_id":u.id,"native_model":m.id,"gateway_model":m.qualified,"name":m.display_name(u,id),
+            "weight_source":if ["v-scheduler","model-hub"].contains(&u.source.as_str())
+                || services.as_array().into_iter().flatten().any(|service|same_origin(service,u))
+                {"unlinked"} else {"upstream"},
+            "service_state":status["state"]
+        }))
+        .collect();
     Ok(
-        json!({"items":items,"observed_at":Utc::now(),"admission":"checked-at-request-time",
+        json!({"items":items,"upstream_models":upstream_models,"observed_at":Utc::now(),"admission":"checked-at-request-time",
         "note":"A ready binding describes configuration; current capacity is checked atomically when inference starts."}),
     )
 }

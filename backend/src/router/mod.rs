@@ -78,6 +78,8 @@ struct Failure {
     code: Option<String>,
     messages: bool,
     trace: Option<String>,
+    upstream: Option<String>,
+    upstream_responded: bool,
 }
 impl Failure {
     fn new(status: u16, message: impl Into<String>) -> Self {
@@ -87,7 +89,33 @@ impl Failure {
             code: None,
             messages: false,
             trace: None,
+            upstream: None,
+            upstream_responded: false,
         }
+    }
+    fn upstream_transport(error: reqwest::Error, upstream: &str) -> Self {
+        let (status, code, message) = if error.is_timeout() {
+            (504, "UPSTREAM_REQUEST_TIMEOUT", "upstream request timed out")
+        } else if error.is_connect() {
+            (502, "UPSTREAM_NETWORK_UNREACHABLE", "upstream connection failed")
+        } else {
+            (502, "UPSTREAM_UNAVAILABLE", "upstream request failed")
+        };
+        let mut failure = Self::new(status, message);
+        failure.code = Some(code.into());
+        failure.upstream = Some(upstream.into());
+        failure
+    }
+    fn upstream_http(status: StatusCode, upstream: &str) -> Self {
+        let mut failure = Self::new(502, format!("upstream returned HTTP {}", status.as_u16()));
+        failure.code = match status.as_u16() {
+            401 | 403 => Some("UPSTREAM_AUTH_FAILED".into()),
+            408 | 504 => Some("UPSTREAM_REQUEST_TIMEOUT".into()),
+            _ => None,
+        };
+        failure.upstream = Some(upstream.into());
+        failure.upstream_responded = true;
+        failure
     }
 }
 impl IntoResponse for Failure {
@@ -121,6 +149,12 @@ impl IntoResponse for Failure {
         response
             .headers_mut()
             .insert("x-request-id", trace.parse().unwrap());
+        if let Some(upstream) = self.upstream.and_then(|value| value.parse().ok()) {
+            response.headers_mut().insert("x-vrouter-upstream", upstream);
+        }
+        if self.upstream_responded {
+            response.headers_mut().insert("x-vscheduler-upstream-responded", axum::http::HeaderValue::from_static("true"));
+        }
         if self.status == StatusCode::UNAUTHORIZED {
             response
                 .headers_mut()

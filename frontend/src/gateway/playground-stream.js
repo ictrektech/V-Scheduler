@@ -1,7 +1,9 @@
 // Normalize stream events without mistaking reasoning for the final answer.
 export function playgroundStreamEvent(endpoint, payload) {
   if (payload.error) {
-    throw new Error(typeof payload.error === 'string' ? payload.error : payload.error.message || JSON.stringify(payload.error));
+    const error = new Error(typeof payload.error === 'string' ? payload.error : payload.error.message || JSON.stringify(payload.error));
+    error.code = payload.error?.code;
+    throw error;
   }
   if (endpoint === 'responses') return { text: payload.type === 'response.output_text.delta' ? payload.delta || '' : '', reasoning: '' };
   if (endpoint === 'messages') return { text: payload.delta?.text || payload.content_block?.text || '', reasoning: payload.delta?.thinking || '' };

@@ -5,6 +5,7 @@ import { groupCatalog, sourceLabel } from './model-catalog.js';
 import {apiError,browserIdentityFailure} from '../http-client.js';
 import {recordDiagnostic,isSessionError,userErrorMessage} from '../diagnostics.js';
 import { createGatewayI18n } from './locale.js';
+import { classifyModelTest, lastModelTest, rememberModelTest, resultLabels, reachabilityLabels, upstreamHost } from './model-test.js';
 import { playgroundStreamEvent } from './playground-stream.js';
 import { CAPABILITIES, ENDPOINTS, PROVIDER_PRESETS, replaceProviderCatalog, effectiveMetadata, systemOneRequest, validateProviderAddress } from './model-options.js';
 export function mountGateway(root, options) {
@@ -463,13 +464,30 @@ const app = {
     return this.state.models.find(m => m.qualified === id && (!upstreamId || m.upstream_id === upstreamId))?.name || id;
   },
 
+  testResultText(upstream, model) {
+    const result = lastModelTest(upstream, model);
+    const t = key => VRouterI18n.t(key);
+    return result ? `${t(resultLabels[result.outcome])} · ${new Date(result.at).toLocaleString(VRouterI18n.locale)}` : t("尚未测试");
+  },
+
+  showTestFailure(upstream, result) {
+    const host = upstreamHost(upstream?.base_url);
+    const name = upstream?.name || upstream?.id;
+    const t = key => VRouterI18n.t(key);
+    this.pgAppend("error", [
+      t(resultLabels[result.outcome]),
+      `${t("选中的上游")}：${[name, host].filter(Boolean).join(" · ") || t("未确认")}`,
+      `${t("上游可达性")}：${t(reachabilityLabels[result.reachability])}`,
+    ].join("\n"));
+  },
+
   modelCatalogRows(models) {
     const admin = this.state.status?.is_admin === true;
     return models.map(m=>{
             const budget = this.budgetFor(m);
             const actions = [];
             if (!m.short && m.kind !== "service") {
-              actions.push(`<button class="btn" onclick="app.tryModel(${jsArg(m.qualified)})">${VRouterI18n.t("测试")}</button>`);
+              actions.push(`<button class="btn" onclick="app.tryModel(${jsArg(m.qualified)}, ${jsArg(m.upstream_id)})">${VRouterI18n.t("测试")}</button>`);
             }
             if (m.upstream_source === "api" && m.upstream_manageable !== false) {
               actions.push(`<button class="btn" onclick="app.openModelDialog(${jsArg(m.qualified)}, ${jsArg(m.upstream_id)})">${VRouterI18n.t("编辑元数据")}</button>`);
@@ -497,7 +515,7 @@ const app = {
               `<span class="mono model-identifier">${esc(m.short ? m.id : (m.name || m.qualified))}</span><div class="model-capability-tags">${(m.capabilities || []).slice(0,4).map(c=>`<span class="capability-tag">${esc(VRouterI18n.t(CAPABILITIES.find(([id])=>id===c)?.[1] || c))}</span>`).join('')}</div><div class="hint">${(m.domains || ['general']).map(id => esc(VRouterI18n.t((this.state.domainCatalog || []).find(d => d.id === id)?.name || id))).join(' · ')}</div>${m.short ? ` <span class="pill kind">${VRouterI18n.t("短名")}</span>` : ""}`,
               ({embedding:"Embedding",chat:VRouterI18n.t("对话"),unknown:VRouterI18n.t("由上游决定"),service:VRouterI18n.t("服务接口")})[m.kind] || esc(m.kind),
               `<span class="pill ${m.upstream_kind}">${kindLabel(m.upstream_kind)}</span>`,
-              esc(VRouterI18n.t(m.upstream_name)),
+              `${esc(VRouterI18n.t(m.upstream_name))}${!m.short && !m.virtual && m.kind !== 'service' ? `<div class="hint">${esc(VRouterI18n.t("最近一次测试"))} · ${esc(this.testResultText(m.upstream_id, m.id))}</div>` : ''}`,
               this.budgetCell(m, budget),
               `<div class="model-row-actions">${!m.short && m.kind !== 'service' ? actions.shift() : ''}<button type="button" class="btn" onclick="app.openModelCall(${jsArg(m.qualified)}, ${jsArg(m.upstream_id)})">${VRouterI18n.t("调用方式")}</button>${!m.short && m.kind !== "service" ? `<button type="button" class="btn" onclick="app.openModelSpeed(${jsArg(m.id)}, ${jsArg(m.upstream_id || 'auto')}, ${jsArg(m.name || m.qualified)})">${VRouterI18n.t("速度趋势")}</button>` : ''}${actions.length ? `<details class="catalog-actions" ${this.catalogActionOpen.has(m.qualified)?'open':''} ontoggle="app.rememberCatalogAction(${jsArg(m.qualified)},this.open)"><summary>${VRouterI18n.t('模型设置')}</summary><div>${actions.join('')}</div></details>` : ''}</div>`,
             ];
@@ -1022,7 +1040,7 @@ const app = {
     for (const row of rows) {
       const native = row.id || value;
       for (const u of this.state.upstreams) {
-        if (seen.has(u.id) || !u.healthy || u.routing?.disabled || !u.model_ids?.includes(native)) continue;
+        if (seen.has(u.id) || u.routing?.disabled || !u.model_ids?.includes(native)) continue;
         if (this.upstreamSupportsEndpoint(u, row, endpoint.path)) {
           seen.add(u.id);
           out.push(u);
@@ -1649,10 +1667,18 @@ const app = {
       this.renderProbeResult(result);
     } catch (err) {
       if(isSessionError(err)){recordDiagnostic("AUTH_REQUEST_REJECTED","gateway_request");this.showError("");return;}
-      this.renderProbeResult({ ok: false, error: err.message });
+      this.renderProbeResult({ ok: false, error: err.message, base_url: $("ufBaseURL").value });
     } finally {
       $("ufProbe").disabled = false;
     }
+  },
+
+  probeDiagnostic(result) {
+    const host = upstreamHost(result.base_url);
+    const diagnosis = (result.test_error ? result.test_diagnosis : null) || result.diagnosis || result.test_diagnosis;
+    const t = key => VRouterI18n.t(key);
+    const reason = diagnosis?.code ? classifyModelTest(0,{code:diagnosis.code},diagnosis.reachability==="reachable") : null;
+    return `<div class="hint">${t("选中的上游")}：${esc(host || t("未确认"))} · ${t("上游可达性")}：${t(reachabilityLabels[diagnosis?.reachability] || "未确认")}${reason ? " · " + t(resultLabels[reason.outcome]) : ""}</div>`;
   },
 
   renderProbeResult(result) {
@@ -1663,9 +1689,9 @@ const app = {
     if (result.pending) { el.className = "probe-result"; VRouterI18n.bind(el, "textContent", () => VRouterI18n.t("正在测试…")); return; }
     el.className = "probe-result " + (result.ok ? "ok" : "bad");
     const models = result.models || [];
-    VRouterI18n.bind(el, "innerHTML", () => result.ok
+    VRouterI18n.bind(el, "innerHTML", () => this.probeDiagnostic(result) + (result.ok
       ? `<strong>${VRouterI18n.t("模型列表可用")}</strong><div class="hint mono">${esc(result.base_url || "")}</div><div class="hint">${models.length ? `${VRouterI18n.t("发现")} ${models.length} ${VRouterI18n.t("个模型")}：${esc(models.slice(0, 12).join(", "))}${models.length > 12 ? " …" : ""}` : VRouterI18n.t("模型列表为空")}</div>${result.protocol === "pi" ? `<div class="hint">${VRouterI18n.t("原生目录不代表账号已获得模型权限；填写具体模型进行轻量调用验证。")}</div>` : ""}${result.test_ok ? `<div class="hint">${VRouterI18n.t("指定模型联通测试通过")}</div>` : result.test_error ? `<div class="hint">${VRouterI18n.t("指定模型测试失败")}：${esc(result.test_error)}</div>` : ""}`
-      : `<strong>${VRouterI18n.t("模型列表测试未通过")}</strong><div class="hint">${esc(result.error || VRouterI18n.t("未知错误"))}</div>${result.test_ok ? `<div class="hint">${VRouterI18n.t("但指定模型联通测试通过")}；${VRouterI18n.t("保存时会把该模型加入列表")}。</div>` : result.test_error ? `<div class="hint">${VRouterI18n.t("指定模型测试也失败")}：${esc(result.test_error)}</div>` : ""}<div class="hint">${VRouterI18n.t("仍可勾选")}“${VRouterI18n.t("探测失败也允许保存")}”，${VRouterI18n.t("让运行时返回上游的具体错误")}。</div>`);
+      : `<strong>${VRouterI18n.t("模型列表测试未通过")}</strong><div class="hint">${esc(result.error || VRouterI18n.t("未知错误"))}</div>${result.test_ok ? `<div class="hint">${VRouterI18n.t("但指定模型联通测试通过")}；${VRouterI18n.t("保存时会把该模型加入列表")}。</div>` : result.test_error ? `<div class="hint">${VRouterI18n.t("指定模型测试也失败")}：${esc(result.test_error)}</div>` : ""}<div class="hint">${VRouterI18n.t("仍可勾选")}“${VRouterI18n.t("探测失败也允许保存")}”，${VRouterI18n.t("让运行时返回上游的具体错误")}。</div>`));
   },
 
   async submitUpstream(event) {
@@ -1712,11 +1738,27 @@ const app = {
     }
   },
 
-  tryModel(qualified) {
+  tryModel(qualified, upstream) {
     this.switchTab("playground");
     setTimeout(() => {
       $("pgModel").value = qualified;
       this.renderPlaygroundEndpoints();
+      if (upstream) {
+        const match = this.playgroundEndpoint() && this.playgroundCandidates(qualified, this.playgroundEndpoint()).some(item => item.id === upstream);
+        if (!match) {
+          const endpoint = PG_ENDPOINTS.find(endpoint => this.playgroundCandidates(qualified, endpoint).some(item => item.id === upstream));
+          if (endpoint) {
+            $("pgEndpoint").value = endpoint.id;
+            this.renderPlaygroundUpstreams();
+            this.updatePlaygroundMode();
+          } else {
+            $("pgUpstream").value = "";
+            this.showTestFailure(this.state.upstreams.find(item => item.id === upstream), {outcome:"failed",reachability:"unknown"});
+            return;
+          }
+        }
+        $("pgUpstream").value = upstream;
+      }
       $("pgInput").focus();
     }, 0);
   },
@@ -1850,6 +1892,14 @@ const app = {
     const out = this.pgAppend("assistant", "…");
     const controller = new AbortController();
     this.pgRequest = controller;
+    const timeout = new AbortController();
+    const deadline = setTimeout(() => timeout.abort(), 180000);
+    const upstreams = this.state.upstreams.slice();
+    let selected = pinned === 'auto' ? undefined : upstreams.find(u => u.id === pinned);
+    let upstreamResponded = false;
+    let resolvedModel = native;
+    const save = result => rememberModelTest(selected?.id, resolvedModel, result);
+    const failure = result => { save(result); out.remove(); this.showTestFailure(selected, result); };
     const queueId = crypto.randomUUID();
     this.pgQueueId = queueId;
     VRouterI18n.bind($("pgSend"), "textContent", () => VRouterI18n.t("停止"));
@@ -1871,7 +1921,7 @@ const app = {
     showProgress();
     const progressTimer = setInterval(() => {
       showProgress();
-      if(queuePoll||controller.signal.aborted||headersReceived)return;
+      if(queuePoll||controller.signal.aborted||timeout.signal.aborted||headersReceived)return;
       queuePoll=true;
       void this.api('GET','/api/v1/inference-queue').then(data=>{
         if(controller.signal.aborted||headersReceived)return;
@@ -1900,18 +1950,23 @@ const app = {
         method: "POST",
         headers,
         body: JSON.stringify(body),
-        signal: controller.signal,
+        signal: AbortSignal.any([controller.signal, timeout.signal]),
       });
+      const routed = res.headers.get("X-VRouter-Upstream");
+      upstreamResponded = res.headers.get("X-VScheduler-Upstream-Responded") === "true";
+      if (routed) selected = upstreams.find(u => u.id === routed) || {id:routed};
+      if (model === 'auto') {
+        const actual = res.headers.get("X-VScheduler-Auto-Model");
+        resolvedModel = this.state.models.find(m => m.qualified === actual && m.upstream_id === routed)?.id;
+      }
       if (!res.ok) {
-        let msg = `HTTP ${res.status}`;
-        try {
-          const raw = (await res.text()).trim().slice(0, 2000);
-          let detail = raw;
-          try { const data = JSON.parse(raw); detail = apiError(data,res.status).message; } catch {}
-          if (typeof detail === "string" && detail) msg += `: ${detail}`;
-        } catch {}
-        out.remove();
-        this.pgAppend("error", msg);
+        const payload = await res.json().catch(() => null);
+        if (!upstreamResponded && isSessionError(apiError(payload,res.status))) throw apiError(payload,res.status);
+        let result = classifyModelTest(res.status, payload, upstreamResponded);
+        if (!upstreamResponded && result.outcome === "failed" && res.status === 503 && selected?.status?.state === "auth_failed") {
+          result = {outcome:"auth", reachability:"reachable"};
+        }
+        failure(result);
         return;
       }
       headersReceived=true;
@@ -1964,6 +2019,7 @@ const app = {
         }
       }
       if (!answer) throw new Error(VRouterI18n.t(reasoningLength ? "模型仅返回思考内容，未返回正文" : "模型未返回正文"));
+      save({outcome:"passed", reachability:"reachable"});
       const total = performance.now() - started;
       VRouterI18n.bind($("pgMeta"), "textContent", () => `${endpoint.label} · ${this.modelLabel(model, pinned)} · ${VRouterI18n.t("上游")} ${res.headers.get("X-VRouter-Upstream") || pinned || VRouterI18n.t("未知")}（${VRouterI18n.t("指定")}） · ${VRouterI18n.t("总耗时")} ${(total / 1000).toFixed(2)}s` +
         (firstToken !== null ? ` · ${VRouterI18n.t("首")} token ${(firstToken / 1000).toFixed(2)}s` : ""));
@@ -1973,10 +2029,12 @@ const app = {
         out.textContent = answer || VRouterI18n.t("已停止生成");
         VRouterI18n.bind($("pgMeta"), "textContent", () => VRouterI18n.t("已停止生成"));
       } else {
-        out.remove();
-        this.pgAppend("error", String(err));
+        failure(timeout.signal.aborted
+          ? {outcome:"timeout", reachability:upstreamResponded ? "reachable" : "unknown"}
+          : classifyModelTest(0, {error:err}, upstreamResponded));
       }
     } finally {
+      clearTimeout(deadline);
       clearInterval(progressTimer);
       this.pgRequest = null;
       $("pgSend").disabled = false;

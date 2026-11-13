@@ -1,5 +1,9 @@
 # V-Scheduler complete API integration
 
+Open Weight management → Model integration status to see download progress, inference service status and the last test separately. Remote weights are marked as managed by the upstream. Select Test in Models & providers and send a request in Playground. Failures identify the selected host, reachability and whether the request failed due to networking, authentication, an unloaded model or a timeout. Results are retained in the current app tab until it reloads.
+
+GET /api/v1/model-lifecycle requires a VOS administrator. download is null or contains phase and progress from 0 to 1; model_running is a boolean or null; upstream_models uses weight_source upstream or unlinked. POST /api/v1/upstreams/probe can return diagnosis and test_diagnosis with code and reachability (reachable, unreachable or unknown). Playground calls the normal /v1 APIs.
+
 ## PGV setup status
 
 Open V-Scheduler in VOS as an enabled system administrator to trigger first-time setup. The page polls status and lets you retry a failed setup request. Restarts reuse the database. If the configured database or account is unavailable, restore the original database or correct its connection settings.

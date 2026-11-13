@@ -1,5 +1,9 @@
 # V-Scheduler · 资源调度
 
+打开「权重管理 → 模型接入状态」，分别查看权重下载进度、推理服务和最近一次测试。远程模型显示「权重由上游管理」。在「模型与上游」点「测试」，从试聊发出请求。失败时查看选中的上游主机、可达性和网络、鉴权、模型未加载或超时原因。测试结果在当前应用页保留，重新加载页面后清空。
+
+GET /api/v1/model-lifecycle 需要 VOS 管理员。download 为 null 或包含 phase 和 0–1 的 progress；model_running 为布尔值或 null；upstream_models 中 weight_source 为 upstream 或 unlinked。POST /api/v1/upstreams/probe 返回可选的 diagnosis 和 test_diagnosis，包含 code 和 reachability（reachable、unreachable、unknown）。试聊通过正常 /v1 接口调用。
+
 统一入口、身份与调度责任见[统一接入指南](docs/application-integration.md)，各 profile 的实际发布与验收范围见[验收记录](docs/validation.md)。
 
 「模型与上游」初次打开时所有来源卡片默认折叠。点击标题展开；刷新列表保留手动展开，搜索临时展开匹配的卡片，清除搜索后恢复原状。API 不受影响。
