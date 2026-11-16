@@ -10,6 +10,8 @@ The unified package includes the model gateway and scheduling controller. Model 
 
 Version __APP_VERSION__
 
+Version 0.0.109 removes the controller container memory limit that caused restart loops when the controller exceeded the previous limit. Upgrade from the VOS App Store to apply the fix. Inference admission, model budgets, and API contracts are unchanged.
+
 Installation checks the PGV dependency. On first opening, sign in as a VOS administrator to automatically initialize a dedicated database, ordinary database role and internal collector identity. Configuration lives in the private ${VOS_APP_STORAGE_PATH}/config directory. No configuration files or terminal commands are required. The page shows initialization status while PGV is unavailable.
 
 Interrupted first-time setup resumes unfinished work. Restarts reuse the existing database. If an existing database or account is unavailable, the app asks an administrator to restore the database or correct its connection settings. If first-time setup fails, follow the displayed instructions and select Retry connection.

@@ -206,7 +206,7 @@ Agent 是本应用在节点上运行的资源采集与任务执行后台进程�
 
 新版 V-Router 的 VOS 包强制依赖 Scheduler `>=0.0.11`，逐模型批准输入、资源参数与目标 executor。HTTP/SSE、WebSocket 与异步创建均有准入；异步接力和已运行任务子调用必须经数据库核验，不能凭 delegated 声明跳过。`GET /api/v1/permits` 显示模型许可历史，executor `upstream_urls` 绑定实际计算地址。接口以 [OpenAPI](api/openapi-v1.json) 和 [接入标准](docs/integration-standard.md) 为准。
 
-节点 `resident_baseline` 计常驻模型，`safety_reserve` 保护 VOS 余量；默认保留至少 2 GiB/10% RAM、一个 CPU 核和 256 MiB/5% 独立显存，CPU 95% 暂停准入。全部未释放预约与观测余量共同校验，统一内存仅用一个池。未知停止继续占用；关联子许可未停止时父任务不释放、不重试。统一服务与内置采集共同受 1280 MiB/3 CPU 容器限制。模板须按真实模型峰值校准，外部未纳管进程及不守契约的模型服务仍需执行端硬约束。
+节点 `resident_baseline` 计常驻模型，`safety_reserve` 保护 VOS 余量；默认保留至少 2 GiB/10% RAM、一个 CPU 核和 256 MiB/5% 独立显存，CPU 95% 暂停准入。全部未释放预约与观测余量共同校验，统一内存仅用一个池。未知停止继续占用；关联子许可未停止时父任务不释放、不重试。VOS 安装包从 0.0.109 起取消 controller 的容器内存上限。模板须按真实模型峰值校准，外部未纳管进程及不守契约的模型服务仍需执行端硬约束。
 
 ### 本机采集与 Jetson Thor
 
