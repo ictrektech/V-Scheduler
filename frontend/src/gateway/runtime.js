@@ -5,7 +5,7 @@ import { groupCatalog, sourceLabel } from './model-catalog.js';
 import {apiError,browserIdentityFailure} from '../http-client.js';
 import {recordDiagnostic,isSessionError,userErrorMessage} from '../diagnostics.js';
 import { createGatewayI18n } from './locale.js';
-import { classifyModelTest, lastModelTest, rememberModelTest, resultLabels, reachabilityLabels, upstreamHost } from './model-test.js';
+import { classifyModelTest, lastModelTest, modelTestScope, rememberModelTest, resultLabels, reachabilityLabels, upstreamHost } from './model-test.js';
 import { playgroundStreamEvent } from './playground-stream.js';
 import { CAPABILITIES, ENDPOINTS, PROVIDER_PRESETS, replaceProviderCatalog, effectiveMetadata, systemOneRequest, validateProviderAddress } from './model-options.js';
 export function mountGateway(root, options) {
@@ -176,12 +176,13 @@ const app = {
 
   async refresh() {
     try {
-      const [status, models, upstreams, usage, providerCatalog] = await Promise.all([
+      const [status, models, upstreams, usage, providerCatalog, identity] = await Promise.all([
         this.api("GET", "/api/v1/status"),
         this.api("GET", "/api/v1/models"),
         this.api("GET", "/api/v1/upstreams"),
         this.api("GET", "/api/v1/usage?period=" + encodeURIComponent(this.state.usagePeriod)),
         this.providerCatalogPromise ||= this.api("GET", "/api/v1/provider-catalog").catch(()=>null),
+        this.api("GET", "/api/v1/auth/me").catch(()=>null),
       ]);
       if(providerCatalog?.providers&&this.providerCatalogRevision!==providerCatalog.revision){
         replaceProviderCatalog(providerCatalog.providers);this.providerCatalogRevision=providerCatalog.revision;
@@ -195,6 +196,7 @@ const app = {
         domainCatalog: models.domain_catalog || [],
         upstreams: upstreams.upstreams,
         usage,
+        testScope: modelTestScope(API, identity),
         budgets: admin ? this.state.budgets : [],
       };
       this.showError("");
@@ -465,7 +467,7 @@ const app = {
   },
 
   testResultText(upstream, model) {
-    const result = lastModelTest(upstream, model);
+    const result = lastModelTest(this.state.testScope, upstream, model);
     const t = key => VRouterI18n.t(key);
     return result ? `${t(resultLabels[result.outcome])} · ${new Date(result.at).toLocaleString(VRouterI18n.locale)}` : t("尚未测试");
   },
@@ -1898,7 +1900,8 @@ const app = {
     let selected = pinned === 'auto' ? undefined : upstreams.find(u => u.id === pinned);
     let upstreamResponded = false;
     let resolvedModel = native;
-    const save = result => rememberModelTest(selected?.id, resolvedModel, result);
+    let scope;
+    const save = result => rememberModelTest(scope, selected?.id, resolvedModel, result, selected?.base_url);
     const failure = result => { save(result); out.remove(); this.showTestFailure(selected, result); };
     const queueId = crypto.randomUUID();
     this.pgQueueId = queueId;
@@ -1932,6 +1935,10 @@ const app = {
     }, 1000);
     try {
       const headers = await this.authHeaders();
+      // Resolve identity using exactly the credentials the gateway trial will use.
+      const identity = await fetch(API + '/api/v1/auth/me', {headers, signal:AbortSignal.any([controller.signal, timeout.signal])})
+        .then(res => res.ok ? res.json() : null).catch(() => null);
+      scope = modelTestScope(API, identity);
       headers["Content-Type"] = "application/json";
       if (model !== 'auto') headers["X-VRouter-Upstream"] = pinned;
       headers["X-VScheduler-Queue-Wait-Seconds"] = "120";

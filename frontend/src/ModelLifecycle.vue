@@ -2,19 +2,25 @@
 import {userErrorMessage} from "./diagnostics.js"
 import {onMounted,onUnmounted,ref} from 'vue'
 import {gatewayRequest} from './gateway-client'
-import {lastModelTest,resultLabels} from './gateway/model-test.js'
+import {apiBases} from './http-client.js'
+import {executionLocation,lastModelTest,modelTestScope,resultLabels} from './gateway/model-test.js'
 defineProps<{t:(text:string)=>string}>()
 const items=ref<any[]>([]),policy=ref<any>(null),seconds=ref(60),error=ref(''),busy=ref(false)
 const upstreamModels=ref<any[]>([])
+const upstreams=ref(new Map())
+const scope=ref<string>()
 const testRevision=ref(0)
 const updateTests=()=>testRevision.value++
 function test(upstream:string,model:string){
  void testRevision.value
- return lastModelTest(upstream,model)
+ return lastModelTest(scope.value,upstream,model)
 }
 function latest(upstream:string,model:string){
  const result=test(upstream,model)
- return result ? {label:resultLabels[result.outcome], time:new Date(result.at).toLocaleString()} : {label:'尚未测试', time:''}
+ return result ? {label:resultLabels[result.outcome], time:new Date(result.at).toLocaleString(), host:result.host} : {label:'尚未测试', time:'', host:''}
+}
+function locationOf(upstream:string){
+ return executionLocation(upstreams.value.get(upstream),window.location.hostname)
 }
 function progress(download:{progress?:number}){
  return typeof download.progress==='number'?Math.round(100*Math.max(0,Math.min(1,download.progress)))+'%':''
@@ -26,8 +32,19 @@ async function refresh(){
  if(busy.value)return
  busy.value=true
  try{
-  const [lifecycle,residency]=await Promise.all([gatewayRequest('/api/v1/model-lifecycle'),gatewayRequest('/api/v1/model-residency')])
-  if(!disposed){items.value=lifecycle.items;upstreamModels.value=lifecycle.upstream_models||[];policy.value=residency;if(!editing)seconds.value=residency.idle_seconds;error.value=''}
+  const [lifecycle,residency,sources,identity]=await Promise.all([
+   gatewayRequest('/api/v1/model-lifecycle'),gatewayRequest('/api/v1/model-residency'),
+   gatewayRequest('/api/v1/upstreams'),gatewayRequest('/api/v1/auth/me').catch(()=>null),
+  ])
+  if(!disposed){
+   items.value=lifecycle.items
+   upstreamModels.value=lifecycle.upstream_models||[]
+   upstreams.value=new Map((sources.upstreams||[]).map((source:{id:string})=>[source.id,source]))
+   scope.value=modelTestScope(apiBases(window.location.pathname).gateway,identity)
+   policy.value=residency
+   if(!editing)seconds.value=residency.idle_seconds
+   error.value=''
+  }
  }catch(e){if(!disposed)error.value=userErrorMessage(e)}finally{busy.value=false}
 }
 async function save(){if(busy.value)return;busy.value=true;try{await gatewayRequest('/api/v1/model-residency',{idle_seconds:seconds.value},'PUT');editing=false}catch(e){error.value=userErrorMessage(e);return}finally{busy.value=false}await refresh()}
@@ -45,7 +62,8 @@ onUnmounted(()=>{window.removeEventListener('vscheduler:model-test',updateTests)
   <p v-if="item.blockers?.includes('NO_LINKED_GATEWAY_SERVICE')">{{t('在推理服务中关联仓库模型，并将该服务注册到统一网关。下载完成不会自动部署外部推理后端。')}}</p>
   <div v-for="deployment in item.deployments" :key="deployment.service_id+'/'+deployment.native_model"><strong>{{deployment.service_id}}</strong><p><code>{{deployment.gateway_model}}</code></p>
    <p><strong>{{t('推理服务')}}</strong> · {{t(states[deployment.route_state]||deployment.route_state)}} · {{t(deployment.configured_callable?'接入就绪':'接入未就绪')}}<span v-if="deployment.model_running != null"> · {{t(deployment.model_running?'模型已加载':'模型未加载')}}</span></p>
-   <p><strong>{{t('最近一次测试')}}</strong> · {{t(latest(deployment.upstream_id,deployment.native_model).label)}} {{latest(deployment.upstream_id,deployment.native_model).time}}</p>
+   <p><strong>{{t('执行位置')}}</strong> · {{t(locationOf(deployment.upstream_id).label)}} <code>{{locationOf(deployment.upstream_id).host}}</code></p>
+   <p><strong>{{t('最近一次测试')}}</strong> · {{t(latest(deployment.upstream_id,deployment.native_model).label)}} {{latest(deployment.upstream_id,deployment.native_model).time}} <code>{{latest(deployment.upstream_id,deployment.native_model).host}}</code></p>
    <p v-for="reason in deployment.blockers" :key="reason">{{t(reasons[reason]||reason)}}</p>
   </div>
  </article><p v-if="!items.length&&!busy">{{t('暂无本地模型')}}</p></section>
@@ -55,7 +73,8 @@ onUnmounted(()=>{window.removeEventListener('vscheduler:model-test',updateTests)
    <h3>{{model.name||model.gateway_model}}</h3><code>{{model.upstream_id}}</code>
    <p><strong>{{t('权重下载')}}</strong> · {{t(model.weight_source==='upstream'?'权重由上游管理':'未关联本地权重')}}</p>
    <p><strong>{{t('推理服务')}}</strong> · {{t(states[model.service_state]||model.service_state)}}</p>
-   <p><strong>{{t('最近一次测试')}}</strong> · {{t(latest(model.upstream_id,model.native_model).label)}} {{latest(model.upstream_id,model.native_model).time}}</p>
+   <p><strong>{{t('执行位置')}}</strong> · {{t(locationOf(model.upstream_id).label)}} <code>{{locationOf(model.upstream_id).host}}</code></p>
+   <p><strong>{{t('最近一次测试')}}</strong> · {{t(latest(model.upstream_id,model.native_model).label)}} {{latest(model.upstream_id,model.native_model).time}} <code>{{latest(model.upstream_id,model.native_model).host}}</code></p>
   </article>
  </section>
  <section class="panel lifecycle"><h2>{{t('模型驻留与卸载')}}</h2><p>{{t('QA、Embedding、Rerank 可同时驻留。空闲时保留已确认的模型内存，调用前重新申请完整计算预算；资源不足时按空闲先后卸载，到期仍确认卸载。')}}</p>

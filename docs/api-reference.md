@@ -1,8 +1,8 @@
 # API reference / API 完整参考
 
-打开「权重管理 → 模型接入状态」，分别查看权重下载进度、推理服务和最近一次测试。远程模型显示「权重由上游管理」。在「模型与上游」点「测试」，从试聊发出请求。失败时查看选中的上游主机、可达性和网络、鉴权、模型未加载或超时原因。测试结果在当前应用页保留，重新加载页面后清空。
+VOS 管理员在「权重管理 → 模型接入状态」可查看权重进度、服务状态和执行位置。内置 Ollama 显示本机 VOS，外部服务显示网关连接的上游主机。若上游使用代理，其后的物理节点无法确认。远程权重标为由上游管理。在「模型与上游」选择模型并点「测试」，发送试聊请求后返回状态页查看实际选中的上游、结果和时间。失败可在试聊中查看可达性、网络、鉴权、模型未加载或超时等原因。同一登录身份在当前浏览器刷新后仍能看到每个模型与上游的最近结果。浏览器清除站点数据或禁用本地存储时，刷新后可能无法恢复。
 
-GET /api/v1/model-lifecycle 需要 VOS 管理员。download 为 null 或包含 phase 和 0–1 的 progress；model_running 为布尔值或 null；upstream_models 中 weight_source 为 upstream 或 unlinked。POST /api/v1/upstreams/probe 返回可选的 diagnosis 和 test_diagnosis，包含 code 和 reachability（reachable、unreachable、unknown）。试聊通过正常 /v1 接口调用。
+GET /api/v1/model-lifecycle 需要 VOS 管理员。download 为 null 或包含 phase 和 0–1 的 progress；model_running 为布尔值或 null；upstream_models 中 weight_source 为 upstream 或 unlinked。POST /api/v1/upstreams/probe 返回可选的 diagnosis 和 test_diagnosis，包含 code 和 reachability（reachable、unreachable、unknown）。试聊通过正常 /v1 接口调用。 界面使用既有 GET /api/v1/upstreams 的 id、source 和 base_url，仅从地址显示主机与端口；使用 GET /api/v1/auth/me 的 auth_method 和 identity.sub 隔离当前浏览器中的试聊结果。最多保留 200 个模型与上游的最近状态、时间和主机，试聊内容不写入存储。API 契约无变化。
 
 This index is generated from the shipped OpenAPI documents. Each operation links to the complete request, response and authentication contract. In the app, open **API Documentation → Model & Gateway API / Scheduler Management API / Model Management API** and search by path. The Application Integration tab explains the end-to-end workflow.
 
