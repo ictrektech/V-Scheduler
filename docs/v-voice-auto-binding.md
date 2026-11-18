@@ -150,3 +150,30 @@ Voice 绑定使用管理 API 当前保存的节点预算，不能继续按初始
 ### V-Voice 0.0.28 兼容
 
 0.0.28 沿用 0.0.27 的模型与执行协议。正式地址仍为 `http://v-scheduler:8080/scheduler/api/v1`；已有 Thor 小模型和 Orin CPU 审批增加该版本记录，资源预算、身份核验、执行器核验与退役模型限制不变。未批准的硬件或模型不会因版本升级自动获得审批。
+
+## Haru 实时对话驻留
+
+Haru 使用 V-Voice discovery 的 `dialogue_models` 单独声明，不混入普通
+`sync_models` 或 `async_models`：
+
+```json
+{
+  "id": "haru-4b-q8",
+  "task_type": "model.dialogue"
+}
+```
+
+对应校准项必须包含 `dialogue_limits`，至少固定 `input_bytes`、
+`max_seconds` 和 `sample_rate`。控制器为匹配的实测审批创建
+`model.dialogue` executor；V-Voice 在启动 worker 前取得普通 `/permits`，
+模型已加载但空闲时每 5 秒续租同一许可，worker 退出后才以
+`native_exit_barrier` 和 `model_unloaded` 证据释放。
+
+该路径不经过 V-Router 的 WebSocket 准入，浏览器只连接 V-Voice 自己的认证
+WebSocket。普通 `model.infer`、`voice.generate` 和网关策略保持不变。
+
+不直接复用 `model.infer` 的原因：`model.infer` 以单次推理请求为生命周期，请求
+结束即释放许可；实时对话需要在 worker 加载、会话进行和空闲热保留期间持续持有同一
+份资源，并在 worker 原生退出后才释放。若复用单次推理路径，许可会在回合之间释放，
+资源账本与实际驻留不一致，也可能允许第二个会话并发准入。`model.dialogue` 只增加
+驻留生命周期，仍复用现有的许可申请、验认、续租和释放机制。

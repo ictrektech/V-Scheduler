@@ -305,6 +305,8 @@ fn build_for_node(
         .map(str::to_owned)
         .unwrap_or_else(secret);
     let mut models = serde_json::Map::new();
+    let mut dialogue_models = serde_json::Map::new();
+    let mut dialogue_limits = serde_json::Map::new();
     let mut gateway_executors = serde_json::Map::new();
     let mut secondary_models = serde_json::Map::new();
     let mut model_limits = serde_json::Map::new();
@@ -506,8 +508,51 @@ fn build_for_node(
                 adapters.push(json!({"id":gateway,"url":ORIGIN,"token":executor_token,"health_url":format!("{ORIGIN}/health")}));
             }
         }
+        let dialogue_declared = contract["dialogue_models"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        let dialogue_requested = approval["dialogue_models"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        let dialogue_approved: Vec<&str> = dialogue_requested
+            .iter()
+            .filter_map(Value::as_str)
+            .filter(|id| {
+                dialogue_declared.iter().any(|row| {
+                    row["id"] == *id
+                        && row["task_type"] == "model.dialogue"
+                        && contract["_ready_dialogue"]
+                            .as_array()
+                            .is_some_and(|ready| ready.iter().any(|model| model == *id))
+                })
+            })
+            .collect();
+        if !dialogue_approved.is_empty() {
+            let executor = format!("v-voice.auto.{id}.dialogue");
+            for model in dialogue_approved {
+                ensure!(
+                    identifier(model) && !models.contains_key(model) && !dialogue_models.contains_key(model),
+                    "invalid or duplicate dialogue model approval"
+                );
+                let limits = approval["dialogue_limits"][model]
+                    .as_object()
+                    .context("measured dialogue limits required")?;
+                ensure!(
+                    limits.get("input_bytes").and_then(Value::as_u64).is_some_and(|v| v > 0 && v <= max_input)
+                        && limits.get("max_seconds").and_then(Value::as_u64).is_some_and(|v| (1..=3600).contains(&v))
+                        && limits.get("sample_rate").and_then(Value::as_u64).is_some_and(|v| v == 24000),
+                    "complete measured dialogue limits required"
+                );
+                dialogue_models.insert(model.to_owned(), json!(executor));
+                dialogue_limits.insert(model.to_owned(), json!(limits));
+            }
+            executors.push(json!({"id":executor,"app_id":APP,"node_id":node_id,"contract_version":"1","task_type":"model.dialogue","resources":resources,"upstream_urls":[UPSTREAM],"retry_mode":"none","max_attempts":1}));
+            adapters.push(json!({"id":executor,"url":ORIGIN,"token":executor_token,"health_url":format!("{ORIGIN}/health")}));
+        }
     }
-    ensure!(!models.is_empty(), "no calibrated model available");
+    ensure!(!models.is_empty() || !dialogue_models.is_empty(), "no calibrated model available");
     for (model, secondary) in &secondary_models {
         for other in secondary.as_array().context("invalid secondary models")? {
             let other = other.as_str().context("invalid secondary identity")?;
@@ -519,7 +564,7 @@ fn build_for_node(
         }
     }
     let controller_url = binding_controller_url(contract)?;
-    let mut state = json!({"credential_epoch":epoch,"binding":{"protocol_version":1,"binding_revision":1,"app_id":APP,"url":controller_url,"token":token,"executor_token":executor_token,"upstream_url":UPSTREAM,"models":models,"gateway_executors":gateway_executors,"secondary_models":secondary_models},
+    let mut state = json!({"credential_epoch":epoch,"binding":{"protocol_version":1,"binding_revision":1,"app_id":APP,"url":controller_url,"token":token,"executor_token":executor_token,"upstream_url":UPSTREAM,"models":models,"dialogue_models":dialogue_models,"dialogue_limits":dialogue_limits,"gateway_executors":gateway_executors,"secondary_models":secondary_models},
         "principals":[{"token":token,"role":"submitter","app_id":APP,"permit_executors":gateway_ids},{"token":gateway_token,"role":"submitter","app_id":"v-scheduler.voice-gateway"}],
         "executors":executors,"adapters":adapters,
         "gateway":{"url":controller_url,"token":gateway_token,"require_model_policy":true,"models":policies}});
@@ -614,6 +659,16 @@ async fn reconcile(path: &Path, runtime: &Runtime, db: &PgPool) -> anyhow::Resul
             .as_array()
             .map(|models| models
                 .iter()
+                .filter_map(|model| model["id"].as_str())
+                .collect::<Vec<_>>())
+            .unwrap_or_default()
+    );
+    contract["_ready_dialogue"] = json!(
+        snapshot["scheduler"]["dialogue_models"]
+            .as_array()
+            .map(|models| models
+                .iter()
+                .filter(|model| model["task_type"] == "model.dialogue")
                 .filter_map(|model| model["id"].as_str())
                 .collect::<Vec<_>>())
             .unwrap_or_default()
@@ -790,6 +845,39 @@ mod tests {
         let contract = json!({"protocol_version":1,"app_id":APP,"executor_base_url":ORIGIN,"upstream_url":UPSTREAM,"binding_endpoint":"/api/v1/scheduler/binding","provider":"cpu","cpu_models":[],"num_threads":4,"max_concurrent_inference":2,"_execution_hardware":[],"_ready_sync":["asr","speaker"],"_ready_async":["tts"],"sync_models":[{"id":"asr","task_type":"model.infer"},{"id":"speaker","task_type":"model.infer"}],"async_models":[{"id":"tts","task_type":"voice.generate","weight_bytes":1}]});
         let approvals = json!({"protocol_version":1,"approvals":[{"id":"measured","architecture":std::env::consts::ARCH,"provider":"cpu","cpu_models":[],"num_threads":4,"max_concurrent_inference":2,"hardware":[],"calibration":{"evidence_id":"unit-fixture","peak_memory_mib":1024},"resources":{"cpu_millicores":4000,"memory_mib":2048},"max_input_bytes":1048576,"limits":{},"sync_models":["asr","speaker"],"async_models":["tts"],"secondary_models":{"asr":["speaker"]}}]});
         (runtime, contract, approvals)
+    }
+
+    #[test]
+    fn dialogue_model_uses_a_direct_resident_executor() {
+        let (runtime, mut contract, mut approvals) = fixtures();
+        contract["dialogue_models"] =
+            json!([{"id":"haru-4b-q8","task_type":"model.dialogue"}]);
+        contract["_ready_dialogue"] = json!(["haru-4b-q8"]);
+        let mut dialogue = approvals["approvals"][0].clone();
+        dialogue["id"] = json!("dialogue");
+        dialogue["sync_models"] = json!([]);
+        dialogue["async_models"] = json!([]);
+        dialogue["dialogue_models"] = json!(["haru-4b-q8"]);
+        dialogue["dialogue_limits"] = json!({"haru-4b-q8": {"input_bytes": 16777216, "max_seconds": 300, "sample_rate": 24000}});
+        dialogue["max_input_bytes"] = json!(16777216);
+        dialogue["resources"] = json!({"cpu_millicores": 4500, "memory_mib": 8192, "gpu_slots": 1, "gpu_memory_mib": 8192});
+        approvals["approvals"] = json!([dialogue]);
+
+        let state = build(&runtime, &contract, &approvals, None).unwrap();
+        let executor = state["binding"]["dialogue_models"]["haru-4b-q8"].as_str().unwrap();
+        let definition = state["executors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["id"] == executor)
+            .unwrap();
+        assert_eq!(definition["task_type"], "model.dialogue");
+        assert_eq!(definition["upstream_urls"], json!([UPSTREAM]));
+        assert_eq!(state["gateway"]["models"].as_object().unwrap().len(), 0);
+        assert_eq!(state["binding"]["dialogue_limits"]["haru-4b-q8"]["max_seconds"], 300);
+
+        approvals["approvals"][0]["dialogue_limits"]["haru-4b-q8"]["sample_rate"] = json!(16000);
+        assert!(build(&runtime, &contract, &approvals, None).is_err());
     }
     #[test]
     fn voice_binding_uses_heartbeat_capacity_after_cpu_only_startup() {

@@ -31,7 +31,6 @@ use uuid::Uuid;
 struct App {
     db: PgPool,
     config: Arc<Config>,
-    voice_ready: Arc<std::sync::atomic::AtomicBool>,
     voice_config: crate::voice::Runtime,
 }
 #[derive(Clone)]
@@ -44,7 +43,6 @@ impl FromRef<SharedApp> for App {
         Self {
             db: shared.app.db.clone(),
             config: shared.config.snapshot(),
-            voice_ready: shared.config.ready.clone(),
             voice_config: shared.config.clone(),
         }
     }
@@ -124,8 +122,12 @@ fn visible(p: &Principal, app: &str) -> bool {
 }
 fn voice_admission(a: &App, executor: &str) -> Api<()> {
     if (executor.starts_with("v-voice.auto.") || executor.starts_with("v-scheduler.voice."))
-        && (!a.voice_ready.load(std::sync::atomic::Ordering::Acquire)
-            || !a.voice_config.is_current(&a.config))
+        && !a
+            .voice_config
+            .snapshot()
+            .executors
+            .iter()
+            .any(|entry| entry.id == executor)
     {
         return Err(Error(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -409,7 +411,6 @@ pub async fn serve(
     let a = App {
         db,
         config,
-        voice_ready: runtime.ready.clone(),
         voice_config: runtime.clone(),
     };
     crate::vos::spawn(a.db.clone(), a.config.clone())?;
@@ -518,7 +519,7 @@ pub async fn serve(
 }
 async fn discovery() -> Json<Value> {
     ok(
-        json!({"protocol_version":1,"implementation_version":"0.1.0","features":["native-admission-queue-v1","shared-native-runtime-lane-v1","priority-scheduling-v1","cooperative-preemption-v1","admin-force-admission-v1","application-lifecycle-v1","cooperative-model-stop","tasks","idempotency","reservations","events","static-executors","dynamic-enrollment","node-management","modelinfer-discovery","vos-app-source-metrics","source-budget-planning","multi-node-permits","executor-approval","service-identities","agent-image-studio","permits","backend-permit-verification","permit-history","statistics","permit-release-times","interactive-inference-queue","managed-ollama-residency","model-service-linkage","task-timeline","delegated-permits","safety-headroom","retry","manual-delete","attempt-history"],"unsupported":["artifacts","ha","vos-remote-control"],"authentication":"scoped-bearer","max_body_bytes":262144,"openapi_url":"openapi.json"}),
+        json!({"protocol_version":1,"implementation_version":"0.1.0","features":["native-admission-queue-v1","shared-native-runtime-lane-v1","priority-scheduling-v1","cooperative-preemption-v1","admin-force-admission-v1","application-lifecycle-v1","cooperative-model-stop","dialogue-residency-v1","tasks","idempotency","reservations","events","static-executors","dynamic-enrollment","node-management","modelinfer-discovery","vos-app-source-metrics","source-budget-planning","multi-node-permits","executor-approval","service-identities","agent-image-studio","permits","backend-permit-verification","permit-history","statistics","permit-release-times","interactive-inference-queue","managed-ollama-residency","model-service-linkage","task-timeline","delegated-permits","safety-headroom","retry","manual-delete","attempt-history"],"unsupported":["artifacts","ha","vos-remote-control"],"authentication":"scoped-bearer","max_body_bytes":262144,"openapi_url":"openapi.json"}),
     )
 }
 async fn executors(State(a): State<App>, h: HeaderMap) -> Api<Json<Value>> {
@@ -1226,7 +1227,11 @@ async fn permit_inspect(
         .config
         .executors
         .iter()
-        .find(|e| e.id == b.executor_id && e.app_id == p.app_id && e.task_type == "model.infer")
+        .find(|e| {
+            e.id == b.executor_id
+                && e.app_id == p.app_id
+                && ["model.infer", "model.dialogue"].contains(&e.task_type.as_str())
+        })
         .ok_or(Error(StatusCode::FORBIDDEN, "EXECUTOR_NOT_ALLOWED"))?;
     if !approved_upstream(e, &b.upstream_url) {
         return Err(Error(StatusCode::FORBIDDEN, "UPSTREAM_NOT_APPROVED"));
@@ -1274,7 +1279,12 @@ async fn acquire_for(a:&App,p:&Principal,h:&HeaderMap,b:PermitRequest,controlled
         .config
         .executors
         .iter()
-        .find(|e| e.id == b.executor_id && e.app_id == p.app_id && (controlled || e.task_type == "model.infer"))
+        .find(|e| {
+            e.id == b.executor_id
+                && e.app_id == p.app_id
+                && (controlled
+                    || ["model.infer", "model.dialogue"].contains(&e.task_type.as_str()))
+        })
         .cloned()
         .ok_or(Error(StatusCode::FORBIDDEN, "EXECUTOR_NOT_ALLOWED"))?;
     // Administrator calibration for an application-owned model changes only the
@@ -1493,7 +1503,11 @@ async fn permit_verify(
         .ok_or(Error(StatusCode::NOT_FOUND,"NOT_FOUND"))?;
     management::principal_active(&mut tx, &p).await?;
     let mut metadata: Value = row.get("metadata");
-    if executor.task_type != "model.infer" && !metadata["managed_control"].is_object() {return Err(Error(StatusCode::FORBIDDEN,"EXECUTOR_NOT_ALLOWED"));}
+    if !["model.infer", "model.dialogue"].contains(&executor.task_type.as_str())
+        && !metadata["managed_control"].is_object()
+    {
+        return Err(Error(StatusCode::FORBIDDEN, "EXECUTOR_NOT_ALLOWED"));
+    }
     integrations::stop_pending(&mut tx,&id).await?;
     if row.get::<String, _>("state") != "active" || !row.get::<bool, _>("valid") {
         return Err(Error(StatusCode::CONFLICT, "PERMIT_NOT_ACTIVE"));
