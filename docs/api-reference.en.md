@@ -67,6 +67,9 @@ PATCH gateway `/api/v1/models` edits metadata; explicit capability/endpoints ove
 
 POST `/api/v1/registrations` registers/discovers a service. Registration is **not** budget approval. `service_id` identifies that instance consistently across its weight-management card, gateway route and executor binding. Automatic discovered/registered sources heartbeat; persistent manually configured upstreams do not require a lease heartbeat.
 
+Ready V-Voice models inherit the application budget by default. For managed local routing, a private gateway `scheduler.local.json` may supply a shared permit policy in `upstreams[upstream_id]`; a specific `models[upstream_id/model_id]` entry takes precedence. The shared policy uses the same `mode`, `executor_id`, `completion`, `max_input_bytes`, and optional `limits` fields as a model policy. For built-in VOS application bindings, an application resource policy in `/config/app-approvals.json` can omit `model_id` to apply to ready models with the matching task type, hardware, profile and execution settings. Applications still acknowledge their binding before use. Inference paths, request bodies, response schemas and error codes are unchanged.
+
+
 The administrator-only `scheduler` policy accepts:
 
 | mode | Meaning |

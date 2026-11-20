@@ -389,15 +389,17 @@ pub(super) fn approval(
     if text(&config, "token").len() < 32 {
         return Err(Failure::new(503, "invalid scheduler identity"));
     }
-    let model_policy = config["models"].get(&key).cloned();
+    let scoped_policy = config["models"].get(&key)
+        .or_else(|| config["upstreams"].get(&u.id))
+        .filter(|policy| policy.is_object())
+        .cloned();
     let strict = config["require_model_policy"] == true || required;
-    if strict && model_policy.is_none() && (method != "GET" || websocket) && method != "DELETE" {
-        let mut failure = Failure::new(503, "model resource policy is not approved; approve this model's resource budget and refresh its binding");
+    if strict && scoped_policy.is_none() && (method != "GET" || websocket) && method != "DELETE" {
+        let mut failure = Failure::new(503, "configure the upstream resource budget and refresh its binding");
         failure.code = Some("MODEL_RESOURCE_POLICY_NOT_APPROVED".into());
         return Err(failure);
     }
-    let policy = model_policy
-        .or_else(|| config["upstreams"].get(&u.id).cloned())
+    let policy = scoped_policy
         .or_else(|| u.scheduler.clone())
         .or_else(|| (u.kind == "local").then(|| config["default_local"].clone()))
         .ok_or_else(|| Failure::new(503, "declare scheduler policy for local upstream"))?;

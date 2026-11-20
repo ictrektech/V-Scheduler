@@ -1,5 +1,5 @@
-//! Fixed VOS application bindings. Discovery describes readiness; only a matching
-//! measured calibration authorizes compute. No client-supplied URL grants trust.
+//! Fixed VOS application bindings. Discovery describes readiness; locally
+//! configured resource budgets govern execution. No client-supplied URL grants trust.
 use super::*;
 use std::{os::unix::fs::PermissionsExt, path::Path, time::Duration};
 
@@ -181,18 +181,34 @@ fn build(
     let mut delegated_ids = Vec::new();
     let mut policy_predecessors = Vec::new();
     let actual_hardware = hardware(report);
-    for approval in approvals["approvals"]
+    let applicable = approvals["approvals"]
         .as_array()
         .context("calibration list required")?
-    {
-        if approval["app_id"] != application.id
-            || approval["architecture"].as_str() != Some(std::env::consts::ARCH)
-            || approval["profile"] != profile
-            || approval["hardware"] != actual_hardware
-            || !execution_settings_match(application, &approval["execution_settings"], &contract["execution_settings"])
-        {
-            continue;
+        .iter()
+        .filter(|policy| policy["app_id"] == application.id
+            && policy["architecture"].as_str() == Some(std::env::consts::ARCH)
+            && policy["profile"] == profile
+            && policy["hardware"] == actual_hardware
+            && execution_settings_match(application, &policy["execution_settings"], &contract["execution_settings"]))
+        .collect::<Vec<_>>();
+    let mut shared = Vec::new();
+    for policy in applicable.iter().copied().filter(|policy| policy.get("model_id").is_none()) {
+        let list = if application.asynchronous { "async_models" } else { "sync_models" };
+        for model in contract[list].as_array().into_iter().flatten() {
+            if model["task_type"] != policy["task_type"] || !model["id"].is_string()
+                || applicable.iter().any(|specific| specific.get("model_id") == model.get("id"))
+            {
+                continue;
+            }
+            let mut expanded = policy.clone();
+            expanded["model_id"] = model["id"].clone();
+            shared.push(expanded);
         }
+    }
+    for (approval, shared_budget) in applicable.into_iter()
+        .filter(|policy| policy.get("model_id").is_some()).map(|policy| (policy, false))
+        .chain(shared.iter().map(|policy| (policy, true)))
+    {
         let model = approval["model_id"]
             .as_str()
             .context("calibrated model required")?;
@@ -243,13 +259,13 @@ fn build(
             "invalid measured resources"
         );
         ensure!(
-            approval["evidence"]["id"]
+            shared_budget || (approval["evidence"]["id"]
                 .as_str()
                 .is_some_and(|id| !id.is_empty())
                 && approval["evidence"]["peak_memory_mib"]
                     .as_i64()
                     .is_some_and(|peak| peak > 0 && peak <= resources.memory_mib)
-                && approval["evidence"]["confirmed_stopped"] == true,
+                && approval["evidence"]["confirmed_stopped"] == true),
             "measurement and stop evidence required"
         );
         if !resources.fits(baseline, capacity) {
@@ -269,7 +285,7 @@ fn build(
             for key in ["duration_seconds", "steps", "prompt_characters", "lyrics_characters"] {
                 ensure!(approval["model_limits"][key].as_u64().is_some_and(|v|v>0), "native input bounds required");
             }
-            if resources.gpu_memory_mib > 0 {
+            if resources.gpu_memory_mib > 0 && !shared_budget {
                 ensure!(approval["evidence"]["peak_gpu_memory_mib"].as_i64().is_some_and(|v|v>0 && v<=resources.gpu_memory_mib), "native GPU measurement required");
             }
         }
@@ -761,6 +777,31 @@ mod tests {
             let changed = build(app,"node",&capacity,&Resources::default(),profile,&json!({}),&contract,&approvals,Some(&first)).unwrap();
             assert!(changed["binding"]["models"].as_object().unwrap().is_empty(), "a version upgrade must not authorize changed execution settings");
         }
+    }
+
+    #[test]
+    fn application_budget_binds_new_discovered_models() {
+        let app = APPLICATIONS[1];
+        let profile = "l4t";
+        let capacity = Resources { cpu_millicores: 8000, memory_mib: 16000, ..Default::default() };
+        let mut contract = json!({
+            "execution_settings":{"runtime":"fixture"},
+            "sync_models":[{"id":"new-model","task_type":"model.infer"}]
+        });
+        let budgets = json!({"protocol_version":1,"credential_epoch":1,"approvals":[{
+            "app_id":app.id,"architecture":std::env::consts::ARCH,"profile":profile,"hardware":[],
+            "execution_settings":{"runtime":"fixture"},"task_type":"model.infer",
+            "resources":{"cpu_millicores":1000,"memory_mib":1024},
+            "max_input_bytes":8192,"model_limits":{"input_bytes":8192}
+        }]});
+        let baseline = Resources::default();
+        let report = json!({});
+        let first = build(app,"node",&capacity,&baseline,profile,&report,&contract,&budgets,None).unwrap();
+        assert!(first["binding"]["models"]["new-model"].is_string());
+        contract["sync_models"].as_array_mut().unwrap().push(json!({"id":"another-new-model","task_type":"model.infer"}));
+        let next = build(app,"node",&capacity,&baseline,profile,&report,&contract,&budgets,Some(&first)).unwrap();
+        assert_eq!(next["binding"]["models"]["new-model"], first["binding"]["models"]["new-model"]);
+        assert!(next["binding"]["models"]["another-new-model"].is_string());
     }
 
     #[test]

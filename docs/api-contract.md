@@ -128,3 +128,7 @@ HTTP 429 的 `WAIT_MEMORY_HEADROOM` 表示观测可用 RAM 小于本次预算、
 ## 应用统一生命周期协议
 
 调度命名空间新增 `GET/POST /integrations`、`POST /integrations/heartbeat`、`POST /permits/{id}/stop` 和 `POST /permits/{id}/stopped`。服务身份按 app 隔离，登记仅引用已批准的执行器；应用心跳不能上报或提高节点预算。停止请求保持预约，回执核验原执行身份及退出/卸载证据后才释放。既有自动绑定保持兼容。完整字段、时序与错误见[统一流程](application-integration.md#unified-lifecycle)及 OpenAPI。
+
+## 上游共享资源预算
+
+V-Voice 就绪模型自动继承应用预算。对托管的通用本地上游，可在私有 `scheduler.local.json` 的 `upstreams[upstream_id]` 写入共享许可策略，继续使用 `mode`、`executor_id`、`completion`、`max_input_bytes` 和可选的 `limits`；专用 `models[upstream_id/model_id]` 优先。内置 VOS 应用的 `/config/app-approvals.json` 资源策略可省略 `model_id`，覆盖同任务类型、硬件、profile 和运行设置的所有就绪模型。推理接口、参数、响应及错误码保持现有契约。

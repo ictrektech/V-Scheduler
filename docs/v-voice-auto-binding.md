@@ -24,10 +24,15 @@ Thor 0.0.27 的原生小模型继续使用 4 GiB 统一内存预算，较大 ONN
 
 ## 资源批准
 
-[内置校准清单](../config/voice-calibrations.json) 只包含经过实测的固定预算。
+V-Voice 声明且就绪的模型自动接入，模型 ID 和应用发布版本无需单独登记。
+新模型使用共享的应用资源预算；管理员可用 `/config/voice-approvals.json` 的顶层
+`default_resources` 调整 CPU、RAM、GPU 槽位和 GPU 内存。默认 CPU 4500m，
+CPU 执行预留 4096 MiB，CUDA 执行预留 6144 MiB 和 1 个 GPU 槽，独立显存再预留
+4096 MiB。实际请求仍经过节点资源与停止确认检查。
+[内置校准清单](../config/voice-calibrations.json) 可为已测模型提供更精确的预算。
 匹配项包括架构、实际 GPU 名称及内存类型、provider、CPU 模型覆盖、线程数与并发设置。
 存在 `application_versions` 时，还须匹配控制器从 VOS 安装详情核验的应用版本；缺少或
-不匹配时不采用该记录，不能用客户端自报版本代替。修改 provider 选择或内存回收实现后，
+不匹配时改用共享预算，不能用客户端自报版本选择历史校准。修改 provider 选择或内存回收实现后，
 旧版本的测量不会自动授权新运行时。CPU 覆盖配置也须核对实际原生工厂使用的 provider。
 192 的 `0.0.20` 混合执行记录预约 2.25 GiB RAM 和 GPU 槽；CUDA 分配不完全计入
 容器内存，不能仅凭 cgroup 硬限制调低预约。修复 CPU provider 与卸载回收后的
@@ -41,7 +46,7 @@ Paraformer。`0.0.22` 仅迁移安装地址，复用已核验的 `0.0.21` 六个
 文件必须为普通文件、0600，最大 256 KiB。它不包含服务令牌，字段格式与内置清单一致。
 校准应在独立测试副本中，通过本机 Scheduler 的独立受限身份和真实资源账本执行，
 同时约束 CPU、内存及输入范围；记录装载、推理、联合模型、取消及停止后的峰值与证据。
-未校准的硬件、运行设置或模型继续拒绝，不从默认预算静默放行。
+匹配不到专项校准时使用共享预算，资源不足时按原有准入规则等待或返回资源状态。
 
 已发布 `0.0.26` 的清单覆盖 NVIDIA Thor 统一内存、CUDA、4 线程与推理并发设置 2：
 同步包括 SenseVoice INT8、Whisper Tiny、Qwen3-ASR 0.6B、CAM++ 声纹和原生 Kokoro；
@@ -98,23 +103,30 @@ Paraformer。`0.0.22` 仅迁移安装地址，复用已核验的 `0.0.21` 六个
 需要在真实节点分别验证 V-Voice 界面、原生兼容 API、网关调用及异步创作任务：
 每次同步推理恰好一笔许可，完成且确认停止后释放；异步任务通过 Agent
 `start/inspect/cancel`，输出保留在发起用户的私有工作区。还需验证重试幂等、
-凭据轮换、错误身份、未校准模型、忙碌资源、过期遥测及停止未知均无法绕过准入。
+凭据轮换，以及默认预算、忙碌资源、过期遥测和停止未知的准入行为。
 界面显示“已发现”不能替代这些调用证据。
 
 ## 原生模型输入边界
 
-### 207 Orin Qwen3-ASR 0.6B（2026-10-27）
+### Orin Qwen3-ASR 0.6B
 
-新增 `orin-qwen3-asr-06b-bounded-v1`，仅匹配 V-Voice `0.0.30`、aarch64 Orin 统一内存、
-CUDA、`cpu_models=["paraformer-zh"]`、线程 4、推理并发 2。独立预约 4500m CPU、
-5120 MiB RAM、GPU 槽 1，不重复计独立显存。输入为 20 秒、16 kHz、1 MiB，热词为 0。
-不批准 Qwen3-ASR 1.7B、翻译或联合声纹，也不复用 SenseVoice 的预算。
+`orin-qwen3-asr-06b-bounded-v2` 匹配 aarch64 Orin 统一内存、CUDA、
+`cpu_models=["paraformer-zh"]`、线程 4、推理并发 2、输入限制协议 1 和生命周期协议 1。
+V-Voice 发布版本只记录在实测证据里。Haru 的 Orin 校准也用运行设置和协议作为准入条件。
+节点批准容量放不下其中一个模型的预约时，只跳过对应校准，其余符合条件的模型继续绑定。
 
-真实隔离容器完成 5 秒及两轮 20 秒原生识别，采样 cgroup 峰值 3191 MiB、宿主可用内存
-下降 3799 MiB；预约增加超过 25% 的余量。正常退出和模型加载后取消均确认容器停止再
-释放真实许可。证据编号 `voice-tc207-qwen3-asr-20261027`，输入范围、运行时哈希和许可
-编号保存在校准清单中。此记录需要 V-Voice 同时支持 Qwen3 的 Go/Python 输入校验；
-旧版应用仅下载了模型时，不能把文件就绪当成推理已获准。
+0.6B 单路转写预约 4500m CPU、7680 MiB RAM、GPU 槽 1，输入为 20 秒、16 kHz、1 MiB，
+热词为 0，联合声纹需另行校准。兼容 API 的请求和响应格式保持一致。
+在 V-Voice 的识别模型列表选择 Qwen3-ASR 0.6B，上传符合上述边界的音频并执行转写。
+API 客户端可在 V-Scheduler 的 API 文档中查看 `POST /v1/audio/transcriptions`，
+使用 `model=v-voice/qwen3-asr-0.6b`。如模型未获准，检查模型文件、节点批准容量、
+实际 provider、线程数和并发设置。Whisper Tiny 在匹配的 Orin 配置上预约 3072 MiB；
+Qwen3-ASR 1.7B 和其他新增模型在没有专项校准时使用应用共享预算。
+
+本次使用 V-Voice 0.0.38 镜像完成 5 秒及两轮 20 秒原生转写，采样 cgroup 峰值 3226 MiB、
+宿主可用内存下降 5901 MiB，原生模型卸载后隔离容器正常退出。证据编号
+`voice-tc207-qwen3-asr-20261120`。原 0.0.30 的停止和许可证据为
+`voice-tc207-qwen3-asr-20261027`。
 
 新清单增加 192 Orin / CUDA 与 232 RTX 5880 宿主 / CPU provider 的原生 Kokoro、SenseVoice 实测记录，其他模型或组合不能借用这些记录。
 

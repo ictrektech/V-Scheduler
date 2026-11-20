@@ -8,6 +8,8 @@ New: Inference queue and Model library → Model integration status. Playground 
 
 The unified package includes the model gateway and scheduling controller. Model clients use host port 22888 /v1; scheduling uses /scheduler/api/v1. Router connects directly to its three built-in Ollama backends without Model Hub discovery. It also discovers available models from Image Studio, V-Voice, V-Music, ML Server, and Video Structure. Once ready, V-Voice connects automatically and binds calibrated executors and model mappings. See Application integration in the UI.
 
+Ready V-Voice models inherit the application resource budget automatically and appear in the model catalog. Configured upstream budgets also apply to newly listed models. Use Application integration and the API docs to inspect the integration and available endpoints. Request and response formats are unchanged.
+
 Version __APP_VERSION__
 
 Version 0.0.109 removes the controller container memory limit that caused restart loops when the controller exceeded the previous limit. Upgrade from the VOS App Store to apply the fix. Inference admission, model budgets, and API contracts are unchanged.

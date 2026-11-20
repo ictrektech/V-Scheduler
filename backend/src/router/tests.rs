@@ -1126,7 +1126,7 @@ async fn permits_are_released_on_terminal_sse_but_not_on_truncation_or_client_ca
     let g = gateway(&root, controller);
     let mut u = upstream("fixture");
     u.base_url = format!("http://127.0.0.1:{port}/v1");
-    let cfg = json!({"url":"http://v-scheduler:38120/api/v1","token":"private-scoped-submitter-credential-1234567890","require_model_policy":true,"models":{"fixture/echo":{"mode":"permit","executor_id":"fake-approved-executor","completion":"synchronous","max_input_bytes":4096}}});
+    let cfg = json!({"url":"http://v-scheduler:38120/api/v1","token":"private-scoped-submitter-credential-1234567890","require_model_policy":true,"upstreams":{"fixture":{"mode":"permit","executor_id":"fake-approved-executor","completion":"synchronous","max_input_bytes":4096}}});
     use std::os::unix::fs::PermissionsExt;
     let path = root.join("scheduler.local.json");
     std::fs::write(&path, serde_json::to_vec(&cfg).unwrap()).unwrap();

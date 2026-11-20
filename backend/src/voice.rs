@@ -25,12 +25,12 @@ fn binding_controller_url(contract: &Value) -> anyhow::Result<&'static str> {
     }
     // Only the pre-0.0.22 wire contract used the compatibility alias. New
     // versions keep the canonical address without extending an allowlist.
-    let Some(version)=contract.get("_application_version") else {return Ok(URL)};
-    let version=version.as_str().context("invalid installed V-Voice version")?;
-    let core=version.split(['-','+']).next().unwrap_or("");
-    let parts=core.split('.').map(str::parse::<u64>).collect::<Result<Vec<_>,_>>()?;
-    ensure!(parts.len()==3,"invalid installed V-Voice version");
-    Ok(if (parts[0],parts[1],parts[2]) >= (0,0,22) {CANONICAL_URL}else{URL})
+    let Some(version) = contract.get("_application_version") else { return Ok(URL) };
+    let legacy = version.as_str()
+        .and_then(|version| version.split(['-', '+']).next())
+        .and_then(|version| version.split('.').map(str::parse::<u64>).collect::<Result<Vec<_>, _>>().ok())
+        .is_some_and(|parts| matches!(parts.as_slice(), [0, 0, patch] if *patch < 22));
+    Ok(if legacy { URL } else { CANONICAL_URL })
 }
 
 
@@ -277,11 +277,22 @@ fn build(
     build_for_node(node, contract, approvals, old)
 }
 
+#[cfg(test)]
 fn build_for_node(
     node: &Node,
     contract: &Value,
     approvals: &Value,
     old: Option<&Value>,
+) -> anyhow::Result<Value> {
+    build_voice_binding(node, contract, approvals, old, false)
+}
+
+fn build_voice_binding(
+    node: &Node,
+    contract: &Value,
+    approvals: &Value,
+    old: Option<&Value>,
+    discover_models: bool,
 ) -> anyhow::Result<Value> {
     ensure!(approvals["protocol_version"] == 1, "unsupported approval format");
     let node_id = &node.id;
@@ -349,6 +360,12 @@ fn build_for_node(
                 continue;
             }
         }
+        if let Some(version) = approval.get("lifecycle_protocol_version") {
+            ensure!(version == 1, "unsupported calibrated lifecycle protocol");
+            if contract["lifecycle_protocol_version"] != *version {
+                continue;
+            }
+        }
         let id = approval["id"]
             .as_str()
             .context("missing approval identity")?;
@@ -373,10 +390,9 @@ fn build_for_node(
             resources.memory_mib >= evidence["peak_memory_mib"].as_i64().unwrap_or(i64::MAX),
             "budget below measured peak"
         );
-        ensure!(
-            resources.fits(&node.resident_baseline, &node.capacities),
-            "approved resources exceed actual node"
-        );
+        if !resources.fits(&node.resident_baseline, &node.capacities) {
+            continue;
+        }
         let max_input = approval["max_input_bytes"]
             .as_u64()
             .context("missing input bound")?;
@@ -552,7 +568,74 @@ fn build_for_node(
             adapters.push(json!({"id":executor,"url":ORIGIN,"token":executor_token,"health_url":format!("{ORIGIN}/health")}));
         }
     }
-    ensure!(!models.is_empty() || !dialogue_models.is_empty(), "no calibrated model available");
+    // A calibration supplies a more specific budget. Ready models can also
+    // use the application's shared budget, with the same permit lifecycle.
+    if discover_models {
+        let gpu_slots = i64::from(contract["provider"] == "cuda");
+        let mut fallback = Resources {
+            cpu_millicores: 4500,
+            memory_mib: if gpu_slots > 0 { 6144 } else { 4096 },
+            gpu_slots,
+            gpu_memory_mib: if gpu_slots > 0 && contract["_execution_hardware"]
+                .as_array().is_some_and(|devices| devices.iter().any(|gpu| gpu["memory_type"] == "dedicated"))
+            { 4096 } else { 0 },
+        };
+        if let Some(resources) = approvals.get("default_resources") {
+            let configured: Resources = serde_json::from_value(resources.clone())?;
+            ensure!(configured.valid() && configured.cpu_millicores > 0
+                && configured.memory_mib > 0 && configured.gpu_slots >= gpu_slots,
+                "invalid shared V-Voice budget");
+            fallback = configured;
+        }
+        let shared_budget_fits = fallback.fits(&node.resident_baseline, &node.capacities);
+        for (list, ready, task, suffix) in [
+            ("sync_models", "_ready_sync", "model.infer", "infer"),
+            ("async_models", "_ready_async", "voice.generate", "generate"),
+            ("dialogue_models", "_ready_dialogue", "model.dialogue", "dialogue"),
+        ].into_iter().filter(|_| shared_budget_fits) {
+            let Some(ready) = contract[ready].as_array() else { continue };
+            let Some(declared) = contract[list].as_array() else { continue };
+            let executor = format!("v-voice.auto.discovered.{suffix}");
+            let gateway = "v-scheduler.voice.discovered.infer";
+            let mut has_models = false;
+            for item in declared {
+                let Some(model) = item["id"].as_str().filter(|id| !id.is_empty() && id.len() <= 512 && !id.chars().any(char::is_control)) else { continue };
+                if item["task_type"] != task || !ready.contains(&item["id"]) || models.contains_key(model) || dialogue_models.contains_key(model) {
+                    continue;
+                }
+                has_models = true;
+                if task == "model.dialogue" {
+                    dialogue_models.insert(model.to_owned(), json!(executor));
+                    dialogue_limits.insert(model.to_owned(), json!({"input_bytes":16777216,"max_seconds":300,"sample_rate":24000}));
+                    continue;
+                }
+                models.insert(model.to_owned(), json!(executor));
+                legacy_unbounded_models.insert(model.to_owned());
+                if task == "model.infer" {
+                    gateway_executors.insert(model.to_owned(), json!(gateway));
+                    policies.insert(format!("app-v-voice/{model}"), json!({
+                        "mode":"permit","executor_id":gateway,"completion":"synchronous",
+                        "max_input_bytes":33554432,"limits":{}
+                    }));
+                }
+            }
+            if !has_models {
+                continue;
+            }
+            executors.push(json!({"id":executor,"app_id":APP,"node_id":node_id,"contract_version":"1","task_type":task,"resources":fallback,"upstream_urls":if task=="voice.generate" {vec![]} else {vec![UPSTREAM]},"retry_mode":"none","max_attempts":1}));
+            adapters.push(json!({"id":executor,"url":ORIGIN,"token":executor_token,"health_url":format!("{ORIGIN}/health")}));
+            if task == "model.infer" {
+                gateway_ids.push(gateway.to_owned());
+                executors.push(json!({"id":gateway,"app_id":"v-scheduler.voice-gateway","node_id":node_id,"contract_version":"1","task_type":"model.infer","resources":fallback,"upstream_urls":[UPSTREAM],"retry_mode":"none","max_attempts":1}));
+                adapters.push(json!({"id":gateway,"url":ORIGIN,"token":executor_token,"health_url":format!("{ORIGIN}/health")}));
+            }
+        }
+        // Older clients support the original all-model binding format only.
+        if contract["mixed_input_limits_version"] != 1 && !legacy_unbounded_models.is_empty() {
+            model_limits.clear();
+        }
+    }
+    ensure!(!models.is_empty() || !dialogue_models.is_empty(), "no ready model available for binding");
     for (model, secondary) in &secondary_models {
         for other in secondary.as_array().context("invalid secondary models")? {
             let other = other.as_str().context("invalid secondary identity")?;
@@ -758,7 +841,7 @@ async fn reconcile(path: &Path, runtime: &Runtime, db: &PgPool) -> anyhow::Resul
     } else {
         None
     };
-    let state = build_for_node(&node, &contract, &approvals, old.as_ref())?;
+    let state = build_voice_binding(&node, &contract, &approvals, old.as_ref(), true)?;
     recover_unclaimed_direct(
         db,
         &state,
@@ -801,10 +884,6 @@ async fn reconcile(path: &Path, runtime: &Runtime, db: &PgPool) -> anyhow::Resul
     );
     write_private(&agent_path, &agent)?;
     drop(adapter_guard);
-    write_private(
-        &Path::new(&gateway).join("voice-scheduler.local.json"),
-        &state["gateway"],
-    )?;
     let response = client
         .post(format!("{ORIGIN}/api/v1/scheduler/binding"))
         .bearer_auth(token.trim())
@@ -813,6 +892,10 @@ async fn reconcile(path: &Path, runtime: &Runtime, db: &PgPool) -> anyhow::Resul
         .await?;
     crate::contract::confirm_application_binding(response, &state["binding"]["binding_revision"])
         .await.context("application binding temporarily rejected")?;
+    write_private(
+        &Path::new(&gateway).join("voice-scheduler.local.json"),
+        &state["gateway"],
+    )?;
     Ok(())
 }
 
@@ -822,7 +905,7 @@ pub fn start(path: PathBuf, runtime: Runtime, db: PgPool) {
     }
     tokio::spawn(async move {
         loop {
-            // 发现缺席和未校准均保持拒绝；不记录响应正文、令牌或连接串。
+            // Reconcile readiness and publish only an acknowledged upstream binding.
             let ready = reconcile(&path, &runtime, &db).await.is_ok();
             runtime.ready.store(ready, Ordering::Release);
             tokio::time::sleep(Duration::from_secs(5)).await;
@@ -878,6 +961,36 @@ mod tests {
 
         approvals["approvals"][0]["dialogue_limits"]["haru-4b-q8"]["sample_rate"] = json!(16000);
         assert!(build(&runtime, &contract, &approvals, None).is_err());
+    }
+
+    #[test]
+    fn ready_voice_models_receive_shared_permits_without_list_entries() {
+        let (runtime, mut contract, mut approvals) = fixtures();
+        approvals["approvals"] = json!([]);
+        let ready = ["new-asr-2026", "new-voice-2026", "new-dialogue-2026"];
+        contract["sync_models"] = json!([
+            {"id":ready[0],"task_type":"model.infer"},
+            {"id":"pending-asr","task_type":"model.infer"}
+        ]);
+        contract["_ready_sync"] = json!([ready[0]]);
+        contract["async_models"] = json!([{"id":ready[1],"task_type":"voice.generate"}]);
+        contract["_ready_async"] = json!([ready[1]]);
+        contract["dialogue_models"] = json!([{"id":ready[2],"task_type":"model.dialogue"}]);
+        contract["_ready_dialogue"] = json!([ready[2]]);
+        contract["_application_version"] = json!("0.0.38");
+        let snapshot = runtime.snapshot();
+        let node = &snapshot.nodes[0];
+
+        let state = build_voice_binding(node, &contract, &approvals, None, true).unwrap();
+        assert_eq!(state["binding"]["models"][ready[0]], "v-voice.auto.discovered.infer");
+        assert_eq!(state["binding"]["models"][ready[1]], "v-voice.auto.discovered.generate");
+        assert_eq!(state["binding"]["dialogue_models"][ready[2]], "v-voice.auto.discovered.dialogue");
+        assert_eq!(state["gateway"]["models"]["app-v-voice/new-asr-2026"]["mode"], "permit");
+        assert!(state["binding"]["models"]["pending-asr"].is_null());
+        assert_eq!(state["executors"].as_array().unwrap().len(), 4);
+        assert!(state["executors"].as_array().unwrap().iter().all(|e| e["resources"]["memory_mib"] == 4096));
+        contract["_application_version"] = json!("2.0.0");
+        assert_eq!(build_voice_binding(node, &contract, &approvals, Some(&state), true).unwrap(), state);
     }
     #[test]
     fn voice_binding_uses_heartbeat_capacity_after_cpu_only_startup() {
@@ -963,7 +1076,7 @@ mod tests {
         assert_eq!(binding_controller_url(&contract).unwrap(),CANONICAL_URL);
         assert!(build(&runtime,&contract,&approvals,None).is_err());
         contract["_application_version"]=json!("invalid");
-        assert!(binding_controller_url(&contract).is_err());
+        assert_eq!(binding_controller_url(&contract).unwrap(),CANONICAL_URL);
         contract["capabilities"]=json!(["canonical-v-scheduler-v1"]);
         assert_eq!(binding_controller_url(&contract).unwrap(),CANONICAL_URL);
     }
@@ -1141,6 +1254,41 @@ mod tests {
 
     #[test]
     #[cfg(target_arch = "aarch64")]
+    fn bundled_orin_asr_and_dialogue_approvals_survive_application_upgrades() {
+        let (runtime, mut contract, _) = fixtures();
+        let approvals: Value =
+            serde_json::from_str(include_str!("../../config/voice-calibrations.json")).unwrap();
+        contract["provider"] = json!("cuda");
+        contract["cpu_models"] = json!(["paraformer-zh"]);
+        contract["_execution_hardware"] = json!([{"name":"Orin (nvgpu)","memory_type":"unified"}]);
+        contract["input_limits_version"] = json!(1);
+        contract["lifecycle_protocol_version"] = json!(1);
+        contract["mixed_input_limits_version"] = json!(1);
+        contract["_application_version"] = json!("0.0.38");
+        contract["sync_models"] = json!([
+            {"id":"sensevoice-int8","task_type":"model.infer"},
+            {"id":"qwen3-asr-0.6b","task_type":"model.infer"},
+            {"id":"qwen3-asr-1.7b","task_type":"model.infer"},
+            {"id":"whisper-tiny","task_type":"model.infer"}
+        ]);
+        contract["_ready_sync"] =
+            json!(["sensevoice-int8", "qwen3-asr-0.6b", "qwen3-asr-1.7b", "whisper-tiny"]);
+        contract["async_models"] = json!([]);
+        contract["dialogue_models"] = json!([{"id":"haru-4b-q8","task_type":"model.dialogue"}]);
+        contract["_ready_dialogue"] = json!(["haru-4b-q8"]);
+
+        let state = build(&runtime, &contract, &approvals, None).unwrap();
+        assert_eq!(state["binding"]["model_limits"]["qwen3-asr-0.6b"]["duration_seconds"], 20);
+        assert!(state["binding"]["dialogue_models"]["haru-4b-q8"].is_string());
+        assert!(state["binding"]["models"]["qwen3-asr-1.7b"].is_null());
+        assert_eq!(state["binding"]["models"]["whisper-tiny"], "v-voice.auto.orin-whisper-tiny-v1.infer");
+        assert_eq!(state["binding"]["legacy_unbounded_models"], json!(["whisper-tiny"]));
+        contract["_application_version"] = json!("0.1.0");
+        assert_eq!(build(&runtime, &contract, &approvals, Some(&state)).unwrap(), state);
+    }
+
+    #[test]
+    #[cfg(target_arch = "aarch64")]
     fn bundled_orin_cpu_voice_upgrade_preserves_measured_budget() {
         let (runtime, mut contract, _) = fixtures();
         let approvals: Value = serde_json::from_str(include_str!("../../config/voice-calibrations.json")).unwrap();
@@ -1181,6 +1329,36 @@ mod tests {
         managed.nodes[0].capacities.cpu_millicores = 5000;
         runtime.set_management(managed).unwrap();
         assert!(build(&runtime, &contract, &approvals, None).is_ok());
+    }
+
+    #[test]
+    fn incompatible_voice_approval_does_not_block_other_models() {
+        let (runtime, mut contract, mut approvals) = fixtures();
+        let mut limited = approvals["approvals"][0].clone();
+        limited["id"] = json!("large-asr");
+        limited["sync_models"] = json!(["larger"]);
+        limited["async_models"] = json!([]);
+        limited["secondary_models"] = json!({});
+        limited["resources"]["memory_mib"] = json!(32768);
+        limited["lifecycle_protocol_version"] = json!(1);
+        approvals["approvals"].as_array_mut().unwrap().insert(0, limited);
+        contract["sync_models"].as_array_mut().unwrap().push(json!({"id":"larger","task_type":"model.infer"}));
+        contract["_ready_sync"].as_array_mut().unwrap().push(json!("larger"));
+        contract["lifecycle_protocol_version"] = json!(1);
+
+        let state = build(&runtime, &contract, &approvals, None).unwrap();
+        assert!(state["binding"]["models"]["asr"].is_string());
+        assert!(state["binding"]["models"]["larger"].is_null());
+
+        approvals["approvals"][0]["resources"]["memory_mib"] = json!(4096);
+        let admitted = build(&runtime, &contract, &approvals, Some(&state)).unwrap();
+        assert!(admitted["binding"]["models"]["larger"].is_string());
+        contract["_application_version"] = json!("1.0.0");
+        assert_eq!(build(&runtime, &contract, &approvals, Some(&admitted)).unwrap()["binding"]["models"], admitted["binding"]["models"]);
+        contract["lifecycle_protocol_version"] = json!(2);
+        let unsupported = build(&runtime, &contract, &approvals, Some(&admitted)).unwrap();
+        assert!(unsupported["binding"]["models"]["larger"].is_null());
+        assert!(unsupported["binding"]["models"]["asr"].is_string());
     }
 
     #[test]
