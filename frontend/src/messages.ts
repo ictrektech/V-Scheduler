@@ -919,6 +919,7 @@ export const messages:Record<string,[string,string]>={
 "复用所属应用的监控，无需另装 Agent。预算规划不会授予执行权限；调度控制接口待验证。":["Uses the owning app’s monitoring. No separate Agent installation is needed. Budget plans do not enable execution; scheduling control awaits verification.", "沿用所屬應用的監控，無需另裝 Agent。預算規劃不會授予執行權限；調度控制介面待驗證。"],
 "调度控制待验证":["Scheduling control awaits verification", "調度控制待驗證"],
 "预算规划":["Budget planning", "預算規劃"],
+"在「节点管理 → 节点与权限 → VOS 应用发现的节点」可查看与「资源与任务 → 执行资源」一致的宿主机实测数据，包括 CPU 使用率与逻辑处理器数、内存已用／总量／可用、GPU 使用率及采样时间。采样缺失或过期时会显示暂不可用。节点发现记录可以仍然有效。两处沿用调度管理 API 的 GET /nodes，内置推理采样位于 modelinfer_source.node.host_resources。":["Open Node management → Nodes and permissions → Nodes discovered by VOS apps to see the same host measurements as Resources & Tasks → Execution resources. The panel shows CPU utilization and logical processors, used/total/available RAM, GPU utilization, and sample time. It indicates when a sample is missing or stale. The node discovery record can still be current. Both views use the existing Scheduling API GET /nodes. Embedded inference samples are in modelinfer_source.node.host_resources.", "在「節點管理 → 節點與權限 → VOS 應用探索的節點」可查看與「資源與任務 → 執行資源」一致的主機實測資料，包括 CPU 使用率與邏輯處理器數、記憶體已用／總量／可用、GPU 使用率及取樣時間。缺少取樣或取樣過期時會顯示暫不可用。節點探索記錄仍可能有效。兩處沿用排程管理 API 的 GET /nodes，內建推論取樣位於 modelinfer_source.node.host_resources。"],
 "仅保存预算规划，不启动远端进程，也不把节点标为可调度。":["Saves planning only. Does not start remote processes or mark this node as schedulable.", "僅儲存預算規劃，不啟動遠端程序，也不將節點標為可調度。"],
 "保存规划":["Save plan", "儲存規劃"],
 "更新节点预算规划":["Node budget plan updated", "更新節點預算規劃"],

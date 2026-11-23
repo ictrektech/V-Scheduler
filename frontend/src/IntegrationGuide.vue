@@ -193,6 +193,7 @@ curl -fsS -X PUT "$GATEWAY/api/v1/model-routing" -H "Authorization: Bearer $VOS_
    <li>{{t('管理员创建一次性节点邀请。VOS App 的组件用邀请登记节点并安全保存 worker 凭据。管理员批准节点容量后，组件可上报资源、提交执行器申请和查询本节点。')}}</li>
    <li>{{t('执行器申请用 resources 声明单次计算预算，用 upstream_urls 声明网关可达的服务地址。管理员审核后才能执行。模型发现另外使用网关的模型注册接口。')}}</li>
    <li>{{t('节点心跳上报实际采样。查询响应区分批准容量、驻留、预约、剩余预算和实时遥测；剩余预算未扣安全保留，也不保证本次能取得许可。遥测过期时 report 为 null。')}}</li>
+   <li>{{t('在「节点管理 → 节点与权限 → VOS 应用发现的节点」可查看与「资源与任务 → 执行资源」一致的宿主机实测数据，包括 CPU 使用率与逻辑处理器数、内存已用／总量／可用、GPU 使用率及采样时间。采样缺失或过期时会显示暂不可用。节点发现记录可以仍然有效。两处沿用调度管理 API 的 GET /nodes，内置推理采样位于 modelinfer_source.node.host_resources。')}}</li>
   </ol>
   <pre>{{nodeCommands}}</pre>
   <h4>registration.json</h4>
