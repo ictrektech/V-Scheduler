@@ -22,7 +22,7 @@ pub const DEFAULT_NVIDIA_GPU_EXPORTER_PORT: i32 = crate::monitor::DEFAULT_NVIDIA
 /// 创建节点请求
 #[derive(Debug, Clone, Deserialize)]
 pub struct NodeCreate {
-    pub profile: Option<profile::Profile>,
+    pub profile: Option<profile::RequestedProfile>,
     pub name: String,
     pub host: String,
     #[serde(default = "default_port")]
@@ -63,7 +63,7 @@ pub struct NodeCreate {
 /// 更新节点请求（字段可选；`ssh_password` / `ssh_key` 为空表示不改）
 #[derive(Debug, Clone, Deserialize)]
 pub struct NodeUpdate {
-    pub profile: Option<profile::Profile>,
+    pub profile: Option<profile::RequestedProfile>,
     pub name: Option<String>,
     pub host: Option<String>,
     pub ssh_port: Option<i32>,
@@ -502,6 +502,10 @@ pub async fn create_node(
     validate_monitor_port(req.node_exporter_port)?;
     validate_monitor_port(req.nvidia_gpu_exporter_port)?;
 
+    let profile_override = match req.profile {
+        Some(profile) => profile.resolve(db).await?,
+        None => None,
+    };
     let host = req.host.trim().to_string();
     let existing = node::Entity::find()
         .filter(node::Column::Host.eq(host.clone()))
@@ -543,7 +547,7 @@ pub async fn create_node(
     let now = time::now_iso();
     let am = node::ActiveModel {
         id: Set(ulid::Ulid::new().to_string()),
-        profile_override: Set(req.profile.and_then(profile::Profile::name).map(str::to_owned)),
+        profile_override: Set(profile_override),
         detected_profile: Set(scan.detected_profile.clone()),
         name: Set(req.name.trim().to_string()),
         host: Set(host),
@@ -593,7 +597,7 @@ pub async fn update_node(
     let current = get_node(db, id).await?;
     let mut am: node::ActiveModel = current.clone().into();
     if let Some(profile) = req.profile {
-        am.profile_override = Set(profile.name().map(str::to_owned));
+        am.profile_override = Set(profile.resolve(db).await?);
     }
     if let Some(name) = req.name {
         if name.trim().is_empty() {

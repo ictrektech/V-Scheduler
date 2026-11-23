@@ -20,6 +20,16 @@ VOS 集群管理按需部署子项目。跨主机操作要求目标节点也运�
 
 新安装可在 VOS 应用配置中开启「内置推理运行时」。运行时启动前会确认旧 ModelInfer 未安装或已停用。目标节点应已具备模型卡要求的镜像，缺少时仍可由原 Image Hub 分发。
 
+### 推理镜像登记
+
+管理员在「推理部署 → 推理镜像」点击「登记镜像」，填写完整仓库、路径与显式标签或 `sha256` 摘要。勾选适用 Profile 后保存。新增硬件类型时，先填入自定义名称并点「登记 Profile」，再保存镜像。用「节点管理 → SSH 算力节点 → 编辑」把该名称手动分配给对应节点。普通 VOS 用户可从侧栏「推理镜像」查看登记清单。
+
+内置 Profile 为 `jetson-thor`、`dgx-spark`、`jetson-orin`、`arm-cpu`、`amd-cpu`、`amd-cuda`、`arm-cuda` 和 `sophon-bm1688`。自定义名称以小写英文字母开头，只含小写英文字母、数字与分隔用的单个连字符，最长 64 个字符。保留名称 `auto`、`thor`、`thor-spark`、`l4t`。自动扫描仍识别内置 Profile。已有镜像可用「编辑 Profile」重新登记。
+
+模型卡的具体运行时镜像可在「推理部署 → 模型广场」打开卡片的清单查看。新建运行配置选择卡片及版本后，「权重与镜像覆盖」显示默认镜像，可粘贴登记清单中的地址覆盖。通过目标 Profile 筛选镜像时，`dgx-spark` 兼容 `jetson-thor`。镜像登记保存地址与管理员确认的兼容信息。实际部署继续按模型卡配置校验节点、权重与镜像。
+
+`GET /compute-profiles` 和 `GET /inference/images` 接受登录 VOS 用户或调度提交者的 Bearer 凭据。管理员可以 `POST /compute-profiles` 提交 `{"name":"arm-new-board"}`，再 `POST /inference/images` 提交 `{"image_ref":"registry.example.com/team/vllm:0.1","profiles":["arm-new-board"]}`。地址最长 512 字节。单次最多提交 64 个已登记 Profile，重复项去重。首次安装或升级会预置已观察到在 Thor、Orin 上运行的镜像记录，只写入地址及 Profile。管理员可修改适用 Profile，已运行记录独立显示。GET 返回 `items` 和 `can_manage`，镜像项含 `image_ref`、`profiles`、`tested_profiles`、`created_at` 和 `updated_at`。POST 返回已保存记录。同一地址重复提交会更新 Profile，保留创建时间。用 `GET /inference/images?profile=arm-new-board` 读取匹配清单。详细的状态码、字段与响应位于「API 文档 → 调度管理 API」。
+
 ## English
 
 Administrators open **Inference deployments** from the V-Scheduler sidebar and switch between **Deployments**, **Model cards**, **Model catalog**, **Node monitoring**, and **Inference settings**. Deployment details open in the same workspace. Go to **Advanced Management → VOS Cluster Manager** for **Cluster overview** and **Cluster members**. The pages use the existing runtime and migration API contracts. An SSH node and a VOS cluster member are linked by exact IP. Cluster membership identifies the source. Task admission uses separate permissions, executors and budgets. A temporary inventory error retains the last loaded rows and disables actions. Authentication or access errors clear the list.
@@ -39,3 +49,22 @@ Preview and import take no request parameters. Preview returns `source_present`,
 Cluster Manager projects are deployed on demand. Remote operations require V-Scheduler Cluster Manager on the target and a trusted HTTPS origin with a separate administrator credential. In `cluster/peers.json` under app storage, use the node IP as the key and supply `origin` and `token` for each peer. Place a private trust anchor at `cluster/peer-ca.pem` if needed. Restrict file access and restart the controller after changes.
 
 On a new installation, enable **Embedded Inference Runtime** in the VOS app configuration. The runtime checks that the legacy ModelInfer app is absent or stopped before starting. Target nodes should already have the images required by the model card. The existing Image Hub can distribute missing images.
+
+
+### Inference image registration
+
+Open **Inference deployments → Inference images** and select **Register image**. Enter the full registry and repository with an explicit tag or sha256 digest. Select the supported profiles and save. For new hardware, enter a custom name and select **Register profile** before saving the image. Assign the custom name manually under **Node management → SSH compute nodes → Edit**. Other signed-in VOS users can read the catalog from **Inference images** in the sidebar.
+
+Built-in profiles are `jetson-thor`, `dgx-spark`, `jetson-orin`, `arm-cpu`, `amd-cpu`, `amd-cuda`, `arm-cuda`, and `sophon-bm1688`. Custom names start with a lowercase ASCII letter and use lowercase letters, digits, and single hyphens as separators, up to 64 characters. `auto`, `thor`, `thor-spark`, and `l4t` are reserved. Hardware scans continue to detect built-in profiles. Use **Edit profiles** to update an existing reference.
+
+For a model card’s default images, open its manifest in **Inference deployments → Model catalog**. When creating a run configuration, select the card and version first. The weight and image overrides section shows the defaults and accepts an image reference from the catalog. Filtering for `dgx-spark` includes `jetson-thor` images. The catalog records the reference and administrator-declared compatibility. Deployments use the model card workflow to check node, weight, and image availability.
+
+`GET /compute-profiles` and `GET /inference/images` accept Bearer credentials from signed-in VOS accounts or scheduler submitters. An administrator can send `{"name":"arm-new-board"}` to `POST /compute-profiles`, then send `{"image_ref":"registry.example.com/team/vllm:0.1","profiles":["arm-new-board"]}` to `POST /inference/images`. References are limited to 512 bytes and a request can supply up to 64 registered profile names. Duplicate selections are removed. Installation or upgrade seeds references observed running on Thor and Orin and stores catalog metadata. The observed profiles remain visible when supported profiles are edited. GET responses contain `items` and `can_manage`. Image items contain `image_ref`, `profiles`, `tested_profiles`, `created_at`, and `updated_at`. POST returns the saved record. Registering the same reference again updates its profiles and preserves the creation time. Use `GET /inference/images?profile=arm-new-board` to filter. See **API Documentation → Scheduler Management API** for field and error definitions.
+
+### 查看节点实际资源 / View live node resources
+
+管理员打开「资源与任务 → 执行资源」可查看仅观察节点的逻辑 CPU 数与利用率、系统内存已用／总量／可用、GPU 利用率，以及采样时间。内置推理和 SSH 节点管理启用后，采集使用节点保存的 SSH 连接。Jetson 或 GB10 的 GPU 与 CPU 共享系统内存，页面只计算一次。支持采集的独显会另外显示显存。缺失或超过 90 秒的采样显示为不可用。检查 SSH 连接配置后等待下一次采集。硬件空闲量与调度批准预算各自显示。
+
+Administrators can open **Resources and tasks → Execution resources** for the logical CPU count and utilization, system memory used, total and available, GPU utilization, and sample timestamp on observation-only nodes. Enable the embedded inference runtime and SSH node management so the controller can sample through the node’s saved connection. Jetson and GB10 report shared system memory once. Discrete GPUs with supported telemetry show their own device memory. Missing or stale samples (90 seconds) are shown as unavailable. Verify the saved SSH connection and wait for the next sample. Scheduling budgets are displayed independently of hardware availability.
+
+`GET /nodes` uses the existing scheduling API administrator Bearer token and takes no parameters. See **API Documentation → Scheduling API → Nodes and placements** for the response fields and errors. Read live samples from `data[].modelinfer_source.node.host_resources` when `modelinfer_source.fresh` is true. The SSH sample object can be absent when the connection or probe fails. GPU fields can be null for unsupported devices.

@@ -7,6 +7,7 @@ mod gateway_identity;
 mod management;
 mod managed_nodes;
 mod model_budget;
+mod compute_catalog;
 mod modelinfer_discovery;
 mod modelinfer_migration;
 mod modelinfer_runtime;
@@ -461,6 +462,8 @@ pub async fn serve(
         .route("/managed-nodes/{id}", axum::routing::put(managed_nodes::forward).delete(managed_nodes::forward))
         .route("/managed-nodes/{id}/rescan", post(managed_nodes::forward))
         .route("/managed-nodes/{id}/runtime", post(managed_nodes::forward))
+        .route("/compute-profiles", get(compute_catalog::list_profiles).post(compute_catalog::register_profile))
+        .route("/inference/images", get(compute_catalog::list_images).post(compute_catalog::register_image))
         .route("/inference/migration/preview", get(modelinfer_migration::preview))
         .route("/inference/migration/import", post(modelinfer_migration::import))
         .route("/inference/runtime/health", get(modelinfer_runtime::health))

@@ -32,6 +32,52 @@ impl Profile {
     }
 }
 
+#[derive(Clone, Debug, Deserialize)]
+#[serde(untagged)]
+pub enum RequestedProfile {
+    Builtin(Profile),
+    Custom(String),
+}
+
+mod catalog {
+    use sea_orm::entity::prelude::*;
+
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+    #[sea_orm(table_name = "vrs_compute_profiles")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub name: String,
+        pub builtin: bool,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
+impl RequestedProfile {
+    pub(super) async fn resolve(
+        self,
+        db: &sea_orm::DatabaseConnection,
+    ) -> Result<Option<String>, crate::error::ModelinferError> {
+        use crate::error::{ModelinferError, codes};
+        use sea_orm::EntityTrait;
+
+        match self {
+            Self::Builtin(profile) => Ok(profile.name().map(str::to_owned)),
+            Self::Custom(name) => {
+                let row = catalog::Entity::find_by_id(name)
+                    .one(db)
+                    .await
+                    .map_err(super::db_err)?
+                    .ok_or_else(|| ModelinferError::new(codes::PARAM_INVALID, "Profile 尚未登记"))?;
+                Ok(Some(row.name))
+            }
+        }
+    }
+}
+
 pub fn detect(arch: &str, device: &str, vendor: &str) -> Option<&'static str> {
     let device = device.to_ascii_lowercase();
     match (arch, vendor) {

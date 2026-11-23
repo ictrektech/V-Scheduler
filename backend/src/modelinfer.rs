@@ -100,10 +100,7 @@ fn client() -> anyhow::Result<Client> {
         .build()?)
 }
 /// 解析 ModelInfer 组件地址（应用已安装配置）；未安装返回 `None`。
-async fn component(
-    client: &Client,
-    platform: &VosEndpoint,
-) -> anyhow::Result<Option<VosEndpoint>> {
+async fn component(client: &Client, platform: &VosEndpoint) -> anyhow::Result<Option<VosEndpoint>> {
     if crate::inference_runtime::enabled() {
         return Ok(Some(VosEndpoint {
             url: crate::inference_runtime::origin(),
@@ -226,25 +223,51 @@ async fn collect(db: &PgPool, headers: &HeaderMap) -> anyhow::Result<Value> {
     let mut snapshot = inventory(&rows)?;
     // Existing ModelInfer monitors are owned and deployed by the VOS App.
     // Never install a second remote Agent or contact inventory-provided URLs.
+    let own_nodes = crate::inference_runtime::enabled() && crate::managed_nodes::enabled();
     let mut tasks = tokio::task::JoinSet::new();
     for row in rows.iter().take(32) {
         let id = row["id"].as_str().unwrap_or_default().to_string();
         let c = client.clone();
         let src = source.clone();
         tasks.spawn(async move {
-            let data = crate::vos::get(&c, &src, &format!("/api/nodes/{id}/metrics")).await;
-            (id, data)
+            let path = format!("/api/nodes/{id}/metrics");
+            let measurements = crate::vos::get(&c, &src, &path);
+            let resources = async {
+                if !own_nodes {
+                    return None;
+                }
+                c.get(format!(
+                    "{}/nodes/{id}/resources",
+                    crate::managed_nodes::origin()
+                ))
+                .timeout(Duration::from_secs(8))
+                .send()
+                .await
+                .ok()?
+                .error_for_status()
+                .ok()?
+                .json::<Value>()
+                .await
+                .ok()
+            };
+            let (measurements, resources) = tokio::join!(measurements, resources);
+            (id, measurements, resources)
         });
     }
     while let Some(result) = tasks.join_next().await {
-        let Ok((id, Ok(data))) = result else {
+        let Ok((id, measurements, resources)) = result else {
             continue;
         };
         if let Some(node) = snapshot
             .as_array_mut()
             .and_then(|nodes| nodes.iter_mut().find(|n| n["id"] == id))
         {
-            node["telemetry"] = metrics(&data);
+            if let Ok(data) = measurements {
+                node["telemetry"] = metrics(&data);
+            }
+            if let Some(data) = resources {
+                node["host_resources"] = data;
+            }
         }
     }
     crate::vos::store(db, "modelinfer:inventory", Ok(snapshot)).await;
@@ -263,7 +286,7 @@ fn service_url(raw: &str) -> Option<String> {
         && url.password().is_none()
         && url.query().is_none()
         && url.fragment().is_none())
-        .then(|| url.as_str().trim_end_matches('/').to_string())
+    .then(|| url.as_str().trim_end_matches('/').to_string())
 }
 /// 运行中的部署 = 已登记模型卡片的可路由实例（目录项，不创建执行器/预算）。
 async fn services(
@@ -275,18 +298,12 @@ async fn services(
         let data = crate::vos::get(
             client,
             source,
-            &format!(
-                "/api/deployments?page_num={page}&page_size=100&state=all&sort=name"
-            ),
+            &format!("/api/deployments?page_num={page}&page_size=100&state=all&sort=name"),
         )
         .await?;
-        let entries = data["data"]
-            .as_array()
-            .context("missing deployments")?;
+        let entries = data["data"].as_array().context("missing deployments")?;
         rows.extend_from_slice(entries);
-        let total = data["total"]
-            .as_u64()
-            .context("missing deployment count")?;
+        let total = data["total"].as_u64().context("missing deployment count")?;
         ensure!(total <= 1000, "too many deployments");
         let pages = data["pages"].as_u64().unwrap_or(1).max(1);
         ensure!(pages <= 10, "too many pages");
@@ -302,12 +319,8 @@ async fn services(
     {
         let id = text(&row["id"], 96).context("missing deployment ID")?;
         ensure!(identifier(id), "invalid deployment identity");
-        let access = crate::vos::get(
-            client,
-            source,
-            &format!("/api/deployments/{id}/access"),
-        )
-        .await?;
+        let access =
+            crate::vos::get(client, source, &format!("/api/deployments/{id}/access")).await?;
         if access["available"] != true {
             continue;
         }
@@ -321,7 +334,9 @@ async fn services(
             deployment: id.to_string(),
             name: text(&row["name"], 128).unwrap_or(id).to_string(),
             base_url,
-            api_key: text(&access["api_key"], 512).unwrap_or_default().to_string(),
+            api_key: text(&access["api_key"], 512)
+                .unwrap_or_default()
+                .to_string(),
             model: model.to_string(),
         });
     }

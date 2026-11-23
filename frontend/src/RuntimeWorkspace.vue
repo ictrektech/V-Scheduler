@@ -8,7 +8,7 @@ const props = defineProps<{
  request: (path: string) => Promise<unknown>
  t: (value: string) => string
 }>()
-const emit = defineEmits<{ weights: []; nodes: [] }>()
+const emit = defineEmits<{ weights: []; nodes: []; images: [] }>()
 
 const views = computed(() => props.kind === 'inference' ? [
  { route: '/runs', label: '部署列表' },
@@ -74,15 +74,17 @@ onBeforeUnmount(() => child?.removeEventListener('hashchange', readRoute))
 </script>
 
 <template>
- <section v-if="health==='ready'" class="runtime-workspace">
-  <div class="documentation-tabs" :aria-label="t(kind==='inference'?'推理部署':'VOS 集群管理')">
+ <section class="runtime-workspace">
+  <div v-if="health==='ready'||kind==='inference'" class="documentation-tabs" :aria-label="t(kind==='inference'?'推理部署':'VOS 集群管理')">
+   <template v-if="health==='ready'">
    <button v-for="view in views" :key="view.route" type="button"
     :class="{current:route===view.route||route.startsWith(view.route+'/')}"
     :aria-current="route===view.route||route.startsWith(view.route+'/')?'page':undefined"
     @click="select(view.route)">{{t(view.label)}}</button>
+   </template>
+   <button v-if="kind==='inference'" type="button" @click="emit('images')">{{t('推理镜像')}}</button>
   </div>
-  <iframe :ref="setFrame" :src="src" :title="t(kind==='inference'?'推理部署':'VOS 集群管理')" @load="onLoad"/>
- </section>
+  <iframe v-if="health==='ready'" :ref="setFrame" :src="src" :title="t(kind==='inference'?'推理部署':'VOS 集群管理')" @load="onLoad"/>
  <section v-else class="section panel" aria-live="polite">
   <p v-if="health==='loading'">{{t('正在处理')}}</p>
   <template v-else>
@@ -90,6 +92,7 @@ onBeforeUnmount(() => child?.removeEventListener('hashchange', readRoute))
    <button type="button" class="quiet" @click="check">{{t('重试连接')}}</button>
    <button v-if="kind==='inference'" type="button" class="quiet" @click="emit('nodes')">{{t('节点管理')}}</button>
   </template>
+ </section>
  </section>
 </template>
 

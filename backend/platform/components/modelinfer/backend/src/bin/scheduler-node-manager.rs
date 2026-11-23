@@ -52,6 +52,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/nodes", get(list).post(create))
         .route("/nodes/{id}", axum::routing::put(update).delete(delete))
         .route("/nodes/{id}/rescan", post(rescan))
+        .route("/nodes/{id}/resources", get(resources))
         .route("/nodes/{id}/runtime", post(runtime))
         .with_state(Arc::new(Manager {
             db,
@@ -89,6 +90,73 @@ async fn rescan(State(app): App, Path(id): Path<String>) -> Result<NodeView> {
     // stored SSH credentials have been verified.
     nodes::test_node(&app.db, &app.ssh, &id).await?;
     Ok(Json(nodes::rescan_node(&app.db, &app.ssh, &id).await?))
+}
+
+async fn resources(State(app): App, Path(id): Path<String>) -> Result<Value> {
+    let node = nodes::get_node(&app.db, &id).await?;
+    let script = include_str!("../../assets/scheduler-host-resources.sh");
+    let cmd = format!("sh -c '{}'", script.replace('\'', "'\\''"));
+    let output = app
+        .ssh
+        .run_with_timeout(&nodes::ssh_target_of(&node), &cmd, Duration::from_secs(6))
+        .await?;
+    let mut sample = json!({"observed_at": chrono::Utc::now().to_rfc3339(), "gpus": []});
+    let mut gpus = Vec::new();
+    for line in output.stdout.lines() {
+        match line.split('\t').collect::<Vec<_>>().as_slice() {
+            ["cpu", cores, used] => {
+                sample["cpu_logical_count"] = json!(cores.parse::<u64>().ok().filter(|n| *n > 0));
+                sample["cpu_used_percent"] = json!(
+                    used.parse::<f64>()
+                        .ok()
+                        .filter(|n| (0.0..=100.0).contains(n))
+                );
+            }
+            ["mem", total, available] => {
+                let total = total.parse::<u64>().ok().filter(|n| *n > 0);
+                let available = available
+                    .parse::<u64>()
+                    .ok()
+                    .filter(|n| total.is_some_and(|t| *n <= t));
+                sample["memory_total_mib"] = json!(total.map(|n| n / 1024));
+                sample["memory_available_mib"] = json!(available.map(|n| n / 1024));
+            }
+            ["gpu", name, used, total, free, kind] => {
+                let total = total.parse::<u64>().ok().filter(|n| *n > 0);
+                let free = free
+                    .parse::<u64>()
+                    .ok()
+                    .filter(|n| total.is_some_and(|t| *n <= t));
+                gpus.push(json!({
+                    "name": name, "memory_type": kind,
+                    "utilization_percent": used.parse::<f64>().ok().filter(|n| (0.0..=100.0).contains(n)),
+                    "total_mib": total, "free_mib": free,
+                }));
+            }
+            _ => {}
+        }
+    }
+    if sample["cpu_logical_count"].is_null()
+        && sample["memory_total_mib"].is_null()
+        && gpus.is_empty()
+    {
+        return Err(ModelinferError::new(
+            codes::SSH_COMMAND_FAILED,
+            "resource_sample_unavailable",
+        ));
+    }
+    if gpus.is_empty() {
+        gpus = NodeView::from(node)
+            .gpu_devices
+            .into_iter()
+            .map(|gpu| {
+                json!({"name": gpu.name, "memory_type": "unknown", "utilization_percent": null,
+                "total_mib": Some(gpu.memory_total_mib).filter(|n| *n > 0), "free_mib": null})
+            })
+            .collect();
+    }
+    sample["gpus"] = json!(gpus);
+    Ok(Json(sample))
 }
 
 async fn runtime(State(app): App, Path(id): Path<String>) -> Result<Value> {

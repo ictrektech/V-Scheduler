@@ -348,6 +348,10 @@ Base: `http://v-scheduler:38120/api/v1`. [Complete OpenAPI](../api/openapi-v1.js
 | DELETE | `/managed-nodes/{id}` | Remove a saved node connection / 移除节点连接 |
 | POST | `/managed-nodes/{id}/rescan` | Rescan a saved node / 重新扫描节点 |
 | POST | `/managed-nodes/{id}/runtime` | Verify image pull and container start / 验证镜像拉取和容器启动 |
+| GET | `/compute-profiles` | List built-in and custom compute Profiles / 读取内置及自定义 Profile |
+| POST | `/compute-profiles` | Register a custom compute Profile / 登记自定义 Profile |
+| GET | `/inference/images` | List or filter registered inference images / 读取或筛选已登记的推理镜像 |
+| POST | `/inference/images` | Register an image reference and supported Profiles / 登记推理镜像和适用 Profile |
 | GET | `/inference/migration/preview` | Inspect the legacy ModelInfer database before migration / 预检旧 ModelInfer 数据库 |
 | POST | `/inference/migration/import` | Import the verified ModelInfer snapshot / 导入已校验的 ModelInfer 快照 |
 | GET | `/inference/runtime/health` | Inspect the embedded inference runtime / 查看内置推理运行时 |
@@ -371,6 +375,10 @@ Base: `http://v-scheduler:38120/api/v1`. [Complete OpenAPI](../api/openapi-v1.js
 | POST | `/permits/{id}/park-resident` | Park an owned Ollama model after native compute is confirmed idle |
 | POST | `/permits/wait` | Wait for native inference admission without starting inference |
 | POST | `/integrations/executions` | 启动已注册应用计算 |
+
+The administrator `GET /nodes` response exposes SSH host utilization in `modelinfer_source.node.host_resources` when sampling succeeds. Check source freshness and the sample timestamp before use. `capacities` holds scheduling budgets.
+
+管理员调用 `GET /nodes` 可从 `modelinfer_source.node.host_resources` 读取 SSH 采集的实际资源。请检查数据源和采样时间是否仍有效。`capacities` 保存调度预算。
 
 <a id="weights"></a>
 ## Weights / 权重管理

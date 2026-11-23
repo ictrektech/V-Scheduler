@@ -32,6 +32,8 @@ Node management reuses the installed ModelInfer app’s remote-node inventory an
 
 Administrators open **Inference deployments** from the V-Scheduler sidebar or go to **Advanced Management → VOS Cluster Manager**. Deployment lists, details, model cards, and cluster views open in this workspace. To import existing deployments, use **Node Management → Migrate ModelInfer deployments**. **API Documentation → Scheduler Management API** lists the existing migration and runtime endpoints.
 
+Open **Inference deployments → Inference images** to browse registered references and compatible profiles. Administrators can register images, select built-in profiles, and add custom names. Assign a custom profile under **Node management → SSH compute nodes → Edit**.
+
 ## Docker aliases and host ports
 
 The defaults below apply to every profile. Replace `<vos-host>` with the installed VOS host IP/name. Docker aliases resolve on `vos_default`; prefix addresses with `http://`. All listed host ports are installer parameters. The in-app API guide displays the configured values.
@@ -61,3 +63,5 @@ With idle retention enabled, verified callers to built-in Ollama wait up to 30 s
 Node management now combines application heartbeats, node health, approved budgets and stop requests. Applications register approved executors through the controller `/integrations` API and follow the returned heartbeat interval. Reservations are released only after the original execution identity confirms native exit and weight unloading. VOS App components report node telemetry automatically; users do not deploy Agents or use SSH. Existing automatic bindings remain compatible; applications without the new stop protocol are not presented as fully managed. See API Documentation → Application integration and the repository integration guide.
 
 On VOS with Traefik v3, opening the app root directly in a browser redirects to its VOS page. Embedded pages and API requests use their existing routes.
+
+In Resources and tasks → Execution resources, administrators can read the observed nodes’ logical CPU count and utilization, available and total system memory, and GPU utilization. Shared memory is counted once. Reports require a working saved SSH connection when using the embedded inference runtime; unavailable samples are identified in the panel. The data is also exposed by the administrator GET /nodes scheduling API.

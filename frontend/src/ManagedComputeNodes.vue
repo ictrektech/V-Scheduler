@@ -33,7 +33,7 @@ const feedback = ref('')
 const edit = ref<Node | null>(null)
 const form = ref<ReturnType<typeof fields> | null>(null)
 const base = 'managed-nodes'
-const profiles = ['jetson-thor', 'dgx-spark', 'jetson-orin', 'arm-cpu', 'amd-cpu', 'amd-cuda', 'arm-cuda', 'sophon-bm1688']
+const profiles = ref<string[]>(['jetson-thor', 'dgx-spark', 'jetson-orin', 'arm-cpu', 'amd-cpu', 'amd-cuda', 'arm-cuda', 'sophon-bm1688'])
 let timer: ReturnType<typeof setInterval>
 let refreshRevision = 0
 
@@ -83,9 +83,13 @@ async function refresh() {
     listFailed.value = true
   }
 }
-function open(node?: Node) {
+async function open(node?: Node) {
   edit.value = node || null
   form.value = fields(node)
+  try {
+    const types = await props.request('compute-profiles')
+    profiles.value = types.items.map((profile: { name: string }) => profile.name)
+  } catch { /* built-in Profiles remain available */ }
 }
 async function perform(action: () => Promise<void>) {
   if (busy.value) return
@@ -147,7 +151,7 @@ onUnmounted(() => clearInterval(timer))
       <label>{{label('SSH 端口', 'SSH port')}}<input v-model.number="form.ssh_port" type="number" min="1" max="65535" required></label>
       <label>{{label('SSH 用户', 'SSH user')}}<input v-model.trim="form.ssh_user" required maxlength="64"></label>
       <label>{{label('认证方式', 'Authentication')}}<select v-model="form.auth_method"><option value="key">{{label('私钥', 'Private key')}}</option><option value="password">{{label('密码', 'Password')}}</option></select></label>
-      <label>Profile<select v-model="form.profile"><option value="auto">{{label('自动识别', 'Auto-detect')}}</option><option v-for="profile in profiles" :key="profile" :value="profile">{{profile}}</option></select></label>
+      <label>Profile<select v-model="form.profile"><option value="auto">{{label('自动识别', 'Auto-detect')}}</option><option v-if="form.profile!=='auto'&&!profiles.includes(form.profile)" :value="form.profile">{{form.profile}}</option><option v-for="profile in profiles" :key="profile" :value="profile">{{profile}}</option></select></label>
       <label v-if="form.auth_method==='password'">{{label('SSH 密码', 'SSH password')}}<input v-model="form.ssh_password" type="password" autocomplete="new-password" :required="edit?.auth_method!=='password'"></label>
       <label v-else>{{label('SSH 私钥', 'SSH private key')}}<textarea v-model="form.ssh_key" rows="4" spellcheck="false" :required="edit?.auth_method!=='key'"></textarea></label>
       <label>{{label('sudo 密码（可选）', 'sudo password (optional)')}}<input v-model="form.sudo_password" type="password" autocomplete="new-password"></label>

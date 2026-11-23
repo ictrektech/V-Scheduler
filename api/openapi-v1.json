@@ -20,6 +20,573 @@
     }
   ],
   "paths": {
+    "/compute-profiles": {
+      "get": {
+        "operationId": "list_compute_profiles",
+        "summary": "List compute profiles",
+        "x-title": {
+          "zh-CN": "读取硬件 Profile",
+          "en": "List compute profiles"
+        },
+        "x-description": {
+          "zh-CN": "登录 VOS 用户和调度提交者可读所有内置与自定义 Profile。内置项在前，各组按名称排序。",
+          "en": "Authenticated VOS accounts and scheduler submitters can read all profiles. Built-ins sort first, followed by custom names."
+        },
+        "x-role": "authenticated VOS account or scheduler submitter",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response / 操作成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "data"
+                      ],
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "required": [
+                            "items",
+                            "can_manage"
+                          ],
+                          "properties": {
+                            "items": {
+                              "type": "array",
+                              "items": {
+                                "$ref": "#/components/schemas/ComputeProfile"
+                              }
+                            },
+                            "can_manage": {
+                              "type": "boolean",
+                              "description": "True when the current credential can register entries. / 当前凭据可登记时为 true。"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/ComputeCatalogAuthentication"
+          },
+          "403": {
+            "$ref": "#/components/responses/ComputeCatalogForbidden"
+          },
+          "503": {
+            "$ref": "#/components/responses/ComputeCatalogUnavailable"
+          }
+        }
+      },
+      "post": {
+        "operationId": "register_compute_profile",
+        "summary": "Register a compute profile",
+        "x-title": {
+          "zh-CN": "登记硬件 Profile",
+          "en": "Register a compute profile"
+        },
+        "x-description": {
+          "zh-CN": "管理员登记名称后，镜像登记与 SSH 节点编辑均可使用。重复的名称返回已有 Profile。自动硬件识别继续产生内置名称。",
+          "en": "Administrators register a name for image registration and SSH node configuration. Repeating a name returns the current entry. Automatic detection continues to produce built-in names."
+        },
+        "x-role": "admin",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response / 操作成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "data"
+                      ],
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/ComputeProfile"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/ComputeCatalogAuthentication"
+          },
+          "403": {
+            "$ref": "#/components/responses/ComputeCatalogForbidden"
+          },
+          "503": {
+            "$ref": "#/components/responses/ComputeCatalogUnavailable"
+          },
+          "400": {
+            "description": "Malformed JSON. / JSON 格式错误。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "error"
+                      ],
+                      "properties": {
+                        "code": {
+                          "enum": [
+                            "INVALID_REQUEST"
+                          ]
+                        },
+                        "error": {
+                          "type": "object",
+                          "required": [
+                            "code",
+                            "message"
+                          ],
+                          "properties": {
+                            "code": {
+                              "enum": [
+                                "INVALID_REQUEST"
+                              ]
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "413": {
+            "$ref": "#/components/responses/ComputeCatalogSize"
+          },
+          "415": {
+            "$ref": "#/components/responses/ComputeCatalogContentType"
+          },
+          "422": {
+            "description": "Invalid, reserved or missing name. / 名称无效、保留或缺失。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "error"
+                      ],
+                      "properties": {
+                        "code": {
+                          "enum": [
+                            "INVALID_REQUEST"
+                          ]
+                        },
+                        "error": {
+                          "type": "object",
+                          "required": [
+                            "code",
+                            "message"
+                          ],
+                          "properties": {
+                            "code": {
+                              "enum": [
+                                "INVALID_REQUEST"
+                              ]
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ComputeProfileRegistration"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/inference/images": {
+      "get": {
+        "operationId": "list_inference_images",
+        "summary": "List inference images",
+        "x-title": {
+          "zh-CN": "读取推理镜像",
+          "en": "List inference images"
+        },
+        "x-description": {
+          "zh-CN": "登录 VOS 用户和调度提交者可见所有已登记镜像。按镜像地址排序，可按目标 Profile 过滤。",
+          "en": "Authenticated VOS accounts and scheduler submitters can read registered images in reference order. Filter by target hardware profile if needed."
+        },
+        "x-role": "authenticated VOS account or scheduler submitter",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response / 操作成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "data"
+                      ],
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "required": [
+                            "items",
+                            "can_manage"
+                          ],
+                          "properties": {
+                            "items": {
+                              "type": "array",
+                              "items": {
+                                "$ref": "#/components/schemas/InferenceImageRecord"
+                              }
+                            },
+                            "can_manage": {
+                              "type": "boolean",
+                              "description": "True when the current credential can register entries. / 当前凭据可登记时为 true。"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/ComputeCatalogAuthentication"
+          },
+          "403": {
+            "$ref": "#/components/responses/ComputeCatalogForbidden"
+          },
+          "503": {
+            "$ref": "#/components/responses/ComputeCatalogUnavailable"
+          },
+          "400": {
+            "description": "Malformed or repeated filter. / 筛选参数格式错误或重复。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "error"
+                      ],
+                      "properties": {
+                        "code": {
+                          "enum": [
+                            "INVALID_REQUEST"
+                          ]
+                        },
+                        "error": {
+                          "type": "object",
+                          "required": [
+                            "code",
+                            "message"
+                          ],
+                          "properties": {
+                            "code": {
+                              "enum": [
+                                "INVALID_REQUEST"
+                              ]
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid Profile name. / Profile 名称无效。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "error"
+                      ],
+                      "properties": {
+                        "code": {
+                          "enum": [
+                            "INVALID_REQUEST"
+                          ]
+                        },
+                        "error": {
+                          "type": "object",
+                          "required": [
+                            "code",
+                            "message"
+                          ],
+                          "properties": {
+                            "code": {
+                              "enum": [
+                                "INVALID_REQUEST"
+                              ]
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "profile",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ComputeProfileName"
+            },
+            "description": "Omit to list all images. dgx-spark includes entries supporting jetson-thor. A well-formed unknown name returns an empty list. / 省略时返回全部，dgx-spark 也会匹配登记为 jetson-thor 的镜像，格式合法但未登记的名称返回空列表。"
+          }
+        ]
+      },
+      "post": {
+        "operationId": "register_inference_image",
+        "summary": "Register an inference image",
+        "x-title": {
+          "zh-CN": "登记推理镜像",
+          "en": "Register an inference image"
+        },
+        "x-description": {
+          "zh-CN": "管理员保存可公开的镜像地址和适用 Profile。同一地址重复登记会替换 Profile，保留首次登记时间。登记只写入清单。",
+          "en": "Administrators publish an image reference and supported profiles. Re-registering an address replaces the profiles and retains the original registration time. This operation writes catalog metadata."
+        },
+        "x-role": "admin",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response / 操作成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "data"
+                      ],
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/InferenceImageRecord"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/ComputeCatalogAuthentication"
+          },
+          "403": {
+            "$ref": "#/components/responses/ComputeCatalogForbidden"
+          },
+          "503": {
+            "$ref": "#/components/responses/ComputeCatalogUnavailable"
+          },
+          "400": {
+            "description": "Malformed JSON. / JSON 格式错误。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "error"
+                      ],
+                      "properties": {
+                        "code": {
+                          "enum": [
+                            "INVALID_REQUEST"
+                          ]
+                        },
+                        "error": {
+                          "type": "object",
+                          "required": [
+                            "code",
+                            "message"
+                          ],
+                          "properties": {
+                            "code": {
+                              "enum": [
+                                "INVALID_REQUEST"
+                              ]
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "413": {
+            "$ref": "#/components/responses/ComputeCatalogSize"
+          },
+          "415": {
+            "$ref": "#/components/responses/ComputeCatalogContentType"
+          },
+          "422": {
+            "description": "Malformed reference, invalid request or unregistered Profile. / 镜像地址或请求无效，或者所选 Profile 尚未登记。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "error"
+                      ],
+                      "properties": {
+                        "code": {
+                          "enum": [
+                            "INVALID_REQUEST",
+                            "COMPUTE_PROFILE_NOT_REGISTERED"
+                          ]
+                        },
+                        "error": {
+                          "type": "object",
+                          "required": [
+                            "code",
+                            "message"
+                          ],
+                          "properties": {
+                            "code": {
+                              "enum": [
+                                "INVALID_REQUEST",
+                                "COMPUTE_PROFILE_NOT_REGISTERED"
+                              ]
+                            },
+                            "message": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InferenceImageRegistration"
+              }
+            }
+          }
+        }
+      }
+    },
     "/inference/migration/preview": {
       "get": {
         "operationId": "preview_legacy_modelinfer_migration",
@@ -784,12 +1351,28 @@
                               "description": "Present for an unfiltered inventory when the embedded Cluster Manager returns members. Only a member ID, display name, role and optional exact-IP association are returned. / 未过滤且内置集群管理返回成员时提供。只返回成员标识、名称、角色和同 IP 的 SSH 节点关联。",
                               "items": {
                                 "type": "object",
-                                "required": ["id", "name", "role", "ssh_node_id"],
+                                "required": [
+                                  "id",
+                                  "name",
+                                  "role",
+                                  "ssh_node_id"
+                                ],
                                 "properties": {
-                                  "id": {"type": "string"},
-                                  "name": {"type": "string"},
-                                  "role": {"type": "string"},
-                                  "ssh_node_id": {"type": ["string", "null"]}
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "role": {
+                                    "type": "string"
+                                  },
+                                  "ssh_node_id": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  }
                                 }
                               }
                             },
@@ -817,17 +1400,11 @@
                                     "type": "string"
                                   },
                                   "profile": {
-                                    "enum": [
-                                      null,
-                                      "jetson-thor",
-                                      "dgx-spark",
-                                      "jetson-orin",
-                                      "arm-cpu",
-                                      "amd-cpu",
-                                      "amd-cuda",
-                                      "arm-cuda",
-                                      "sophon-bm1688"
-                                    ]
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ],
+                                    "maxLength": 64
                                   },
                                   "last_checked_at": {
                                     "type": [
@@ -961,19 +1538,12 @@
                     "description": "Optional explicit sudo password. Omit on update to retain; send an empty value to remove."
                   },
                   "profile": {
-                    "type": "string",
-                    "enum": [
-                      "auto",
-                      "jetson-thor",
-                      "dgx-spark",
-                      "jetson-orin",
-                      "arm-cpu",
-                      "amd-cpu",
-                      "amd-cuda",
-                      "arm-cuda",
-                      "sophon-bm1688"
+                    "type": [
+                      "string",
+                      "null"
                     ],
-                    "description": "Optional hardware profile override. auto uses detected hardware and clears an existing override."
+                    "maxLength": 64,
+                    "description": "Optional registered Profile or auto, which uses detected hardware and clears an existing override. Omit on PATCH-style PUT to retain. Legacy aliases thor, thor-spark and l4t remain accepted. / 可使用已登记名称或 auto 自动识别。编辑省略时保留已有设置。"
                   }
                 },
                 "required": [
@@ -1019,17 +1589,11 @@
                               "type": "string"
                             },
                             "profile": {
-                              "enum": [
-                                null,
-                                "jetson-thor",
-                                "dgx-spark",
-                                "jetson-orin",
-                                "arm-cpu",
-                                "amd-cpu",
-                                "amd-cuda",
-                                "arm-cuda",
-                                "sophon-bm1688"
-                              ]
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "maxLength": 64
                             },
                             "last_checked_at": {
                               "type": [
@@ -1163,19 +1727,12 @@
                     "description": "Optional explicit sudo password. Omit on update to retain; send an empty value to remove."
                   },
                   "profile": {
-                    "type": "string",
-                    "enum": [
-                      "auto",
-                      "jetson-thor",
-                      "dgx-spark",
-                      "jetson-orin",
-                      "arm-cpu",
-                      "amd-cpu",
-                      "amd-cuda",
-                      "arm-cuda",
-                      "sophon-bm1688"
+                    "type": [
+                      "string",
+                      "null"
                     ],
-                    "description": "Optional hardware profile override. auto uses detected hardware and clears an existing override."
+                    "maxLength": 64,
+                    "description": "Optional registered Profile or auto, which uses detected hardware and clears an existing override. Omit on PATCH-style PUT to retain. Legacy aliases thor, thor-spark and l4t remain accepted. / 可使用已登记名称或 auto 自动识别。编辑省略时保留已有设置。"
                   }
                 }
               }
@@ -1217,17 +1774,11 @@
                               "type": "string"
                             },
                             "profile": {
-                              "enum": [
-                                null,
-                                "jetson-thor",
-                                "dgx-spark",
-                                "jetson-orin",
-                                "arm-cpu",
-                                "amd-cpu",
-                                "amd-cuda",
-                                "arm-cuda",
-                                "sophon-bm1688"
-                              ]
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "maxLength": 64
                             },
                             "last_checked_at": {
                               "type": [
@@ -1421,17 +1972,11 @@
                               "type": "string"
                             },
                             "profile": {
-                              "enum": [
-                                null,
-                                "jetson-thor",
-                                "dgx-spark",
-                                "jetson-orin",
-                                "arm-cpu",
-                                "amd-cpu",
-                                "amd-cuda",
-                                "arm-cuda",
-                                "sophon-bm1688"
-                              ]
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "maxLength": 64
                             },
                             "last_checked_at": {
                               "type": [
@@ -2881,7 +3426,7 @@
       "get": {
         "operationId": "get_nodes",
         "summary": "Nodes and placements",
-        "description": "Combines Agent heartbeat, approved budgets, VOS observations, local app installations and executor placement with source freshness.",
+        "description": "Combines Agent heartbeat, approved budgets, VOS observations, local app installations and executor placement with source freshness. Observation-only nodes can provide live host utilization independently of scheduling budgets.",
         "x-title": {
           "zh-CN": "节点与部署位置",
           "en": "Nodes and placements",
@@ -7420,6 +7965,241 @@
     }
   },
   "components": {
+    "responses": {
+      "ComputeCatalogAuthentication": {
+        "description": "Missing, invalid, expired, or revoked bearer. / 缺少、失效、过期或撤销的凭据。",
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/Envelope"
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "error"
+                  ],
+                  "properties": {
+                    "code": {
+                      "enum": [
+                        "UNAUTHENTICATED",
+                        "CREDENTIAL_REVOKED",
+                        "FORBIDDEN"
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "enum": [
+                            "UNAUTHENTICATED",
+                            "CREDENTIAL_REVOKED",
+                            "FORBIDDEN"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "ComputeCatalogForbidden": {
+        "description": "Non-administrator write or account without read access. / 非管理员写入或账户无读权限。",
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/Envelope"
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "error"
+                  ],
+                  "properties": {
+                    "code": {
+                      "enum": [
+                        "FORBIDDEN"
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "enum": [
+                            "FORBIDDEN"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "ComputeCatalogUnavailable": {
+        "description": "Database or identity service unavailable. Retry after recovery. / 数据库或身份服务不可用，恢复后重试。",
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/Envelope"
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "error"
+                  ],
+                  "properties": {
+                    "code": {
+                      "enum": [
+                        "TEMPORARILY_UNAVAILABLE",
+                        "UNAUTHENTICATED",
+                        "FORBIDDEN"
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "enum": [
+                            "TEMPORARILY_UNAVAILABLE",
+                            "UNAUTHENTICATED",
+                            "FORBIDDEN"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "ComputeCatalogSize": {
+        "description": "JSON body exceeds 256 KiB. / 请求体超过 256 KiB。",
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/Envelope"
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "error"
+                  ],
+                  "properties": {
+                    "code": {
+                      "enum": [
+                        "REQUEST_TOO_LARGE"
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "enum": [
+                            "REQUEST_TOO_LARGE"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "ComputeCatalogContentType": {
+        "description": "Use application/json. / 请使用 application/json。",
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/Envelope"
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "error"
+                  ],
+                  "properties": {
+                    "code": {
+                      "enum": [
+                        "INTERNAL_ERROR"
+                      ]
+                    },
+                    "error": {
+                      "type": "object",
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "properties": {
+                        "code": {
+                          "enum": [
+                            "INTERNAL_ERROR"
+                          ]
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
     "securitySchemes": {
       "bearerAuth": {
         "type": "http",
@@ -7432,6 +8212,119 @@
       }
     },
     "schemas": {
+      "ComputeProfileName": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+        "maxLength": 64,
+        "description": "An administrator-registered hardware Profile. Use lowercase ASCII letters, digits, and single hyphens. / 管理员登记的硬件 Profile，使用小写英文字母、数字和单个连字符。",
+        "examples": [
+          "jetson-thor",
+          "arm-new-board"
+        ]
+      },
+      "ComputeProfile": {
+        "type": "object",
+        "required": [
+          "name",
+          "builtin"
+        ],
+        "properties": {
+          "name": {
+            "$ref": "#/components/schemas/ComputeProfileName"
+          },
+          "builtin": {
+            "type": "boolean",
+            "description": "True for the eight factory Profiles and false for an administrator-defined Profile. / 内置八种 Profile 为 true，管理员定义的为 false。"
+          }
+        }
+      },
+      "InferenceImageRecord": {
+        "type": "object",
+        "required": [
+          "image_ref",
+          "profiles",
+          "tested_profiles",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "image_ref": {
+            "type": "string",
+            "maxLength": 512,
+            "example": "registry.example.com/team/vllm:0.1",
+            "description": "Full Docker/OCI reference with registry, repository, and explicit tag or sha256 digest. ASCII, trimmed at the edges. No scheme, user information, or query. / 完整 Docker/OCI 镜像引用，包含仓库主机、路径以及显式标签或 sha256 摘要。移除首尾空白，禁止协议、用户凭据与查询参数。"
+          },
+          "profiles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ComputeProfileName"
+            },
+            "maxItems": 64,
+            "description": "Registered names. Up to 64 supplied entries, with duplicates removed and names sorted before storing. / 已登记名称，单次最多提交 64 项，按名称排序并去重后保存。"
+          },
+          "tested_profiles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ComputeProfileName"
+            },
+            "description": "Profiles observed running the preloaded image. Empty for manual registrations. Editing supported profiles preserves this evidence. / 预置镜像已观测运行过的 Profile，手工登记时为空。调整适用 Profile 保留该记录。"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Time of original registration (UTC). / 首次登记的 UTC 时间。"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Time of last profile change (UTC). / 最近一次修改 Profile 的 UTC 时间。"
+          }
+        }
+      },
+      "ComputeProfileRegistration": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
+            "maxLength": 64,
+            "description": "An administrator-registered hardware Profile. Use lowercase ASCII letters, digits, and single hyphens. / 管理员登记的硬件 Profile，使用小写英文字母、数字和单个连字符。 Trimmed at the edges. auto, thor, thor-spark and l4t are reserved. / 移除首尾空白，保留 auto、thor、thor-spark 和 l4t。",
+            "examples": [
+              "jetson-thor",
+              "arm-new-board"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "InferenceImageRegistration": {
+        "type": "object",
+        "required": [
+          "image_ref",
+          "profiles"
+        ],
+        "properties": {
+          "image_ref": {
+            "type": "string",
+            "maxLength": 512,
+            "example": "registry.example.com/team/vllm:0.1",
+            "description": "Full Docker/OCI reference with registry, repository, and explicit tag or sha256 digest. ASCII, trimmed at the edges. No scheme, user information, or query. / 完整 Docker/OCI 镜像引用，包含仓库主机、路径以及显式标签或 sha256 摘要。移除首尾空白，禁止协议、用户凭据与查询参数。"
+          },
+          "profiles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ComputeProfileName"
+            },
+            "minItems": 1,
+            "maxItems": 64,
+            "description": "Registered names. Up to 64 supplied entries, with duplicates removed and names sorted before storing. / 已登记名称，单次最多提交 64 项，按名称排序并去重后保存。"
+          }
+        },
+        "additionalProperties": false
+      },
       "ExecutorRef": {
         "type": "object",
         "additionalProperties": false,
@@ -8862,19 +9755,51 @@
           },
           "management_version": {
             "type": "integer"
+          },
+          "modelinfer_source": {
+            "type": "object",
+            "description": "Present when a node originates from ModelInfer inventory. The controller samples up to 32 nodes per inventory refresh when embedded inference and SSH node management are running.",
+            "properties": {
+              "fresh": {
+                "type": "boolean",
+                "description": "Inventory succeeded and is less than 90 seconds old."
+              },
+              "observed_at": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time",
+                "description": "Last successful inventory collection time in UTC."
+              },
+              "node": {
+                "type": "object",
+                "properties": {
+                  "host_resources": {
+                    "$ref": "#/components/schemas/ObservedHostResources"
+                  }
+                },
+                "additionalProperties": true
+              }
+            },
+            "required": [
+              "fresh",
+              "observed_at",
+              "node"
+            ]
+          },
+          "managed": {
+            "type": "boolean",
+            "description": "False for an observation-only node. Such a node can report live resource samples even when its scheduler budget is zero."
           }
         },
         "required": [
           "id",
           "capacities",
-          "resident_baseline",
-          "safety_reserve",
           "report",
-          "management_enabled",
           "draining",
           "heartbeat",
-          "health_state",
-          "effective_safety_reserve"
+          "health_state"
         ],
         "additionalProperties": true
       },
@@ -10097,6 +11022,110 @@
         },
         "additionalProperties": true,
         "description": "Host observations: RAM/GPU sizes are MiB, CPU/GPU load is percent. observed_at and per-executor health freshness are required for resource admission; an accepted heartbeat alone does not approve capacity. Unified GPU memory shares system RAM; unknown GPU values remain null rather than fabricated."
+      },
+      "ObservedHostResources": {
+        "type": "object",
+        "description": "Read-only live Linux host sample via the node’s configured SSH connection. A sample can be partial; missing metrics are omitted or null. Unified device memory is counted once as system RAM.",
+        "properties": {
+          "observed_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC collection timestamp. The interface treats samples at least 90 seconds old as unavailable."
+          },
+          "cpu_logical_count": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Count of logical CPUs exposed by the host.",
+            "minimum": 1
+          },
+          "cpu_used_percent": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "description": "Whole-host busy percentage from two /proc/stat samples about 0.4 seconds apart.",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "memory_total_mib": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Linux MemTotal in MiB, rounded down.",
+            "minimum": 0
+          },
+          "memory_available_mib": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Linux MemAvailable in MiB, rounded down. Approximate usable memory including reclaimable memory. Subtract from memory_total_mib to compute used memory for this view.",
+            "minimum": 0
+          },
+          "gpus": {
+            "type": "array",
+            "description": "One item per discovered device. Empty means no devices were reported. Inventory fallback can return names without utilization.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Device name from the current sample or hardware inventory."
+                },
+                "memory_type": {
+                  "type": "string",
+                  "enum": [
+                    "unified",
+                    "dedicated",
+                    "unknown"
+                  ],
+                  "description": "Shared system RAM, independent device memory, or unavailable memory classification."
+                },
+                "utilization_percent": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "description": "Device utilization percentage, null when unavailable.",
+                  "minimum": 0,
+                  "maximum": 100
+                },
+                "total_mib": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "description": "Device memory total in MiB if reported.",
+                  "minimum": 0
+                },
+                "free_mib": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "description": "Free device memory in MiB if reported.",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "name",
+                "memory_type",
+                "utilization_percent",
+                "total_mib",
+                "free_mib"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "observed_at",
+          "gpus"
+        ],
+        "additionalProperties": false
       }
     }
   }
