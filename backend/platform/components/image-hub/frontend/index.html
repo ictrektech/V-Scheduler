@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VOS 镜像仓库</title>
+    <script>
+      // 首帧前按上次主题标记根元素，减少 iframe 重载时的浅色闪烁；
+      // 平台同步（vos_platform.getState）后由 stores/app.ts 覆盖为平台主题。
+      try {
+        if (localStorage.getItem('image-hub-theme') === 'dark') {
+          document.documentElement.classList.add('dark');
+        }
+      } catch (e) {
+        /* 存储不可用（隐私模式等）时忽略 */
+      }
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,33 @@
+# com.ictrek.image-hub Dockerfile.dockerignore
+# BuildKit 的 <Dockerfile>.dockerignore 格式，仅对 apps/com.ictrek.image-hub/Dockerfile 生效
+# build context = 仓库根，白名单控制只传输必要文件
+
+# 默认排除一切
+*
+
+# 放行组件（后端 / 前端 / 配置 / README 等）
+!components/image-hub/**
+
+# 放行单容器 entrypoint 脚本
+!apps/com.ictrek.image-hub/image-hub-entrypoint.sh
+
+# 放行 trackerror 依赖（后端 Cargo.toml path 依赖）
+!shared/trackerror/**
+
+# 放行 Cargo workspace 锁文件（若存在，构建可复现）
+!Cargo.lock
+
+# 排除构建产物与依赖目录（即使被放行也不传输）
+components/image-hub/backend/target/**
+components/image-hub/frontend/node_modules/**
+components/image-hub/frontend/dist/**
+components/image-hub/frontend/.vite/**
+shared/trackerror/target/**
+
+# 排除 git / IDE / 临时文件
+**/.git/**
+**/.gitignore
+**/.vscode/**
+**/.idea/**
+**/*.log
+**/.DS_Store

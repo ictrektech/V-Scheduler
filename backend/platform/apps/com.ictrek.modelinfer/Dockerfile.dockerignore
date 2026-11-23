@@ -1,0 +1,26 @@
+# whitelist 模式：先忽略全部，再白名单需要的目录
+*
+*/*
+**
+
+# whitelist: 需要的目录
+!components/modelinfer/
+!components/modelinfer/**
+!shared/
+!shared/trackerror/
+!shared/trackerror/**
+!third_party/
+!third_party/sea-schema/
+!third_party/sea-schema/**
+
+# 排除构建产物与文档
+components/modelinfer/backend/target
+components/modelinfer/backend/**/target
+components/modelinfer/frontend/node_modules
+components/modelinfer/frontend/dist
+components/modelinfer/frontend/.vite
+components/modelinfer/.agents
+components/modelinfer/openspec
+components/modelinfer/docs
+components/modelinfer/**/*.log
+components/modelinfer/**/*.db

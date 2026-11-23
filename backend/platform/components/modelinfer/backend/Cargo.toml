@@ -1,0 +1,100 @@
+[package]
+name = "modelinfer"
+version = "0.1.0"
+edition = "2024"
+description = "modelinfer：VOS AI 模型下载管理与集群调度应用（模型广场 / 节点管理 / NFS 挂载 / 运行配置）"
+license = "Apache-2.0"
+
+# 二进制入口：modelinfer --port ... --frontend-dir ... --data-dir ...
+# lib + bin 分离：lib 导出核心逻辑便于单元测试，bin 仅做入口装配
+[[bin]]
+name = "modelinfer"
+path = "src/bin/modelinfer.rs"
+
+[lib]
+name = "modelinfer"
+path = "src/lib.rs"
+
+[dependencies]
+# === 异步运行时 ===
+tokio = { version = "1.40", features = ["full"] }
+
+# === HTTP 框架（multipart：本地模型卡片包上传）===
+axum = { version = "0.8", features = ["macros", "json", "multipart"] }
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["trace", "cors", "fs"] }
+
+# === CLI 参数解析 ===
+clap = { version = "4.5", features = ["derive", "env"] }
+
+# === 结构化日志 ===
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+# === 序列化 ===
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+
+# === 时间（CST 时间戳 / 健康检查）===
+chrono = { version = "0.4", features = ["serde"] }
+
+# === 持久化（生产仅 PostgreSQL；sqlx-sqlite 仅供单元测试内存库）===
+# 生产运行时 MUST 使用平台 postgres（见 config::resolved_database_url，无 sqlite 回退）；
+# `sqlx-sqlite` 保留以便 `cargo test` 使用 `sqlite::memory:`（同一套 Entity），
+# 文件型 sqlite 连接串会被 db::ensure_supported_url 拒绝（20726）。
+sea-orm = { version = "2.0.0-rc.38", features = [
+    "schema-sync",
+    "sqlx-sqlite",
+    "sqlx-postgres",
+    "runtime-tokio-rustls",
+    "with-chrono",
+    "with-json",
+] }
+ulid = "1.2"
+
+# === 异步 trait（SshExec / PlatformClient 抽象）===
+async-trait = "0.1"
+
+# === SSH 客户端（密码认证；libssh2 由 cc 内联编译，无需系统 libssh2）===
+ssh2 = "0.9"
+
+# === 平台 API 调用（rustls 避免系统 openssl）===
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+
+# === 模型广场：model.tar.gz 组装 / 解压 / 校验 ===
+flate2 = "1"
+tar = "0.4"
+sha2 = "0.10"
+hex = "0.4"
+
+# === 本地模型卡片包：tar.xz 外层归档解压（对齐 vos-platform-backend 主题包方案）===
+xz2 = "0.1"
+
+# === 错误处理 ===
+thiserror = "2"
+anyhow = "1"
+
+# === Temporal 异步任务编排（部署配置生命周期；锁 0.4.0，Rust SDK 仍 prerelease）===
+temporalio-client = "=0.4.0"
+temporalio-common = { version = "=0.4.0", default-features = false, features = ["envconfig"] }
+temporalio-sdk = "=0.4.0"
+temporalio-sdk-core = "=0.4.0"
+temporalio-macros = "=0.4.0"
+url = "2"
+futures = "0.3"
+futures-util = "0.3"
+
+# === 共享错误库（category 实现，对齐 vos-http-response-spec）===
+trackerror = { path = "../../../shared/trackerror" }
+
+[dev-dependencies]
+http-body-util = "0.1"
+tempfile = "3"
+
+# === 约束发现直查 pg_catalog（对齐 vos-platform-backend，见 docs/migrate-schema-sync-slow-analysis.md）===
+# vendored 自 SeaQL/sea-schema 0.18.1（third_party/sea-schema），已应用上游 PR #169 修复，
+# 消除 postgres `information_schema` 五视图级联坏执行计划（全量 sync 185s → <1s）。
+# ️ 临时方案：待上游发布含该修复的 sea-schema 后移除本段。
+[patch.crates-io]
+sea-schema = { path = "../../../third_party/sea-schema" }

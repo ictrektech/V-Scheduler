@@ -1,0 +1,7 @@
+<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- 通用模型兜底图标（仓库自绘，不来自 LobeHub）：立方体 + 内核，象征"模型资产"。
+       使用显式中性色，使其在 <img> 上下文中也稳定呈现。 -->
+  <path d="M12 2.6 20.13 7.3v9.4L12 21.4 3.87 16.7V7.3L12 2.6Z" stroke="#64748b" stroke-width="1.5" stroke-linejoin="round"/>
+  <path d="M12 7.4 16.3 9.9v5L12 17.4 7.7 14.9v-5L12 7.4Z" stroke="#64748b" stroke-width="1.2" stroke-linejoin="round" opacity="0.6"/>
+  <circle cx="12" cy="12" r="1.4" fill="#64748b"/>
+</svg>

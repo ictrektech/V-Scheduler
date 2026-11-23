@@ -1,0 +1,8 @@
+# pnpm 11 起构建脚本白名单统一放在 pnpm-workspace.yaml（package.json 的 pnpm 字段不再读取）。
+# - esbuild：安装平台原生二进制；
+# - core-js：安装期脚本（仅提示信息）；
+# - vue-demi：postinstall 仅用于 Vue 2/3 入口切换（Vue 3 默认入口已可用），显式放行。
+allowBuilds:
+  core-js: true
+  esbuild: true
+  vue-demi: true

@@ -1,0 +1,36 @@
+{
+  "name": "image-hub-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "VOS 离线镜像中转（image-hub）管理前端",
+  "scripts": {
+    "dev": "vite --mode development",
+    "build": "vite build --mode production",
+    "preview": "vite preview",
+    "check:type": "vue-tsc --noEmit --skipLibCheck",
+    "test:utils": "node --test src/utils/arch.test.mjs src/utils/ip.test.mjs src/utils/commands.test.mjs src/utils/format.test.mjs src/utils/image.test.mjs src/utils/mirror.test.mjs src/utils/platform.test.mjs src/utils/task.test.mjs src/utils/copy.test.mjs src/utils/gc.test.mjs src/platform/__tests__/vos-platform.test.mjs src/i18n/__tests__/i18n.test.mjs"
+  },
+  "dependencies": {
+    "@ant-design/icons-vue": "^7.0.1",
+    "ant-design-vue": "^4.2.6",
+    "axios": "^1.10.0",
+    "dayjs": "^1.11.13",
+    "pinia": "^2.2.6",
+    "vue": "^3.5.17",
+    "vue-i18n": "^9.14.5",
+    "vue-router": "^4.5.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@vitejs/plugin-vue": "^6.0.1",
+    "typescript": "^5.8.3",
+    "vite": "^7.1.2",
+    "vue-tsc": "2.2.10"
+  },
+  "engines": {
+    "node": ">=20.10.0",
+    "pnpm": ">=9.12.0"
+  },
+  "packageManager": "pnpm@11.10.0"
+}

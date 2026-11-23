@@ -1,0 +1,91 @@
+html,
+body,
+#app {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  background: var(--ih-bg);
+  color: var(--ih-text);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* ===== 设计令牌 ===== */
+:root {
+  color-scheme: light;
+  /* 背景 / 表面 */
+  --ih-bg: #f5f7fa;
+  --ih-surface: #ffffff;
+  --ih-surface-alt: #fafbfc;
+  --ih-border: #e5e7eb;
+  --ih-border-strong: #d0d5dd;
+  /* 文本 */
+  --ih-text: #1f2329;
+  --ih-text-secondary: #6b7280;
+  --ih-text-tertiary: #9ca3af;
+  /* 语义色 */
+  --ih-primary: #1677ff;
+  --ih-success: #52c41a;
+  --ih-warning: #faad14;
+  --ih-danger: #f5222d;
+  /* 圆角 / 阴影 */
+  --ih-radius: 8px;
+  --ih-radius-sm: 6px;
+  --ih-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 2px 8px -2px rgba(0, 0, 0, 0.06);
+  /* 间距 */
+  --ih-space-xs: 4px;
+  --ih-space-sm: 8px;
+  --ih-space: 12px;
+  --ih-space-lg: 16px;
+  --ih-space-xl: 24px;
+}
+
+/* ===== 暗黑主题令牌（跟随 VOS 平台亮度；根元素挂 `dark` class） ===== */
+html.dark {
+  color-scheme: dark;
+  --ih-bg: #14151a;
+  --ih-surface: #1d1f27;
+  --ih-surface-alt: #24262f;
+  --ih-border: #303139;
+  --ih-border-strong: #3b3d47;
+  --ih-text: rgba(255, 255, 255, 0.88);
+  --ih-text-secondary: rgba(255, 255, 255, 0.55);
+  --ih-text-tertiary: rgba(255, 255, 255, 0.36);
+  --ih-primary: #4096ff;
+  --ih-success: #52c41a;
+  --ih-warning: #faad14;
+  --ih-danger: #ff4d4f;
+  --ih-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 8px -2px rgba(0, 0, 0, 0.5);
+}
+
+/* 通用卡片 */
+.ih-card {
+  background: var(--ih-surface);
+  border: 1px solid var(--ih-border);
+  border-radius: var(--ih-radius);
+  box-shadow: var(--ih-shadow);
+  padding: var(--ih-space-lg);
+}
+
+.ih-muted {
+  color: var(--ih-text-secondary);
+}
+
+/* 命令代码块 */
+.ih-cmd {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 12.5px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: #0d1117;
+  color: #e6edf3;
+  border-radius: var(--ih-radius-sm);
+  padding: var(--ih-space) var(--ih-space-lg);
+  margin: 0;
+}

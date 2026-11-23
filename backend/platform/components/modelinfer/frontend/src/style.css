@@ -1,0 +1,135 @@
+:root {
+  /* ---------- 基础色 ---------- */
+  --mi-bg: #f5f6f8;
+  --mi-surface: #ffffff;
+  --mi-surface-2: #fafbfc;
+  --mi-text: #1f2329;
+  --mi-text-secondary: #646a73;
+  --mi-text-tertiary: #8f959e;
+  --mi-border: #e5e6eb;
+  --mi-border-strong: #d5d8de;
+
+  /* ---------- 主色（科技蓝紫） ---------- */
+  --mi-primary: #4f6bff;
+  --mi-primary-2: #7c5cff;
+  --mi-primary-soft: #eef1ff;
+  --mi-primary-gradient: linear-gradient(135deg, #4f6bff 0%, #7c5cff 100%);
+
+  /* ---------- 语义色 ---------- */
+  --mi-success: #16a34a;
+  --mi-success-soft: #e9f7ef;
+  --mi-processing: #2563eb;
+  --mi-processing-soft: #e9f0ff;
+  --mi-warning: #d97706;
+  --mi-warning-soft: #fdf3e6;
+  --mi-error: #dc2626;
+  --mi-error-soft: #fdecec;
+  --mi-neutral: #64748b;
+  --mi-neutral-soft: #eef1f5;
+
+  /* 语义色描边（状态标签等） */
+  --mi-success-border: rgba(22, 163, 74, 0.18);
+  --mi-processing-border: rgba(37, 99, 235, 0.18);
+  --mi-warning-border: rgba(217, 119, 6, 0.18);
+  --mi-error-border: rgba(220, 38, 38, 0.18);
+  --mi-neutral-border: rgba(100, 116, 139, 0.16);
+
+  /* ---------- 形状 ---------- */
+  --mi-radius-sm: 6px;
+  --mi-radius-md: 10px;
+  --mi-radius-lg: 14px;
+  --mi-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.06);
+  --mi-shadow-md: 0 6px 18px rgba(15, 23, 42, 0.08);
+
+  /* ---------- 间距 ---------- */
+  --mi-space-xs: 4px;
+  --mi-space-sm: 8px;
+  --mi-space-md: 12px;
+  --mi-space-lg: 16px;
+  --mi-space-xl: 24px;
+
+  /* ---------- 字号层级 ---------- */
+  --mi-font-page-title: 22px;
+  --mi-font-card-title: 15px;
+  --mi-font-body: 13px;
+  --mi-font-hint: 12px;
+}
+
+/* ---------- 暗黑主题变量（跟随 VOS 平台亮度；根元素挂 `dark` class） ---------- */
+html.dark {
+  --mi-bg: #14151a;
+  --mi-surface: #1d1f27;
+  --mi-surface-2: #24262f;
+  --mi-text: rgba(255, 255, 255, 0.88);
+  --mi-text-secondary: rgba(255, 255, 255, 0.55);
+  --mi-text-tertiary: rgba(255, 255, 255, 0.36);
+  --mi-border: #303139;
+  --mi-border-strong: #3b3d47;
+
+  --mi-primary: #6b83ff;
+  --mi-primary-2: #9b7cff;
+  --mi-primary-soft: rgba(79, 107, 255, 0.2);
+  --mi-primary-gradient: linear-gradient(135deg, #6b83ff 0%, #9b7cff 100%);
+
+  --mi-success: #3ecf7a;
+  --mi-success-soft: rgba(22, 163, 74, 0.18);
+  --mi-processing: #5b8def;
+  --mi-processing-soft: rgba(37, 99, 235, 0.2);
+  --mi-warning: #f0a63c;
+  --mi-warning-soft: rgba(217, 119, 6, 0.18);
+  --mi-error: #ff6b6b;
+  --mi-error-soft: rgba(220, 38, 38, 0.18);
+  --mi-neutral: #94a3b8;
+  --mi-neutral-soft: rgba(100, 116, 139, 0.22);
+
+  --mi-success-border: rgba(62, 207, 122, 0.3);
+  --mi-processing-border: rgba(91, 141, 239, 0.3);
+  --mi-warning-border: rgba(240, 166, 60, 0.3);
+  --mi-error-border: rgba(255, 107, 107, 0.3);
+  --mi-neutral-border: rgba(148, 163, 184, 0.26);
+
+  --mi-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.5);
+  --mi-shadow-md: 0 6px 18px rgba(0, 0, 0, 0.5);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', sans-serif;
+  color: var(--mi-text);
+  background: var(--mi-bg);
+}
+
+/* 等宽文本（id / 权重 / 路径 / 镜像 / 端点） */
+.mi-mono {
+  font-family: 'SFMono-Regular', 'JetBrains Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  font-size: 12px;
+}
+
+/* 辅助说明文本（全站复用） */
+.mi-hint {
+  color: var(--mi-text-secondary);
+  font-size: var(--mi-font-hint);
+}
+
+/* 模型广场：来源 / 卡片选中行高亮（a-table row-class-name 全局生效） */
+.mi-row-active > td {
+  background: var(--mi-primary-soft) !important;
+}
+/* 列表分页条（四个列表页复用；与「已筛选」提示同一行右侧对齐） */
+.mi-list-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
