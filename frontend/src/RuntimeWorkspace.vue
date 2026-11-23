@@ -25,18 +25,27 @@ const route = ref(views.value[0].route)
 const initialRoute = ref(route.value)
 const src = computed(() => new URL(`./${props.kind}/#${initialRoute.value}`, location.href).href)
 const health = ref<'loading' | 'ready' | 'unavailable'>('loading')
+const checking = ref(false)
+const failureDetail = ref('')
 let frame: SchedulerRuntimeFrame | null = null
 let child: Window | null = null
 let timer: ReturnType<typeof setInterval> | undefined
 
 async function check() {
- health.value = 'loading'
+ if (checking.value) return
+ checking.value = true
  try {
-  const result = await props.request(props.kind + '/runtime/health')
-  health.value = props.kind === 'cluster' || (result as { ready?: boolean } | null)?.ready
-   ? 'ready' : 'unavailable'
- } catch {
+  const result = await props.request(props.kind + '/runtime/health') as { enabled?: boolean; ready?: boolean } | null
+  const ready = props.kind === 'cluster' || result?.ready
+  health.value = ready ? 'ready' : 'unavailable'
+  failureDetail.value = ready ? '' : result?.enabled === false
+   ? props.t('VOS 应用配置中尚未启用内置推理运行时。')
+   : props.t('推理运行时尚未就绪。')
+ } catch (error) {
   health.value = 'unavailable'
+  failureDetail.value = error instanceof Error ? error.message : ''
+ } finally {
+  checking.value = false
  }
 }
 
@@ -49,6 +58,9 @@ function setFrame(element: unknown) {
    locale: () => props.locale,
    openWeights: () => emit('weights'),
   }
+ } else {
+  child?.removeEventListener('hashchange', readRoute)
+  child = null
  }
 }
 
@@ -79,13 +91,11 @@ onBeforeUnmount(() => {clearInterval(timer);child?.removeEventListener('hashchan
 
 <template>
  <section class="runtime-workspace">
-  <div v-if="health==='ready'||kind==='inference'" class="documentation-tabs" :aria-label="t(kind==='inference'?'推理部署':'VOS 集群管理')">
-   <template v-if="health==='ready'">
+  <div class="documentation-tabs" :aria-label="t(kind==='inference'?'推理部署':'VOS 集群管理')">
    <button v-for="view in views" :key="view.route" type="button"
     :class="{current:!images&&(route===view.route||route.startsWith(view.route+'/'))}"
     :aria-current="!images&&(route===view.route||route.startsWith(view.route+'/'))?'page':undefined"
     @click="select(view.route)">{{t(view.label)}}</button>
-   </template>
    <button v-if="kind==='inference'" type="button" :class="{current:images}" :aria-current="images?'page':undefined" @click="emit('images')">{{t('推理镜像')}}</button>
   </div>
   <slot v-if="images" name="images"/>
@@ -93,8 +103,9 @@ onBeforeUnmount(() => {clearInterval(timer);child?.removeEventListener('hashchan
  <section v-else-if="!images" class="section panel" aria-live="polite">
   <p v-if="health==='loading'">{{t('正在处理')}}</p>
   <template v-else>
-   <p>{{t('运行时暂不可用。请检查 VOS 应用配置和服务状态。')}}</p>
-   <button type="button" class="quiet" @click="check">{{t('重试连接')}}</button>
+   <p>{{t('运行时暂不可用。应用正在自动重试，请检查 VOS 应用配置和服务状态。')}}</p>
+   <p v-if="failureDetail">{{failureDetail}}</p>
+   <button type="button" class="quiet" :disabled="checking" @click="check">{{t('重试连接')}}</button>
    <button v-if="kind==='inference'" type="button" class="quiet" @click="emit('nodes')">{{t('节点管理')}}</button>
   </template>
  </section>

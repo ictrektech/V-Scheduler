@@ -185,6 +185,7 @@ curl -fsS -X PUT "$GATEWAY/api/v1/model-routing" -H "Authorization: Bearer $VOS_
 </pre>
   <h3 id="integration-reference" tabindex="-1">{{t('完整 API 索引与错误处理')}}</h3>
   <p>{{t('模型与网关 API、调度管理 API、模型管理 API 三个页签分别列出全部接口、参数、请求和响应。下面的完整参考按服务列出接口索引，包含 Key、可见范围、能力、Auto、节点心跳、资源查询、下载选文件和模型停止。')}}</p>
+  <p>{{t('推理部署和 VOS 集群管理在运行时启动或断线时保留全部页签，内容区显示原因并自动重试。也可点「重试连接」，无需刷新整个页面。调度管理 API 中的运行时健康检查沿用原有接口。')}}</p>
   <p>{{t('401/403 检查 VOS 身份、所有者与管理员权限；推理 Key 不能修改配置。503 SCHEDULER_BINDING_MISSING/INVALID 表示缺失或无效的资源绑定，MODEL_RESOURCE_POLICY_NOT_APPROVED 表示模型预算尚未批准；查看高级控制中的接入状态与日志。429 按 Retry-After 重试或设置队列等待；不要自动重放已经开始的计算。上游 400 上下文超限应缩短输入或修改上游配置，不是资源预算不足。')}}</p>
   <p><a href="https://github.com/ictrektech/V-Scheduler/blob/main/docs/api-reference.md" target="_blank" rel="noopener">{{t('按服务查看完整 API 参考')}}</a></p>
   <h3 id="integration-nodes" tabindex="-1">{{t('节点注册与资源查询')}}</h3>
