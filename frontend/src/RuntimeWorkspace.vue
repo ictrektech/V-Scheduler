@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { getVOSBearerToken, type SchedulerRuntimeFrame } from './vos-auth'
+import { getVOSBearerToken, clearCachedVOSBearerToken, type SchedulerRuntimeFrame } from './vos-auth'
 
 const props = defineProps<{
  kind: 'inference' | 'cluster'
+ images?: boolean
  locale: string
  request: (path: string) => Promise<unknown>
  t: (value: string) => string
 }>()
-const emit = defineEmits<{ weights: []; nodes: []; images: [] }>()
+const emit = defineEmits<{ weights: []; nodes: []; images: []; runtime: [] }>()
 
 const views = computed(() => props.kind === 'inference' ? [
  { route: '/runs', label: '部署列表' },
@@ -26,6 +27,7 @@ const src = computed(() => new URL(`./${props.kind}/#${initialRoute.value}`, loc
 const health = ref<'loading' | 'ready' | 'unavailable'>('loading')
 let frame: SchedulerRuntimeFrame | null = null
 let child: Window | null = null
+let timer: ReturnType<typeof setInterval> | undefined
 
 async function check() {
  health.value = 'loading'
@@ -43,6 +45,7 @@ function setFrame(element: unknown) {
  if (frame) {
   frame.schedulerRuntime = {
    token: getVOSBearerToken,
+   rejectToken: clearCachedVOSBearerToken,
    locale: () => props.locale,
    openWeights: () => emit('weights'),
   }
@@ -61,6 +64,7 @@ function onLoad() {
 }
 
 function select(next: string) {
+ if (props.images) emit('runtime')
  route.value = next
  if (child) child.location.hash = next
  else initialRoute.value = next
@@ -69,8 +73,8 @@ function select(next: string) {
 watch(() => props.locale, () => {
  child?.dispatchEvent(new Event('scheduler:locale'))
 })
-onMounted(check)
-onBeforeUnmount(() => child?.removeEventListener('hashchange', readRoute))
+onMounted(() => { void check(); timer=setInterval(() => {if(health.value==='unavailable')void check()}, 5000) })
+onBeforeUnmount(() => {clearInterval(timer);child?.removeEventListener('hashchange', readRoute)})
 </script>
 
 <template>
@@ -78,14 +82,15 @@ onBeforeUnmount(() => child?.removeEventListener('hashchange', readRoute))
   <div v-if="health==='ready'||kind==='inference'" class="documentation-tabs" :aria-label="t(kind==='inference'?'推理部署':'VOS 集群管理')">
    <template v-if="health==='ready'">
    <button v-for="view in views" :key="view.route" type="button"
-    :class="{current:route===view.route||route.startsWith(view.route+'/')}"
-    :aria-current="route===view.route||route.startsWith(view.route+'/')?'page':undefined"
+    :class="{current:!images&&(route===view.route||route.startsWith(view.route+'/'))}"
+    :aria-current="!images&&(route===view.route||route.startsWith(view.route+'/'))?'page':undefined"
     @click="select(view.route)">{{t(view.label)}}</button>
    </template>
-   <button v-if="kind==='inference'" type="button" @click="emit('images')">{{t('推理镜像')}}</button>
+   <button v-if="kind==='inference'" type="button" :class="{current:images}" :aria-current="images?'page':undefined" @click="emit('images')">{{t('推理镜像')}}</button>
   </div>
-  <iframe v-if="health==='ready'" :ref="setFrame" :src="src" :title="t(kind==='inference'?'推理部署':'VOS 集群管理')" @load="onLoad"/>
- <section v-else class="section panel" aria-live="polite">
+  <slot v-if="images" name="images"/>
+  <iframe v-if="health==='ready'" v-show="!images" :ref="setFrame" :src="src" :title="t(kind==='inference'?'推理部署':'VOS 集群管理')" @load="onLoad"/>
+ <section v-else-if="!images" class="section panel" aria-live="polite">
   <p v-if="health==='loading'">{{t('正在处理')}}</p>
   <template v-else>
    <p>{{t('运行时暂不可用。请检查 VOS 应用配置和服务状态。')}}</p>

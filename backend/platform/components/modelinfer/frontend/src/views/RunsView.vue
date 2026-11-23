@@ -324,7 +324,7 @@ const nodeOptions = computed(() => {
     const selected = form.node_ids.includes(n.id);
     const reached = capsMaxNodes.value > 0 && form.node_ids.length >= capsMaxNodes.value;
     return {
-      label: t('runs.nodeOption', { name: n.name, host: n.host, hostname: n.hostname || '-' }),
+      label: t('runs.nodeHostLabel', { name: n.hostname || n.name, host: n.host }),
       value: n.id,
       disabled: !selected && reached,
     };
@@ -334,7 +334,7 @@ const headOptions = computed(() => {
   void locale.value;
   return nodes.value
     .filter((n) => form.node_ids.includes(n.id))
-    .map((n) => ({ label: t('runs.nodeHostLabel', { name: n.name, host: n.host }), value: n.id }));
+    .map((n) => ({ label: t('runs.nodeHostLabel', { name: n.hostname || n.name, host: n.host }), value: n.id }));
 });
 const modalTitle = computed(() => {
   void locale.value;
@@ -946,7 +946,7 @@ onUnmounted(() => {
             <a-tag v-if="isMissingNode(headNodeOf(record)!)" color="red">
               {{ t('runs.deletedNode') }}
             </a-tag>
-            <a-tag v-else color="gold">{{ headNodeOf(record)!.name }}</a-tag>
+            <a-tag v-else color="gold">{{ headNodeOf(record)!.hostname || headNodeOf(record)!.name }}</a-tag>
             <div class="mi-hint">
               {{ isMissingNode(headNodeOf(record)!) ? headNodeOf(record)!.id : headNodeOf(record)!.host }}
             </div>

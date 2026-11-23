@@ -32,7 +32,10 @@ fn inventory(rows: &[Value]) -> anyhow::Result<Value> {
             .context("missing GPU inventory")?;
         ensure!(devices.len() <= 32, "too many GPUs");
         let gpus=devices.iter().map(|g|json!({"index":g["index"].as_u64(),"name":text(&g["name"],128),"memory_total_mib":g["memory_total_mib"].as_u64()})).collect::<Vec<_>>();
-        result.push(json!({"id":id,"display_name":text(&row["name"],128).unwrap_or(id),"arch":text(&row["arch"],32),"gpu_model":text(&row["gpu_model"],128),"gpus":gpus,"status":text(&row["status"],32),"busy":row["busy"].as_bool(),"monitor_state":text(&row["monitor_state"],32)}));
+        let address = row["host"]
+            .as_str()
+            .and_then(|host| host.parse::<std::net::IpAddr>().ok());
+        result.push(json!({"id":id,"address":address,"hostname":text(&row["hostname"],253),"profile":text(&row["profile"],64),"display_name":text(&row["name"],128).unwrap_or(id),"arch":text(&row["arch"],32),"gpu_model":text(&row["gpu_model"],128),"gpus":gpus,"status":text(&row["status"],32),"busy":row["busy"].as_bool(),"monitor_state":text(&row["monitor_state"],32)}));
     }
     Ok(json!(result))
 }

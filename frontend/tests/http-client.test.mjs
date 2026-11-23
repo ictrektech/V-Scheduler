@@ -32,3 +32,21 @@ test('a provider credential failure does not trigger a browser token refresh',as
  let calls=0;const response=await authenticatedFetch('/v1/chat/completions',{method:'POST',body:'{}'},{token:async()=>'browser-token',clearToken:()=>assert.fail('provider key is separate'),fetch:async()=>{calls++;return new Response('{"category":"v-scheduler","error":{"code":"PROVIDER_AUTH_REQUIRED","type":"authentication_error"}}',{status:401})}});assert.equal(response.status,401);assert.equal(calls,1);
  const err=apiError({error:{type:'authentication_error',message:'provider credentials invalid'}},401);assert.equal(err.sessionError,false);
 });
+
+test('read requests recover from a gateway restart without reloading', async () => {
+ let attempts=0
+ const response=await authenticatedFetch('/scheduler/api/v1/openapi.json',{},{
+  fetch:async()=>++attempts===1?new Response('Starting',{status:503}):Response.json({openapi:'3.1.0',paths:{}})
+ })
+ assert.equal(attempts,2)
+ assert.equal((await response.json()).openapi,'3.1.0')
+})
+
+test('a temporary gateway response does not replay mutations', async () => {
+ let attempts=0
+ const response=await authenticatedFetch('/backend-deployments',{method:'POST'},{
+  fetch:async()=>{attempts++;return new Response('Starting',{status:503})}
+ })
+ assert.equal(response.status,503)
+ assert.equal(attempts,1)
+})

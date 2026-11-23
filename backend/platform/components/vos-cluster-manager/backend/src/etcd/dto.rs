@@ -124,6 +124,8 @@ pub struct InfraStatus {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct NodeRecordView {
     pub member_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hostname: Option<String>,
     pub display_name: String,
     pub role: String,
     pub node_ip: String,
@@ -136,6 +138,7 @@ impl From<&NodeRecord> for NodeRecordView {
         let m = &rec.metadata;
         Self {
             member_id: m.member_id.clone(),
+            hostname: None,
             display_name: m.display_name.clone(),
             // 旧值（master/node）视图归一化为 manager/worker（D1）
             role: role::normalize_legacy(&m.role),

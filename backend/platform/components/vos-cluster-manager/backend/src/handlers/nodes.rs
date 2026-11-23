@@ -597,13 +597,44 @@ pub async fn node_add(
     Ok(Json(ResultBody::ok(json!({"node": view}), version)))
 }
 
+async fn use_registered_hostnames(state: &AppState, views: &mut [NodeRecordView]) {
+    use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
+
+    if crate::projects::APP_ID != "com.ictrek.v-scheduler" || views.is_empty() {
+        return;
+    }
+    let Some(db) = &state.db else { return };
+    let Ok(rows) = db
+        .query_all_raw(Statement::from_string(
+            DatabaseBackend::Postgres,
+            "SELECT DISTINCT ON (host) host,hostname FROM public.modelinfer_nodes
+         WHERE hostname <> '' ORDER BY host,updated_at DESC",
+        ))
+        .await
+    else {
+        return;
+    };
+    for row in rows {
+        let (Ok(host), Ok(hostname)) = (
+            row.try_get::<String>("", "host"),
+            row.try_get::<String>("", "hostname"),
+        ) else {
+            continue;
+        };
+        for view in views.iter_mut().filter(|view| view.node_ip == host) {
+            view.hostname = Some(hostname.clone());
+        }
+    }
+}
+
 /// 节点列表（脱敏——无 admin_password）
 pub async fn node_list(
     State(state): State<AppState>,
 ) -> Result<Json<ResultBody<Value>>, VcmError> {
     let version = state.version;
     let records = state.etcd_cluster_client.get_all_node_records().await?;
-    let views: Vec<NodeRecordView> = records.iter().map(NodeRecordView::from).collect();
+    let mut views: Vec<NodeRecordView> = records.iter().map(NodeRecordView::from).collect();
+    use_registered_hostnames(&state, &mut views).await;
     Ok(Json(ResultBody::ok(json!({"nodes": views}), version)))
 }
 

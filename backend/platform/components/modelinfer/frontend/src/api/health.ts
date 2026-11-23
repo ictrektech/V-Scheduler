@@ -1,4 +1,4 @@
-import { get } from './client';
+import { embeddedRuntime, get } from './client';
 
 export interface HealthData {
   status: string;
@@ -9,5 +9,5 @@ export interface HealthData {
 }
 
 export function fetchHealth(): Promise<HealthData> {
-  return get<HealthData>('/api/health');
+  return get<HealthData>(embeddedRuntime ? '/api/service-health' : '/api/health');
 }

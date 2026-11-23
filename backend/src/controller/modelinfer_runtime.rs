@@ -45,6 +45,20 @@ pub(super) async fn health(State(app): State<App>, headers: HeaderMap) -> Api<Js
     })))
 }
 
+pub(super) async fn service_health(State(app): State<App>, request: Request) -> Api<Response> {
+    require(&auth(&app, request.headers()).await?, "admin")?;
+    if !crate::inference_runtime::enabled() {
+        return Err(Error(StatusCode::NOT_FOUND, "INFERENCE_RUNTIME_DISABLED"));
+    }
+    forward_to(
+        &crate::inference_runtime::origin(),
+        "health",
+        request,
+        UNAVAILABLE,
+    )
+    .await
+}
+
 pub(super) async fn forward(
     State(app): State<App>,
     Path(path): Path<String>,

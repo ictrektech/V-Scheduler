@@ -4,6 +4,7 @@ import { del, get, post } from './client';
 export interface NodeRecordView {
   member_id: string;
   display_name: string;
+  hostname?: string;
   role: string; // manager（管理节点）| worker（工作节点）
   node_ip: string;
   api_endpoint: string;

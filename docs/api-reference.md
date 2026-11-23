@@ -348,6 +348,7 @@ Base: `http://v-scheduler:38120/api/v1`. [Complete OpenAPI](../api/openapi-v1.js
 | DELETE | `/managed-nodes/{id}` | Remove a saved node connection / 移除节点连接 |
 | POST | `/managed-nodes/{id}/rescan` | Rescan a saved node / 重新扫描节点 |
 | POST | `/managed-nodes/{id}/runtime` | Verify image pull and container start / 验证镜像拉取和容器启动 |
+| GET | `/backend-deployment-access` | List application grants / 列出应用授权 |
 | GET | `/backend-deployment-access/{app_id}` | Read application backend access / 读取应用后端部署授权 |
 | PUT | `/backend-deployment-access/{app_id}` | Grant application backend access / 设置应用后端部署授权 |
 | GET | `/backend-deployments` | List application backend deployments / 列出应用后端部署 |
@@ -362,6 +363,7 @@ Base: `http://v-scheduler:38120/api/v1`. [Complete OpenAPI](../api/openapi-v1.js
 | POST | `/inference/images` | Register an image reference and supported Profiles / 登记推理镜像和适用 Profile |
 | GET | `/inference/migration/preview` | Inspect the legacy ModelInfer database before migration / 预检旧 ModelInfer 数据库 |
 | POST | `/inference/migration/import` | Import the verified ModelInfer snapshot / 导入已校验的 ModelInfer 快照 |
+| GET | `/inference/runtime/service-health` | Read inference settings health / 读取推理设置详细健康状态 |
 | GET | `/inference/runtime/health` | Inspect the embedded inference runtime / 查看内置推理运行时 |
 | GET | `/inference/runtime/{*path}` | Forward authenticated ModelInfer requests / 转发已认证的 ModelInfer 请求 |
 | POST | `/inference/runtime/{*path}` | Forward authenticated ModelInfer requests / 转发已认证的 ModelInfer 请求 |

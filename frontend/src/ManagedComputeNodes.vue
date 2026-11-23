@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import {computed,onMounted,onUnmounted,ref} from 'vue'
+import {nodeIdentity} from './node-identity'
 
 type Node = {
   id: string
   name: string
   host?: string
+  address?: string
+  hostname?: string
   ssh_port?: number
   ssh_user?: string
   auth_method?: 'password' | 'key'
@@ -14,6 +17,7 @@ type Node = {
   arch: string
   gpu_model: string
   last_checked_at?: string
+  connection_error?: string
 }
 const props = defineProps<{
   request: (path: string, body?: unknown, method?: string) => Promise<any>
@@ -22,12 +26,15 @@ const props = defineProps<{
 const zh = computed(() => props.locale.startsWith('zh'))
 const label = (a: string, b: string) => zh.value ? a : b
 const nodes = ref<Node[]>([])
-const clusterNodes = ref<{id: string, name: string, role: string, ssh_node_id: string | null}[]>([])
+const clusterNodes = ref<{id: string, name: string, role: string, ssh_node_id: string | null, address?: string, hostname?: string, profile?: string}[]>([])
 const clusterOnly = computed(() => clusterNodes.value.filter(node => !node.ssh_node_id))
 const canManage = ref(false)
 const busy = ref(false)
 const error = ref('')
 const listFailed = ref(false)
+const lastFailure = ref('')
+const refreshing = ref(false)
+let failures = 0
 const loaded = ref(false)
 const feedback = ref('')
 const edit = ref<Node | null>(null)
@@ -51,6 +58,13 @@ function describe(reason: unknown) {
     NODE_SSH_FAILED: ['SSH 连接或命令执行失败。请检查连接配置，或稍后重试。', 'SSH connection or command failed. Check the connection settings or try again shortly.'],
     NODE_IMAGE_PULL_FAILED: ['镜像拉取失败，请检查节点到镜像仓库的连接。', 'Could not pull the image. Check registry access from the node.'],
     NODE_CONTAINER_START_FAILED: ['测试容器未成功启动。', 'The test container did not start successfully.'],
+    UNAUTHENTICATED: ['VOS 会话暂不可用，正在尝试恢复。', 'The VOS session is temporarily unavailable. Retrying.'],
+    FORBIDDEN: ['当前身份没有读取节点列表的权限。', 'This identity is not authorized to read the node inventory.'],
+    NODE_MANAGER_DISABLED: ['SSH 节点管理服务未启用。', 'The SSH node manager is disabled.'],
+    NODE_SSH_AUTH_REJECTED: ['SSH 鉴权未通过，请检查连接账户和凭据。', 'SSH authentication failed. Check the account and saved credentials.'],
+    NODE_SSH_SUDO_FAILED: ['SSH 已连通，但无法通过已保存的方式取得 sudo 权限。', 'SSH connected, but the saved sudo configuration did not authorize the check.'],
+    NODE_SSH_CHECK_TIMEOUT: ['SSH 连接验证超时。', 'SSH verification timed out.'],
+    NODE_SSH_UNREACHABLE: ['无法连接节点的 SSH 端口。', 'Could not reach the SSH port.'],
     NODE_MANAGER_UNAVAILABLE: ['节点服务暂不可用。', 'The node manager is temporarily unavailable.'],
   }
   const message = code && errors[code]
@@ -58,6 +72,7 @@ function describe(reason: unknown) {
 }
 async function refresh() {
   const revision = ++refreshRevision
+  refreshing.value=true
   try {
     const response = await props.request(base)
     if (revision !== refreshRevision) return
@@ -67,20 +82,15 @@ async function refresh() {
     canManage.value = response.can_manage
     loaded.value = true
     listFailed.value = false
+    failures = 0
     if (!canManage.value) form.value = null
   } catch (reason) {
     if (revision !== refreshRevision) return
-    const failure = reason as {status?: number, code?: string}
-    if (failure.status === 401 || failure.status === 403 ||
-        failure.code === 'FORBIDDEN' || failure.code === 'UNAUTHENTICATED' ||
-        failure.code === 'NODE_MANAGER_DISABLED') {
-      nodes.value = []
-      clusterNodes.value = []
-      loaded.value = false
-      form.value = null
-    }
-    canManage.value = false
-    listFailed.value = true
+    failures+=1
+    lastFailure.value=describe(reason)
+    listFailed.value=failures>=2
+  } finally {
+    if(revision===refreshRevision)refreshing.value=false
   }
 }
 async function open(node?: Node) {
@@ -127,7 +137,7 @@ function remove(node: Node) {
   if (!window.confirm(label(`移除节点「${node.name}」的连接配置？`, `Remove the saved connection for ${node.name}?`))) return
   void perform(async () => { await props.request(`${base}/${encodeURIComponent(node.id)}`, undefined, 'DELETE') })
 }
-onMounted(() => { void refresh(); timer = setInterval(() => { if (!busy.value) void refresh() }, 10000) })
+onMounted(() => { void refresh(); timer = setInterval(() => { if (!busy.value&&!refreshing.value) void refresh() }, 10000) })
 onUnmounted(() => clearInterval(timer))
 </script>
 
@@ -136,13 +146,14 @@ onUnmounted(() => clearInterval(timer))
     <div class="section-head">
       <h2>{{label('SSH 算力节点', 'SSH compute nodes')}}</h2>
       <button v-if="canManage" :disabled="busy" @click="open()">{{label('添加节点', 'Add node')}}</button>
-      <button v-if="listFailed" class="quiet" :disabled="busy" @click="refresh">{{label('重试读取', 'Retry loading')}}</button>
+      <button v-if="listFailed" class="quiet" :disabled="busy||refreshing" @click="refresh">{{label('重试读取', 'Retry loading')}}</button>
     </div>
     <p v-if="error" class="error" role="alert">{{error}}</p>
-    <p v-if="listFailed" class="error" role="status">
+    <p v-if="!loaded&&!listFailed" role="status">{{label('正在读取节点列表…','Loading nodes…')}}</p>
+    <p v-if="listFailed" role="status">
       {{loaded
         ? label('节点列表暂时无法刷新，以下为上次读取的记录。', 'Could not refresh nodes. Showing the last loaded list.')
-        : label('暂时无法读取节点列表。', 'Could not load the node list.')}}
+        : label('暂时无法读取节点列表。', 'Could not load the node list.')}} {{lastFailure}}
     </p>
     <p v-if="feedback" role="status">{{feedback}}</p>
     <form v-if="form && canManage" class="node-form" @submit.prevent="save">
@@ -161,11 +172,10 @@ onUnmounted(() => clearInterval(timer))
     <p v-if="loaded && !listFailed && !nodes.length && !clusterOnly.length">{{label('暂无已纳管节点。', 'No managed nodes yet.')}}</p>
     <div v-for="node in nodes" :key="node.id" class="compute-node">
       <div>
-        <strong>{{node.name}}</strong>
-        <div>{{node.status==='online' ? label('在线','Online') : label('离线','Offline')}} · {{node.arch || '—'}} · {{node.gpu_model || '—'}}</div>
-        <small v-if="node.profile">Profile · {{node.profile}}</small>
+        <strong>{{nodeIdentity(node).name}}</strong>
+        <div>{{[nodeIdentity(node).address, nodeIdentity(node).profile].filter(Boolean).join(' · ')}}</div>
+        <small>{{node.status==='online' ? label('在线','Online') : label('离线','Offline')}}<template v-if="node.connection_error"> · {{describe({code:node.connection_error})}}</template></small>
         <small v-if="clusterNodes.some(member => member.ssh_node_id === node.id)">{{label('VOS 集群成员','VOS cluster member')}}</small>
-        <small v-if="canManage">{{node.ssh_user}}@{{node.host}}:{{node.ssh_port}} · {{node.auth_method==='key' ? label('私钥','Private key') : label('密码','Password')}}</small>
       </div>
       <div v-if="canManage" class="node-actions">
         <button class="quiet" :disabled="busy" @click="open(node)">{{label('编辑', 'Edit')}}</button>
@@ -176,7 +186,8 @@ onUnmounted(() => clearInterval(timer))
     </div>
     <div v-for="member in clusterOnly" :key="member.id" class="compute-node">
       <div>
-        <strong>{{member.name}}</strong>
+        <strong>{{nodeIdentity(member).name}}</strong>
+        <div>{{[nodeIdentity(member).address, nodeIdentity(member).profile].filter(Boolean).join(' · ')}}</div>
         <small>{{label('VOS 集群成员','VOS cluster member')}} · {{member.role}}</small>
       </div>
     </div>

@@ -73,3 +73,11 @@ ModelInfer 接口由已安装应用的受信 VOS 地址与配置端口解析。�
 「节点管理 → 应用统一接入」每 5 秒刷新已启用统一生命周期协议的应用、心跳、执行器批准预算、节点状态和未释放执行。可请求停止并卸载模型；界面保持“等待原生停止核验”，直到执行端回执通过后才移除。未接入的旧应用保留原自动绑定，不显示虚假的可停止状态。
 
 节点约每 2 秒报告、超过 12 秒无心跳暂停新准入；应用心跳按响应间隔（当前 5 秒），20 秒过期暂停已登记执行器的新准入。两类心跳均不直接释放在途预约。接口、身份与完整停止示例见[统一接入指南](application-integration.md#unified-lifecycle)。
+
+节点管理、执行资源和应用后端以扫描得到的主机名为主标题，并独立显示完整 IP 和 Profile。登记别名可在编辑节点时查看和修改。GET /managed-nodes 返回 hostname 与节点地址。
+
+Node Management, Execution resources, and Application backends show the scanned hostname, full IP address and Profile. The registered alias is still editable. GET /managed-nodes returns the hostname and node address.
+
+SSH 节点会在后台轮询复验已保存的连接。鉴权失败、sudo 权限不足、超时和无法连接分别显示，保留上次扫描的主机名和 Profile。VOS 登录失效时应用会尝试续期，并在当前页面重试读取。
+
+The scheduler rechecks saved SSH connections in the background. It distinguishes rejected credentials, sudo authorization, timeouts, and unreachable hosts while preserving the last scanned hostname and profile. When a VOS session expires, the app attempts to renew it and retries reads on the current page.

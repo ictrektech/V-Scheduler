@@ -69,3 +69,5 @@ In Resources and tasks → Execution resources, administrators can read the obse
 ### Application backend deployments
 
 Open API Documentation → Scheduling API → Application backend deployments for roles, fields, states, and examples. Register the target and Profile, issue an application service credential, and grant repositories and targets with PUT /backend-deployment-access/{app_id}. Submit the selected image, target, and container port to POST /backend-deployments. Poll until running and read endpoint. SSH targets use Docker. Trusted cluster members use VOS Projects. Stop retains the host port. Confirmed deletion releases it.
+
+Administrators can register applications and select target profiles in Node Management → Application backends. The deployment form saves the image, container port, optional host port, CPU and memory caps, and backend JSON settings. API Documentation → Scheduling API → Application backend deployments has examples for SSH and cluster targets.

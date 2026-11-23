@@ -13,3 +13,5 @@
 @media(max-width:540px){aside nav{overflow-x:auto}aside nav button{flex:0 0 auto}}
 
 .documentation-tabs{display:flex;gap:8px;margin-bottom:20px}.documentation-tabs button{background:transparent;color:#64748b}.documentation-tabs button.current{background:#e7effc;color:#265cc2}
+
+.session-notice { display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;margin-bottom:14px;color:#49627a }

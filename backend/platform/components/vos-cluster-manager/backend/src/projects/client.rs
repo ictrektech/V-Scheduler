@@ -54,7 +54,7 @@ fn map_projects_err(context: &str, detail: impl std::fmt::Display) -> VcmError {
 pub struct RealProjectsClient {
     http: reqwest::Client,
     base_url: String,
-    bearer: String,
+    token_path: std::path::PathBuf,
 }
 
 impl RealProjectsClient {
@@ -66,14 +66,13 @@ impl RealProjectsClient {
                 format!("base_url 应含尾斜杠: {base_url}"),
             ));
         }
-        let token = read_access_token_from(token_path)?;
         Ok(Self {
             http: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(30))
                 .build()
                 .map_err(|e| map_projects_err("构建 http client", e))?,
             base_url,
-            bearer: format!("Bearer {token}"),
+            token_path: token_path.to_owned(),
         })
     }
 
@@ -85,7 +84,7 @@ impl RealProjectsClient {
         let resp = self
             .http
             .get(format!("{}{endpoint}", self.base_url))
-            .header(reqwest::header::AUTHORIZATION, &self.bearer)
+            .bearer_auth(read_access_token_from(&self.token_path)?)
             .send()
             .await
             .map_err(|e| map_projects_err("GET 请求失败", e))?;
@@ -101,7 +100,7 @@ impl RealProjectsClient {
         let resp = self
             .http
             .post(format!("{}{endpoint}", self.base_url))
-            .header(reqwest::header::AUTHORIZATION, &self.bearer)
+            .bearer_auth(read_access_token_from(&self.token_path)?)
             .json(body)
             .send()
             .await
@@ -128,7 +127,7 @@ impl RealProjectsClient {
                 .http
                 .get(&gw)
                 .query(&[("task_id", task_id)])
-                .header(reqwest::header::AUTHORIZATION, &self.bearer)
+                .bearer_auth(read_access_token_from(&self.token_path)?)
                 .send()
                 .await
                 .map_err(|e| map_projects_err("async-task 轮询失败", e))?;

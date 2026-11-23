@@ -1,6 +1,6 @@
 import axios from 'axios';
 import type { AxiosRequestConfig } from 'axios';
-import { getVOSBearerToken } from '@scheduler-auth';
+import { withRuntimeToken } from '@scheduler-auth';
 
 const runtime = import.meta.env.VITE_SCHEDULER_CLUSTER === 'true'
   ? '/api/com.ictrek.v-scheduler/scheduler/api/v1/cluster/runtime/'
@@ -25,17 +25,12 @@ const client = axios.create({
 
 /** 请求包装：解析 ResultBody，按 code 判成败；HTTP 层异常映射为 2xxx 内部错误 */
 export async function request<T>(config: AxiosRequestConfig): Promise<T> {
-  let requestConfig = config;
-  if (runtime) {
-    const token = await getVOSBearerToken();
-    if (!token) throw new Error('VOS authentication required');
-    requestConfig = {
-      ...config,
-      url: config.url?.replace(/^\/?api\//, ''),
-      headers: { ...config.headers, Authorization: `Bearer ${token}` },
-    };
-  }
-  const resp = await client.request<ResultBody<T>>(requestConfig);
+  const send = (token?: string) => client.request<ResultBody<T>>(token ? {
+    ...config,
+    url: config.url?.replace(/^\/?api\//, ''),
+    headers: {...config.headers, Authorization: `Bearer ${token}`},
+  } : config);
+  const resp = runtime ? await withRuntimeToken(send, (config.method || 'GET').toUpperCase() === 'GET') : await send();
   const body = resp.data;
   if (body.code !== 0) {
     throw new Error(`[${body.code}] ${body.msg || body.category}`);

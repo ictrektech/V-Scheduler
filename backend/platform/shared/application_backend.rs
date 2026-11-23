@@ -22,6 +22,9 @@ pub struct Instance {
     pub container_port: u16,
     pub host_port: u16,
     pub nvidia: bool,
+    pub cpu_millicores: Option<u32>,
+    pub memory_mib: Option<u32>,
+    pub config_b64: Option<String>,
     pub operation: Operation,
 }
 
@@ -39,7 +42,22 @@ impl Instance {
             && self.container_port != 0
             && (PORT_MIN..=PORT_MAX).contains(&self.host_port)
             && image_repository(&self.image).is_some()
+            && valid_limits(self.cpu_millicores, self.memory_mib)
+            && self.config_b64.as_ref().is_none_or(|value| {
+                value.len() <= 10924
+                    && value.len() % 4 == 0
+                    && value
+                        .trim_end_matches('=')
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b == b'+' || b == b'/')
+                    && value.bytes().rev().take_while(|&b| b == b'=').count() <= 2
+            })
     }
+}
+
+pub fn valid_limits(cpu: Option<u32>, memory: Option<u32>) -> bool {
+    cpu.is_none_or(|value| (100..=128_000).contains(&value))
+        && memory.is_none_or(|value| (16..=1_048_576).contains(&value))
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]

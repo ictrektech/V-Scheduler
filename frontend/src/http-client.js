@@ -21,11 +21,36 @@ export async function jsonResponse(response) {
  if(!response.ok||(payload?.category==='v-scheduler'&&typeof payload.code==='string'&&payload.code!=='OK'))throw apiError(payload,response.status);
  return payload;
 }
+const transientStatuses=new Set([408,502,503,504]);
+const wait=milliseconds=>new Promise(resolve=>setTimeout(resolve,milliseconds));
+export function isTemporaryReadFailure(error) {
+ return transientStatuses.has(error?.status)||error instanceof TypeError||error?.code==='INVALID_RESPONSE';
+}
+export async function retryReadFetch(url,init={},fetcher=fetch) {
+ const method=(init.method||'GET').toUpperCase();
+ if(method!=='GET'&&method!=='HEAD')return fetcher(url,init);
+ for(const delay of [0,250,850]){
+  if(delay)await wait(delay);
+  if(init.signal?.aborted)throw init.signal.reason;
+  const timeout=new AbortController();
+  const timer=setTimeout(()=>timeout.abort(new Error('Read request timed out')),15_000);
+  const signal=init.signal?AbortSignal.any([init.signal,timeout.signal]):timeout.signal;
+  try {
+   const response=await fetcher(url,{...init,signal});
+   if(!transientStatuses.has(response.status)||delay===850)return response;
+   await response.body?.cancel();
+  }catch(error){
+   if(init.signal?.aborted||delay===850)throw error;
+  }finally{
+   clearTimeout(timer);
+  }
+ }
+}
 export async function authenticatedFetch(url,init={},auth={}) {
  const send=async()=>{
   const token=await auth.token?.()||'';const headers=new Headers(init.headers);
   if(token)headers.set('Authorization',`Bearer ${token}`);
-  return {token,response:await (auth.fetch||fetch)(url,{...init,headers})};
+  return {token,response:await retryReadFetch(url,{...init,headers},auth.fetch||fetch)};
  };
  let result=await send();
  if(result.response.status===401&&auth.clearToken&&!init.signal?.aborted&&await browserIdentityFailure(result.response)){

@@ -155,7 +155,15 @@ pub struct NodeView {
 
 impl From<node::Model> for NodeView {
     fn from(m: node::Model) -> Self {
-        let detected_profile = profile::saved(m.detected_profile, &m.gpu_model);
+        let detected_profile = profile::saved(m.detected_profile, &m.gpu_model).or_else(|| {
+            let detected = match (m.arch.as_str(), m.gpu_model.to_ascii_lowercase().as_str()) {
+                ("aarch64" | "arm64", "nvidia thor") => profile::Profile::JetsonThor,
+                ("aarch64" | "arm64", "orin (nvgpu)") => profile::Profile::JetsonOrin,
+                ("aarch64" | "arm64", "nvidia gb10" | "nvidia dgx spark") => profile::Profile::DgxSpark,
+                _ => return None,
+            };
+            detected.name().map(str::to_owned)
+        });
         let profile_override = profile::saved(m.profile_override, "");
         let profile = profile_override.clone().or_else(|| detected_profile.clone());
         let compatible_profiles = profile::compatible(profile.as_deref());

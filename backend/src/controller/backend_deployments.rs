@@ -1,4 +1,5 @@
 use super::*;
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use std::{net::Ipv4Addr, sync::OnceLock, time::Duration};
 
 #[path = "../../platform/shared/application_backend.rs"]
@@ -23,10 +24,16 @@ pub(super) struct Access {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Create {
+    app_id: Option<String>,
     request_key: String,
     target: Target,
     image: String,
     container_port: u16,
+    host_port: Option<u16>,
+    cpu_millicores: Option<u32>,
+    memory_mib: Option<u32>,
+    #[serde(default)]
+    config: serde_json::Map<String, Value>,
 }
 
 #[derive(sqlx::FromRow, serde::Serialize)]
@@ -39,6 +46,10 @@ struct Deployment {
     profile: String,
     host: String,
     host_port: i32,
+    requested_host_port: Option<i32>,
+    cpu_millicores: Option<i32>,
+    memory_mib: Option<i32>,
+    config: Value,
     container_port: i32,
     image: String,
     nvidia: bool,
@@ -65,16 +76,37 @@ impl Deployment {
             && self.profile == input.target.profile
             && self.image == input.image
             && self.container_port == i32::from(input.container_port)
+            && self.requested_host_port == input.host_port.map(i32::from)
+            && self.cpu_millicores == input.cpu_millicores.map(|value| value as i32)
+            && self.memory_mib == input.memory_mib.map(|value| value as i32)
+            && self.config.as_object() == Some(&input.config)
     }
 
-    async fn execute(&self, operation: Operation) -> anyhow::Result<RuntimeState> {
+    async fn execute(&self, operation: Operation) -> Result<RuntimeState, &'static str> {
+        const UNAVAILABLE: &str = "BACKEND_RUNTIME_UNAVAILABLE";
         let instance = Instance {
             id: self.id.clone(),
-            host: self.host.parse()?,
+            host: self
+                .host
+                .parse()
+                .map_err(|_| "BACKEND_TARGET_UNAVAILABLE")?,
             image: self.image.clone(),
-            container_port: self.container_port.try_into()?,
-            host_port: self.host_port.try_into()?,
+            container_port: self.container_port.try_into().map_err(|_| UNAVAILABLE)?,
+            host_port: self.host_port.try_into().map_err(|_| UNAVAILABLE)?,
             nvidia: self.nvidia,
+            cpu_millicores: self
+                .cpu_millicores
+                .map(u32::try_from)
+                .transpose()
+                .map_err(|_| UNAVAILABLE)?,
+            memory_mib: self
+                .memory_mib
+                .map(u32::try_from)
+                .transpose()
+                .map_err(|_| UNAVAILABLE)?,
+            config_b64: Some(
+                STANDARD.encode(serde_json::to_vec(&self.config).map_err(|_| UNAVAILABLE)?),
+            ),
             operation,
         };
         let endpoint = if self.target_kind == "ssh" {
@@ -94,15 +126,40 @@ impl Deployment {
             .post(endpoint)
             .json(&instance)
             .send()
-            .await?
-            .error_for_status()?;
-        let data = response.json::<Value>().await?;
+            .await
+            .map_err(|_| UNAVAILABLE)?;
+        let status = response.status();
+        let data = response.json::<Value>().await.map_err(|_| UNAVAILABLE)?;
         if self.target_kind == "cluster" {
-            anyhow::ensure!(data["code"] == 0, "backend project operation failed");
-            Ok(serde_json::from_value(data["data"].clone())?)
-        } else {
-            Ok(serde_json::from_value(data)?)
+            return match data["code"].as_i64() {
+                Some(0) if status.is_success() => {
+                    serde_json::from_value(data["data"].clone()).map_err(|_| UNAVAILABLE)
+                }
+                Some(20501 | 20505) => Err("BACKEND_TARGET_UNAVAILABLE"),
+                Some(20509) => Err("BACKEND_CLUSTER_PEER_UNAVAILABLE"),
+                Some(_) => Err("BACKEND_CLUSTER_PROJECT_FAILED"),
+                None => Err(UNAVAILABLE),
+            };
         }
+        if let Some(code) = data["code"].as_i64() {
+            return Err(match data["msg"].as_str() {
+                Some("backend_image_pull_failed") => "BACKEND_IMAGE_PULL_FAILED",
+                Some("backend_host_port_busy") => "BACKEND_PORT_IN_USE",
+                Some("backend_docker_access_denied") => "BACKEND_DOCKER_ACCESS_DENIED",
+                _ if code == 20704
+                    && data["msg"].as_str().is_some_and(|msg| msg.contains("认证")) =>
+                {
+                    "BACKEND_SSH_AUTH_REJECTED"
+                }
+                _ if code == 20704 => "BACKEND_SSH_UNREACHABLE",
+                _ if code == 20701 || code == 20702 => "BACKEND_TARGET_UNAVAILABLE",
+                _ => "BACKEND_START_FAILED",
+            });
+        }
+        if !status.is_success() {
+            return Err(UNAVAILABLE);
+        }
+        serde_json::from_value(data).map_err(|_| UNAVAILABLE)
     }
 }
 
@@ -192,6 +249,22 @@ pub(super) async fn get_access(
         return Err(denied());
     }
     Ok(ok(json!(access(&app.db, &app_id).await?)))
+}
+
+pub(super) async fn list_access(State(app): State<App>, h: HeaderMap) -> Api<Json<Value>> {
+    require(&auth(&app, &h).await?, "admin")?;
+    let items: Vec<Value> = sqlx::query_scalar(
+        "SELECT jsonb_build_object('app_id',a.app_id,'targets',a.targets,'repositories',a.repositories)
+         FROM vrs_backend_deployment_access a ORDER BY a.app_id",
+    ).fetch_all(&app.db).await.map_err(unavailable)?;
+    let applications: Vec<String> = sqlx::query_scalar(
+        "SELECT app_id FROM vrs_service_identities WHERE revoked_at IS NULL
+         UNION SELECT app_id FROM vrs_backend_deployment_access ORDER BY app_id",
+    )
+    .fetch_all(&app.db)
+    .await
+    .map_err(unavailable)?;
+    Ok(ok(json!({"items":items,"applications":applications})))
 }
 
 pub(super) async fn set_access(
@@ -284,10 +357,22 @@ pub(super) async fn create(
     Json(input): Json<Create>,
 ) -> Api<Json<Value>> {
     let principal = auth(&app, &h).await?;
-    if principal.role != "submitter" {
-        return Err(denied());
-    }
-    if !identifier(&input.request_key) || !valid_target(&input.target) || input.container_port == 0
+    let app_id = match (principal.role.as_str(), input.app_id.as_deref()) {
+        ("admin", Some(app_id)) if identifier(app_id) => app_id,
+        ("submitter", None) => &principal.app_id,
+        _ => return Err(denied()),
+    };
+    if !identifier(&input.request_key)
+        || !valid_target(&input.target)
+        || input.container_port == 0
+        || input
+            .host_port
+            .is_some_and(|port| !(PORT_MIN..=PORT_MAX).contains(&port))
+        || !wire::valid_limits(input.cpu_millicores, input.memory_mib)
+        || serde_json::to_vec(&input.config)
+            .map_err(|_| invalid())?
+            .len()
+            > 8192
     {
         return Err(invalid());
     }
@@ -295,7 +380,7 @@ pub(super) async fn create(
     if let Some(row) = sqlx::query_as::<_, Deployment>(
         "SELECT * FROM vrs_backend_deployments WHERE app_id=$1 AND request_key=$2",
     )
-    .bind(&principal.app_id)
+    .bind(app_id)
     .bind(&input.request_key)
     .fetch_optional(&app.db)
     .await
@@ -307,11 +392,7 @@ pub(super) async fn create(
             Err(conflict("BACKEND_REQUEST_CONFLICT"))
         };
     }
-    if !permits(
-        &access(&app.db, &principal.app_id).await?,
-        &input.target,
-        repository,
-    ) {
+    if !permits(&access(&app.db, app_id).await?, &input.target, repository) {
         return Err(denied());
     }
     let host = locate(&input.target).await?.to_string();
@@ -327,23 +408,39 @@ pub(super) async fn create(
         .execute(&mut *tx)
         .await
         .map_err(unavailable)?;
+    if let Some(row) = sqlx::query_as::<_, Deployment>(
+        "SELECT * FROM vrs_backend_deployments WHERE app_id=$1 AND request_key=$2",
+    )
+    .bind(app_id)
+    .bind(&input.request_key)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(unavailable)?
+    {
+        return if row.matches(&input) {
+            Ok(ok(row.view()))
+        } else {
+            Err(conflict("BACKEND_REQUEST_CONFLICT"))
+        };
+    }
     let port: i32 = sqlx::query_scalar(
         "SELECT port FROM generate_series($1::int,$2::int) AS candidates(port)
-         WHERE NOT EXISTS(SELECT 1 FROM vrs_backend_deployments d WHERE d.host=$3 AND d.host_port=port AND d.state<>'removed')
+         WHERE ($5::int IS NULL OR port=$5) AND NOT EXISTS(SELECT 1 FROM vrs_backend_deployments d WHERE d.host=$3 AND d.host_port=port AND d.state<>'removed')
          ORDER BY (port - $1 + $4) % ($2 - $1 + 1) LIMIT 1",
-    ).bind(i32::from(PORT_MIN)).bind(i32::from(PORT_MAX)).bind(&host).bind(offset)
-        .fetch_optional(&mut *tx).await.map_err(unavailable)?.ok_or_else(|| conflict("BACKEND_NO_PORTS"))?;
+    ).bind(i32::from(PORT_MIN)).bind(i32::from(PORT_MAX)).bind(&host).bind(offset).bind(input.host_port.map(i32::from))
+        .fetch_optional(&mut *tx).await.map_err(unavailable)?.ok_or_else(|| conflict(if input.host_port.is_some() { "BACKEND_PORT_IN_USE" } else { "BACKEND_NO_PORTS" }))?;
     sqlx::query(
-        "INSERT INTO vrs_backend_deployments(id,app_id,request_key,target_id,target_kind,profile,host,host_port,container_port,image,nvidia,state)
-         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'pending') ON CONFLICT(app_id,request_key) DO NOTHING",
-    ).bind(uuid.simple().to_string()).bind(&principal.app_id).bind(&input.request_key)
+        "INSERT INTO vrs_backend_deployments(id,app_id,request_key,target_id,target_kind,profile,host,host_port,container_port,image,nvidia,state,requested_host_port,cpu_millicores,memory_mib,config)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'pending',$12,$13,$14,$15) ON CONFLICT(app_id,request_key) DO NOTHING",
+    ).bind(uuid.simple().to_string()).bind(app_id).bind(&input.request_key)
         .bind(&input.target.id).bind(&input.target.kind).bind(&input.target.profile).bind(&host)
-        .bind(port).bind(i32::from(input.container_port)).bind(&input.image).bind(nvidia)
+        .bind(port).bind(i32::from(input.container_port)).bind(&input.image).bind(nvidia).bind(input.host_port.map(i32::from))
+        .bind(input.cpu_millicores.map(|value| value as i32)).bind(input.memory_mib.map(|value| value as i32)).bind(json!(&input.config))
         .execute(&mut *tx).await.map_err(unavailable)?;
     let row = sqlx::query_as::<_, Deployment>(
         "SELECT * FROM vrs_backend_deployments WHERE app_id=$1 AND request_key=$2",
     )
-    .bind(&principal.app_id)
+    .bind(app_id)
     .bind(&input.request_key)
     .fetch_one(&mut *tx)
     .await
@@ -499,7 +596,7 @@ async fn tick(db: &PgPool) -> anyhow::Result<bool> {
             (Operation::Status, Ok(RuntimeState::Pending)) => {
                 ("running", Some("BACKEND_RUNTIME_PENDING"))
             }
-            (Operation::Status, Err(_)) => ("running", Some("BACKEND_RUNTIME_UNAVAILABLE")),
+            (Operation::Status, Err(code)) => ("running", Some(code)),
             (Operation::Remove, Ok(RuntimeState::Absent)) => (
                 if job.state == "deleting" {
                     "removed"
@@ -510,6 +607,8 @@ async fn tick(db: &PgPool) -> anyhow::Result<bool> {
             ),
             (Operation::Remove, Ok(RuntimeState::Pending)) => (job.state.as_str(), None),
             (Operation::Remove, _) => ("cleanup_failed", Some("BACKEND_CLEANUP_FAILED")),
+            (Operation::Ensure, Err(code)) => ("failed", Some(code)),
+            _ if job.target_kind == "cluster" => ("failed", Some("BACKEND_CLUSTER_PROJECT_FAILED")),
             _ => ("failed", Some("BACKEND_START_FAILED")),
         }
     };

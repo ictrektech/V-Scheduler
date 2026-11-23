@@ -78,3 +78,42 @@ Successful requests return HTTP 200, `code=OK` and `data`. List responses return
 | `cleanup_failed` | Cleanup could not be confirmed. The port remains reserved. Check the target and retry stop or removal. |
 
 Use the business code on HTTP 409 to diagnose a Profile mismatch, conflicting request key, exhausted port pool or a busy lifecycle operation. When a request returns 503, check target or database availability. For `BACKEND_START_FAILED`, check the image pull, target runtime and host port. For `BACKEND_RUNTIME_UNAVAILABLE`, check the peer connection and wait for the next status probe.
+
+## 在应用内登记与部署 / Register and deploy in the workspace
+
+管理员打开「节点管理 → 应用后端」。可用节点区显示主机名、完整 IP、节点类型和 Profile。「登记应用」保存应用 ID、允许的镜像仓库和各目标的 Profile。「部署后端」选择已登记的 SSH 节点或 VOS 集群成员，并填写镜像、容器端口和部署参数。应用也可以用自己的服务凭据提交同一份部署请求。
+
+Administrators can open **Node Management → Application backends**. Available targets show their hostname, address, node type and profile. **Register application** saves the application ID, approved repositories and target profiles. **Deploy backend** lets an administrator submit the selected SSH node or cluster member, image, port and settings. Applications can submit the same request with their own service credential.
+
+### 镜像准备示例 / Image preparation example
+
+同一个后端可分别发布 `registry.example.com/team/backend:jetson-orin-v1`、`:jetson-thor-v1`、`:arm-cpu-v1` 和 `:amd-cuda-v1`。Orin、Thor 和 ARM CPU 镜像使用 `linux/arm64`，AMD CUDA 镜像使用 `linux/amd64`。GPU 镜像还需验证目标节点的驱动和运行时。后端监听 `0.0.0.0:8080`，部署请求填入实际监听端口。生产可使用带 SHA-256 摘要的引用，以及已在目标 Profile 验证的镜像。
+
+Publish separate tags such as `registry.example.com/team/backend:jetson-orin-v1`, `:jetson-thor-v1`, `:arm-cpu-v1` and `:amd-cuda-v1` for the same backend. Build the Orin, Thor and ARM CPU images for `linux/arm64` and the AMD CUDA image for `linux/amd64`. Verify driver and runtime compatibility for GPU images. Run the application on `0.0.0.0:8080` in this example and submit the actual listening port. For production, use a SHA-256 digest and images verified on their target profile.
+
+```json
+{
+  "targets": [
+    {"kind":"ssh","id":"node-orin","profile":"jetson-orin"},
+    {"kind":"cluster","id":"member-thor","profile":"jetson-thor"}
+  ],
+  "repositories": ["registry.example.com/team/backend"]
+}
+```
+
+```json
+{
+  "request_key":"worker-on-thor",
+  "target":{"kind":"cluster","id":"member-thor","profile":"jetson-thor"},
+  "image":"registry.example.com/team/backend:jetson-thor-v1",
+  "container_port":8080,
+  "host_port":42080,
+  "cpu_millicores":1500,
+  "memory_mib":2048,
+  "config":{"workers":2,"batch_size":4}
+}
+```
+
+部署到 SSH 时，将 `target` 改为 `{"kind":"ssh","id":"node-orin","profile":"jetson-orin"}`，将镜像标签改为相应的 Orin 版，并使用新的 `request_key`。省略 `host_port` 可自动分配。CPU 和内存限制为可选项，分别以 mCPU 和 MiB 表示。应用镜像把 `V_SCHEDULER_BACKEND_CONFIG_B64` 解码为 UTF-8 JSON 后读取自定义字段。使用应用自己的机密管理渠道传递凭据。
+
+For SSH, use `{"kind":"ssh","id":"node-orin","profile":"jetson-orin"}`, select the Orin image tag, and supply a new `request_key`. Omit `host_port` for automatic allocation. CPU and memory caps are optional and measured in mCPU and MiB. Decode `V_SCHEDULER_BACKEND_CONFIG_B64` as Base64-encoded UTF-8 JSON to read application settings. Use the application's secret management mechanism for credentials.

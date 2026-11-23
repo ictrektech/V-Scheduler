@@ -19,8 +19,12 @@
     />
 
     <a-table :data-source="nodes" :loading="loading" :pagination="false" size="small" row-key="member_id">
-      <a-table-column title="节点 IP" data-index="node_ip" key="ip" />
-      <a-table-column title="名称" data-index="display_name" key="name" />
+      <a-table-column title="节点" key="name">
+        <template #default="{ record }">
+          <strong>{{ record.hostname || record.display_name }}</strong>
+          <div>{{ record.node_ip }}</div>
+        </template>
+      </a-table-column>
       <a-table-column title="角色" key="role">
         <template #default="{ record }">
           <a-tag :color="roleColor(record.role)">{{ roleLabel(record.role) }}</a-tag>

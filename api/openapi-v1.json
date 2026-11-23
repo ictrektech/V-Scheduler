@@ -1326,7 +1326,7 @@
             "bearerAuth": []
           }
         ],
-        "description": "Signed-in VOS users and authorized application identities see the public inventory. Administrators also see connection settings, detected hardware and credential-presence flags. No credentials are returned.",
+        "description": "Signed-in VOS users and authorized application identities see the public inventory. Administrators also see connection settings, detected hardware and credential-presence flags. No credentials are returned. Node identity includes the scanned hostname and the registered literal IP. SSH credentials and usernames remain administrator scoped. SSH connectivity is rechecked in the background. connection_error reports the most recent failed connection check without returning credentials.",
         "responses": {
           "200": {
             "description": "List SSH compute nodes",
@@ -1348,7 +1348,7 @@
                             },
                             "cluster_nodes": {
                               "type": "array",
-                              "description": "Present for an unfiltered inventory when the embedded Cluster Manager returns members. Only a member ID, display name, role and optional exact-IP association are returned. / 未过滤且内置集群管理返回成员时提供。只返回成员标识、名称、角色和同 IP 的 SSH 节点关联。",
+                              "description": "Unfiltered inventory includes cluster member identity when Cluster Manager responds. / 未过滤的节点清单会在集群管理可用时显示成员身份。",
                               "items": {
                                 "type": "object",
                                 "required": [
@@ -1372,6 +1372,27 @@
                                       "string",
                                       "null"
                                     ]
+                                  },
+                                  "hostname": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ],
+                                    "description": "Registered host name if the cluster member has a matching SSH entry."
+                                  },
+                                  "address": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ],
+                                    "description": "Registered literal IPv4 or IPv6 address."
+                                  },
+                                  "profile": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ],
+                                    "description": "Effective Profile from the matched SSH node."
                                   }
                                 }
                               }
@@ -1432,6 +1453,34 @@
                                       "type": "string"
                                     },
                                     "description": "Accepted deployment profiles, with the preferred profile first."
+                                  },
+                                  "hostname": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ],
+                                    "description": "Scanned host name."
+                                  },
+                                  "address": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ],
+                                    "description": "Registered literal IPv4 or IPv6 address for signed-in inventory readers."
+                                  },
+                                  "connection_error": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ],
+                                    "enum": [
+                                      null,
+                                      "NODE_SSH_AUTH_REJECTED",
+                                      "NODE_SSH_SUDO_FAILED",
+                                      "NODE_SSH_CHECK_TIMEOUT",
+                                      "NODE_SSH_UNREACHABLE"
+                                    ],
+                                    "description": "Latest check result: null when no failure is recorded, otherwise SSH authentication, sudo authorization, timeout, or reachability failure."
                                   }
                                 }
                               }
@@ -8288,18 +8337,18 @@
       "post": {
         "operationId": "create_backend_deployment",
         "summary": "Deploy an application backend",
-        "description": "Submit an approved image, node, Profile and TCP port through the application service credential. A background worker starts the container or VOS Project. Poll GET /backend-deployments/{id} before using its endpoint.",
+        "description": "Submit an approved image, node, Profile and TCP port through the application service credential. A background worker starts the container or VOS Project. Poll GET /backend-deployments/{id} before using its endpoint. Administrators can submit for an authorized application by specifying app_id. The SSH and cluster adapters apply the same optional host port, CPU and memory limits, and JSON settings.",
         "x-title": {
           "en": "Deploy an application backend",
           "zh-CN": "创建应用后端部署",
           "zh-TW": "创建应用后端部署"
         },
         "x-description": {
-          "en": "Submit an approved image, node, Profile and TCP port through the application service credential. A background worker starts the container or VOS Project. Poll GET /backend-deployments/{id} before using its endpoint.",
-          "zh-CN": "应用用服务凭据提交获准的镜像、节点、Profile 和 TCP 端口。后台通过容器或 VOS Project 启动。轮询 GET /backend-deployments/{id} 后使用 endpoint。",
-          "zh-TW": "应用用服务凭据提交获准的镜像、节点、Profile 和 TCP 端口。后台通过容器或 VOS Project 启动。轮询 GET /backend-deployments/{id} 后使用 endpoint。"
+          "en": "Submit an approved image, node, Profile and TCP port through the application service credential. A background worker starts the container or VOS Project. Poll GET /backend-deployments/{id} before using its endpoint. Administrators can submit for an authorized application by specifying app_id. The SSH and cluster adapters apply the same optional host port, CPU and memory limits, and JSON settings.",
+          "zh-CN": "应用用服务凭据提交获准的镜像、节点、Profile 和 TCP 端口。后台通过容器或 VOS Project 启动。轮询 GET /backend-deployments/{id} 后使用 endpoint。 管理员可指定 app_id 代已授权的应用提交。SSH 与集群执行相同的可选宿主机端口、CPU、内存上限及 JSON 配置。",
+          "zh-TW": "应用用服务凭据提交获准的镜像、节点、Profile 和 TCP 端口。后台通过容器或 VOS Project 启动。轮询 GET /backend-deployments/{id} 后使用 endpoint。 管理员可指定 app_id 代已授权的应用提交。SSH 与集群执行相同的可选宿主机端口、CPU、内存上限及 JSON 配置。"
         },
-        "x-role": "submitter",
+        "x-role": "submitter or admin with app_id",
         "security": [
           {
             "bearerAuth": []
@@ -8313,27 +8362,41 @@
                 "$ref": "#/components/schemas/ApplicationBackendCreate"
               },
               "example": {
-                "request_key": "backend-dev-1",
+                "request_key": "api-worker-1",
                 "target": {
                   "kind": "ssh",
                   "id": "node-35",
                   "profile": "jetson-thor"
                 },
-                "image": "registry.example.com/demo/backend:1.0",
-                "container_port": 8080
+                "image": "registry.example.com/team/backend:jetson-thor",
+                "container_port": 8080,
+                "host_port": 42080,
+                "cpu_millicores": 1500,
+                "memory_mib": 2048,
+                "config": {
+                  "workers": 2,
+                  "batch_size": 4
+                }
               }
             }
           }
         },
         "x-example": {
-          "request_key": "backend-dev-1",
+          "request_key": "api-worker-1",
           "target": {
             "kind": "ssh",
             "id": "node-35",
             "profile": "jetson-thor"
           },
-          "image": "registry.example.com/demo/backend:1.0",
-          "container_port": 8080
+          "image": "registry.example.com/team/backend:jetson-thor",
+          "container_port": 8080,
+          "host_port": 42080,
+          "cpu_millicores": 1500,
+          "memory_mib": 2048,
+          "config": {
+            "workers": 2,
+            "batch_size": 4
+          }
         },
         "responses": {
           "200": {
@@ -8391,11 +8454,11 @@
             }
           },
           "409": {
-            "description": "BACKEND_REQUEST_CONFLICT for changed idempotent input; BACKEND_PROFILE_UNSUPPORTED for SSH Profile mismatch; BACKEND_NO_PORTS for a full allocation range; BACKEND_BUSY for an operation in progress; BACKEND_STATE_CONFLICT for a prohibited state transition.",
+            "description": "BACKEND_REQUEST_CONFLICT for changed idempotent input; BACKEND_PROFILE_UNSUPPORTED for SSH Profile mismatch; BACKEND_NO_PORTS for a full allocation range; BACKEND_BUSY for an operation in progress; BACKEND_STATE_CONFLICT for a prohibited state transition. BACKEND_PORT_IN_USE indicates the requested host port is already reserved by this controller.",
             "x-description": {
-              "en": "BACKEND_REQUEST_CONFLICT for changed idempotent input; BACKEND_PROFILE_UNSUPPORTED for SSH Profile mismatch; BACKEND_NO_PORTS for a full allocation range; BACKEND_BUSY for an operation in progress; BACKEND_STATE_CONFLICT for a prohibited state transition.",
-              "zh-CN": "幂等请求参数不一致为 BACKEND_REQUEST_CONFLICT，SSH Profile 不匹配为 BACKEND_PROFILE_UNSUPPORTED，端口耗尽为 BACKEND_NO_PORTS，操作正执行为 BACKEND_BUSY，状态不允许为 BACKEND_STATE_CONFLICT。",
-              "zh-TW": "幂等请求参数不一致为 BACKEND_REQUEST_CONFLICT，SSH Profile 不匹配为 BACKEND_PROFILE_UNSUPPORTED，端口耗尽为 BACKEND_NO_PORTS，操作正执行为 BACKEND_BUSY，状态不允许为 BACKEND_STATE_CONFLICT。"
+              "en": "BACKEND_REQUEST_CONFLICT for changed idempotent input; BACKEND_PROFILE_UNSUPPORTED for SSH Profile mismatch; BACKEND_NO_PORTS for a full allocation range; BACKEND_BUSY for an operation in progress; BACKEND_STATE_CONFLICT for a prohibited state transition. BACKEND_PORT_IN_USE indicates the requested host port is already reserved by this controller.",
+              "zh-CN": "幂等请求参数不一致为 BACKEND_REQUEST_CONFLICT，SSH Profile 不匹配为 BACKEND_PROFILE_UNSUPPORTED，端口耗尽为 BACKEND_NO_PORTS，操作正执行为 BACKEND_BUSY，状态不允许为 BACKEND_STATE_CONFLICT。 端口已预留时返回 BACKEND_PORT_IN_USE。",
+              "zh-TW": "幂等请求参数不一致为 BACKEND_REQUEST_CONFLICT，SSH Profile 不匹配为 BACKEND_PROFILE_UNSUPPORTED，端口耗尽为 BACKEND_NO_PORTS，操作正执行为 BACKEND_BUSY，状态不允许为 BACKEND_STATE_CONFLICT。 端口已预留时返回 BACKEND_PORT_IN_USE。"
             }
           },
           "415": {
@@ -8839,6 +8902,262 @@
               "zh-CN": "节点清单、地址或适配器不可用时返回 BACKEND_TARGET_UNAVAILABLE；数据库不可用时返回 TEMPORARILY_UNAVAILABLE。",
               "zh-TW": "节点清单、地址或适配器不可用时返回 BACKEND_TARGET_UNAVAILABLE；数据库不可用时返回 TEMPORARILY_UNAVAILABLE。"
             }
+          }
+        }
+      }
+    },
+    "/backend-deployment-access": {
+      "get": {
+        "operationId": "list_backend_deployment_access",
+        "summary": "List backend deployment grants",
+        "x-title": {
+          "en": "List backend deployment grants",
+          "zh-CN": "列出应用后端部署授权",
+          "zh-TW": "列出应用后端部署授权"
+        },
+        "description": "List configured policies and applications with service credentials or grants.",
+        "x-description": {
+          "en": "List configured policies and applications with service credentials or grants.",
+          "zh-CN": "列出已登记的应用授权，以及有服务凭据或部署授权的应用 ID。",
+          "zh-TW": "列出已登记的应用授权，以及有服务凭据或部署授权的应用 ID。"
+        },
+        "x-role": "admin",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Configured access policies and selectable application IDs.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "items": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "app_id": {
+                                    "type": "string",
+                                    "description": "Application identifier.",
+                                    "x-description": {
+                                      "en": "Application identifier.",
+                                      "zh-CN": "应用 ID。",
+                                      "zh-TW": "应用 ID。"
+                                    }
+                                  },
+                                  "targets": {
+                                    "type": "array",
+                                    "description": "Approved target and Profile pairs. Omit none of the fields. An empty list denies new placements.",
+                                    "x-description": {
+                                      "en": "Approved target and Profile pairs. Omit none of the fields. An empty list denies new placements.",
+                                      "zh-CN": "获准的目标和 Profile 组合。字段必填，空列表禁止新建部署。",
+                                      "zh-TW": "获准的目标和 Profile 组合。字段必填，空列表禁止新建部署。"
+                                    },
+                                    "maxItems": 64,
+                                    "items": {
+                                      "$ref": "#/components/schemas/ApplicationBackendTarget"
+                                    }
+                                  },
+                                  "repositories": {
+                                    "type": "array",
+                                    "description": "Exact OCI repositories including the registry, without tag or digest. An empty list denies new placements.",
+                                    "x-description": {
+                                      "en": "Exact OCI repositories including the registry, without tag or digest. An empty list denies new placements.",
+                                      "zh-CN": "精确的 OCI 仓库路径，含 registry，省略 tag 与摘要。空列表禁止新建部署。",
+                                      "zh-TW": "精确的 OCI 仓库路径，含 registry，省略 tag 与摘要。空列表禁止新建部署。"
+                                    },
+                                    "maxItems": 64,
+                                    "items": {
+                                      "type": "string",
+                                      "description": "Scope includes tags and SHA-256 digests within this repository.",
+                                      "x-description": {
+                                        "en": "Scope includes tags and SHA-256 digests within this repository.",
+                                        "zh-CN": "授权范围涵盖该仓库下各 tag 和 SHA-256 摘要。",
+                                        "zh-TW": "授权范围涵盖该仓库下各 tag 和 SHA-256 摘要。"
+                                      },
+                                      "maxLength": 383
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "app_id",
+                                  "targets",
+                                  "repositories"
+                                ],
+                                "additionalProperties": false
+                              }
+                            },
+                            "applications": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "items",
+                            "applications"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid or missing credential."
+          },
+          "403": {
+            "description": "Requires administrator access."
+          },
+          "503": {
+            "description": "Database unavailable."
+          }
+        }
+      }
+    },
+    "/inference/runtime/service-health": {
+      "get": {
+        "operationId": "get_inference_service_health",
+        "summary": "Read native inference service health",
+        "x-title": {
+          "en": "Read native inference service health",
+          "zh-CN": "读取推理服务详细健康状态",
+          "zh-TW": "读取推理服务详细健康状态"
+        },
+        "description": "Returns the native numeric ModelInfer envelope with database and platform-token state. Used by inference settings. The readiness probe /inference/runtime/health retains its existing response.",
+        "x-description": {
+          "en": "Returns inference database and platform-token readiness in the native ModelInfer envelope.",
+          "zh-CN": "以 ModelInfer 响应协议返回推理数据库和平台访问凭据状态。推理设置页使用此接口。",
+          "zh-TW": "以 ModelInfer 响应协议返回推理数据库和平台访问凭据状态。推理设置页使用此接口。"
+        },
+        "x-role": "admin",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Inference service health.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "category",
+                    "data",
+                    "msg",
+                    "version"
+                  ],
+                  "properties": {
+                    "code": {
+                      "const": 0
+                    },
+                    "category": {
+                      "type": "string"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "description": "ModelInfer service health.",
+                          "x-description": {
+                            "en": "ModelInfer service health.",
+                            "zh-CN": "ModelInfer 服务健康状态。",
+                            "zh-TW": "ModelInfer 服务健康状态。"
+                          },
+                          "enum": [
+                            "ok"
+                          ]
+                        },
+                        "version": {
+                          "type": "string",
+                          "description": "Embedded ModelInfer build version.",
+                          "x-description": {
+                            "en": "Embedded ModelInfer build version.",
+                            "zh-CN": "内置 ModelInfer 版本。",
+                            "zh-TW": "内置 ModelInfer 版本。"
+                          }
+                        },
+                        "db_ready": {
+                          "type": "boolean",
+                          "description": "Whether the inference database is ready.",
+                          "x-description": {
+                            "en": "Whether the inference database is ready.",
+                            "zh-CN": "推理数据库是否就绪。",
+                            "zh-TW": "推理数据库是否就绪。"
+                          }
+                        },
+                        "platform_token_present": {
+                          "type": "boolean",
+                          "description": "Whether a platform token is configured. No credential is returned.",
+                          "x-description": {
+                            "en": "Whether a platform token is configured. No credential is returned.",
+                            "zh-CN": "平台访问凭据是否已配置。",
+                            "zh-TW": "平台访问凭据是否已配置。"
+                          }
+                        },
+                        "timestamp": {
+                          "type": "string",
+                          "description": "UTC health response timestamp.",
+                          "x-description": {
+                            "en": "UTC health response timestamp.",
+                            "zh-CN": "健康响应的 UTC 时间戳。",
+                            "zh-TW": "健康响应的 UTC 时间戳。"
+                          },
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "status",
+                        "version",
+                        "db_ready",
+                        "platform_token_present",
+                        "timestamp"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Credential missing or no longer valid."
+          },
+          "403": {
+            "description": "Requires administrator access."
+          },
+          "404": {
+            "description": "INFERENCE_RUNTIME_DISABLED."
+          },
+          "503": {
+            "description": "INFERENCE_RUNTIME_UNAVAILABLE."
           }
         }
       }
@@ -10657,6 +10976,42 @@
                 "properties": {
                   "host_resources": {
                     "$ref": "#/components/schemas/ObservedHostResources"
+                  },
+                  "hostname": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Hostname recorded by the SSH inventory.",
+                    "x-description": {
+                      "en": "Hostname recorded by the SSH inventory.",
+                      "zh-CN": "SSH 清单登记的主机名。",
+                      "zh-TW": "SSH 清单登记的主机名。"
+                    }
+                  },
+                  "address": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Canonical literal IPv4 or IPv6 address.",
+                    "x-description": {
+                      "en": "Canonical literal IPv4 or IPv6 address.",
+                      "zh-CN": "实际 IPv4 或 IPv6 地址。",
+                      "zh-TW": "实际 IPv4 或 IPv6 地址。"
+                    }
+                  },
+                  "profile": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Effective compute Profile.",
+                    "x-description": {
+                      "en": "Effective compute Profile.",
+                      "zh-CN": "当前使用的算力 Profile。",
+                      "zh-TW": "当前使用的算力 Profile。"
+                    }
                   }
                 },
                 "additionalProperties": true
@@ -12130,6 +12485,72 @@
             },
             "minimum": 1,
             "maximum": 65535
+          },
+          "app_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Required for administrators launching on behalf of an application. Omit for service credentials, which use their own application identity.",
+            "x-description": {
+              "en": "Required for administrators launching on behalf of an application. Omit for service credentials, which use their own application identity.",
+              "zh-CN": "管理员代应用部署时必填。应用服务凭据应省略，系统使用凭据所属应用 ID。",
+              "zh-TW": "管理员代应用部署时必填。应用服务凭据应省略，系统使用凭据所属应用 ID。"
+            },
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}$"
+          },
+          "host_port": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Optional requested host TCP port. Omit or pass null to allocate automatically.",
+            "x-description": {
+              "en": "Optional requested host TCP port. Omit or pass null to allocate automatically.",
+              "zh-CN": "可选宿主机 TCP 端口。省略或传 null 自动分配。",
+              "zh-TW": "可选宿主机 TCP 端口。省略或传 null 自动分配。"
+            },
+            "minimum": 42000,
+            "maximum": 42999
+          },
+          "cpu_millicores": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Optional Docker CPU cap measured in millicores. 1000 means one CPU. Null leaves the runtime default.",
+            "x-description": {
+              "en": "Optional Docker CPU cap measured in millicores. 1000 means one CPU. Null leaves the runtime default.",
+              "zh-CN": "可选 Docker CPU 上限，单位 mCPU。1000 表示一个 CPU，null 使用运行时默认。",
+              "zh-TW": "可选 Docker CPU 上限，单位 mCPU。1000 表示一个 CPU，null 使用运行时默认。"
+            },
+            "minimum": 100,
+            "maximum": 128000
+          },
+          "memory_mib": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Optional Docker memory limit in MiB. Null leaves the runtime default.",
+            "x-description": {
+              "en": "Optional Docker memory limit in MiB. Null leaves the runtime default.",
+              "zh-CN": "可选 Docker 内存上限，单位 MiB。null 使用运行时默认。",
+              "zh-TW": "可选 Docker 内存上限，单位 MiB。null 使用运行时默认。"
+            },
+            "minimum": 16,
+            "maximum": 1048576
+          },
+          "config": {
+            "type": "object",
+            "description": "Application configuration as a JSON object, max 8192 bytes after compact serialization. Default empty object. The image reads UTF-8 JSON from the Base64 environment variable V_SCHEDULER_BACKEND_CONFIG_B64. Do not put credentials here.",
+            "x-description": {
+              "en": "Application configuration as a JSON object, max 8192 bytes after compact serialization. Default empty object. The image reads UTF-8 JSON from the Base64 environment variable V_SCHEDULER_BACKEND_CONFIG_B64. Do not put credentials here.",
+              "zh-CN": "应用配置 JSON 对象，紧凑序列化后最多 8192 字节。默认空对象。镜像从 V_SCHEDULER_BACKEND_CONFIG_B64 读取 Base64 编码的 UTF-8 JSON。请通过应用自己的机密配置渠道传递凭据。",
+              "zh-TW": "应用配置 JSON 对象，紧凑序列化后最多 8192 字节。默认空对象。镜像从 V_SCHEDULER_BACKEND_CONFIG_B64 读取 Base64 编码的 UTF-8 JSON。请通过应用自己的机密配置渠道传递凭据。"
+            },
+            "additionalProperties": true,
+            "default": {}
           }
         },
         "required": [
@@ -12281,11 +12702,11 @@
               "string",
               "null"
             ],
-            "description": "`BACKEND_DEPLOYMENT_FORBIDDEN` Deployment authorization was withdrawn.\n`BACKEND_START_FAILED` Start failed or runtime cannot be contacted; verify image, port, runtime and peer.\n`BACKEND_RUNTIME_PENDING` Previously running project now reports a pending state.\n`BACKEND_RUNTIME_UNAVAILABLE` The last runtime status check failed.\n`BACKEND_CLEANUP_FAILED` Stop or removal failed or could not be confirmed. Null when there is no current operation error.",
+            "description": "`BACKEND_DEPLOYMENT_FORBIDDEN` Deployment authorization was withdrawn.\n`BACKEND_START_FAILED` Start failed or runtime cannot be contacted; verify image, port, runtime and peer.\n`BACKEND_RUNTIME_PENDING` Previously running project now reports a pending state.\n`BACKEND_RUNTIME_UNAVAILABLE` The last runtime status check failed.\n`BACKEND_CLEANUP_FAILED` Stop or removal failed or could not be confirmed. Null when there is no current operation error.\n`BACKEND_TARGET_UNAVAILABLE` The registered target no longer resolves to the original node.\n`BACKEND_PORT_IN_USE` Docker reported the host port already in use.\n`BACKEND_IMAGE_PULL_FAILED` The target could not pull the selected image.\n`BACKEND_DOCKER_ACCESS_DENIED` SSH connected, but the login account cannot access Docker.\n`BACKEND_SSH_AUTH_REJECTED` The saved SSH credential was rejected.\n`BACKEND_SSH_UNREACHABLE` The target SSH listener could not be reached.\n`BACKEND_CLUSTER_PEER_UNAVAILABLE` The trusted VOS peer could not be reached or authorized.\n`BACKEND_CLUSTER_PROJECT_FAILED` The target VOS Projects operation failed. Read its project task for details.",
             "x-description": {
-              "en": "`BACKEND_DEPLOYMENT_FORBIDDEN` Deployment authorization was withdrawn.\n`BACKEND_START_FAILED` Start failed or runtime cannot be contacted; verify image, port, runtime and peer.\n`BACKEND_RUNTIME_PENDING` Previously running project now reports a pending state.\n`BACKEND_RUNTIME_UNAVAILABLE` The last runtime status check failed.\n`BACKEND_CLEANUP_FAILED` Stop or removal failed or could not be confirmed. Null when there is no current operation error.",
-              "zh-CN": "`BACKEND_DEPLOYMENT_FORBIDDEN` 部署授权已撤销.\n`BACKEND_START_FAILED` 启动失败或运行时无法连接，检查镜像、端口、运行时和对端.\n`BACKEND_RUNTIME_PENDING` 此前运行的项目当前处于过渡态.\n`BACKEND_RUNTIME_UNAVAILABLE` 最近一次运行状态检查失败.\n`BACKEND_CLEANUP_FAILED` 停止或清理失败，或暂无法确认. 当前无操作错误时为 null。",
-              "zh-TW": "`BACKEND_DEPLOYMENT_FORBIDDEN` 部署授权已撤销.\n`BACKEND_START_FAILED` 启动失败或运行时无法连接，检查镜像、端口、运行时和对端.\n`BACKEND_RUNTIME_PENDING` 此前运行的项目当前处于过渡态.\n`BACKEND_RUNTIME_UNAVAILABLE` 最近一次运行状态检查失败.\n`BACKEND_CLEANUP_FAILED` 停止或清理失败，或暂无法确认. 当前无操作错误时为 null。"
+              "en": "`BACKEND_DEPLOYMENT_FORBIDDEN` Deployment authorization was withdrawn.\n`BACKEND_START_FAILED` Start failed or runtime cannot be contacted; verify image, port, runtime and peer.\n`BACKEND_RUNTIME_PENDING` Previously running project now reports a pending state.\n`BACKEND_RUNTIME_UNAVAILABLE` The last runtime status check failed.\n`BACKEND_CLEANUP_FAILED` Stop or removal failed or could not be confirmed. Null when there is no current operation error.\n`BACKEND_TARGET_UNAVAILABLE` The registered target no longer resolves to the original node.\n`BACKEND_PORT_IN_USE` Docker reported the host port already in use.\n`BACKEND_IMAGE_PULL_FAILED` The target could not pull the selected image.\n`BACKEND_DOCKER_ACCESS_DENIED` SSH connected, but the login account cannot access Docker.\n`BACKEND_SSH_AUTH_REJECTED` The saved SSH credential was rejected.\n`BACKEND_SSH_UNREACHABLE` The target SSH listener could not be reached.\n`BACKEND_CLUSTER_PEER_UNAVAILABLE` The trusted VOS peer could not be reached or authorized.\n`BACKEND_CLUSTER_PROJECT_FAILED` The target VOS Projects operation failed. Read its project task for details.",
+              "zh-CN": "`BACKEND_DEPLOYMENT_FORBIDDEN` 部署授权已撤销.\n`BACKEND_START_FAILED` 启动失败或运行时无法连接，检查镜像、端口、运行时和对端.\n`BACKEND_RUNTIME_PENDING` 此前运行的项目当前处于过渡态.\n`BACKEND_RUNTIME_UNAVAILABLE` 最近一次运行状态检查失败.\n`BACKEND_CLEANUP_FAILED` 停止或清理失败，或暂无法确认. 当前无操作错误时为 null。\n`BACKEND_TARGET_UNAVAILABLE` 登记的目标不可用或地址已改变。\n`BACKEND_PORT_IN_USE` Docker 报告宿主机端口已被占用。\n`BACKEND_IMAGE_PULL_FAILED` 目标无法拉取所选镜像。\n`BACKEND_DOCKER_ACCESS_DENIED` SSH 已连通，但登录账户无法访问 Docker。\n`BACKEND_SSH_AUTH_REJECTED` 已保存的 SSH 凭据被拒绝。\n`BACKEND_SSH_UNREACHABLE` 无法连接目标 SSH 端口。\n`BACKEND_CLUSTER_PEER_UNAVAILABLE` 无法访问或认证受信 VOS 对端。\n`BACKEND_CLUSTER_PROJECT_FAILED` 目标 VOS Projects 操作失败，请查看目标项目任务。",
+              "zh-TW": "`BACKEND_DEPLOYMENT_FORBIDDEN` 部署授权已撤销.\n`BACKEND_START_FAILED` 启动失败或运行时无法连接，检查镜像、端口、运行时和对端.\n`BACKEND_RUNTIME_PENDING` 此前运行的项目当前处于过渡态.\n`BACKEND_RUNTIME_UNAVAILABLE` 最近一次运行状态检查失败.\n`BACKEND_CLEANUP_FAILED` 停止或清理失败，或暂无法确认. 当前无操作错误时为 null。\n`BACKEND_TARGET_UNAVAILABLE` 登记的目标不可用或地址已改变。\n`BACKEND_PORT_IN_USE` Docker 报告宿主机端口已被占用。\n`BACKEND_IMAGE_PULL_FAILED` 目标无法拉取所选镜像。\n`BACKEND_DOCKER_ACCESS_DENIED` SSH 已连通，但登录账户无法访问 Docker。\n`BACKEND_SSH_AUTH_REJECTED` 已保存的 SSH 凭据被拒绝。\n`BACKEND_SSH_UNREACHABLE` 无法连接目标 SSH 端口。\n`BACKEND_CLUSTER_PEER_UNAVAILABLE` 无法访问或认证受信 VOS 对端。\n`BACKEND_CLUSTER_PROJECT_FAILED` 目标 VOS Projects 操作失败，请查看目标项目任务。"
             },
             "enum": [
               "BACKEND_DEPLOYMENT_FORBIDDEN",
@@ -12293,6 +12714,14 @@
               "BACKEND_RUNTIME_PENDING",
               "BACKEND_RUNTIME_UNAVAILABLE",
               "BACKEND_CLEANUP_FAILED",
+              "BACKEND_TARGET_UNAVAILABLE",
+              "BACKEND_PORT_IN_USE",
+              "BACKEND_IMAGE_PULL_FAILED",
+              "BACKEND_DOCKER_ACCESS_DENIED",
+              "BACKEND_SSH_AUTH_REJECTED",
+              "BACKEND_SSH_UNREACHABLE",
+              "BACKEND_CLUSTER_PEER_UNAVAILABLE",
+              "BACKEND_CLUSTER_PROJECT_FAILED",
               null
             ]
           },
@@ -12328,6 +12757,59 @@
               "zh-TW": "最近一次状态检查或变更时间，UTC。"
             },
             "format": "date-time"
+          },
+          "requested_host_port": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Optional requested host TCP port. Omit or pass null to allocate automatically.",
+            "x-description": {
+              "en": "Optional requested host TCP port. Omit or pass null to allocate automatically.",
+              "zh-CN": "可选宿主机 TCP 端口。省略或传 null 自动分配。",
+              "zh-TW": "可选宿主机 TCP 端口。省略或传 null 自动分配。"
+            },
+            "minimum": 42000,
+            "maximum": 42999
+          },
+          "cpu_millicores": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Optional Docker CPU cap measured in millicores. 1000 means one CPU. Null leaves the runtime default.",
+            "x-description": {
+              "en": "Optional Docker CPU cap measured in millicores. 1000 means one CPU. Null leaves the runtime default.",
+              "zh-CN": "可选 Docker CPU 上限，单位 mCPU。1000 表示一个 CPU，null 使用运行时默认。",
+              "zh-TW": "可选 Docker CPU 上限，单位 mCPU。1000 表示一个 CPU，null 使用运行时默认。"
+            },
+            "minimum": 100,
+            "maximum": 128000
+          },
+          "memory_mib": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Optional Docker memory limit in MiB. Null leaves the runtime default.",
+            "x-description": {
+              "en": "Optional Docker memory limit in MiB. Null leaves the runtime default.",
+              "zh-CN": "可选 Docker 内存上限，单位 MiB。null 使用运行时默认。",
+              "zh-TW": "可选 Docker 内存上限，单位 MiB。null 使用运行时默认。"
+            },
+            "minimum": 16,
+            "maximum": 1048576
+          },
+          "config": {
+            "type": "object",
+            "description": "Application configuration as a JSON object, max 8192 bytes after compact serialization. Default empty object. The image reads UTF-8 JSON from the Base64 environment variable V_SCHEDULER_BACKEND_CONFIG_B64. Do not put credentials here.",
+            "x-description": {
+              "en": "Application configuration as a JSON object, max 8192 bytes after compact serialization. Default empty object. The image reads UTF-8 JSON from the Base64 environment variable V_SCHEDULER_BACKEND_CONFIG_B64. Do not put credentials here.",
+              "zh-CN": "应用配置 JSON 对象，紧凑序列化后最多 8192 字节。默认空对象。镜像从 V_SCHEDULER_BACKEND_CONFIG_B64 读取 Base64 编码的 UTF-8 JSON。请通过应用自己的机密配置渠道传递凭据。",
+              "zh-TW": "应用配置 JSON 对象，紧凑序列化后最多 8192 字节。默认空对象。镜像从 V_SCHEDULER_BACKEND_CONFIG_B64 读取 Base64 编码的 UTF-8 JSON。请通过应用自己的机密配置渠道传递凭据。"
+            },
+            "additionalProperties": true,
+            "default": {}
           }
         },
         "required": [
@@ -12346,7 +12828,11 @@
           "last_error",
           "endpoint",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "requested_host_port",
+          "cpu_millicores",
+          "memory_mib",
+          "config"
         ],
         "additionalProperties": false
       },

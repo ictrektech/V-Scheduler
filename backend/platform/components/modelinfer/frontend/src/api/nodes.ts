@@ -31,6 +31,7 @@ export interface NodeItem {
   has_key: boolean;
   has_sudo_password?: boolean;
   hostname: string;
+  profile?: string;
   /** CPU 架构（uname -m） */
   arch: string;
   /** 内核版本 */

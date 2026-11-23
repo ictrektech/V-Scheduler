@@ -15,6 +15,7 @@ import { resolveApiErrorMessage } from '@/i18n/api-error';
 const { t } = useI18n();
 const loading = ref(false);
 const health = ref<HealthData | null>(null);
+const healthError = ref('');
 const nfsInfo = ref<NfsResolveResult | null>(null);
 const nfsError = ref('');
 const hub = ref<ModelHubInfo | null>(null);
@@ -57,8 +58,9 @@ async function load() {
   loading.value = true;
   try {
     health.value = await fetchHealth();
+    healthError.value = '';
   } catch (e) {
-    message.error(resolveApiErrorMessage(e));
+    healthError.value = resolveApiErrorMessage(e);
   }
   try {
     nfsInfo.value = await fetchNfsInfo();
@@ -95,11 +97,12 @@ onMounted(load);
     </template>
 
     <a-card size="small" :title="t('settings.health.title')" style="margin-bottom: 16px">
+      <a-alert v-if="healthError" type="warning" show-icon :message="t('settings.health.loadFailed')" :description="healthError" />
       <div class="mi-grid">
         <div class="mi-kv">
           <div class="mi-kv__k">{{ t('settings.health.status') }}</div>
           <div class="mi-kv__v">
-            <a-tag :color="health?.status === 'ok' ? 'green' : 'red'">
+            <a-tag :color="!health ? 'default' : health.status === 'ok' ? 'green' : 'red'">
               {{ health?.status ?? '-' }}
             </a-tag>
           </div>
@@ -111,14 +114,14 @@ onMounted(load);
         <div class="mi-kv">
           <div class="mi-kv__k">{{ t('settings.health.dbReady') }}</div>
           <div class="mi-kv__v">
-            <a-tag :color="health?.db_ready ? 'green' : 'red'">{{ health?.db_ready ? t('common.yes') : t('common.no') }}</a-tag>
+            <a-tag :color="!health ? 'default' : health.db_ready ? 'green' : 'red'">{{ !health ? '—' : health.db_ready ? t('common.yes') : t('common.no') }}</a-tag>
           </div>
         </div>
         <div class="mi-kv">
           <div class="mi-kv__k">{{ t('settings.health.platformToken') }}</div>
           <div class="mi-kv__v">
-            <a-tag :color="health?.platform_token_present ? 'green' : 'red'">
-              {{ health?.platform_token_present ? t('settings.health.tokenPresent') : t('settings.health.tokenMissing') }}
+            <a-tag :color="!health ? 'default' : health.platform_token_present ? 'green' : 'red'">
+              {{ !health ? '—' : health.platform_token_present ? t('settings.health.tokenPresent') : t('settings.health.tokenMissing') }}
             </a-tag>
           </div>
         </div>

@@ -2,7 +2,7 @@ import { bindSpeedTooltips, speedSeries } from './model-speed.js';
 import {renderOperationContract} from '../api-contract.js';
 import {NATIVE_PROVIDERS} from './native-providers.js';
 import { groupCatalog, sourceLabel } from './model-catalog.js';
-import {apiError,browserIdentityFailure} from '../http-client.js';
+import {apiError,browserIdentityFailure,retryReadFetch,isTemporaryReadFailure} from '../http-client.js';
 import {recordDiagnostic,isSessionError,userErrorMessage} from '../diagnostics.js';
 import { createGatewayI18n } from './locale.js';
 import { classifyModelTest, lastModelTest, modelTestScope, rememberModelTest, resultLabels, reachabilityLabels, upstreamHost } from './model-test.js';
@@ -66,7 +66,7 @@ const app = {
   async api(method, path, body, raw = false, retried = false) {
     const headers = await this.authHeaders();
     if (body !== undefined) headers["Content-Type"] = "application/json";
-    const res = await fetch(API + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+    const res = await retryReadFetch(API + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
     if (res.status === 401 && !retried && headers.Authorization && headers.Authorization !== "Bearer " + this.gatewayKey() && await browserIdentityFailure(res)) {
       recordDiagnostic("AUTH_REQUEST_RETRY","gateway_401_retry","info");
       VRouterOIDC.clear(headers.Authorization.slice(7));
@@ -1778,13 +1778,19 @@ const app = {
 
     // Clear the previous-language payload immediately while the new one loads.
     VRouterI18n.bind($("apidocIdentity"), "innerHTML", () => "");
-    VRouterI18n.bind(container, "innerHTML", () => `<div class="empty">${VRouterI18n.t("文档加载中…")}</div>`);
+    if(!previousHTML)VRouterI18n.bind(container, "innerHTML", () => `<div class="empty">${VRouterI18n.t("文档加载中…")}</div>`);
     let doc, contract;
     try {
       [doc, contract] = await Promise.all([this.api("GET", `/api/v1/apidoc?lang=${lang}`), this.api("GET", `/api/v1/openapi.json?lang=${lang}`)]);
       if (request !== this.apiDocRequest) return;
     } catch (err) {
-      if(isSessionError(err)){recordDiagnostic("AUTH_REQUEST_REJECTED","api_docs_auth");if(request===this.apiDocRequest)VRouterI18n.bind(container,"innerHTML",()=>previousHTML);this.apiDocRetry=setTimeout(()=>{if(!this.disposed&&options.visible()&&this.state.tab==="apidoc")void this.renderApiDoc()},5000);return;}
+      if(isSessionError(err)||isTemporaryReadFailure(err)){
+        if(request!==this.apiDocRequest)return;
+        if(isSessionError(err))recordDiagnostic("AUTH_REQUEST_REJECTED","api_docs_auth");
+        VRouterI18n.bind(container,"innerHTML",()=>previousHTML||`<div class="empty">${VRouterI18n.t("文档加载中…")}</div>`);
+        this.apiDocRetry=setTimeout(()=>{if(!this.disposed&&options.visible()&&this.state.tab==="apidoc")void this.renderApiDoc()},5000);
+        return;
+      }
       if (request !== this.apiDocRequest) return;
       VRouterI18n.bind(container, "innerHTML", () => `<div class="empty">${VRouterI18n.t("文档加载失败")}：${esc(VRouterI18n.t(err.sourceMessage || err.message))}</div>`);
       return;

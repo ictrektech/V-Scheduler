@@ -1,6 +1,6 @@
 import axios from 'axios';
 import type { AxiosRequestConfig } from 'axios';
-import { getVOSBearerToken } from '@scheduler-auth';
+import { getVOSBearerToken, withRuntimeToken } from '@scheduler-auth';
 
 const controller = import.meta.env.VITE_SCHEDULER_INFERENCE === 'true'
   ? '/api/com.ictrek.v-scheduler/scheduler/api/v1/inference/runtime/'
@@ -58,11 +58,12 @@ const client = axios.create({
 
 /** 请求包装：解析 ResultBody，按 code 判成败 */
 export async function request<T>(config: AxiosRequestConfig): Promise<T> {
-  const resp = await client.request<ResultBody<T>>({
+  const send = (token?: string) => client.request<ResultBody<T>>({
     ...config,
     url: runtimeUrl(config.url ?? ''),
-    headers: { ...config.headers, ...await runtimeHeaders() },
+    headers: {...config.headers, ...(token ? {Authorization: `Bearer ${token}`} : {})},
   });
+  const resp = controller ? await withRuntimeToken(send, (config.method || 'GET').toUpperCase() === 'GET') : await send();
   const body = resp.data;
   if (body.code !== 0) {
     throw new ModelinferApiError(body.code, body.msg, body.category, body.data);

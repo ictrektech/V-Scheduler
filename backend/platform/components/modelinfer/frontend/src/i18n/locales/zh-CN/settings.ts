@@ -5,6 +5,7 @@ export default {
   notAvailable: '未获取',
   none: '（无）',
   health: {
+      loadFailed: '暂时无法读取推理服务健康状态',
     title: '服务健康',
     status: '服务状态',
     version: '版本',

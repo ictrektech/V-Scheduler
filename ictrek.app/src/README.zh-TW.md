@@ -81,3 +81,5 @@ V-Voice 就緒模型自動繼承應用資源預算並進入模型目錄，已設
 ### 應用後端部署
 
 在「API 文件 → 排程管理 API → 應用後端部署」查閱權限、欄位、狀態及範例。登記節點和 Profile 後，為應用建立服務憑據，透過 PUT /backend-deployment-access/{app_id} 授權節點和倉庫。以 POST /backend-deployments 提交映像檔、目標和容器連接埠。輪詢至 running 後讀取 endpoint。SSH 節點使用 Docker，受信的 VOS 叢集成員使用 VOS Projects。停止保留主機連接埠，確認刪除後釋放。
+
+管理員也可在「節點管理 → 應用後端」登記應用，選擇目標和 Profile。部署表單儲存映像檔、容器連接埠、選用主機連接埠、CPU 和記憶體上限及後端 JSON 設定。應用內 API 文件提供 SSH 和叢集目標的完整範例。

@@ -70,6 +70,24 @@ pub(crate) async fn local(
     let runtime = match (instance.operation, current) {
         (Operation::Ensure, RuntimeState::Absent) => {
             let env_vars = HashMap::from([
+                (
+                    "SCHEDULER_BACKEND_CPU".into(),
+                    format!(
+                        "{:.3}",
+                        f64::from(instance.cpu_millicores.unwrap_or(0)) / 1000.0
+                    ),
+                ),
+                (
+                    "SCHEDULER_BACKEND_MEMORY".into(),
+                    instance
+                        .memory_mib
+                        .map(|mib| format!("{mib}m"))
+                        .unwrap_or_else(|| "0".into()),
+                ),
+                (
+                    "SCHEDULER_BACKEND_CONFIG_B64".into(),
+                    instance.config_b64.unwrap_or_else(|| "e30=".into()),
+                ),
                 ("SCHEDULER_BACKEND_IMAGE".into(), instance.image),
                 (
                     "SCHEDULER_BACKEND_PORT".into(),

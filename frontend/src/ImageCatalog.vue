@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 type Profile = { name: string; builtin: boolean }
 type CatalogImage = { image_ref: string; profiles: string[]; tested_profiles: string[]; created_at: string; updated_at: string }
@@ -8,13 +8,13 @@ const props = defineProps<{
  request: (path: string, body?: unknown) => Promise<any>
  locale: string
  t: (value: string) => string
- administrator: boolean
 }>()
-const emit = defineEmits<{ deployments: [] }>()
 
 const images = ref<CatalogImage[]>([])
 const profiles = ref<Profile[]>([])
 const canManage = ref(false)
+const loaded = ref(false)
+let timer:ReturnType<typeof setInterval>|undefined
 const busy = ref(false)
 const editing = ref(false)
 const error = ref('')
@@ -41,6 +41,7 @@ async function load() {
   props.request('compute-profiles'),
  ])
  images.value = catalog.items
+ loaded.value = true
  profiles.value = types.items
  canManage.value = catalog.can_manage && types.can_manage
 }
@@ -103,15 +104,12 @@ function copy(image: CatalogImage) {
  })
 }
 
-onMounted(() => perform(load))
+onMounted(() => {void perform(load);timer=setInterval(()=>{if(!loaded.value&&!busy.value)void perform(load)},5000)})
+onUnmounted(()=>clearInterval(timer))
 </script>
 
 <template>
  <section class="image-catalog">
-  <div v-if="administrator" class="documentation-tabs">
-   <button type="button" @click="emit('deployments')">{{t('部署列表')}}</button>
-   <button type="button" class="current" aria-current="page">{{t('推理镜像')}}</button>
-  </div>
   <div v-if="error" class="error" role="alert">{{error}}</div>
   <p v-if="notice" role="status">{{notice}}</p>
   <section v-if="editing && canManage" class="section panel">

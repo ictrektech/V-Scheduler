@@ -464,6 +464,7 @@ pub async fn serve(
         .route("/managed-nodes/{id}", axum::routing::put(managed_nodes::forward).delete(managed_nodes::forward))
         .route("/managed-nodes/{id}/rescan", post(managed_nodes::forward))
         .route("/managed-nodes/{id}/runtime", post(managed_nodes::forward))
+        .route("/backend-deployment-access", get(backend_deployments::list_access))
         .route("/backend-deployment-access/{app_id}", get(backend_deployments::get_access).put(backend_deployments::set_access))
         .route("/backend-deployments", get(backend_deployments::list).post(backend_deployments::create))
         .route("/backend-deployments/{id}", get(backend_deployments::detail).delete(backend_deployments::remove))
@@ -474,6 +475,7 @@ pub async fn serve(
         .route("/inference/migration/preview", get(modelinfer_migration::preview))
         .route("/inference/migration/import", post(modelinfer_migration::import))
         .route("/inference/runtime/health", get(modelinfer_runtime::health))
+        .route("/inference/runtime/service-health", get(modelinfer_runtime::service_health))
         .route(
             "/inference/runtime/{*path}",
             get(modelinfer_runtime::forward)

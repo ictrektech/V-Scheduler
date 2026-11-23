@@ -207,8 +207,8 @@ function onEditSaved(n: NodeItem) {
 
 <template>
   <PageShell
-    :title="node ? node.name : t('nodeDetail.title')"
-    :subtitle="node ? `${node.host} · ${node.hostname || t('nodeDetail.unnamedHost')}` : ''"
+    :title="node ? (node.hostname || node.name) : t('nodeDetail.title')"
+    :subtitle="node ? [node.host,node.profile].filter(Boolean).join(' · ') : ''"
     :loading="loading"
   >
     <template #actions>

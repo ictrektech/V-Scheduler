@@ -46,6 +46,7 @@ declare global {
 
 interface SchedulerRuntimeContext {
   token: () => Promise<string | null>
+  rejectToken?: (token: string) => void
   locale: () => string
   openWeights: () => void
 }
@@ -83,11 +84,40 @@ export async function getVOSBearerToken(): Promise<string | null> {
   return tokenPromise
 }
 
+export async function withRuntimeToken<T>(send: (token: string) => Promise<T>, read: boolean): Promise<T> {
+  let rejected = false
+  let transientRetries = 0
+  for (;;) {
+    const token = await getVOSBearerToken()
+    try {
+      if (!token) throw Object.assign(new Error('VOS authentication required'), {status:401})
+      return await send(token)
+    } catch (error) {
+      const failure = error as { status?: number; response?: { status?: number }; code?: string }
+      const status = failure.response?.status || failure.status
+      if (token && status === 401 && !rejected) {
+        rejected = true
+        clearCachedVOSBearerToken(token)
+        continue
+      }
+      if (!read || (status !== 401 && status !== 408 && status !== 502 && status !== 503
+          && status !== 504 && !(failure.code === 'ERR_NETWORK')) || transientRetries >= 2) throw error
+      const delay = transientRetries++ === 0 ? 300 : 950
+      await new Promise(resolve => setTimeout(resolve, delay))
+    }
+  }
+}
+
 export function getCachedVOSBearerToken(): string | null {
   return readCachedToken()
 }
 
 export function clearCachedVOSBearerToken(failedToken?: string) {
+  const runtime = getSchedulerRuntime()
+  if (failedToken && runtime?.rejectToken) {
+    runtime.rejectToken(failedToken)
+    return
+  }
   const rejected=failedToken || memoryToken?.access_token
   if(rejected){rejectedTokens.add(rejected);if(rejectedTokens.size>16)rejectedTokens.delete(rejectedTokens.values().next().value!)}
   if (!failedToken || memoryToken?.access_token === failedToken) memoryToken = null
@@ -100,7 +130,10 @@ export function clearCachedVOSBearerToken(failedToken?: string) {
 }
 
 async function resolveVOSBearerToken(): Promise<string | null> {
-  if(platformLoggedOut)return null
+  if(platformLoggedOut){
+    if(!tokenFromLocalStorage())return null
+    platformLoggedOut=false
+  }
   const host=currentHostToken()
   if(host){
     const subject=tokenSubject(host)
@@ -168,10 +201,20 @@ function cacheToken(token: VOSTokenSet) {
 function tokenSubject(token:string):string|null {try {const p=JSON.parse(atob(token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));return typeof p.sub==='string'?p.sub:null}catch{return null}}
 window.addEventListener?.('storage',(event:StorageEvent)=>{
   if(event.key===null||event.key==='core-access'||event.key?.endsWith('-core-access')) {
-    if(!event.newValue || !tokenFromAccessStore(event.newValue)){applicationToken=null;memoryToken=null;authEpoch++;platformLoggedOut=true;recordDiagnostic('VOS_PLATFORM_SESSION_CHANGED','platform_logout','info')}
+    if((!event.newValue || !tokenFromAccessStore(event.newValue))&&!tokenFromLocalStorage()){applicationToken=null;memoryToken=null;authEpoch++;platformLoggedOut=true;recordDiagnostic('VOS_PLATFORM_SESSION_CHANGED','platform_logout','info')}
     else {platformLoggedOut=false}
   }
 })
+async function awaitVOS<T>(operation: Promise<T>, timeoutMs:number):Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([operation,new Promise<T>((_,reject)=>{
+      timer=setTimeout(()=>reject(new Error('VOS session request timed out')),timeoutMs)
+    })])
+  } finally {
+    clearTimeout(timer)
+  }
+}
 async function requestApplicationToken():Promise<VOSTokenSet|null> {
   if(oauthPromise)return oauthPromise
   const epoch=authEpoch
@@ -182,7 +225,7 @@ async function requestApplicationToken():Promise<VOSTokenSet|null> {
       const oauth2=await waitForOAuth2()
       if(oauth2){
         try {
-          const refreshed=await oauth2.token({grant_type:'refresh_token',refresh_token:applicationToken.refresh_token,client_id:CLIENT_ID})
+          const refreshed=await awaitVOS(oauth2.token({grant_type:'refresh_token',refresh_token:applicationToken.refresh_token,client_id:CLIENT_ID}),12_000)
           if(epoch!==authEpoch||!refreshed?.access_token||!usableToken(refreshed.access_token))return null
           cacheToken(refreshed);recordDiagnostic('VOS_AUTH_REFRESHED','oauth_refresh','info');return refreshed
         } catch(error) {
@@ -226,7 +269,7 @@ async function requestFastpathToken(): Promise<VOSTokenSet | null> {
   const state = randomBase64url()
   const nonce = randomBase64url()
   const codeChallenge = await sha256Base64url(verifier)
-  const auth = await oauth2.authorize({
+  const auth = await awaitVOS(oauth2.authorize({
     client_id: CLIENT_ID,
     response_type: 'code',
     scope: SCOPE,
@@ -234,14 +277,14 @@ async function requestFastpathToken(): Promise<VOSTokenSet | null> {
     code_challenge: codeChallenge,
     code_challenge_method: 'S256',
     nonce,
-  })
+  }),30_000)
   if (auth.state !== state) throw new Error('VOS OIDC state mismatch')
-  const token = await oauth2.token({
+  const token = await awaitVOS(oauth2.token({
     grant_type: 'authorization_code',
     code: auth.code,
     code_verifier: verifier,
     client_id: CLIENT_ID,
-  })
+  }),12_000)
   return token?.access_token ? token : null
 }
 

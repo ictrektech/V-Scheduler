@@ -441,3 +441,5 @@ English readers can use the [complete API integration handbook](docs/api-referen
 模型与上游的「速度趋势」分别显示最近流式调用的生成速度和首 Token 等待，生成速度不含首字等待，悬停图上的点可查看数值、单位和时间。参见[模型速度趋势与 API（中英）](docs/model-speed.md)。
 
 应用可以使用自己的镜像清单，通过 V-Scheduler 将后端部署到已授权的 SSH 节点或 VOS 集群成员。部署、端口分配和生命周期参见[应用后端部署 API](docs/application-backend-deployment.md)。
+
+管理员可在「节点管理 → 应用后端」登记应用与目标 Profile、提交部署参数并管理部署。资源、SSH 节点和集群列表使用主机名显示同一设备，IP 与 Profile 各自展示。VOS 会话恢复、SSH 定期复验和读取失败提示见[节点管理与连接状态](docs/node-management.md)。

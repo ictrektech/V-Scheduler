@@ -5,6 +5,7 @@ export default {
   notAvailable: 'Not available',
   none: '(None)',
   health: {
+      loadFailed: 'Could not read inference service health',
     title: 'Service Health',
     status: 'Service Status',
     version: 'Version',

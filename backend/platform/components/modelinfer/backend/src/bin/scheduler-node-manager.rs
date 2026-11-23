@@ -2,7 +2,7 @@
 mod application_backend;
 
 use application_backend::{Instance, Operation, RuntimeState};
-use std::{net::Ipv4Addr, sync::Arc, time::Duration};
+use std::{collections::HashMap, net::Ipv4Addr, sync::Arc, time::Duration};
 
 use axum::{
     Json, Router,
@@ -37,6 +37,7 @@ struct Manager {
     db: DatabaseConnection,
     ssh: RealSshExec,
     test_image: String,
+    connection_errors: tokio::sync::Mutex<HashMap<String, &'static str>>,
 }
 
 type App = State<Arc<Manager>>;
@@ -52,6 +53,13 @@ async fn main() -> anyhow::Result<()> {
     let db = db::connect(&config.database_url)
         .await
         .map_err(|error| anyhow::anyhow!("node database initialization failed ({})", error.code))?;
+    let manager = Arc::new(Manager {
+        db,
+        ssh: RealSshExec::node_manager(),
+        test_image: config.test_image,
+        connection_errors: tokio::sync::Mutex::new(HashMap::new()),
+    });
+    tokio::spawn(recheck_connections(manager.clone()));
     let app = Router::new()
         .route("/nodes", get(list).post(create))
         .route("/nodes/{id}", axum::routing::put(update).delete(delete))
@@ -59,18 +67,71 @@ async fn main() -> anyhow::Result<()> {
         .route("/nodes/{id}/resources", get(resources))
         .route("/nodes/{id}/runtime", post(runtime))
         .route("/nodes/{id}/application-backend", post(application_backend))
-        .with_state(Arc::new(Manager {
-            db,
-            ssh: RealSshExec::node_manager(),
-            test_image: config.test_image,
-        }));
+        .with_state(manager);
     let socket = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, config.port)).await?;
     axum::serve(socket, app).await?;
     Ok(())
 }
 
-async fn list(State(app): App) -> Result<Vec<NodeView>> {
-    Ok(Json(nodes::list_nodes(&app.db).await?))
+fn connection_code(error: &ModelinferError) -> &'static str {
+    if error.msg.contains("认证") {
+        "NODE_SSH_AUTH_REJECTED"
+    } else if error.code == codes::NODE_SUDO_FAILED {
+        "NODE_SSH_SUDO_FAILED"
+    } else if error.msg.contains("超时") {
+        "NODE_SSH_CHECK_TIMEOUT"
+    } else {
+        "NODE_SSH_UNREACHABLE"
+    }
+}
+
+async fn recheck_connections(app: Arc<Manager>) {
+    loop {
+        tokio::time::sleep(Duration::from_secs(45)).await;
+        let Ok(mut nodes) = nodes::list_nodes(&app.db).await else {
+            continue;
+        };
+        nodes.sort_by(|left, right| left.last_checked_at.cmp(&right.last_checked_at));
+        let mut checks = tokio::task::JoinSet::new();
+        for node in nodes.into_iter().take(8) {
+            let app = app.clone();
+            checks.spawn(async move {
+                let result = tokio::time::timeout(
+                    Duration::from_secs(14),
+                    nodes::test_node(&app.db, &app.ssh, &node.id),
+                )
+                .await;
+                let mut errors = app.connection_errors.lock().await;
+                match result {
+                    Ok(Ok(_)) => {
+                        errors.remove(&node.id);
+                    }
+                    Ok(Err(error)) => {
+                        errors.insert(node.id, connection_code(&error));
+                    }
+                    Err(_) => {
+                        errors.insert(node.id, "NODE_SSH_CHECK_TIMEOUT");
+                    }
+                }
+            });
+        }
+        while checks.join_next().await.is_some() {}
+    }
+}
+
+async fn list(State(app): App) -> Result<Vec<Value>> {
+    let nodes = nodes::list_nodes(&app.db).await?;
+    let errors = app.connection_errors.lock().await;
+    Ok(Json(
+        nodes
+            .iter()
+            .map(|node| {
+                let mut value = json!(node);
+                value["connection_error"] = json!(errors.get(&node.id));
+                value
+            })
+            .collect(),
+    ))
 }
 
 async fn create(State(app): App, Json(req): Json<NodeCreate>) -> Result<NodeView> {
@@ -87,13 +148,21 @@ async fn update(
 
 async fn delete(State(app): App, Path(id): Path<String>) -> Result<Value> {
     nodes::delete_node(&app.db, &id).await?;
+    app.connection_errors.lock().await.remove(&id);
     Ok(Json(json!({"removed": true})))
 }
 
 async fn rescan(State(app): App, Path(id): Path<String>) -> Result<NodeView> {
     // Record failed connections as offline. Refresh hardware only after the
     // stored SSH credentials have been verified.
-    nodes::test_node(&app.db, &app.ssh, &id).await?;
+    if let Err(error) = nodes::test_node(&app.db, &app.ssh, &id).await {
+        app.connection_errors
+            .lock()
+            .await
+            .insert(id, connection_code(&error));
+        return Err(error);
+    }
+    app.connection_errors.lock().await.remove(&id);
     Ok(Json(nodes::rescan_node(&app.db, &app.ssh, &id).await?))
 }
 
@@ -251,17 +320,27 @@ async fn application_backend(
             } else {
                 ""
             };
+            let mut limits = String::new();
+            if let Some(cpu) = instance.cpu_millicores {
+                limits.push_str(&format!("--cpus {:.3} ", f64::from(cpu) / 1000.0));
+            }
+            if let Some(memory) = instance.memory_mib {
+                limits.push_str(&format!("--memory {memory}m "));
+            }
+            let config = instance.config_b64.as_deref().unwrap_or("e30=");
             format!(
                 "if test -n \"$current\"; then\n\
                    test \"$running\" = true || docker start \"$current\" >/dev/null || exit 1\n\
                  else\n\
-                   docker run --detach --pull=missing --name '{name}' --restart unless-stopped \
+                   if ! docker image inspect '{}' >/dev/null 2>&1; then docker pull '{}' >/dev/null || {{ echo image_pull_failed; exit 1; }}; fi
+\
+                   docker run --detach --pull=never --name '{name}' --restart unless-stopped \
                      --label 'com.ictrek.v-scheduler.backend={}' --security-opt no-new-privileges \
-                     -p '{}:{}/tcp' {gpu}'{}' >/dev/null || exit 1\n\
+                     -p '{}:{}/tcp' {gpu}{limits}--env 'V_SCHEDULER_BACKEND_CONFIG_B64={config}' '{}' >/dev/null || exit 1\n\
                  fi\n\
                  docker inspect --format '{{{{.State.Running}}}}' '{name}' | grep -qx true || exit 1\n\
                  echo running",
-                instance.id, instance.host_port, instance.container_port, instance.image,
+                instance.image, instance.image, instance.id, instance.host_port, instance.container_port, instance.image,
             )
         }
     };
@@ -282,6 +361,26 @@ async fn application_backend(
         (true, Some("running")) => Ok(Json(RuntimeState::Running)),
         (true, Some("stopped")) => Ok(Json(RuntimeState::Stopped)),
         (true, Some("absent")) => Ok(Json(RuntimeState::Absent)),
+        (false, Some("image_pull_failed")) => Err(ModelinferError::new(
+            codes::SSH_COMMAND_FAILED,
+            "backend_image_pull_failed",
+        )),
+        _ if output.stderr.contains("permission denied")
+            && output.stderr.contains("Docker daemon") =>
+        {
+            Err(ModelinferError::new(
+                codes::SSH_COMMAND_FAILED,
+                "backend_docker_access_denied",
+            ))
+        }
+        _ if output.stderr.contains("port is already allocated")
+            || output.stderr.contains("address already in use") =>
+        {
+            Err(ModelinferError::new(
+                codes::SSH_COMMAND_FAILED,
+                "backend_host_port_busy",
+            ))
+        }
         _ => Err(ModelinferError::new(
             codes::SSH_COMMAND_FAILED,
             "backend_container_operation_failed",

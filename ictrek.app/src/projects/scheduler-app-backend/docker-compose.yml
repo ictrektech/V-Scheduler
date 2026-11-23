@@ -1,12 +1,16 @@
+# VOS invokes Compose down without the instance env. These defaults keep teardown parseable.
 services:
   backend:
-    image: "${SCHEDULER_BACKEND_IMAGE:?missing application backend image}"
+    image: "${SCHEDULER_BACKEND_IMAGE:-docker.io/library/busybox:1.37.0}"
     runtime: "${SCHEDULER_BACKEND_RUNTIME:-runc}"
+    cpus: "${SCHEDULER_BACKEND_CPU:-0}"
+    mem_limit: "${SCHEDULER_BACKEND_MEMORY:-0}"
     security_opt:
       - no-new-privileges:true
     environment:
+      V_SCHEDULER_BACKEND_CONFIG_B64: "${SCHEDULER_BACKEND_CONFIG_B64:-e30=}"
       NVIDIA_VISIBLE_DEVICES: "${SCHEDULER_BACKEND_VISIBLE_DEVICES:-void}"
       NVIDIA_DRIVER_CAPABILITIES: compute,utility
     ports:
-      - "${SCHEDULER_BACKEND_HOST_PORT:?missing host port}:${SCHEDULER_BACKEND_PORT:?missing application port}/tcp"
+      - "${SCHEDULER_BACKEND_HOST_PORT:-0}:${SCHEDULER_BACKEND_PORT:-65535}/tcp"
     restart: unless-stopped

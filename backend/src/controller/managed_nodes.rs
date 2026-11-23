@@ -138,6 +138,9 @@ pub(super) async fn forward(
             json!({
                 "items": rows.map(|row| json!({
                     "id": row["id"], "name": row["name"], "status": row["status"],
+                    "connection_error":row["connection_error"],
+                    "hostname": row["hostname"],
+                    "address": row["host"].as_str().and_then(|host| host.parse::<std::net::IpAddr>().ok()),
                     "arch": row["arch"], "gpu_model": row["gpu_model"], "profile": row["profile"],
                     "detected_profile": row["detected_profile"],
                     "compatible_profiles": row["compatible_profiles"],
@@ -159,17 +162,20 @@ pub(super) async fn forward(
                 let node_ip = member["node_ip"]
                     .as_str()
                     .and_then(|ip| ip.parse::<std::net::IpAddr>().ok());
-                let ssh_node_id = node_ip.and_then(|ip| {
+                let ssh_node = node_ip.and_then(|ip| {
                     value.as_array()?.iter().find_map(|row| {
                         let host = row["host"].as_str()?.parse::<std::net::IpAddr>().ok()?;
-                        (ip == host).then(|| row["id"].as_str()).flatten()
+                        (ip == host).then_some(row)
                     })
                 });
                 inventory.push(json!({
                     "id":id,
                     "name":member["display_name"].as_str().filter(|name| !name.is_empty()).unwrap_or(id),
                     "role":member["role"].as_str().unwrap_or("unknown"),
-                    "ssh_node_id":ssh_node_id
+                    "ssh_node_id":ssh_node.and_then(|row|row["id"].as_str()),
+                    "hostname":ssh_node.and_then(|row|row["hostname"].as_str()).or_else(||member["hostname"].as_str()),
+                    "profile":ssh_node.and_then(|row|row["profile"].as_str()),
+                    "address":node_ip
                 }));
             }
             data["cluster_nodes"] = json!(inventory);

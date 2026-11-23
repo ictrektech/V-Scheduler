@@ -858,7 +858,7 @@ onUnmounted(() => {
               <template v-if="n.status === 'missing'">
                 {{ t('runDetail.overview.deletedNode') }}（{{ n.id }}）
               </template>
-              <template v-else>{{ t('common.nodeLabel', { name: n.name, host: n.host }) }} {{ n.role }}</template>
+              <template v-else>{{ t('common.nodeLabel', { name: n.hostname || n.name, host: n.host }) }} {{ n.role }}</template>
             </a-tag>
             <span v-if="!(deployment?.nodes || []).length">-</span>
             <div v-if="(deployment?.missing_node_ids || []).length" class="mi-hint mi-error">

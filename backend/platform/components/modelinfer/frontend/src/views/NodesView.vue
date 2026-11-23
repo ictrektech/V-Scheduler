@@ -434,12 +434,12 @@ onMounted(load);
     >
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'name'">
-          <a class="mi-link" @click="openDetail(record)">{{ record.name }}</a>
+          <a class="mi-link" @click="openDetail(record)">{{ record.hostname || record.name }}</a>
         </template>
 
         <template v-else-if="column.key === 'host'">
           <CopyText :text="record.host" />
-          <div class="mi-hint">{{ record.ssh_user }}@{{ record.ssh_port }}</div>
+          <div v-if="record.profile" class="mi-hint">{{ record.profile }}</div>
         </template>
 
         <template v-else-if="column.key === 'arch'">

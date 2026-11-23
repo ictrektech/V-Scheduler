@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import {ref,onMounted,computed} from 'vue'
+import {ref,onMounted,onUnmounted,computed} from 'vue'
 import {request,base} from './client'
 defineProps<{t:(text:string)=>string}>()
 const integration=ref<any>(null),spec=ref<any>(null),error=ref(''),filter=ref(''),operationKey=ref('POST /api/v1/models/pull'),externalHost=ref(location.hostname)
@@ -67,11 +67,23 @@ const registration=`curl -fsS -X POST http://v-scheduler:6005/api/v1/inference-s
 # Custom paths above are an example contract; provide paths implemented by your backend.
 # Start/stop POST: {model, mode?, keep_alive?}. Status GET appends model/action.
 # Plain vLLM does not supply model lifecycle endpoints by default.`
-onMounted(async()=>{try{[integration.value,spec.value]=await Promise.all([request('/api/v1/integration'),request('/openapi.json')])}catch(e){error.value=e instanceof Error?e.message:String(e)}})
+let timer: ReturnType<typeof setInterval>|undefined
+const loading=ref(false)
+async function load(){
+ if(loading.value)return
+ loading.value=true
+ const [intro,reference]=await Promise.allSettled([request('/api/v1/integration'),request('/openapi.json')])
+ if(intro.status==='fulfilled')integration.value=intro.value
+ if(reference.status==='fulfilled')spec.value=reference.value
+ error.value=reference.status==='rejected'?'接口文档暂时无法读取，正在重试。':''
+ loading.value=false
+}
+onMounted(()=>{void load();timer=setInterval(()=>{if(!integration.value||!spec.value||error.value)void load()},5000)})
+onUnmounted(()=>clearInterval(timer))
 </script>
 <template>
  <article class="hub-guide panel">
-  <h2>{{t('模型管理接入指南 / API')}}</h2><p v-if="error" class="error">{{error}}</p>
+  <h2>{{t('模型管理接入指南 / API')}}</h2><p v-if="error" role="status">{{t(error)}} <button type="button" :disabled="loading" @click="load">{{t('重试读取')}}</button></p>
   <nav><a href="#hub-endpoints">{{t('调用入口与认证边界')}}</a><a href="#hub-download">{{t('选择下载与追加文件')}}</a><a href="#hub-storage">{{t('模型路径与应用挂载')}}</a><a href="#hub-runtime">{{t('推理服务')}}</a><a href="#hub-api">{{t('API 文档')}}</a></nav>
   <h3 id="hub-endpoints">{{t('调用入口与认证边界')}}</h3>
   <label>{{t('VOS 宿主机地址')}} <input v-model="externalHost" placeholder="<vos-host>"></label>
