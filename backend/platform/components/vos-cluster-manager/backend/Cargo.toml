@@ -1,0 +1,117 @@
+[package]
+name = "vos-cluster-manager"
+version = "0.1.0"
+edition = "2024"
+description = "VOS 集群管理组件：基于 etcd 集群拓扑 + patroni 高可用 postgres 的集群管理 Web 控制台"
+license = "Apache-2.0"
+
+# 二进制入口：vos-cluster-manager --port ... --frontend-dir ... --data-dir ...
+# lib + bin 分离：lib 导出核心逻辑便于单元测试，bin 仅做入口
+[[bin]]
+name = "vos-cluster-manager"
+path = "src/bin/vos_cluster_manager.rs"
+
+# etcd 认证/TLS 迁移与凭据运维 CLI（与 HTTP 端点共用库函数；见 docs/etcd-auth-tls.md）
+[[bin]]
+name = "vcm-etcd-auth"
+path = "src/bin/vcm_etcd_auth.rs"
+
+[lib]
+name = "vos_cluster_manager"
+path = "src/lib.rs"
+
+[dependencies]
+# === 异步运行时 ===
+tokio = { version = "1.40", features = ["full"] }
+
+# === HTTP 框架 ===
+axum = { version = "0.8", features = ["macros", "json"] }
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["trace", "cors", "fs"] }
+
+# === CLI 参数解析 ===
+clap = { version = "4.5", features = ["derive", "env"] }
+
+# === 结构化日志 ===
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+# === 序列化 ===
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# === 时间（health timestamp）===
+chrono = { version = "0.4", features = ["serde"] }
+
+# === 集群编排（Phase 1+）===
+# etcd 客户端（与 vos-platform-backend P1 同系：0.19，gRPC /kv 访问 /vos/cluster/* key）
+# tls：etcd auth/TLS 前置（二期 cephfs-multinode-storage-provider D9）——开启 tonic/tls-ring
+# 才能用 `ConnectOptions::with_tls` 做服务端校验 + mTLS 客户端证书
+etcd-client = { version = "0.19", features = ["tls"] }
+
+# === etcd auth/TLS 证书签发（D9）===
+# 纯 Rust X.509 生成（不依赖运行时 openssl 可执行文件——runtime 镜像仅装 ca-certificates）；
+# 用于集群内部 CA / etcd 服务端证书 / 各节点客户端证书（mTLS）
+rcgen = "0.14"
+
+# === 管理面状态持久化（Phase 1+，平台 postgres，D-VCM-09）===
+# sea-orm 2（vswitch 同系 2.0.1 + schema-sync）：SchemaBuilder 增量幂等建表（schema.rs 模式）
+# 生产连平台 postgres（sqlx-postgres）；单测用临时 SQLite（sqlx-sqlite）验证建表
+sea-orm = { version = "2.0.1", default-features = false, features = [
+    "macros",
+    "with-chrono",
+    "with-json",
+    "with-uuid",
+    "sqlx-postgres",
+    "sqlx-sqlite",
+    "runtime-tokio-rustls",
+    "schema-sync",
+] }
+
+# === 异步 trait（EtcdClusterClient / 编排 client）===
+async-trait = "0.1"
+
+# === UUID（集群 ID / 节点逻辑成员 ID）===
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# === 平台 API 客户端（Phase 2+：/v1000/app/projects/* 编排，D-VCM-03/08）===
+# rustls-tls 避免系统 openssl 依赖（axum 侧 tls 同为 rustls 系）
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+
+# === 编排纯函数（compose_project_name 校验）===
+regex = "1"
+
+# === 平台 temporal（D-VCM-08：节点本地异步编排接平台 temporal；VMS 同款 0.4.0）===
+temporalio-client = "=0.4.0"
+temporalio-sdk = "=0.4.0"
+temporalio-sdk-core = "=0.4.0"
+temporalio-macros = "=0.4.0"
+temporalio-common = { version = "=0.4.0", default-features = false }
+# temporal 连接地址解析（ConnectionOptions::new(url::Url)）
+url = "2"
+# temporalio 0.4 宏（#[activities]/#[workflow_methods]）生成代码引用 futures 系列
+futures = "0.3"
+futures-util = "0.3"
+
+# === 错误处理 ===
+thiserror = "2"
+anyhow = "1"
+
+# === 共享错误库（category 实现，对齐 vos-http-response-spec）===
+trackerror = { path = "../../../shared/trackerror" }
+
+# === 平台 postgres schema sync 慢查询修复（与 vos-platform-backend 同款补丁）===
+# sea-schema（sea-orm 的 schema 探测依赖）0.18.1 原版 FK 发现走 information_schema
+# 五视图级联 JOIN，在表/约束多的库上每条查询 3~8s（schema sync 可达数分钟）。仓库根
+# third_party/sea-schema 为 vendored 0.18.1 + 上游 PR #169（FK 发现改 pg_constraint /
+# pg_attribute 直查，185s → <1s，vos-platform-backend 实测验证）。详见
+# components/vos-platform-backend/docs/migrate-schema-sync-slow-analysis.md §9.12。
+#
+# ⚠️ 临时方案：待上游 PR #169 合入并发布 sea-schema 到 crates.io 后移除本段
+#    （升级 crates.io sea-schema，见 https://github.com/SeaQL/sea-orm/issues/3130）
+[patch.crates-io]
+sea-schema = { path = "../../../third_party/sea-schema" }
+
+[dev-dependencies]
+http-body-util = "0.1"
+tempfile = "3"

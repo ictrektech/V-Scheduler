@@ -71,10 +71,27 @@ profiles:
         - any-of: [jetson-thor, dgx-spark, thor-spark, thor, spark]
     conflicts: [amd, amd-without-cuda, arm, arm-without-cuda, l4t]
 require-profiles: true
+projects:
+  - name: etcd
+    title: {zh-CN: 集群状态存储, en: Cluster State Store}
+  - name: postgres-ha
+    title: {zh-CN: 高可用 PostgreSQL, en: High-availability PostgreSQL}
+  - name: haproxy
+    title: {zh-CN: 集群负载均衡, en: Cluster Load Balancer}
+  - name: temporal
+    title: {zh-CN: 集群工作流, en: Cluster Workflows}
+  - name: keepalived
+    title: {zh-CN: 集群虚拟 IP, en: Cluster Virtual IP}
 storage:
   directories:
     - path: config
       mode: '0700'
 
     - path: gateway
+      mode: '0700'
+
+    - path: inference
+      mode: '0700'
+
+    - path: cluster
       mode: '0700'

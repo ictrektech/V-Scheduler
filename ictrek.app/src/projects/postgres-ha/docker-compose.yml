@@ -1,0 +1,39 @@
+# projects/postgres-ha 子项目 compose（vos-app-spec §3.9 约定式路径）
+#
+# 由 vos-cluster-manager 经平台 /v1000/app/projects/deploy(_async) 动态启停；
+# patroni 高可用 postgres（独立构建镜像，不强求与平台 postgres 共用）。
+# 平台部署时渲染实例专属 .env 并注入以下变量：
+#   - VOS_PROJECT_DATA_PATH   本实例数据根（<app_storage>/projects/<compose_project_name>，
+#     挂载到 /patroni：配置 + postgres 数据；运行环境 venv 位于镜像 /opt/patroni 不被覆盖）
+#   - PATRONI_NAME / PATRONI_SCOPE / PATRONI_HOST_IP / PATRONI_ETCD_HOSTS /
+#     PATRONI_BOOTSTRAP / PATRONI_SUPERUSER_* / PATRONI_REPLICATION_* 等（部署时
+#     env_vars 传入，由编排方按拓扑生成——Phase 3 bootstrap / join / failover）
+#
+# 端口：5433（postgres，避开单机 5432）/ 8008（patroni REST：/leader 200=leader）。
+# host 网络：patroni 经 etcd 发现成员（东西向），REST 健康检查供编排方探测。
+#
+# 启动：patroni-entrypoint.sh（镜像 ENTRYPOINT）渲染 /patroni/config/patroni.yml 后
+# exec patroni 托管同容器 postgres（D-PG-02，command 无需覆盖）。
+services:
+  postgres-ha:
+    # 镜像 tag 由 Makefile 打包时替换为 FULL_VERSION（与 manifest assets 还原 tag 一致）
+    image: "swr.cn-southwest-2.myhuaweicloud.com/ictrek/v-scheduler-cluster-patroni:3ad999b4c-${VOS_CLUSTER_PROJECT_ARCH:?missing project architecture}"
+    environment:
+      - PATRONI_SCOPE=${PATRONI_SCOPE:-vos-cluster}
+      - PATRONI_NAME=${PATRONI_NAME}
+      # DCS：集群 etcd（Phase 2 后由编排方注入实际 etcd 节点列表）
+      - PATRONI_ETCD_HOSTS=${PATRONI_ETCD_HOSTS:-127.0.0.1:2379}
+      # 本节点通告地址（host 网络）
+      - PATRONI_HOST_IP=${PATRONI_HOST_IP}
+      # bootstrap 开关（首节点 true / 后续 false）
+      - PATRONI_BOOTSTRAP=${PATRONI_BOOTSTRAP:-false}
+      # 超级用户与复制用户凭据（编排方生成并写入 etcd credentials；内网可信，后续加密/轮换见 roadmap）
+      - PATRONI_SUPERUSER_USERNAME=${PATRONI_SUPERUSER_USERNAME:-postgres}
+      - PATRONI_SUPERUSER_PASSWORD=${PATRONI_SUPERUSER_PASSWORD}
+      - PATRONI_REPLICATION_USERNAME=${PATRONI_REPLICATION_USERNAME:-replicator}
+      - PATRONI_REPLICATION_PASSWORD=${PATRONI_REPLICATION_PASSWORD}
+    volumes:
+      # 数据根（数据文件 /patroni/postgres-data + 配置 /patroni/config，entrypoint 生成）
+      - ${VOS_PROJECT_DATA_PATH}:/patroni
+    network_mode: host
+    restart: unless-stopped

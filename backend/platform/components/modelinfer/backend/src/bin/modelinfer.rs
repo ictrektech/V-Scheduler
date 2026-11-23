@@ -6,7 +6,6 @@ use std::sync::Arc;
 use clap::Parser;
 
 use modelinfer::platform::{platform_base_from_env, context_token_path, RealPlatformClient};
-use modelinfer::nfs;
 use modelinfer::deploy::{DeployDeps, activities::DeployActivities, runtime};
 use modelinfer::plaza::{self, RealPlazaClient};
 use modelinfer::ssh::RealSshExec;
@@ -49,7 +48,11 @@ async fn main() -> anyhow::Result<()> {
     } else {
         config.platform_api.trim().to_string()
     };
-    let platform = Arc::new(RealPlatformClient::new(base_url.clone(), token_path.clone(), nfs::APP_ID));
+    let platform = Arc::new(RealPlatformClient::new(
+        base_url.clone(),
+        token_path.clone(),
+        &config.platform_app_id,
+    ));
 
     // ---- 模型广场：种子默认来源 ----
     if let Err(e) = plaza::seed_default_source(&conn, &config.plaza_server).await {
@@ -83,31 +86,22 @@ async fn main() -> anyhow::Result<()> {
         monitor: config.monitor(),
     };
 
-    // ---- 统一网关注册续约调度器（进程级，非 Temporal）----
-    modelinfer::vrouter::spawn_scheduler(
-        conn.clone(),
-        platform.clone(),
-        vrouter_client.clone(),
-        vrouter_config.clone(),
-        config.health_interval_secs,
-    );
-
     // ---- Temporal：连接 + 内嵌 Worker（失败不阻塞 HTTP）----
     let temporal_address = config.resolved_temporal_address();
     let mut temporal_client = None;
-    let mut _worker_handle = runtime::WorkerHandle::noop();
+    let mut worker_handle = runtime::WorkerHandle::noop();
     if config.temporal_enabled {
         match runtime::connect(&temporal_address, &config.temporal_namespace).await {
             Ok(client) => {
                 let activities = DeployActivities::new(deploy_deps.clone());
-                match runtime::spawn_worker(client.clone(), &config.task_queue, activities) {
+                match runtime::spawn_worker(client.clone(), &config.task_queue, activities).await {
                     Ok(h) => {
-                        _worker_handle = h;
+                        worker_handle = h;
+                        temporal_client = Some(client);
                         tracing::info!(task_queue = %config.task_queue, "Temporal Worker 已启动");
                     }
                     Err(e) => tracing::error!(error = %e.msg, "Temporal Worker 启动失败"),
                 }
-                temporal_client = Some(client);
             }
             Err(e) => tracing::warn!(
                 address = %temporal_address,
@@ -118,6 +112,18 @@ async fn main() -> anyhow::Result<()> {
     } else {
         tracing::warn!("Temporal 已禁用（VOS_MODELINFER_TEMPORAL_ENABLED=false）");
     }
+    anyhow::ensure!(
+        !config.require_temporal_worker || worker_handle.is_running(),
+        "inference runtime requires a connected Temporal worker"
+    );
+
+    modelinfer::vrouter::spawn_scheduler(
+        conn.clone(),
+        platform.clone(),
+        vrouter_client.clone(),
+        vrouter_config.clone(),
+        config.health_interval_secs,
+    );
 
     // ---- 进程级健康巡检 + 自动重启调度器（同一周期：先巡检、后自动重启决策）----
     // 自动重启需要 Temporal 客户端下发停止 / 启动工作流；不可用时只记录判定结果。
@@ -195,7 +201,7 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let app = build_router(state);
-    let addr: SocketAddr = ([0, 0, 0, 0], config.port).into();
+    let addr = SocketAddr::new(config.bind_address, config.port);
     tracing::info!(
         %addr,
         url_base = %if url_base.is_empty() { "/" } else { &url_base },
@@ -206,6 +212,17 @@ async fn main() -> anyhow::Result<()> {
     );
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app).await?;
+    if config.require_temporal_worker {
+        tokio::select! {
+            result = axum::serve(listener, app) => result?,
+            _ = async {
+                while worker_handle.is_running() {
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                }
+            } => anyhow::bail!("inference runtime Temporal worker exited"),
+        }
+    } else {
+        axum::serve(listener, app).await?;
+    }
     Ok(())
 }

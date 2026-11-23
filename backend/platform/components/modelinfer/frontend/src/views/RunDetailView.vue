@@ -41,8 +41,10 @@ import {
   type ModelHubVariant,
   type VariantFile,
 } from '@/api/modelHub';
+import { embeddedRuntime } from '@/api/client';
 import {
   containerLogStreamUrl,
+  readContainerLogStream,
   getRun,
   getRunTemporal,
   listContainers,
@@ -445,6 +447,7 @@ const logPaused = ref(false);
 const logAutoScroll = ref(true);
 const logBlockRef = ref<InstanceType<typeof TerminalBlock> | null>(null);
 let es: EventSource | null = null;
+let logStream: AbortController | null = null;
 let currentLogTarget: { nodeId: string; name: string } | null = null;
 
 const logLineCount = computed(() => (logBuffer.value ? logBuffer.value.split('\n').length : 0));
@@ -460,6 +463,8 @@ function appendLog(text: string) {
 }
 
 function stopStream() {
+  logStream?.abort();
+  logStream = null;
   if (es) {
     es.close();
     es = null;
@@ -470,10 +475,23 @@ function startStream() {
   stopStream();
   if (!currentLogTarget) return;
   const url = containerLogStreamUrl(id.value, currentLogTarget.nodeId, currentLogTarget.name, 30);
+  logPaused.value = false;
+  if (embeddedRuntime) {
+    const stream = new AbortController();
+    logStream = stream;
+    void readContainerLogStream(url, stream.signal, (line) => appendLog(`${line}\n`))
+      .catch(() => undefined)
+      .finally(() => {
+        if (logStream === stream) {
+          logStream = null;
+          logPaused.value = true;
+        }
+      });
+    return;
+  }
   es = new EventSource(url);
   es.onmessage = (ev) => appendLog(`${ev.data}\n`);
   es.onerror = () => undefined;
-  logPaused.value = false;
 }
 
 function openLogs(record: ContainerItem) {

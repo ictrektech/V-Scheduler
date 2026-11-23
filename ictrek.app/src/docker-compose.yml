@@ -88,17 +88,27 @@ x-controller: &controller
     V_ROUTER_USAGE_PATH: /gateway-data/usage.jsonl
     SCHEDULER_EMBEDDED_AGENT: "true"
     SCHEDULER_NATIVE_NODES: "true"
+    SCHEDULER_EMBEDDED_INFERENCE: "${SCHEDULER_EMBEDDED_INFERENCE:-false}"
+    SCHEDULER_EMBEDDED_CLUSTER_MANAGER: "${SCHEDULER_EMBEDDED_CLUSTER_MANAGER:-false}"
+    MODELINFER_MODEL_HUB_PATH: "${MODEL_HUB_SHARED_MODELS_PATH:-/data/vos_workspace/model_hub}"
+    MODELINFER_IMAGE_HUB_PROBE_HOST: "${VOS_HOST_GW_IP:-}"
+    VOS_CLUSTER_MANAGER_ETCD_ENDPOINTS: "http://${VOS_HOST_GW_IP}:2379"
     SCHEDULER_NODE_TEST_IMAGE: "${SCHEDULER_NODE_TEST_IMAGE:-docker.io/library/busybox:1.37.0}"
     NVIDIA_VISIBLE_DEVICES: all
     NVIDIA_DRIVER_CAPABILITIES: compute,utility
     SCHEDULER_VOS_URL: "${SCHEDULER_VOS_URL:-}"
     VOS_HOST_GW_IP: ${VOS_HOST_GW_IP}
+    VOS_POSTGRES_PORT: "${VOS_POSTGRES_PORT:-5432}"
+    VOS_POSTGRES_USER: "${VOS_POSTGRES_USER:-postgres}"
+    VOS_POSTGRES_DB: "${VOS_POSTGRES_DB:-postgres}"
     VOS_APP_VERSION: __APP_VERSION__
     SCHEDULER_PGV_BOOTSTRAP_PASSWORD: ${VOS_POSTGRES_PASSWORD:?VOS_POSTGRES_PASSWORD is required}
   volumes:
     - ${MODEL_HUB_SHARED_MODELS_PATH:-/data/vos_workspace/model_hub}:/data
     - ${VOS_APP_STORAGE_PATH}/config:/config
     - ${VOS_APP_STORAGE_PATH}/gateway:/gateway-data
+    - ${VOS_APP_STORAGE_PATH}/inference:/var/lib/modelinfer
+    - ${VOS_APP_STORAGE_PATH}/cluster:/var/lib/vos-cluster-manager
     - ${VOS_APP_CONTEXT_PATH}:/var/lib/vos-context:ro
   networks:
     vos_default:
@@ -118,6 +128,14 @@ x-controller: &controller
     - "traefik.http.middlewares.v-scheduler-top-open-redirect.redirectregex.replacement=$${1}/#/app/app-drawer/com.ictrek.v-scheduler/v-scheduler"
     - "traefik.http.middlewares.v-scheduler-top-open-redirect.redirectregex.permanent=false"
     - "traefik.http.routers.v-scheduler-web.rule=PathPrefix(`/app/com.ictrek.v-scheduler/api/v1`)"
+    - "traefik.http.routers.v-scheduler-inference-ui.rule=PathPrefix(`/app/com.ictrek.v-scheduler/inference/`)"
+    - "traefik.http.routers.v-scheduler-inference-ui.priority=1400"
+    - "traefik.http.routers.v-scheduler-inference-ui.service=v-scheduler-web"
+    - "traefik.http.routers.v-scheduler-inference-ui.middlewares=v-scheduler-strip"
+    - "traefik.http.routers.v-scheduler-cluster-ui.rule=PathPrefix(`/app/com.ictrek.v-scheduler/cluster/`)"
+    - "traefik.http.routers.v-scheduler-cluster-ui.priority=1400"
+    - "traefik.http.routers.v-scheduler-cluster-ui.service=v-scheduler-web"
+    - "traefik.http.routers.v-scheduler-cluster-ui.middlewares=v-scheduler-strip"
     - "traefik.http.routers.v-scheduler-web.priority=1300"
     - "traefik.http.routers.v-scheduler-web.service=v-scheduler-web"
     - "traefik.http.routers.v-scheduler-web.middlewares=v-scheduler-strip"

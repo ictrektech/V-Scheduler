@@ -1,9 +1,11 @@
 mod agent;
 mod bootstrap;
+mod cluster_runtime;
 mod contract;
 mod controller;
 mod gpu;
 mod identity;
+mod inference_runtime;
 mod local;
 mod managed_nodes;
 mod model;
@@ -90,6 +92,8 @@ async fn main() -> anyhow::Result<()> {
             }
             let url = url.ok_or_else(|| anyhow::anyhow!("database setup incomplete"))?;
             let node_manager = managed_nodes::start(&url);
+            let inference = inference_runtime::start(&url);
+            let cluster = cluster_runtime::start(&url);
             let mut previous_failure = None;
             let result = loop {
                 let result = tokio::select! {
@@ -139,6 +143,12 @@ async fn main() -> anyhow::Result<()> {
             }
             if let Some(node_manager) = node_manager {
                 node_manager.abort();
+            }
+            if let Some(inference) = inference {
+                inference.abort();
+            }
+            if let Some(cluster) = cluster {
+                cluster.abort();
             }
             result
         }

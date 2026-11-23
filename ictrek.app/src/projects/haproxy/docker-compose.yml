@@ -1,0 +1,100 @@
+# projects/haproxy 子项目 compose（vos-app-spec §3.9 约定式路径）
+#
+# 由 vos-cluster-manager 经平台 /v1000/app/projects/deploy(_async) 动态启停；
+# 官方镜像 registry.ictrek.internal/library/haproxy:3.4.2（不自行构建，D-HA-01/RC-D1）。
+#
+# 平台部署渲染实例 .env，compose 全文本插值以下编排方注入的变量（单行逗号分隔拓扑）：
+#   HAPROXY_STATS_PORT(18404) / HAPROXY_PG_FRONT_PORT(15432) / HAPROXY_PG_BACKENDS(ip,ip) /
+#   HAPROXY_PG_BACKEND_PORT(5433) / HAPROXY_PG_CHECK_PORT(8008) /
+#   HAPROXY_TEMPORAL_FRONT_PORT(7133) / HAPROXY_TEMPORAL_BACKENDS(S2 前为空→不渲染) /
+#   HAPROXY_TEMPORAL_BACKEND_PORT(7333)
+#
+# 启动流程（entrypoint 覆盖为 sh -c，绕开镜像 docker-entrypoint.sh 对 CFG_* 的隐式行为）：
+#   按注入值渲染 /tmp/haproxy.cfg →（条件 listener）→ haproxy -c 校验 → exec 前台运行。
+# postgres HA listener 语义（旧方案 D2）：http-check GET /leader @ 8008，仅 patroni leader
+# 返回 200 → 流量恒路由主库；leader 漂移由运行时健康检查（inter 2s fall 3 rise 2）自动收敛，
+# 无需变更本配置；成员增删由编排方重新 deploy（upsert 刷新，D-HA-04）。
+#
+# 注意：脚本内 `$$` 为 compose 转义（渲染后 shell 运行时变量）；`$'...'`/`'${VAR}'` 处
+# 的单引号是 shell 语法，compose 插值发生在文本层，不受引号影响。
+services:
+  haproxy:
+    # 镜像 tag 由 Makefile 打包时替换为 HAPROXY_IMAGE_TAG（与 manifest assets 归档一致）
+    image: "swr.cn-southwest-2.myhuaweicloud.com/ictrek/v-scheduler-cluster-haproxy:3ad999b4c-${VOS_CLUSTER_PROJECT_ARCH:?missing project architecture}"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        CFG=/tmp/haproxy.cfg
+        printf '%s\n' \
+          'global' \
+          '    maxconn 4096' \
+          '    log stdout format raw local0 info' \
+          '' \
+          'defaults' \
+          '    log global' \
+          '    mode tcp' \
+          '    retries 2' \
+          '    timeout connect 5s' \
+          '    timeout client 1h' \
+          '    timeout server 1h' \
+          '' \
+          'listen stats' \
+          '    bind *:${HAPROXY_STATS_PORT:-18404}' \
+          '    mode http' \
+          '    stats enable' \
+          '    stats uri /' \
+          '    stats refresh 10s' \
+          > "$$CFG"
+        if [ -n '${HAPROXY_PG_BACKENDS:-}' ]; then
+          printf '%s\n' \
+            '' \
+            'listen pg_ha' \
+            '    bind *:${HAPROXY_PG_FRONT_PORT:-15432}' \
+            '    balance roundrobin' \
+            '    option httpchk' \
+            '    http-check send meth GET uri /leader ver HTTP/1.1' \
+            '    http-check expect status 200' \
+            >> "$$CFG"
+          i=0
+          for b in $$(echo '${HAPROXY_PG_BACKENDS:-}' | tr ',' ' '); do
+            printf '    server pg%d %s:%s check port %s inter 2s fall 3 rise 2\n' \
+              $$i $$b '${HAPROXY_PG_BACKEND_PORT:-5433}' '${HAPROXY_PG_CHECK_PORT:-8008}' >> "$$CFG"
+            i=$$((i+1))
+          done
+        fi
+        if [ -n '${HAPROXY_TEMPORAL_BACKENDS:-}' ]; then
+          printf '%s\n' \
+            '' \
+            'listen temporal' \
+            '    bind *:${HAPROXY_TEMPORAL_FRONT_PORT:-7133}' \
+            '    balance roundrobin' \
+            >> "$$CFG"
+          j=0
+          for b in $$(echo '${HAPROXY_TEMPORAL_BACKENDS:-}' | tr ',' ' '); do
+            printf '    server t%d %s:%s check inter 2s fall 3 rise 2\n' \
+              $$j $$b '${HAPROXY_TEMPORAL_BACKEND_PORT:-7333}' >> "$$CFG"
+            j=$$((j+1))
+          done
+        fi
+        if [ -n '${HAPROXY_RGW_BACKENDS:-}' ] && [ -n '${HAPROXY_RGW_VIP:-}' ]; then
+          printf '%s\n' \
+            '' \
+            'listen rgw' \
+            '    bind 127.0.0.1:${HAPROXY_RGW_PORT:-7480}' \
+            '    bind ${HAPROXY_RGW_VIP}:${HAPROXY_RGW_PORT:-7480}' \
+            '    mode tcp' \
+            '    balance roundrobin' \
+            '    option tcp-check' \
+            >> "$$CFG"
+          k=0
+          for b in $$(echo '${HAPROXY_RGW_BACKENDS:-}' | tr ',' ' '); do
+            printf '    server rgw%d %s:%s check inter 2s fall 3 rise 2\n' \
+              $$k $$b '${HAPROXY_RGW_PORT:-7480}' >> "$$CFG"
+            k=$$((k+1))
+          done
+        fi
+        haproxy -c -f "$$CFG"
+        exec haproxy -f "$$CFG"
+    network_mode: host
+    restart: unless-stopped

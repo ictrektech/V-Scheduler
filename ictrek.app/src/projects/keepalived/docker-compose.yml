@@ -1,0 +1,35 @@
+services:
+  keepalived:
+    # 复用 VCM 主镜像：镜像内已包含 keepalived + iproute2 + curl，无额外镜像资产
+    image: "${VOS_CLUSTER_KEEPALIVED_IMAGE:?missing V-Scheduler image}"
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+    restart: unless-stopped
+    stop_signal: SIGTERM
+    stop_grace_period: 30s
+    # 复用 VCM 主镜像会继承镜像级 HEALTHCHECK（探测 VCM 后端 18093）；
+    # keepalived 容器不跑后端，必须关闭，否则平台 wait-project-healthy
+    # 会一直等待/判 unhealthy，导致 keepalived project 部署失败。
+    healthcheck:
+      disable: true
+    environment:
+      KEEPALIVED_NODE_IP: ${KEEPALIVED_NODE_IP}
+      KEEPALIVED_VIP: ${KEEPALIVED_VIP}
+      KEEPALIVED_VIP_PREFIX: ${KEEPALIVED_VIP_PREFIX}
+      KEEPALIVED_PEERS: ${KEEPALIVED_PEERS}
+      KEEPALIVED_PRIORITY: ${KEEPALIVED_PRIORITY}
+      KEEPALIVED_VRRP_ID: ${KEEPALIVED_VRRP_ID}
+      KEEPALIVED_INTERFACE: ${KEEPALIVED_INTERFACE}
+      KEEPALIVED_SERVICES: ${KEEPALIVED_SERVICES}
+      KEEPALIVED_HEALTH_URL_BASE: ${KEEPALIVED_HEALTH_URL_BASE}
+      KEEPALIVED_RGW_VIP: ${KEEPALIVED_RGW_VIP:-}
+      KEEPALIVED_RGW_VIP_PREFIX: ${KEEPALIVED_RGW_VIP_PREFIX:-24}
+      KEEPALIVED_RGW_PEERS: ${KEEPALIVED_RGW_PEERS:-}
+      KEEPALIVED_RGW_PRIORITY: ${KEEPALIVED_RGW_PRIORITY:-100}
+      KEEPALIVED_RGW_VRRP_ID: ${KEEPALIVED_RGW_VRRP_ID:-52}
+      KEEPALIVED_RGW_HEALTH_URL: ${KEEPALIVED_RGW_HEALTH_URL:-http://127.0.0.1:7480/}
+    volumes:
+      # 状态文件：notify_master/backup/fault/stop 写入，VCM 读取用于 status
+      - ${VOS_PROJECT_DATA_PATH:-/var/lib/vos-keepalived}:/var/lib/keepalived
+    entrypoint: ["/usr/local/bin/keepalived-entrypoint.sh"]

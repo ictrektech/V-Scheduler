@@ -18,7 +18,7 @@ class PackageManifestValidationTests(unittest.TestCase):
             r"<<'PYPROFILES'\n(.*?)\nPYPROFILES", (self.root / 'scripts/package.sh').read_text(), re.S
         ).group(1)
 
-    def validate(self, manifest):
+    def validate(self, manifest, omit_project=None):
         # Serialize exactly as the dependency resolver does. Both flow and
         # block YAML represent the same manifest contract.
         content = yaml.safe_dump(manifest, sort_keys=False).encode()
@@ -28,6 +28,10 @@ class PackageManifestValidationTests(unittest.TestCase):
                 member = tarfile.TarInfo('manifest.yml')
                 member.size = len(content)
                 archive.addfile(member, io.BytesIO(content))
+                for project in manifest.get('projects', []):
+                    if project['name'] != omit_project:
+                        path = f"projects/{project['name']}/docker-compose.yml"
+                        archive.add(self.root / 'src' / path, arcname=path)
             return subprocess.run(
                 ['python3', '-', str(target), '/app/com.ictrek.v-scheduler'],
                 input=self.validator, text=True, capture_output=True,
@@ -70,6 +74,11 @@ class PackageManifestValidationTests(unittest.TestCase):
     def test_resolved_manifest_format_is_accepted(self):
         result = self.validate(self.manifest)
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_missing_cluster_project_template_is_rejected(self):
+        result = self.validate(self.manifest, omit_project='etcd')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Missing projects/etcd/docker-compose.yml', result.stderr)
 
     def test_invalid_category_or_missing_profile_is_rejected(self):
         for field, value in [('category', ['unsupported']), ('profiles', self.manifest['profiles'][:-1])]:

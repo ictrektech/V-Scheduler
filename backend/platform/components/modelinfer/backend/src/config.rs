@@ -1,6 +1,6 @@
 //! 应用启动配置（clap derive + env，优先级 CLI 参数 > 环境变量 > 默认值）
 
-use std::path::PathBuf;
+use std::{net::IpAddr, path::PathBuf};
 
 use clap::Parser;
 
@@ -13,6 +13,14 @@ pub struct Config {
     /// HTTP 监听端口（VOS 应用 compose 显式传 19908；host 网络）
     #[arg(long, env = "VOS_MODELINFER_PORT", default_value_t = 19908)]
     pub port: u16,
+
+    /// HTTP 监听地址。嵌入 V-Scheduler 时仅监听回环接口。
+    #[arg(long, env = "VOS_MODELINFER_BIND_ADDRESS", default_value = "0.0.0.0")]
+    pub bind_address: IpAddr,
+
+    /// 提供应用上下文凭据及模型仓库配置的 VOS App。
+    #[arg(long, env = "MODELINFER_PLATFORM_APP_ID", default_value = crate::nfs::APP_ID)]
+    pub platform_app_id: String,
 
     /// 前端 dist 目录（构建产物，运行时托管）
     #[arg(long, env = "VOS_MODELINFER_FRONTEND_DIR")]
@@ -41,6 +49,10 @@ pub struct Config {
     /// 是否启用 Temporal 编排（本地开发可关闭）
     #[arg(long, env = "VOS_MODELINFER_TEMPORAL_ENABLED", default_value_t = true)]
     pub temporal_enabled: bool,
+
+    /// 服务启动时要求 Temporal Worker 可用。
+    #[arg(long, default_value_t = false)]
+    pub require_temporal_worker: bool,
 
     /// 健康巡检周期（秒）
     #[arg(long, env = "VOS_MODELINFER_HEALTH_INTERVAL_SECS", default_value_t = 30)]
@@ -91,6 +103,10 @@ pub struct Config {
     /// 本机路由源地址同网段 → 平台设备同网段 → 节点默认网关 → 首个可用本机 IP）
     #[arg(long, env = "MODELINFER_IMAGE_HUB_SERVER", default_value = "")]
     pub image_hub_server: String,
+
+    /// 可选的管理进程 registry 探测地址；不会传给执行节点。
+    #[arg(long, env = "MODELINFER_IMAGE_HUB_PROBE_HOST", default_value = "")]
+    pub image_hub_probe_host: String,
 
     /// image-hub registry 端口
     #[arg(long, env = "MODELINFER_IMAGE_HUB_PORT", default_value_t = crate::images::DEFAULT_IMAGE_HUB_PORT)]
@@ -200,8 +216,10 @@ impl Config {
 
     /// image-hub registry 配置（启动前缺失镜像分发）
     pub fn image_hub(&self) -> crate::images::ImageHubConfig {
-        crate::images::ImageHubConfig::new(self.image_hub_server.clone(), self.image_hub_port)
-            .with_concurrency(self.image_hub_concurrency)
+        let mut hub = crate::images::ImageHubConfig::new(self.image_hub_server.clone(), self.image_hub_port)
+            .with_concurrency(self.image_hub_concurrency);
+        hub.probe_host = self.image_hub_probe_host.clone();
+        hub
     }
 
     /// 统一网关集成配置（自动发现地址 + 应用上下文 token）
@@ -512,6 +530,14 @@ mod tests {
         assert_eq!(hub.concurrency, 4, "默认并行度");
         assert_eq!(hub.addr("10.10.11.90"), "10.10.11.90:19913");
         assert_eq!(hub.registry_base(), "http://127.0.0.1:19913");
+
+        let cfg = Config::parse_from([
+            "modelinfer", "--frontend-dir", "/tmp", "--data-dir", "/tmp",
+            "--image-hub-probe-host", "172.17.0.1",
+        ]);
+        let hub = cfg.image_hub();
+        assert_eq!(hub.registry_base(), "http://172.17.0.1:19913");
+        assert!(hub.server.is_empty(), "SSH 节点继续按各自网络选择地址");
 
         let cfg = Config::parse_from([
             "modelinfer",

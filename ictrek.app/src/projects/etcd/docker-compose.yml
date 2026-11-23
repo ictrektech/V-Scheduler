@@ -1,0 +1,48 @@
+# projects/etcd 子项目 compose（vos-app-spec §3.9 约定式路径）
+#
+# 由 vos-cluster-manager 经平台 /v1000/app/projects/deploy(_async) 动态启停；
+# 平台部署时渲染实例专属 .env 并注入以下变量：
+#   - VOS_PROJECT_DATA_PATH   本实例数据根（<app_storage>/projects/<compose_project_name>）
+#   - VOS_PROJECT_NAME / VOS_PROJECT_COMPOSE_NAME
+#   - ETCD_NAME / ETCD_INITIAL_CLUSTER / ETCD_ADVERTISE_CLIENT_URLS 等（部署时 env_vars 传入）
+#   - ETCD_LISTEN_CLIENT_URLS / ETCD_CLIENT_CERT_AUTH / ETCD_TRUSTED_CA_FILE /
+#     ETCD_CERT_FILE / ETCD_KEY_FILE / ETCD_CERT_HOST_DIR（auth/TLS 启用时）
+#
+# 端口：2379（client）/ 2380（peer）。host 网络：节点间 etcd raft 互联（东西向）。
+# 默认保持明文（http://），只有显式开启 auth/TLS 时才改为 https:// + 客户端证书校验。
+services:
+  etcd:
+    image: "swr.cn-southwest-2.myhuaweicloud.com/ictrek/v-scheduler-cluster-etcd:3ad999b4c-${VOS_CLUSTER_PROJECT_ARCH:?missing project architecture}"
+    command:
+      - /usr/local/bin/etcd
+      - --name
+      - ${ETCD_NAME:-etcd0}
+      - --data-dir
+      - /var/lib/etcd
+      - --listen-peer-urls
+      - http://0.0.0.0:2380
+      - --initial-advertise-peer-urls
+      - ${ETCD_ADVERTISE_PEER:-http://127.0.0.1:2380}
+      - --initial-cluster
+      - ${ETCD_INITIAL_CLUSTER:-etcd0=http://127.0.0.1:2380}
+      - --initial-cluster-state
+      - ${ETCD_INITIAL_CLUSTER_STATE:-new}
+      - --initial-cluster-token
+      - vcm-etcd
+      # patroni 4.x 仅支持 etcd v2 协议；etcd 3.5 需显式开启 v2 API（3.6+ 已移除）
+      - --enable-v2=true
+    environment:
+      # client listener/advertise 走 env（命令行 flag 优先级更高，必须从这里配置）
+      ETCD_LISTEN_CLIENT_URLS: ${ETCD_LISTEN_CLIENT_URLS:-http://0.0.0.0:2379}
+      ETCD_ADVERTISE_CLIENT_URLS: ${ETCD_ADVERTISE_CLIENT_URLS:-http://127.0.0.1:2379}
+      # bool 必须始终有合法值（空字符串会导致 etcd 解析失败）
+      ETCD_CLIENT_CERT_AUTH: ${ETCD_CLIENT_CERT_AUTH:-false}
+      ETCD_TRUSTED_CA_FILE: ${ETCD_TRUSTED_CA_FILE:-}
+      ETCD_CERT_FILE: ${ETCD_CERT_FILE:-}
+      ETCD_KEY_FILE: ${ETCD_KEY_FILE:-}
+    volumes:
+      - ${VOS_PROJECT_DATA_PATH}:/var/lib/etcd
+      # TLS 材料（CA / server.crt / server.key）；默认目录不存在时 docker 自动创建空目录
+      - ${ETCD_CERT_HOST_DIR:-/etc/vos/etcd/pki}:/etc/vos/etcd/pki:ro
+    network_mode: host
+    restart: unless-stopped

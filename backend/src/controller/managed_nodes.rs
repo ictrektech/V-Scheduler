@@ -88,7 +88,7 @@ pub(super) async fn forward(
             "NODE_MANAGER_INVALID_RESPONSE",
         ));
     }
-    let data = if reading {
+    let mut data = if reading {
         let rows = value.as_array().ok_or(Error(
             StatusCode::BAD_GATEWAY,
             "NODE_MANAGER_INVALID_RESPONSE",
@@ -120,8 +120,28 @@ pub(super) async fn forward(
             })
         }
     } else {
-        value
+        value.clone()
     };
+    if reading && filters.profile.is_none() && crate::cluster_runtime::enabled() {
+        if let Some(members) = crate::cluster_runtime::members(client).await {
+            let mut inventory = Vec::with_capacity(members.len());
+            for member in members {
+                let Some(id) = member["member_id"].as_str() else { continue };
+                let node_ip = member["node_ip"].as_str().and_then(|ip| ip.parse::<std::net::IpAddr>().ok());
+                let ssh_node_id = node_ip.and_then(|ip| value.as_array()?.iter().find_map(|row| {
+                    let host = row["host"].as_str()?.parse::<std::net::IpAddr>().ok()?;
+                    (ip == host).then(|| row["id"].as_str()).flatten()
+                }));
+                inventory.push(json!({
+                    "id":id,
+                    "name":member["display_name"].as_str().filter(|name| !name.is_empty()).unwrap_or(id),
+                    "role":member["role"].as_str().unwrap_or("unknown"),
+                    "ssh_node_id":ssh_node_id
+                }));
+            }
+            data["cluster_nodes"] = json!(inventory);
+        }
+    }
     let mut response = ok(data).into_response();
     response.headers_mut().insert(
         header::CACHE_CONTROL,

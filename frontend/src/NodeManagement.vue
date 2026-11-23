@@ -15,10 +15,44 @@ const live=(id:string)=>props.nodes.find(node=>node.id===id)
 const nodeName=(node:any)=>node.display_name||live(node.id)?.display_name||live(node.id)?.vos_node?.display_name||live(node.id)?.vos_metrics?.data?.device_name||live(node.id)?.vos_metrics?.data?.hostname||node.id
 const pending=computed(()=>data.value.nodes.filter((node:any)=>node.state==='pending').length+data.value.executors.filter((e:any)=>e.state==='pending').length)
 const observed=computed(()=>props.nodes.filter(n=>n.modelinfer_source))
+const inferenceReady=ref(false)
+const clusterReady=ref(false)
+const migration=ref<{pending:boolean,error:string,preview:any,receipt:any}>({pending:false,error:'',preview:null,receipt:null})
 const events:Record<string,string>={'enrollment.revoked':'撤销接入凭据','node.draining':'排空节点','node.resumed':'恢复接收','enrollment.created':'创建接入凭据','worker.pending':'节点申请接入','node.approved':'批准节点','node.budget.updated':'更新节点预算','node.revoked':'撤销节点','executor.pending':'执行器申请接入','executor.enabled':'批准执行器','executor.disabled':'停用执行器','identity.created':'创建服务凭据','identity.revoked':'撤销服务凭据','source.plan.updated':'更新节点预算规划'}
 const zero=()=>({cpu_millicores:0,memory_mib:0,gpu_slots:0,gpu_memory_mib:0})
 function failureText(e:unknown){if(isSessionError(e))return userErrorMessage(e);const code=e instanceof Error?e.message:String(e);return props.t(failure[code]||'操作未完成，请刷新后重试。')+` (${code})`}
-async function refresh(){if(busy.value)return;try{data.value=await props.request('management');error.value=''}catch(e){error.value=failureText(e)}}
+async function loadMigration(){
+  migration.value={pending:true,error:'',preview:null,receipt:null}
+  const state=migration.value
+  dialog.value='migration'
+  try{state.preview=await props.request('inference/migration/preview')}
+  catch(e){state.error=failureText(e)}
+  finally{state.pending=false}
+}
+async function importMigration(){
+  const state=migration.value
+  if(state.pending||!state.preview?.source_present||state.receipt)return
+  state.pending=true
+  state.error=''
+  try{state.receipt=await props.request('inference/migration/import',{},'POST')}
+  catch(e){state.error=failureText(e)}
+  finally{state.pending=false}
+  await refresh()
+}
+async function refresh(){
+  if(busy.value)return
+  const [management, inference, cluster] = await Promise.allSettled([
+    props.request('management'),
+    props.request('inference/runtime/health'),
+    props.request('cluster/runtime/health'),
+  ])
+  if(management.status==='fulfilled'){
+    data.value=management.value
+    error.value=''
+  }else error.value=failureText(management.reason)
+  inferenceReady.value=inference.status==='fulfilled'&&inference.value?.ready===true
+  clusterReady.value=cluster.status==='fulfilled'
+}
 async function action(fn:()=>Promise<void>){if(busy.value)return;busy.value=true;error.value='';try{await fn();emit('refresh')}catch(e){error.value=failureText(e)}finally{busy.value=false}await refresh()}
 function close(){dialog.value='';secret.value=null;nodeForm.value=null;executorForm.value=null;copied.value=false}
 function editNode(node:any){nodeForm.value={source:false,id:node.id,approve:node.state==='pending',version:node.version,display_name:nodeName(node),capacities:{...zero(),...(node.definition?.capacities||{})},resident_baseline:{...zero(),...(node.definition?.resident_baseline||{})},safety_reserve:{...zero(),...(node.definition?.safety_reserve||{})},vos_member_id:node.definition?.vos_member_id||''};dialog.value='node'}
@@ -42,12 +76,19 @@ onUnmounted(()=>{clearInterval(timer);secret.value=null})
 <template>
  <ApplicationIntegrations :request="request" :t="t"/>
  <section class="node-management">
-  <div class="management-intro panel"><div><h2>{{t('节点管理')}}</h2><p>{{t('节点由 VOS 应用发现和管理；已有部署继续由所属应用负责。')}}</p></div><a class="button quiet" href="/app/com.ictrek.modelinfer/" target="_blank" rel="noopener">{{t('打开 ModelInfer 管理')}}</a></div>
+  <div class="management-intro panel">
+   <div><h2>{{t('节点管理')}}</h2><p>{{t('管理 SSH 算力节点、VOS 集群成员和推理部署。')}}</p></div>
+   <div class="dialog-actions">
+    <a v-if="inferenceReady" class="button quiet" href="/app/com.ictrek.v-scheduler/inference/#/runs">{{t('推理部署')}}</a>
+    <button v-else type="button" class="quiet" :disabled="migration.pending" @click="loadMigration">{{t('迁移 ModelInfer 部署')}}</button>
+    <a v-if="clusterReady" class="button quiet" href="/app/com.ictrek.v-scheduler/cluster/">{{t('VOS 集群管理')}}</a>
+   </div>
+  </div>
   <div v-if="error" class="error" role="alert">{{error}}</div>
   <div class="management-tabs" role="tablist" :aria-label="t('节点管理')"><button v-for="item in [{id:'nodes',label:'节点'},{id:'executors',label:'执行器'},{id:'identities',label:'服务凭据'},{id:'events',label:'操作记录'}]" :key="item.id" role="tab" :aria-selected="tab===item.id" :class="{current:tab===item.id}" @click="tab=item.id">{{t(item.label)}}<span v-if="item.id==='nodes'&&pending" class="pending-count">{{pending}}</span></button><button class="quiet" :disabled="busy" @click="refresh"><Icon name="refresh"/>{{t('刷新')}}</button></div>
   <div v-if="data.cluster_discovery?.state==='unavailable'&&data.modelinfer_discovery?.state!=='ready'" class="discovery-notice" role="status">{{t('无法读取 VOS 集群成员；当前列表可能只有本机。请检查平台集群服务，或在所属 VOS 应用中检查节点。')}}</div>
   <div v-else-if="data.cluster_discovery?.state==='not_initialized'" class="discovery-notice" role="status">{{t('VOS 尚未初始化集群；已安装应用发现的节点仍会单独显示。')}}</div>
-  <div v-if="data.modelinfer_discovery?.state==='ready'" class="discovery-notice source-ready" role="status">ModelInfer · {{t('已发现节点')}} {{data.modelinfer_discovery.node_count}} · {{t('已有部署由 ModelInfer 管理；调度控制接口待验证。')}}</div>
+  <div v-if="data.modelinfer_discovery?.state==='ready'" class="discovery-notice source-ready" role="status">{{t(inferenceReady?'推理部署':'ModelInfer')}} · {{t('已发现节点')}} {{data.modelinfer_discovery.node_count}}</div>
   <section v-if="tab==='nodes'" class="section panel">
    <div class="section-head"><div><h2>{{t('已登记节点')}}</h2><p>{{t('同一台机器的容量由一个控制器管理；撤销不会删除任务记录或业务文件。')}}</p></div></div>
    <div class="table-wrap"><table><thead><tr><th>{{t('名称 / 标识')}}</th><th>{{t('接入状态')}}</th><th>{{t('批准预算')}}</th><th>{{t('操作')}}</th></tr></thead><tbody><tr v-for="node in data.nodes" :key="node.id"><td><strong>{{nodeName(node)}}</strong><small>{{node.id}}</small></td><td><span class="status" :class="node.state==='pending'?'queued':node.state==='revoked'?'failed':'succeeded'">{{t(names[node.state]||node.state)}}</span><small v-if="['approved','configured'].includes(node.state)">{{t(names[live(node.id)?.health_state||'unavailable'])}}</small></td><td><template v-if="node.definition"><strong>{{node.definition.capacities.cpu_millicores/1000}} vCPU · {{(node.definition.capacities.memory_mib/1024).toFixed(1)}} GiB</strong><small>{{node.definition.capacities.gpu_slots}} GPU · {{(node.definition.capacities.gpu_memory_mib/1024).toFixed(1)}} GiB {{t('GPU 内存预算')}}</small></template><span v-else>—</span></td><td class="management-actions"><button v-if="node.state==='pending'" class="quiet" :disabled="busy" @click="editNode(node)">{{t('审批接入')}}</button><template v-if="['approved','configured'].includes(node.state)"><button class="quiet" :disabled="busy" @click="editNode(node)">{{t('编辑预算')}}</button><button class="quiet" :disabled="busy" @click="drain(node)">{{t(live(node.id)?.draining?'恢复接收':'排空节点')}}</button></template><button v-if="node.can_revoke&&node.state!=='revoked'" class="text-button" :disabled="busy" @click="revoke(`nodes/${encodeURIComponent(node.id)}/revoke`,t('撤销节点')+' '+nodeName(node))">{{t('撤销')}}</button></td></tr></tbody></table><p v-if="!data.nodes.length" class="empty">{{t('尚无已登记节点。')}}</p></div>
@@ -56,8 +97,27 @@ onUnmounted(()=>{clearInterval(timer);secret.value=null})
   <section v-if="tab==='executors'" class="section panel"><div class="section-head"><div><h2>{{t('执行器')}}</h2><p>{{t('节点上报的是申请；执行位置、服务身份和资源模板须经管理员批准。')}}</p></div><button :disabled="busy||!data.nodes.some((n:any)=>['approved','configured'].includes(n.state))" @click="editExecutor()">{{t('添加执行器')}}</button></div><div class="table-wrap"><table><thead><tr><th>{{t('执行器 / 应用')}}</th><th>{{t('执行节点')}}</th><th>{{t('状态')}}</th><th>{{t('预约资源')}}</th><th>{{t('操作')}}</th></tr></thead><tbody><tr v-for="entry in data.executors" :key="entry.id"><td><strong>{{entry.id}}</strong><small>{{entry.definition.app_id}} · {{entry.definition.task_type}}</small></td><td>{{entry.definition.node_id}}<small v-for="part in entry.definition.placements||[]" :key="part.node_id">+ {{part.node_id}}</small></td><td><span class="status" :class="entry.state==='pending'?'queued':entry.state==='enabled'?'succeeded':'cancelled'">{{t(names[entry.state])}}</span></td><td>{{entry.definition.resources.cpu_millicores/1000}} vCPU · {{entry.definition.resources.memory_mib}} MiB<small>{{entry.definition.resources.gpu_slots}} GPU · {{entry.definition.resources.gpu_memory_mib}} MiB</small></td><td><button v-if="entry.editable" class="quiet" :disabled="busy" @click="editExecutor(entry)">{{t(entry.state==='pending'?'审批接入':'编辑')}}</button><small v-else>{{t('由应用自动绑定')}}</small></td></tr></tbody></table><p v-if="!data.executors.length" class="empty">{{t('尚无已登记执行器。')}}</p></div></section>
   <section v-if="tab==='identities'" class="section panel"><div class="section-head"><div><h2>{{t('服务凭据')}}</h2><p>{{t('服务身份按应用隔离；令牌仅在创建时显示，撤销后立即失效。')}}</p></div><button :disabled="busy" @click="identityApp='';permitGrants=[];delegatedGrants=[];dialog='identity'">{{t('创建服务凭据')}}</button></div><div class="table-wrap"><table><thead><tr><th>{{t('应用')}}</th><th>{{t('状态')}}</th><th>{{t('创建时间')}}</th><th>{{t('操作')}}</th></tr></thead><tbody><tr v-for="entry in data.service_identities" :key="entry.id"><td><strong>{{entry.app_id}}</strong><small>{{entry.id}}</small></td><td>{{t(entry.revoked_at?'已撤销':'有效')}}</td><td>{{time(entry.created_at)}}</td><td><button v-if="!entry.revoked_at" class="text-button" :disabled="busy" @click="revoke(`service-identities/${entry.id}/revoke`,t('撤销服务凭据')+' '+entry.app_id)">{{t('撤销')}}</button></td></tr></tbody></table><p v-if="!data.service_identities.length" class="empty">{{t('尚未创建服务凭据。')}}</p></div></section>
   <section v-if="tab==='events'" class="section panel"><div class="section-head"><h2>{{t('操作记录')}}</h2><span>{{t('最近 100 条')}}</span></div><div class="table-wrap"><table><thead><tr><th>{{t('操作')}}</th><th>{{t('对象')}}</th><th>{{t('时间')}}</th></tr></thead><tbody><tr v-for="event in data.events" :key="event.cursor"><td>{{t(events[event.action]||event.action)}}</td><td>{{event.resource}}</td><td>{{time(event.created_at)}}</td></tr></tbody></table><p v-if="!data.events.length" class="empty">{{t('尚无操作记录。')}}</p></div></section>
-  <div v-if="dialog||confirm" class="management-backdrop" @click.self="confirm?confirm=null:close()"><section class="management-dialog" role="dialog" aria-modal="true" :aria-label="t(confirm?'确认操作':dialog==='node'?'节点预算':dialog==='executor'?'执行器配置':dialog==='identity'?'创建服务凭据':'保存接入配置')"><button class="dialog-close quiet" :aria-label="t('关闭')" @click="confirm?confirm=null:close()"><Icon name="close"/></button>
+  <div v-if="dialog||confirm" class="management-backdrop" @click.self="confirm?confirm=null:close()"><section class="management-dialog" role="dialog" aria-modal="true" :aria-label="t(confirm?'确认操作':dialog==='migration'?'迁移 ModelInfer 部署':dialog==='node'?'节点预算':dialog==='executor'?'执行器配置':dialog==='identity'?'创建服务凭据':'保存接入配置')"><button class="dialog-close quiet" :aria-label="t('关闭')" @click="confirm?confirm=null:close()"><Icon name="close"/></button>
    <template v-if="confirm"><h2>{{confirm.label}}</h2><p>{{t('撤销将阻止新请求。仍有未停止的执行时，系统会拒绝撤销并保留资源账本。')}}</p><div class="dialog-actions"><button class="quiet" :disabled="busy" @click="confirm=null">{{t('返回')}}</button><button :disabled="busy" @click="confirmAction">{{t('确认撤销')}}</button></div></template>
+   <template v-else-if="dialog==='migration'">
+    <h2>{{t('迁移 ModelInfer 部署')}}</h2>
+    <p>{{t('备份旧部署数据，将模型卡目录复制到 V-Scheduler 应用存储的 inference/plaza，再在 VOS 停用原 ModelInfer 应用。')}}</p>
+    <p v-if="migration.error" class="error" role="alert">{{migration.error}}</p>
+    <p v-if="migration.pending" role="status">{{t('正在处理')}}</p>
+    <template v-if="migration.receipt">
+     <p role="status">{{t('导入已完成，等待推理运行时就绪。')}}</p>
+     <pre>{{JSON.stringify(migration.receipt.tables,null,2)}}</pre>
+    </template>
+    <template v-else-if="migration.preview">
+     <template v-if="migration.preview.source_present">
+      <h3>{{t('源部署状态')}}</h3>
+      <pre>{{JSON.stringify(migration.preview.deployments_by_state,null,2)}}</pre>
+      <div class="dialog-actions"><button :disabled="migration.pending" @click="importMigration">{{t('导入旧部署')}}</button></div>
+     </template>
+     <p v-else>{{t('未找到旧 ModelInfer 部署数据。')}}</p>
+    </template>
+    <button v-else-if="migration.error" class="quiet" :disabled="migration.pending" @click="loadMigration">{{t('刷新')}}</button>
+   </template>
    <form v-else-if="dialog==='node'&&nodeForm" @submit.prevent="saveNode"><h2>{{t(nodeForm.source?'预算规划':nodeForm.approve?'审批节点接入':'节点预算')}}</h2><p>{{nodeForm.id}}</p><p v-if="nodeForm.source" class="form-note">{{t('仅保存预算规划，不启动远端进程，也不把节点标为可调度。')}}</p><label>{{t('显示名称')}}<input v-model="nodeForm.display_name" required maxlength="128"></label><div v-for="group in [{key:'capacities',label:nodeForm.source?'规划容量':'批准容量'},{key:'resident_baseline',label:'常驻占用'},{key:'safety_reserve',label:'系统保留'}]" :key="group.key" class="budget-group"><h3>{{t(group.label)}}</h3><div class="budget-grid"><label v-for="field in resourceFields" :key="field.key">{{t(field.label)}}<input v-model.number="nodeForm[group.key][field.key]" type="number" step="1" min="0" required></label></div></div><label v-if="!nodeForm.source">{{t('VOS 成员标识（可选）')}}<input v-model="nodeForm.vos_member_id" maxlength="96"></label><p class="form-note">{{t('预算须按真实设备和模型峰值校准；统一内存按同一个资源池核算。')}}</p><div class="dialog-actions"><button type="submit" :disabled="busy">{{t(nodeForm.source?'保存规划':nodeForm.approve?'批准接入':'保存预算')}}</button></div></form>
    <form v-else-if="dialog==='executor'&&executorForm" @submit.prevent="saveExecutor"><h2>{{t('执行器配置')}}</h2><div class="budget-grid"><label>{{t('执行器标识')}}<input v-model="executorForm.definition.id" :readonly="executorForm.existing" required pattern="[A-Za-z0-9_.-]+" maxlength="96"></label><label>{{t('应用标识')}}<input v-model="executorForm.definition.app_id" :readonly="executorForm.identityLocked" required pattern="[A-Za-z0-9_.-]+" maxlength="96"></label><label>{{t('执行节点')}}<select v-model="executorForm.definition.node_id" :disabled="executorForm.existing" required><option v-for="node in data.nodes.filter((n:any)=>['approved','configured'].includes(n.state))" :key="node.id" :value="node.id">{{nodeName(node)}}</option></select></label><label>{{t('契约版本')}}<input v-model="executorForm.definition.contract_version" :readonly="executorForm.identityLocked" required maxlength="96"></label><label>{{t('任务类型')}}<input v-model="executorForm.definition.task_type" :readonly="executorForm.identityLocked" required placeholder="model.infer"></label><label>{{t('状态')}}<select v-model="executorForm.enabled"><option :value="true">{{t('已启用')}}</option><option :value="false">{{t('已停用')}}</option></select></label></div><h3>{{t('单次执行预算')}}</h3><div class="budget-grid"><label v-for="field in resourceFields" :key="field.key">{{t(field.label)}}<input v-model.number="executorForm.definition.resources[field.key]" type="number" min="0" step="1" required></label></div><section v-if="executorForm.definition.task_type==='model.infer'" class="placement-editor"><h3>{{t('其他执行节点（联合推理）')}}</h3><p class="form-note">{{t('主执行节点使用上方预算。为其余每个计算节点单独设置增量预算；所有节点同时获准后才开始推理。')}}</p><div v-for="(part,index) in executorForm.definition.placements" :key="index" class="placement-entry"><label>{{t('执行节点')}}<select v-model="part.node_id" required><option value="" disabled>{{t('选择节点')}}</option><option v-for="node in data.nodes.filter((n:any)=>['approved','configured'].includes(n.state)&&n.id!==executorForm.definition.node_id)" :key="node.id" :value="node.id">{{nodeName(node)}}</option></select></label><div class="budget-grid"><label v-for="field in resourceFields" :key="field.key">{{t(field.label)}}<input v-model.number="part.resources[field.key]" type="number" min="0" step="1" required></label></div><button type="button" class="text-button" @click="executorForm.definition.placements.splice(index,1)">{{t('移除该节点')}}</button></div><button type="button" class="quiet" :disabled="executorForm.definition.placements.length>=31" @click="addPlacement">{{t('增加联合执行节点')}}</button></section><label>{{t('允许的模型服务地址（每行一个）')}}<textarea v-model="executorForm.urls" rows="3" placeholder="http://spark-01:8000/v1"></textarea></label><div class="budget-grid"><label>{{t('重试方式')}}<select v-model="executorForm.definition.retry_mode"><option value="none">{{t('不自动重试')}}</option><option value="idempotent">{{t('执行端支持幂等重试')}}</option></select></label><label>{{t('最大尝试次数')}}<input v-model.number="executorForm.definition.max_attempts" type="number" min="1" max="10" step="1" required></label></div><p class="form-note">{{t('在线推理使用 model.infer；异步任务仍需目标节点提供受控业务适配器。')}}</p><div class="dialog-actions"><button type="submit" :disabled="busy">{{t('保存执行器')}}</button></div></form>
    <form v-else-if="dialog==='identity'" @submit.prevent="createIdentity"><h2>{{t('创建服务凭据')}}</h2><label>{{t('应用标识')}}<input v-model="identityApp" required maxlength="96" pattern="[A-Za-z0-9_.-]+"></label><p>{{t('该身份可提交和管理本应用的任务与许可；不会获得节点管理权限。')}}</p><label>{{t('允许核验许可的执行器（可选）')}}<select v-model="permitGrants" multiple><option v-for="e in data.executors.filter((e:any)=>e.state==='enabled')" :key="e.id" :value="e.id">{{e.id}}</option></select></label><label>{{t('允许移交任务的执行器（可选）')}}<select v-model="delegatedGrants" multiple><option v-for="e in data.executors.filter((e:any)=>e.state==='enabled')" :key="e.id" :value="e.id">{{e.id}}</option></select></label><div class="dialog-actions"><button type="submit" :disabled="busy">{{t('创建凭据')}}</button></div></form>

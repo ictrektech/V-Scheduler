@@ -22,15 +22,20 @@ const props = defineProps<{
 const zh = computed(() => props.locale.startsWith('zh'))
 const label = (a: string, b: string) => zh.value ? a : b
 const nodes = ref<Node[]>([])
+const clusterNodes = ref<{id: string, name: string, role: string, ssh_node_id: string | null}[]>([])
+const clusterOnly = computed(() => clusterNodes.value.filter(node => !node.ssh_node_id))
 const canManage = ref(false)
 const busy = ref(false)
 const error = ref('')
+const listFailed = ref(false)
+const loaded = ref(false)
 const feedback = ref('')
 const edit = ref<Node | null>(null)
 const form = ref<ReturnType<typeof fields> | null>(null)
 const base = 'managed-nodes'
 const profiles = ['jetson-thor', 'dgx-spark', 'jetson-orin', 'arm-cpu', 'amd-cpu', 'amd-cuda', 'arm-cuda', 'sophon-bm1688']
 let timer: ReturnType<typeof setInterval>
+let refreshRevision = 0
 
 function fields(node?: Node) {
   return {
@@ -52,15 +57,30 @@ function describe(reason: unknown) {
   return message ? label(...message) : label('节点操作失败。', 'Node operation failed.')
 }
 async function refresh() {
+  const revision = ++refreshRevision
   try {
     const response = await props.request(base)
+    if (revision !== refreshRevision) return
+    if (!Array.isArray(response?.items)) throw new Error('Invalid node inventory')
     nodes.value = response.items
+    if (Array.isArray(response.cluster_nodes)) clusterNodes.value = response.cluster_nodes
     canManage.value = response.can_manage
+    loaded.value = true
+    listFailed.value = false
     if (!canManage.value) form.value = null
   } catch (reason) {
-    nodes.value = []
+    if (revision !== refreshRevision) return
+    const failure = reason as {status?: number, code?: string}
+    if (failure.status === 401 || failure.status === 403 ||
+        failure.code === 'FORBIDDEN' || failure.code === 'UNAUTHENTICATED' ||
+        failure.code === 'NODE_MANAGER_DISABLED') {
+      nodes.value = []
+      clusterNodes.value = []
+      loaded.value = false
+      form.value = null
+    }
     canManage.value = false
-    if ((reason as {code?: string})?.code !== 'NODE_MANAGER_DISABLED') error.value = describe(reason)
+    listFailed.value = true
   }
 }
 function open(node?: Node) {
@@ -112,8 +132,14 @@ onUnmounted(() => clearInterval(timer))
     <div class="section-head">
       <h2>{{label('SSH 算力节点', 'SSH compute nodes')}}</h2>
       <button v-if="canManage" :disabled="busy" @click="open()">{{label('添加节点', 'Add node')}}</button>
+      <button v-if="listFailed" class="quiet" :disabled="busy" @click="refresh">{{label('重试读取', 'Retry loading')}}</button>
     </div>
     <p v-if="error" class="error" role="alert">{{error}}</p>
+    <p v-if="listFailed" class="error" role="status">
+      {{loaded
+        ? label('节点列表暂时无法刷新，以下为上次读取的记录。', 'Could not refresh nodes. Showing the last loaded list.')
+        : label('暂时无法读取节点列表。', 'Could not load the node list.')}}
+    </p>
     <p v-if="feedback" role="status">{{feedback}}</p>
     <form v-if="form && canManage" class="node-form" @submit.prevent="save">
       <label>{{label('节点名称', 'Node name')}}<input v-model.trim="form.name" required maxlength="128"></label>
@@ -128,12 +154,13 @@ onUnmounted(() => clearInterval(timer))
       <p v-if="edit">{{label('凭据留空会保留已保存的值。', 'Leave credentials blank to keep the saved values.')}}</p>
       <div class="node-actions"><button type="submit" :disabled="busy">{{label('连接并保存', 'Connect and save')}}</button><button type="button" class="quiet" :disabled="busy" @click="form=null">{{label('取消', 'Cancel')}}</button></div>
     </form>
-    <p v-if="!nodes.length && !error">{{label('暂无已纳管节点。', 'No managed nodes yet.')}}</p>
+    <p v-if="loaded && !listFailed && !nodes.length && !clusterOnly.length">{{label('暂无已纳管节点。', 'No managed nodes yet.')}}</p>
     <div v-for="node in nodes" :key="node.id" class="compute-node">
       <div>
         <strong>{{node.name}}</strong>
         <div>{{node.status==='online' ? label('在线','Online') : label('离线','Offline')}} · {{node.arch || '—'}} · {{node.gpu_model || '—'}}</div>
         <small v-if="node.profile">Profile · {{node.profile}}</small>
+        <small v-if="clusterNodes.some(member => member.ssh_node_id === node.id)">{{label('VOS 集群成员','VOS cluster member')}}</small>
         <small v-if="canManage">{{node.ssh_user}}@{{node.host}}:{{node.ssh_port}} · {{node.auth_method==='key' ? label('私钥','Private key') : label('密码','Password')}}</small>
       </div>
       <div v-if="canManage" class="node-actions">
@@ -141,6 +168,12 @@ onUnmounted(() => clearInterval(timer))
         <button class="quiet" :disabled="busy" @click="check(node,'rescan')">{{label('重新扫描', 'Rescan')}}</button>
         <button class="quiet" :disabled="busy" @click="check(node,'runtime')">{{label('验证容器运行', 'Check container runtime')}}</button>
         <button class="quiet" :disabled="busy" @click="remove(node)">{{label('移除', 'Remove')}}</button>
+      </div>
+    </div>
+    <div v-for="member in clusterOnly" :key="member.id" class="compute-node">
+      <div>
+        <strong>{{member.name}}</strong>
+        <small>{{label('VOS 集群成员','VOS cluster member')}} · {{member.role}}</small>
       </div>
     </div>
   </section>

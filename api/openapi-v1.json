@@ -20,6 +20,730 @@
     }
   ],
   "paths": {
+    "/inference/migration/preview": {
+      "get": {
+        "operationId": "preview_legacy_modelinfer_migration",
+        "summary": "Inspect the ModelInfer migration source",
+        "x-title": {
+          "zh-CN": "预检 ModelInfer 迁移源",
+          "zh-TW": "預檢 ModelInfer 遷移來源",
+          "en": "Inspect the ModelInfer migration source"
+        },
+        "x-description": {
+          "zh-CN": "管理员只读统计当前 VOS 平台 PostgreSQL 中的 ModelInfer 源表与部署状态。此预检用于评估迁移范围，部署迁移仍需检查模型卡文件、容器和目标端冲突。",
+          "zh-TW": "管理員唯讀統計當前 VOS 平台 PostgreSQL 中的 ModelInfer 來源表和部署狀態。",
+          "en": "Read deployment states and table counts in the current VOS PostgreSQL instance. This preview inventories the source. Migration also requires validating card files, containers, and destination conflicts."
+        },
+        "x-role": "admin",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Inspect the ModelInfer migration source",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "required": [
+                            "source_present",
+                            "tables",
+                            "deployments_by_state"
+                          ],
+                          "properties": {
+                            "source_present": {
+                              "type": "boolean",
+                              "description": "At least one ModelInfer table is present. / 至少存在一张 ModelInfer 表。"
+                            },
+                            "tables": {
+                              "type": "object",
+                              "required": [
+                                "modelinfer_nodes",
+                                "modelinfer_node_monitors",
+                                "modelinfer_deployments",
+                                "modelinfer_plaza_sources",
+                                "modelinfer_plaza_models",
+                                "modelinfer_runs",
+                                "modelinfer_run_logs",
+                                "modelinfer_run_node_data",
+                                "modelinfer_run_global_data",
+                                "modelinfer_run_steps",
+                                "modelinfer_deployment_containers",
+                                "modelinfer_settings",
+                                "modelinfer_comfyui_weights"
+                              ],
+                              "properties": {
+                                "modelinfer_nodes": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ],
+                                  "minimum": 0,
+                                  "description": "Row count. null means the table is absent. / 行数，null 表示表不存在。"
+                                },
+                                "modelinfer_node_monitors": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ],
+                                  "minimum": 0,
+                                  "description": "Row count. null means the table is absent. / 行数，null 表示表不存在。"
+                                },
+                                "modelinfer_deployments": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ],
+                                  "minimum": 0,
+                                  "description": "Row count. null means the table is absent. / 行数，null 表示表不存在。"
+                                },
+                                "modelinfer_plaza_sources": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ],
+                                  "minimum": 0,
+                                  "description": "Row count. null means the table is absent. / 行数，null 表示表不存在。"
+                                },
+                                "modelinfer_plaza_models": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ],
+                                  "minimum": 0,
+                                  "description": "Row count. null means the table is absent. / 行数，null 表示表不存在。"
+                                },
+                                "modelinfer_runs": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ],
+                                  "minimum": 0,
+                                  "description": "Row count. null means the table is absent. / 行数，null 表示表不存在。"
+                                },
+                                "modelinfer_run_logs": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ],
+                                  "minimum": 0,
+                                  "description": "Row count. null means the table is absent. / 行数，null 表示表不存在。"
+                                },
+                                "modelinfer_run_node_data": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ],
+                                  "minimum": 0,
+                                  "description": "Row count. null means the table is absent. / 行数，null 表示表不存在。"
+                                },
+                                "modelinfer_run_global_data": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ],
+                                  "minimum": 0,
+                                  "description": "Row count. null means the table is absent. / 行数，null 表示表不存在。"
+                                },
+                                "modelinfer_run_steps": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ],
+                                  "minimum": 0,
+                                  "description": "Row count. null means the table is absent. / 行数，null 表示表不存在。"
+                                },
+                                "modelinfer_deployment_containers": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ],
+                                  "minimum": 0,
+                                  "description": "Row count. null means the table is absent. / 行数，null 表示表不存在。"
+                                },
+                                "modelinfer_settings": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ],
+                                  "minimum": 0,
+                                  "description": "Row count. null means the table is absent. / 行数，null 表示表不存在。"
+                                },
+                                "modelinfer_comfyui_weights": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ],
+                                  "minimum": 0,
+                                  "description": "Row count. null means the table is absent. / 行数，null 表示表不存在。"
+                                }
+                              },
+                              "additionalProperties": false
+                            },
+                            "deployments_by_state": {
+                              "type": "object",
+                              "description": "Counts by exact stored state: stopped, starting, running, stopping, failed, degraded or a value preserved from the installed legacy version. Unobserved states are omitted. / 按源库状态统计，未出现的状态省略。",
+                              "additionalProperties": {
+                                "type": "integer",
+                                "minimum": 1
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED. Provide a valid Bearer token. / 请提供有效 Bearer 令牌。"
+          },
+          "403": {
+            "description": "FORBIDDEN. Administrator role required. / 需要管理员权限。"
+          },
+          "503": {
+            "description": "LEGACY_MODELINFER_DATABASE_UNAVAILABLE if platform database configuration, snapshot connection, or a query fails. Verify the platform PostgreSQL service and retry. / 平台数据库连接或查询失败，请检查后重试。"
+          }
+        }
+      }
+    },
+    "/inference/migration/import": {
+      "post": {
+        "operationId": "import_legacy_modelinfer",
+        "summary": "Import legacy ModelInfer data",
+        "x-title": {
+          "en": "Import legacy ModelInfer data",
+          "zh-CN": "导入旧 ModelInfer 数据"
+        },
+        "x-description": {
+          "en": "Copy the frozen ModelInfer database snapshot into the scheduler database after model card files have been staged and verified. The embedded inference runtime must be disabled. Existing destination rows are preserved on any conflict.",
+          "zh-CN": "停用内置推理运行时并准备好已校验的模型卡文件后，将旧库快照导入调度数据库。遇到冲突时回滚整次导入。"
+        },
+        "x-role": "admin",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Imported or already imported. / 已导入。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "required": [
+                            "already_imported",
+                            "tables"
+                          ],
+                          "properties": {
+                            "already_imported": {
+                              "type": "boolean",
+                              "description": "True if a successful import was already recorded. / 已有成功导入记录时为 true。"
+                            },
+                            "tables": {
+                              "type": "object",
+                              "additionalProperties": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "description": "Copied row counts keyed by source table. / 各源表已复制的行数。"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED. Provide a valid Bearer token."
+          },
+          "403": {
+            "description": "FORBIDDEN. Administrator role required."
+          },
+          "404": {
+            "description": "LEGACY_MODELINFER_DATA_NOT_FOUND. Source deployment table is absent."
+          },
+          "409": {
+            "description": "MODELINFER_IMPORT_RUNTIME_ENABLED, MODELINFER_IMPORT_LEGACY_NOT_STOPPED, MODELINFER_IMPORT_WORK_IN_PROGRESS, MODELINFER_MODEL_CARD_FILES_REQUIRED, MODELINFER_IMPORT_SCHEMA_MISMATCH, or MODELINFER_IMPORT_CONFLICT. Resolve the indicated prerequisite and retry. / 运行时已启用、源端有进行中的工作、模型卡缺失或校验失败、结构差异或记录冲突。"
+          },
+          "503": {
+            "description": "LEGACY_MODELINFER_DATABASE_UNAVAILABLE or MODELINFER_IMPORT_TARGET_UNAVAILABLE. Restore database availability and retry. / 源库或目标库暂不可用。"
+          }
+        }
+      }
+    },
+    "/inference/runtime/health": {
+      "get": {
+        "operationId": "embedded_inference_runtime_health",
+        "summary": "Embedded inference runtime health",
+        "x-title": {
+          "zh-CN": "内置推理运行时健康状态",
+          "zh-TW": "內建推論執行環境健康狀態",
+          "en": "Embedded inference runtime health"
+        },
+        "x-description": {
+          "zh-CN": "管理员查看内置推理管理服务的启用与就绪状态。就绪表示进程已成功启动 Temporal Worker 且其数据库当前可用。",
+          "zh-TW": "管理員檢查內建推論管理服務是否已啟用並就緒。",
+          "en": "Administrator check for embedded inference runtime availability. Ready means the runtime started its Temporal worker and its database is responding."
+        },
+        "x-role": "admin",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Disabled or ready. / 已停用或已就绪。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "required": [
+                            "enabled",
+                            "ready"
+                          ],
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean",
+                              "description": "Whether the embedded runtime is enabled. / 是否启用。"
+                            },
+                            "ready": {
+                              "type": "boolean",
+                              "description": "Whether an enabled service is ready. A disabled service always reports false. / 是否就绪，停用时为 false。"
+                            },
+                            "version": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "description": "ModelInfer component version, returned only when ready. / 就绪时返回组件版本。"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UNAUTHENTICATED. Provide a valid Bearer token. / 请提供有效 Bearer 令牌。"
+          },
+          "403": {
+            "description": "FORBIDDEN. Administrator role required. / 需要管理员权限。"
+          },
+          "503": {
+            "description": "INFERENCE_RUNTIME_UNAVAILABLE. Enabled runtime is starting, inaccessible, or its database is unavailable. / 已启用的运行时正在启动、暂时不可达或数据库不可用。"
+          }
+        }
+      }
+    },
+    "/inference/runtime/{*path}": {
+      "get": {
+        "operationId": "inference_runtime_forward_get",
+        "summary": "GET ModelInfer runtime resource",
+        "x-title": {
+          "en": "GET ModelInfer endpoint",
+          "zh-CN": "GET ModelInfer 运行时接口"
+        },
+        "description": "Administrator-only forwarding to an embedded ModelInfer API. For example, use deployments as the resource path to list deployments. The native response uses a numeric code. / 管理员访问 ModelInfer 原生 API。例如 deployments 用于读取运行配置，原生响应使用数字业务码。",
+        "x-role": "admin",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "*path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Relative resource path under ModelInfer /api, including nested segments when required. / ModelInfer /api 下的相对资源路径。"
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "ModelInfer response status and body, including native JSON and event streams. / 保留 ModelInfer 的状态和响应体，包括原生 JSON 和事件流。"
+          },
+          "401": {
+            "description": "UNAUTHENTICATED. Supply a valid Bearer token. / 需要有效 Bearer 令牌。"
+          },
+          "403": {
+            "description": "FORBIDDEN. Administrator role required. / 需要管理员权限。"
+          },
+          "404": {
+            "description": "INFERENCE_RUNTIME_DISABLED or an unknown ModelInfer resource. / 运行时停用或资源不存在。"
+          },
+          "422": {
+            "description": "INVALID_REQUEST. The resource path contains an invalid segment. / 资源路径不合法。"
+          },
+          "503": {
+            "description": "INFERENCE_RUNTIME_UNAVAILABLE. Runtime is starting or offline. / 运行时正在启动或离线。"
+          }
+        }
+      },
+      "post": {
+        "operationId": "inference_runtime_forward_post",
+        "summary": "POST ModelInfer runtime resource",
+        "x-title": {
+          "en": "POST ModelInfer endpoint",
+          "zh-CN": "POST ModelInfer 运行时接口"
+        },
+        "description": "Administrator-only forwarding to an embedded ModelInfer API. For example, use deployments as the resource path to list deployments. The native response uses a numeric code. / 管理员访问 ModelInfer 原生 API。例如 deployments 用于读取运行配置，原生响应使用数字业务码。",
+        "x-role": "admin",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "*path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Relative resource path under ModelInfer /api, including nested segments when required. / ModelInfer /api 下的相对资源路径。"
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "ModelInfer response status and body, including native JSON and event streams. / 保留 ModelInfer 的状态和响应体，包括原生 JSON 和事件流。"
+          },
+          "401": {
+            "description": "UNAUTHENTICATED. Supply a valid Bearer token. / 需要有效 Bearer 令牌。"
+          },
+          "403": {
+            "description": "FORBIDDEN. Administrator role required. / 需要管理员权限。"
+          },
+          "404": {
+            "description": "INFERENCE_RUNTIME_DISABLED or an unknown ModelInfer resource. / 运行时停用或资源不存在。"
+          },
+          "422": {
+            "description": "INVALID_REQUEST. The resource path contains an invalid segment. / 资源路径不合法。"
+          },
+          "503": {
+            "description": "INFERENCE_RUNTIME_UNAVAILABLE. Runtime is starting or offline. / 运行时正在启动或离线。"
+          }
+        }
+      },
+      "put": {
+        "operationId": "inference_runtime_forward_put",
+        "summary": "PUT ModelInfer runtime resource",
+        "x-title": {
+          "en": "PUT ModelInfer endpoint",
+          "zh-CN": "PUT ModelInfer 运行时接口"
+        },
+        "description": "Administrator-only forwarding to an embedded ModelInfer API. For example, use deployments as the resource path to list deployments. The native response uses a numeric code. / 管理员访问 ModelInfer 原生 API。例如 deployments 用于读取运行配置，原生响应使用数字业务码。",
+        "x-role": "admin",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "*path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Relative resource path under ModelInfer /api, including nested segments when required. / ModelInfer /api 下的相对资源路径。"
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "ModelInfer response status and body, including native JSON and event streams. / 保留 ModelInfer 的状态和响应体，包括原生 JSON 和事件流。"
+          },
+          "401": {
+            "description": "UNAUTHENTICATED. Supply a valid Bearer token. / 需要有效 Bearer 令牌。"
+          },
+          "403": {
+            "description": "FORBIDDEN. Administrator role required. / 需要管理员权限。"
+          },
+          "404": {
+            "description": "INFERENCE_RUNTIME_DISABLED or an unknown ModelInfer resource. / 运行时停用或资源不存在。"
+          },
+          "422": {
+            "description": "INVALID_REQUEST. The resource path contains an invalid segment. / 资源路径不合法。"
+          },
+          "503": {
+            "description": "INFERENCE_RUNTIME_UNAVAILABLE. Runtime is starting or offline. / 运行时正在启动或离线。"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "inference_runtime_forward_delete",
+        "summary": "DELETE ModelInfer runtime resource",
+        "x-title": {
+          "en": "DELETE ModelInfer endpoint",
+          "zh-CN": "DELETE ModelInfer 运行时接口"
+        },
+        "description": "Administrator-only forwarding to an embedded ModelInfer API. For example, use deployments as the resource path to list deployments. The native response uses a numeric code. / 管理员访问 ModelInfer 原生 API。例如 deployments 用于读取运行配置，原生响应使用数字业务码。",
+        "x-role": "admin",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "*path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Relative resource path under ModelInfer /api, including nested segments when required. / ModelInfer /api 下的相对资源路径。"
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "ModelInfer response status and body, including native JSON and event streams. / 保留 ModelInfer 的状态和响应体，包括原生 JSON 和事件流。"
+          },
+          "401": {
+            "description": "UNAUTHENTICATED. Supply a valid Bearer token. / 需要有效 Bearer 令牌。"
+          },
+          "403": {
+            "description": "FORBIDDEN. Administrator role required. / 需要管理员权限。"
+          },
+          "404": {
+            "description": "INFERENCE_RUNTIME_DISABLED or an unknown ModelInfer resource. / 运行时停用或资源不存在。"
+          },
+          "422": {
+            "description": "INVALID_REQUEST. The resource path contains an invalid segment. / 资源路径不合法。"
+          },
+          "503": {
+            "description": "INFERENCE_RUNTIME_UNAVAILABLE. Runtime is starting or offline. / 运行时正在启动或离线。"
+          }
+        }
+      }
+    },
+    "/cluster/runtime/{*path}": {
+      "get": {
+        "operationId": "cluster_manager_forward_get",
+        "summary": "GET VOS Cluster Manager resource",
+        "x-title": {
+          "en": "GET VOS Cluster Manager resource",
+          "zh-CN": "GET VOS 集群管理接口"
+        },
+        "description": "Administrator-only forwarding to the embedded VOS Cluster Manager. The original response envelope uses a numeric code. / 管理员访问内置集群管理接口，保留原生数字业务码。",
+        "x-role": "admin",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "*path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Relative path under VOS Cluster Manager /api, such as nodes or cluster/status. / 集群管理 /api 下的相对路径。"
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "ModelInfer response status and body, including native JSON and event streams. / 保留 ModelInfer 的状态和响应体，包括原生 JSON 和事件流。"
+          },
+          "401": {
+            "description": "UNAUTHENTICATED. Supply a valid Bearer token. / 需要有效 Bearer 令牌。"
+          },
+          "403": {
+            "description": "FORBIDDEN. Administrator role required. / 需要管理员权限。"
+          },
+          "404": {
+            "description": "CLUSTER_MANAGER_DISABLED or unknown cluster resource. / 集群管理停用或资源不存在。"
+          },
+          "422": {
+            "description": "INVALID_REQUEST. The resource path contains an invalid segment. / 资源路径不合法。"
+          },
+          "503": {
+            "description": "CLUSTER_MANAGER_UNAVAILABLE. The Cluster Manager is starting or offline. / 集群管理正在启动或离线。"
+          }
+        }
+      },
+      "post": {
+        "operationId": "cluster_manager_forward_post",
+        "summary": "POST VOS Cluster Manager resource",
+        "x-title": {
+          "en": "POST VOS Cluster Manager resource",
+          "zh-CN": "POST VOS 集群管理接口"
+        },
+        "description": "Administrator-only forwarding to the embedded VOS Cluster Manager. The original response envelope uses a numeric code. / 管理员访问内置集群管理接口，保留原生数字业务码。",
+        "x-role": "admin",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "*path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Relative path under VOS Cluster Manager /api, such as nodes or cluster/status. / 集群管理 /api 下的相对路径。"
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "ModelInfer response status and body, including native JSON and event streams. / 保留 ModelInfer 的状态和响应体，包括原生 JSON 和事件流。"
+          },
+          "401": {
+            "description": "UNAUTHENTICATED. Supply a valid Bearer token. / 需要有效 Bearer 令牌。"
+          },
+          "403": {
+            "description": "FORBIDDEN. Administrator role required. / 需要管理员权限。"
+          },
+          "404": {
+            "description": "CLUSTER_MANAGER_DISABLED or unknown cluster resource. / 集群管理停用或资源不存在。"
+          },
+          "422": {
+            "description": "INVALID_REQUEST. The resource path contains an invalid segment. / 资源路径不合法。"
+          },
+          "503": {
+            "description": "CLUSTER_MANAGER_UNAVAILABLE. The Cluster Manager is starting or offline. / 集群管理正在启动或离线。"
+          }
+        }
+      },
+      "put": {
+        "operationId": "cluster_manager_forward_put",
+        "summary": "PUT VOS Cluster Manager resource",
+        "x-title": {
+          "en": "PUT VOS Cluster Manager resource",
+          "zh-CN": "PUT VOS 集群管理接口"
+        },
+        "description": "Administrator-only forwarding to the embedded VOS Cluster Manager. The original response envelope uses a numeric code. / 管理员访问内置集群管理接口，保留原生数字业务码。",
+        "x-role": "admin",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "*path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Relative path under VOS Cluster Manager /api, such as nodes or cluster/status. / 集群管理 /api 下的相对路径。"
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "ModelInfer response status and body, including native JSON and event streams. / 保留 ModelInfer 的状态和响应体，包括原生 JSON 和事件流。"
+          },
+          "401": {
+            "description": "UNAUTHENTICATED. Supply a valid Bearer token. / 需要有效 Bearer 令牌。"
+          },
+          "403": {
+            "description": "FORBIDDEN. Administrator role required. / 需要管理员权限。"
+          },
+          "404": {
+            "description": "CLUSTER_MANAGER_DISABLED or unknown cluster resource. / 集群管理停用或资源不存在。"
+          },
+          "422": {
+            "description": "INVALID_REQUEST. The resource path contains an invalid segment. / 资源路径不合法。"
+          },
+          "503": {
+            "description": "CLUSTER_MANAGER_UNAVAILABLE. The Cluster Manager is starting or offline. / 集群管理正在启动或离线。"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "cluster_manager_forward_delete",
+        "summary": "DELETE VOS Cluster Manager resource",
+        "x-title": {
+          "en": "DELETE VOS Cluster Manager resource",
+          "zh-CN": "DELETE VOS 集群管理接口"
+        },
+        "description": "Administrator-only forwarding to the embedded VOS Cluster Manager. The original response envelope uses a numeric code. / 管理员访问内置集群管理接口，保留原生数字业务码。",
+        "x-role": "admin",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "*path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Relative path under VOS Cluster Manager /api, such as nodes or cluster/status. / 集群管理 /api 下的相对路径。"
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "ModelInfer response status and body, including native JSON and event streams. / 保留 ModelInfer 的状态和响应体，包括原生 JSON 和事件流。"
+          },
+          "401": {
+            "description": "UNAUTHENTICATED. Supply a valid Bearer token. / 需要有效 Bearer 令牌。"
+          },
+          "403": {
+            "description": "FORBIDDEN. Administrator role required. / 需要管理员权限。"
+          },
+          "404": {
+            "description": "CLUSTER_MANAGER_DISABLED or unknown cluster resource. / 集群管理停用或资源不存在。"
+          },
+          "422": {
+            "description": "INVALID_REQUEST. The resource path contains an invalid segment. / 资源路径不合法。"
+          },
+          "503": {
+            "description": "CLUSTER_MANAGER_UNAVAILABLE. The Cluster Manager is starting or offline. / 集群管理正在启动或离线。"
+          }
+        }
+      }
+    },
     "/managed-nodes": {
       "get": {
         "operationId": "list_managed_compute_nodes",
@@ -54,6 +778,20 @@
                           "properties": {
                             "can_manage": {
                               "type": "boolean"
+                            },
+                            "cluster_nodes": {
+                              "type": "array",
+                              "description": "Present for an unfiltered inventory when the embedded Cluster Manager returns members. Only a member ID, display name, role and optional exact-IP association are returned. / 未过滤且内置集群管理返回成员时提供。只返回成员标识、名称、角色和同 IP 的 SSH 节点关联。",
+                              "items": {
+                                "type": "object",
+                                "required": ["id", "name", "role", "ssh_node_id"],
+                                "properties": {
+                                  "id": {"type": "string"},
+                                  "name": {"type": "string"},
+                                  "role": {"type": "string"},
+                                  "ssh_node_id": {"type": ["string", "null"]}
+                                }
+                              }
                             },
                             "items": {
                               "type": "array",

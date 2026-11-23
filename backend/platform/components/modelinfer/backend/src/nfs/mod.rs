@@ -149,8 +149,13 @@ pub async fn resolve_nfs(
     platform: &dyn PlatformClient,
     input: &ResolveInput<'_>,
 ) -> Result<NfsResolveResult, ModelinferError> {
-    let configs = platform.app_configs_json(APP_ID).await?;
-    let (host_path, public_dir_uuid) = match extract_config_source(&configs, input.config_name) {
+    let app_id = platform.app_id();
+    let config_name = match (app_id, input.config_name) {
+        ("com.ictrek.v-scheduler", MODEL_HUB_CONFIG) => "MODEL_HUB_SHARED_MODELS_PATH",
+        (_, name) => name,
+    };
+    let configs = platform.app_configs_json(app_id).await?;
+    let (host_path, public_dir_uuid) = match extract_config_source(&configs, config_name) {
         Ok(v) => v,
         Err(e) => {
             // 平台配置缺失时兜底到环境变量/启动参数
@@ -225,7 +230,7 @@ pub async fn resolve_nfs(
         .ok_or_else(|| ModelinferError::new(codes::NFS_RESOLVE_FAILED, "无法推断 NFS 服务端 IP"))?;
 
     Ok(NfsResolveResult {
-        config_name: input.config_name.to_string(),
+        config_name: config_name.to_string(),
         host_path: host_path.clone(),
         volume_uuid: volume.uuid.clone(),
         volume_name: volume.name.clone(),

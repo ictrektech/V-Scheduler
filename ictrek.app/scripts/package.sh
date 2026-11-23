@@ -308,6 +308,11 @@ verify_package() {
 import sys, tarfile, yaml
 with tarfile.open(sys.argv[1], "r:gz") as archive:
     manifest = yaml.safe_load(archive.extractfile("manifest.yml"))
+    for project in manifest.get("projects", []):
+        filename = f"projects/{project['name']}/docker-compose.yml"
+        assert filename in archive.getnames(), f"Missing {filename}"
+        project_compose = yaml.safe_load(archive.extractfile(filename))
+        assert project_compose.get("services"), f"No services in {filename}"
 assert manifest.get("category") == ["system"], "V-Scheduler must use the VOS-supported system category"
 profiles = manifest.get("profiles", [])
 assert {profile["name"] for profile in profiles} == {"amd","arm","amd-without-cuda","arm-without-cuda","l4t","thor-spark"}, "missing hardware profile"
@@ -450,6 +455,10 @@ if [[ -f "${SRC_DIR}/README.en.md" ]]; then
   render_text_file "${SRC_DIR}/README.en.md" "${STAGE_DIR}/README.en.md"
 fi
 render_compose_file "${SRC_DIR}/docker-compose.yml" "${STAGE_DIR}/docker-compose.yml" "$ENV_FILE"
+for project in etcd postgres-ha haproxy temporal keepalived; do
+  mkdir -p "${STAGE_DIR}/projects/$project"
+  render_text_file "${SRC_DIR}/projects/$project/docker-compose.yml" "${STAGE_DIR}/projects/$project/docker-compose.yml"
+done
 
 APP_TARBALL="${DIST_DIR}/app.tar.gz"
 PACKAGE_NAME="${APP_NAME}_${APP_VERSION}_pull.tar"
@@ -457,7 +466,7 @@ PACKAGE_PATH="${DIST_DIR}/${PACKAGE_NAME}"
 
 rm -rf "$PACKAGE_ROOT"
 mkdir -p "$PACKAGE_ROOT"
-TAR_FILES=(.env manifest.yml docker-compose.yml configs.yml routers.yml icon.png README.zh-CN.md)
+TAR_FILES=(.env manifest.yml docker-compose.yml configs.yml routers.yml icon.png README.zh-CN.md projects)
 [[ -f "${STAGE_DIR}/README.en.md" ]] && TAR_FILES+=(README.en.md)
 render_text_file "${SRC_DIR}/README.zh-TW.md" "${STAGE_DIR}/README.zh-TW.md"
 TAR_FILES+=(README.zh-TW.md)

@@ -1,4 +1,4 @@
-import { get, put } from './client';
+import { get, put, runtimeHeaders, runtimeUrl } from './client';
 
 /** 运行记录 */
 export interface RunItem {
@@ -199,11 +199,51 @@ export function containerLogStreamUrl(
   name: string,
   tail = 30,
 ): string {
-  return (
-    `./api/deployments/${encodeURIComponent(deploymentId)}` +
+  return runtimeUrl(
+    `api/deployments/${encodeURIComponent(deploymentId)}` +
     `/nodes/${encodeURIComponent(nodeId)}` +
     `/containers/${encodeURIComponent(name)}/stream?tail=${tail}`
   );
+}
+
+export async function readContainerLogStream(
+  url: string,
+  signal: AbortSignal,
+  onMessage: (data: string) => void,
+): Promise<void> {
+  const headers = await runtimeHeaders();
+  const response = await fetch(url, {
+    headers: { ...headers, Accept: 'text/event-stream' },
+    signal,
+    redirect: 'error',
+  });
+  if (!response.ok || !response.body ||
+      !response.headers.get('content-type')?.startsWith('text/event-stream')) {
+    throw new Error('Container log stream unavailable');
+  }
+  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+  let pending = '';
+  let lines: string[] = [];
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) return;
+      pending += value;
+      let end: number;
+      while ((end = pending.indexOf('\n')) >= 0) {
+        const line = pending.slice(0, end).replace(/\r$/, '');
+        pending = pending.slice(end + 1);
+        if (line === '') {
+          if (lines.length) onMessage(lines.join('\n'));
+          lines = [];
+        } else if (line.startsWith('data:')) {
+          lines.push(line.slice(5).replace(/^ /, ''));
+        }
+      }
+    }
+  } finally {
+    await reader.cancel();
+  }
 }
 
 export function getSettings(): Promise<SettingsData> {

@@ -1,0 +1,51 @@
+# projects/temporal 子项目 compose（vos-app-spec §3.9 约定式路径）—— 二期 S2
+#
+# 集群级 temporal（单容器模式）：管理节点部署，为集群业务异步提供独立于平台单机
+# temporal 的编排总线。DB 走**本节点 haproxy 127.0.0.1:15432 → postgres HA leader**
+# （旧方案 D3 语义，闭环验证集群数据面）。
+#
+# 平台部署渲染实例 .env，注入编排方生成的变量（infra_temporal.build_deploy_bo）：
+#   - TEMPORAL_DB_HOST     本节点 pg 入口（固定 127.0.0.1，即本机 haproxy）
+#   - TEMPORAL_DB_PORT     haproxy pg 前端（15432）
+#   - TEMPORAL_DB_USER     postgres 超级用户（etcd pg_credentials）
+#   - TEMPORAL_DB_PASSWORD postgres 超级用户密码（etcd pg_credentials，不出本机）
+#   - TEMPORAL_NAMESPACES  逗号分隔命名空间清单（缺省 default）
+#
+# 两服务均 host 网络、无持久卷（temporal 状态全在共享 postgres HA——设计本体 D-TE-05）。
+# 端口避让平台单机 temporal 7233-7243（前端 7333，见 docker/temporal/Dockerfile 契约）。
+# 单容器自举：temporal 镜像 entrypoint 幂等建库/schema/namespace（平台 projects
+# 要求所有容器常驻 running，一次性 init job 会被判 Dead 快速失败，D-TE-01）。
+services:
+  temporal:
+    # 自举镜像 tag 由 Makefile 打包时替换（build-temporal-image 多架构 CI）
+    image: "swr.cn-southwest-2.myhuaweicloud.com/ictrek/v-scheduler-cluster-temporal:3ad999b4c-${VOS_CLUSTER_PROJECT_ARCH:?missing project architecture}"
+    environment:
+      - TEMPORAL_DB_HOST=${TEMPORAL_DB_HOST:-127.0.0.1}
+      - TEMPORAL_DB_PORT=${TEMPORAL_DB_PORT:-15432}
+      - TEMPORAL_DB_USER=${TEMPORAL_DB_USER:-postgres}
+      - TEMPORAL_DB_PASSWORD=${TEMPORAL_DB_PASSWORD:-}
+      - TEMPORAL_NAMESPACES=${TEMPORAL_NAMESPACES:-default}
+    network_mode: host
+    restart: unless-stopped
+    healthcheck:
+      # frontend gRPC cluster health。start_period 覆盖最坏自举窗口（等 pg≤120s +
+      # schema + server 起）；超时后 retries*interval 才判 unhealthy
+      test: ["CMD-SHELL", "temporal operator cluster health --address 127.0.0.1:7333 >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      start_period: 300s
+      retries: 20
+
+  temporal-ui:
+    # UI 官方镜像（内部 registry 镜像，固定版本 2.51.0——与 server 1.31.1 兼容；
+    # Makefile 打包阶段 sed 替换，同 haproxy 模式），随应用 assets docker-archive 离线分发
+    image: "swr.cn-southwest-2.myhuaweicloud.com/ictrek/v-scheduler-cluster-temporal-ui:3ad999b4c-${VOS_CLUSTER_PROJECT_ARCH:?missing project architecture}"
+    environment:
+      - TEMPORAL_ADDRESS=127.0.0.1:7333
+      - TEMPORAL_UI_PORT=8133
+      - TEMPORAL_CORS_ORIGINS=http://localhost:3000
+    depends_on:
+      temporal:
+        condition: service_healthy
+    network_mode: host
+    restart: unless-stopped

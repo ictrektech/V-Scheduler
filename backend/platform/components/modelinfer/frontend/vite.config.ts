@@ -10,6 +10,7 @@ const DEFAULT_API_TARGET = 'http://127.0.0.1:19908';
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   const apiTarget = env.VITE_API_TARGET || DEFAULT_API_TARGET;
+  const embedded = env.VITE_SCHEDULER_INFERENCE === 'true';
 
   return {
     plugins: [vue()],
@@ -17,6 +18,9 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url)),
+        '@scheduler-auth': embedded
+          ? '/build/scheduler/vos-auth.ts'
+          : fileURLToPath(new URL('./src/api/standalone-auth.ts', import.meta.url)),
       },
     },
     server: {

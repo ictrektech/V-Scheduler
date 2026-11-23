@@ -86,7 +86,7 @@ fn metrics(value: &Value) -> Value {
 }
 
 /// 应用上下文 access-token：定期发现没有管理员请求可借用凭据。
-fn context_token() -> Option<String> {
+pub(crate) fn context_token() -> Option<String> {
     std::fs::read_to_string("/var/lib/vos-context/access-token")
         .ok()
         .map(|s| s.trim().to_string())
@@ -94,6 +94,7 @@ fn context_token() -> Option<String> {
 }
 fn client() -> anyhow::Result<Client> {
     Ok(Client::builder()
+        .no_proxy()
         .timeout(Duration::from_secs(3))
         .redirect(reqwest::redirect::Policy::none())
         .build()?)
@@ -103,6 +104,12 @@ async fn component(
     client: &Client,
     platform: &VosEndpoint,
 ) -> anyhow::Result<Option<VosEndpoint>> {
+    if crate::inference_runtime::enabled() {
+        return Ok(Some(VosEndpoint {
+            url: crate::inference_runtime::origin(),
+            token: String::new(),
+        }));
+    }
     let apps = crate::vos::get(client, platform, "/v1000/app/list?limit=1000").await?;
     let list = apps["data"]
         .as_array()

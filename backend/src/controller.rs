@@ -8,6 +8,8 @@ mod management;
 mod managed_nodes;
 mod model_budget;
 mod modelinfer_discovery;
+mod modelinfer_migration;
+mod modelinfer_runtime;
 mod ollama;
 mod vsub_bindings;
 use crate::model::*;
@@ -459,6 +461,23 @@ pub async fn serve(
         .route("/managed-nodes/{id}", axum::routing::put(managed_nodes::forward).delete(managed_nodes::forward))
         .route("/managed-nodes/{id}/rescan", post(managed_nodes::forward))
         .route("/managed-nodes/{id}/runtime", post(managed_nodes::forward))
+        .route("/inference/migration/preview", get(modelinfer_migration::preview))
+        .route("/inference/migration/import", post(modelinfer_migration::import))
+        .route("/inference/runtime/health", get(modelinfer_runtime::health))
+        .route(
+            "/inference/runtime/{*path}",
+            get(modelinfer_runtime::forward)
+                .post(modelinfer_runtime::forward)
+                .put(modelinfer_runtime::forward)
+                .delete(modelinfer_runtime::forward),
+        )
+        .route(
+            "/cluster/runtime/{*path}",
+            get(modelinfer_runtime::cluster)
+                .post(modelinfer_runtime::cluster)
+                .put(modelinfer_runtime::cluster)
+                .delete(modelinfer_runtime::cluster),
+        )
         .route("/model-budgets", get(model_budget::list))
         .route("/model-budgets/calibrate", post(model_budget::calibrate))
         .route("/model-budgets/restore", post(model_budget::restore))
@@ -508,6 +527,20 @@ pub async fn serve(
         .layer(axum::extract::DefaultBodyLimit::max(262144))
         .with_state(shared);
     if let Some(path) = ui.as_ref() {
+        if let Some(parent) = path.parent() {
+            router = router.nest_service(
+                "/inference/",
+                ServeDir::new(parent.join("inference-ui")).append_index_html_on_directories(true),
+            );
+        }
+        if crate::cluster_runtime::enabled()
+            && let Some(parent) = path.parent()
+        {
+            router = router.nest_service(
+                "/cluster/",
+                ServeDir::new(parent.join("cluster-ui")).append_index_html_on_directories(true),
+            );
+        }
         router = router.fallback_service(ServeDir::new(path));
     }
     let router = router.layer(axum::middleware::from_fn(crate::contract::normalize_errors));

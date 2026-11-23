@@ -47,6 +47,8 @@ pub const DEFAULT_IMAGE_DISTRIBUTION_CONCURRENCY: usize = 4;
 pub struct ImageHubConfig {
     /// registry 地址 host 覆盖（空 = 按节点自动解析）
     pub server: String,
+    /// 管理进程访问宿主机 registry 的内部地址，节点拉取仍自动选择设备地址。
+    pub probe_host: String,
     /// registry 端口
     pub port: u16,
     /// 镜像分发节点级并行度（0 = 不限制 / 全部节点并行）
@@ -57,6 +59,7 @@ impl Default for ImageHubConfig {
     fn default() -> Self {
         Self {
             server: String::new(),
+            probe_host: String::new(),
             port: DEFAULT_IMAGE_HUB_PORT,
             concurrency: DEFAULT_IMAGE_DISTRIBUTION_CONCURRENCY,
         }
@@ -67,6 +70,7 @@ impl ImageHubConfig {
     pub fn new(server: impl Into<String>, port: u16) -> Self {
         Self {
             server: server.into(),
+            probe_host: String::new(),
             port: if port == 0 { DEFAULT_IMAGE_HUB_PORT } else { port },
             concurrency: DEFAULT_IMAGE_DISTRIBUTION_CONCURRENCY,
         }
@@ -85,11 +89,8 @@ impl ImageHubConfig {
 
     /// hub 存在性检查使用的基地址（同宿主默认 `127.0.0.1`）
     pub fn registry_base(&self) -> String {
-        let host = if self.server.trim().is_empty() {
-            "127.0.0.1"
-        } else {
-            self.server.trim()
-        };
+        let host = [&self.server, &self.probe_host].into_iter()
+            .map(|host| host.trim()).find(|host| !host.is_empty()).unwrap_or("127.0.0.1");
         format!("http://{}:{}", host, self.port)
     }
 }

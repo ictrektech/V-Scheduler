@@ -27,6 +27,16 @@ pub(crate) async fn get(
     endpoint: &VosEndpoint,
     path: &str,
 ) -> anyhow::Result<Value> {
+    let value = get_envelope(client, endpoint, path).await?;
+    ensure!(value["code"] == 0, "VOS response failed");
+    Ok(value["data"].clone())
+}
+
+pub(crate) async fn get_envelope(
+    client: &Client,
+    endpoint: &VosEndpoint,
+    path: &str,
+) -> anyhow::Result<Value> {
     let url = format!("{}{}", endpoint.url.trim_end_matches('/'), path);
     let mut req = client.get(url);
     if !endpoint.token.is_empty() {
@@ -42,9 +52,7 @@ pub(crate) async fn get(
         );
         body.extend_from_slice(&chunk);
     }
-    let value: Value = serde_json::from_slice(&body)?;
-    ensure!(value["code"] == 0, "VOS response failed");
-    Ok(value["data"].clone())
+    Ok(serde_json::from_slice(&body)?)
 }
 fn inventory(data: &Value) -> anyhow::Result<Value> {
     let items = data["nodes"].as_array().context("missing nodes")?;

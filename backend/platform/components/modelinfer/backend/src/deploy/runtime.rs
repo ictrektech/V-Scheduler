@@ -50,6 +50,10 @@ pub struct WorkerHandle {
 }
 
 impl WorkerHandle {
+    pub fn is_running(&self) -> bool {
+        self.thread.as_ref().is_some_and(|thread| !thread.is_finished())
+    }
+
     pub fn shutdown(mut self) {
         if let Some(tx) = self.shutdown_tx.take() {
             let _ = tx.send(());
@@ -66,13 +70,14 @@ impl WorkerHandle {
 }
 
 /// 启动内嵌 Worker（后台线程，非阻塞）
-pub fn spawn_worker(
+pub async fn spawn_worker(
     client: Arc<Client>,
     task_queue: &str,
     activities: DeployActivities,
 ) -> Result<WorkerHandle, ModelinferError> {
     let task_queue = task_queue.to_string();
     let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
+    let (ready_tx, ready_rx) = oneshot::channel::<()>();
 
     let thread = std::thread::Builder::new()
         .name("modelinfer-worker".to_string())
@@ -118,6 +123,9 @@ pub fn spawn_worker(
                     return;
                 }
             };
+            if ready_tx.send(()).is_err() {
+                return;
+            }
             tracing::info!(task_queue = %task_queue, "modelinfer Temporal Worker 启动");
 
             let local = LocalSet::new();
@@ -140,6 +148,10 @@ pub fn spawn_worker(
             }
         })
         .map_err(|e| ModelinferError::new(codes::TEMPORAL_FAILED, format!("启动 Worker 线程失败: {e}")))?;
+
+    if !matches!(tokio::time::timeout(std::time::Duration::from_secs(10), ready_rx).await, Ok(Ok(()))) {
+        return Err(ModelinferError::new(codes::TEMPORAL_FAILED, "Temporal Worker 未就绪"));
+    }
 
     Ok(WorkerHandle {
         shutdown_tx: Some(shutdown_tx),

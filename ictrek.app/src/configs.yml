@@ -1,4 +1,20 @@
 configs:
+  - name: SCHEDULER_EMBEDDED_INFERENCE
+    type: boolean
+    title: {zh-CN: 内置推理运行时, en: Embedded Inference Runtime}
+    description:
+      zh-CN: 使用 V-Scheduler 管理推理部署。接管旧 ModelInfer 部署前，请先准备迁移并完成导入。
+      en: Manage inference deployments within V-Scheduler. Prepare and import legacy ModelInfer deployments before taking them over.
+    default: false
+
+  - name: SCHEDULER_EMBEDDED_CLUSTER_MANAGER
+    type: boolean
+    title: {zh-CN: 内置 VOS 集群管理, en: Embedded VOS Cluster Manager}
+    description:
+      zh-CN: 在 V-Scheduler 中启动 VOS 集群管理控制面。集群基础设施由管理员按需部署。
+      en: Start the VOS cluster management control plane within V-Scheduler. Administrators deploy cluster infrastructure on demand.
+    default: false
+
   - name: SCHEDULER_NODE_TEST_IMAGE
     type: string
     title:

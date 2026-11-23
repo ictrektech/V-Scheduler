@@ -344,6 +344,17 @@ Base: `http://v-scheduler:38120/api/v1`. [Complete OpenAPI](../api/openapi-v1.js
 | DELETE | `/managed-nodes/{id}` | Remove a saved node connection / 移除节点连接 |
 | POST | `/managed-nodes/{id}/rescan` | Rescan a saved node / 重新扫描节点 |
 | POST | `/managed-nodes/{id}/runtime` | Verify image pull and container start / 验证镜像拉取和容器启动 |
+| GET | `/inference/migration/preview` | Inspect the legacy ModelInfer database before migration / 预检旧 ModelInfer 数据库 |
+| POST | `/inference/migration/import` | Import the verified ModelInfer snapshot / 导入已校验的 ModelInfer 快照 |
+| GET | `/inference/runtime/health` | Inspect the embedded inference runtime / 查看内置推理运行时 |
+| GET | `/inference/runtime/{*path}` | Forward authenticated ModelInfer requests / 转发已认证的 ModelInfer 请求 |
+| POST | `/inference/runtime/{*path}` | Forward authenticated ModelInfer requests / 转发已认证的 ModelInfer 请求 |
+| PUT | `/inference/runtime/{*path}` | Forward authenticated ModelInfer requests / 转发已认证的 ModelInfer 请求 |
+| DELETE | `/inference/runtime/{*path}` | Forward authenticated ModelInfer requests / 转发已认证的 ModelInfer 请求 |
+| GET | `/cluster/runtime/{*path}` | Forward administrator Cluster Manager requests / 转发管理员集群管理请求 |
+| POST | `/cluster/runtime/{*path}` | Forward administrator Cluster Manager requests / 转发管理员集群管理请求 |
+| PUT | `/cluster/runtime/{*path}` | Forward administrator Cluster Manager requests / 转发管理员集群管理请求 |
+| DELETE | `/cluster/runtime/{*path}` | Forward administrator Cluster Manager requests / 转发管理员集群管理请求 |
 | POST | `/inference-waiters` | Internal bounded admission priority hints |
 | POST | `/permits/{id}/reuse-resident` | Rotate a reserved built-in resident execution proof |
 | POST | `/permits/inspect` | Inspect current binding and execution-node eligibility without reserving resources |

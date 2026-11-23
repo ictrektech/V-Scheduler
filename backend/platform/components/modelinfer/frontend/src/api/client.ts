@@ -1,5 +1,23 @@
 import axios from 'axios';
 import type { AxiosRequestConfig } from 'axios';
+import { getVOSBearerToken } from '@scheduler-auth';
+
+const controller = import.meta.env.VITE_SCHEDULER_INFERENCE === 'true'
+  ? '/api/com.ictrek.v-scheduler/scheduler/api/v1/inference/runtime/'
+  : null;
+
+export const embeddedRuntime = controller !== null;
+
+export function runtimeUrl(path: string): string {
+  return controller ? controller + path.replace(/^\/?api\//, '') : './' + path.replace(/^\//, '');
+}
+
+export async function runtimeHeaders(): Promise<Record<string, string>> {
+  if (!controller) return {};
+  const token = await getVOSBearerToken();
+  if (!token) throw new Error('VOS authentication required');
+  return { Authorization: `Bearer ${token}` };
+}
 
 /**
  * VOS HTTP 统一响应结构（对齐 specs/docs/design/vos-http-response-spec/）
@@ -35,13 +53,16 @@ export class ModelinferApiError extends Error {
 }
 
 const client = axios.create({
-  baseURL: './',
   timeout: 120_000,
 });
 
 /** 请求包装：解析 ResultBody，按 code 判成败 */
 export async function request<T>(config: AxiosRequestConfig): Promise<T> {
-  const resp = await client.request<ResultBody<T>>(config);
+  const resp = await client.request<ResultBody<T>>({
+    ...config,
+    url: runtimeUrl(config.url ?? ''),
+    headers: { ...config.headers, ...await runtimeHeaders() },
+  });
   const body = resp.data;
   if (body.code !== 0) {
     throw new ModelinferApiError(body.code, body.msg, body.category, body.data);

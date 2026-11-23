@@ -62,6 +62,10 @@ pub struct AppInfo {
 /// 平台只读 API 抽象
 #[async_trait]
 pub trait PlatformClient: Send + Sync {
+    fn app_id(&self) -> &str {
+        crate::nfs::APP_ID
+    }
+
     /// `GET /v1000/app/detail` → `configs_json`
     async fn app_configs_json(&self, app_id: &str) -> Result<Value, ModelinferError>;
     /// `GET /v1000/app/list` → 已安装应用摘要
@@ -119,7 +123,7 @@ pub struct RealPlatformClient {
     base_url: String,
     token_path: Option<PathBuf>,
     client: reqwest::Client,
-    _app_id: String,
+    app_id: String,
 }
 
 impl RealPlatformClient {
@@ -133,7 +137,7 @@ impl RealPlatformClient {
             base_url: base_url.into().trim_end_matches('/').to_string(),
             token_path,
             client,
-            _app_id: app_id.into(),
+            app_id: app_id.into(),
         }
     }
 
@@ -195,6 +199,10 @@ async fn parse_result(resp: reqwest::Response, url: &str) -> Result<Value, Model
 
 #[async_trait]
 impl PlatformClient for RealPlatformClient {
+    fn app_id(&self) -> &str {
+        &self.app_id
+    }
+
     async fn app_configs_json(&self, app_id: &str) -> Result<Value, ModelinferError> {
         let data = self
             .get_json(&format!("/v1000/app/detail?app_id={app_id}"))
