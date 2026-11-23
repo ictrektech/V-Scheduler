@@ -16,6 +16,7 @@ import logoUrl from '../../assets/icon.svg'
 import TaskCard from './TaskCard.vue'
 import NodeTelemetry from './NodeTelemetry.vue'
 import NodeManagement from './NodeManagement.vue'
+import ManagedComputeNodes from './ManagedComputeNodes.vue'
 import SchedulingActivity from './SchedulingActivity.vue'
 import {createLocaleController,type Locale,type Preference} from './locale'
 import {messages} from './messages'
@@ -76,7 +77,7 @@ async function api(path:string,body?:unknown,method?:string,extra:Record<string,
 
 function showError(e:unknown){if(isSessionError(e)){recordDiagnostic("AUTH_REQUEST_REJECTED","scheduler_request");return}const failure=e as {code?:string;requestId?:string};errorRequestId.value=failure?.requestId||'';error.value=failure?.code&&errors[failure.code]?failure.code:(e instanceof Error?e.message:String(e)).replace(/^Error: /,'')}
 async function refresh(){
- if(!connected.value||busy.value)return
+ if(!connected.value||busy.value||nodeViewerOnly.value)return
  busy.value=true
  try{
   const taskData:Task[]=[];let cursor:string|null='0'
@@ -89,9 +90,11 @@ async function refresh(){
 async function loadMoreTasks(){if(busy.value||!taskCursor.value)return;taskPages.value++;await refresh()}
 function resetFilters(){filter.value='all';search.value='';appFilter.value='';nodeFilter.value=''}
 let setupAttempted=false
+const nodeViewerOnly=ref(false)
 async function connect(manual=false){
  if(busy.value)return
  if(manual)setupAttempted=false
+ nodeViewerOnly.value=false
  demo.value=false;error.value='';busy.value=true
  try{
   credential.value=await getVOSBearerToken()||''
@@ -115,7 +118,14 @@ async function connect(manual=false){
   setupError.value=''
   tasks.value=[];nodes.value=[];reservations.value=[];taskPages.value=1;taskCursor.value=null;connected.value=true
  }catch(e){showError(e)}finally{busy.value=false}
- await refresh();if(error.value)connected.value=false
+ await refresh()
+ if(error.value && vosEmbedded){
+  try {
+   const inventory=await api('managed-nodes')
+   if(inventory?.can_manage===false){nodeViewerOnly.value=true;page.value='nodes';error.value='';connected.value=true}
+  } catch { /* retain the existing connection error */ }
+ }
+ if(error.value)connected.value=false
 }
 function logout(){demo.value=false;connected.value=false;credential.value='';tasks.value=[];nodes.value=[];reservations.value=[];selected.value=null}
 function updateTask(task:Task){tasks.value=tasks.value.map(current=>current.task_id===task.task_id?task:current);if(selected.value?.task_id===task.task_id)selected.value=task}
@@ -167,7 +177,8 @@ onUnmounted(()=>{clearInterval(timer);language.dispose()})
    <DiagnosticLogs v-if="page==='logs'" :t="t" :locale="locale"/>
    <ModelHub v-if="page==='model-hub'" :locale="locale" :t="t"/>
    <ModelHub v-if="page==='api'&&docMode==='model-hub'" :locale="locale" :t="t" docs-only/>
-   <NodeManagement v-if="page==='nodes'&&connected" :request="api" :nodes="nodes" :api-url="managementApiUrl" :t="t" :locale="locale" @refresh="refresh"/>
+   <ManagedComputeNodes v-if="page==='nodes'&&connected" :request="api" :locale="locale"/>
+   <NodeManagement v-if="page==='nodes'&&connected&&!nodeViewerOnly" :request="api" :nodes="nodes" :api-url="managementApiUrl" :t="t" :locale="locale" @refresh="refresh"/>
    <section v-if="page==='nodes'&&!connected&&!setupError" class="login"><h2>{{t('连接 VOS')}}</h2><button :disabled="busy" @click="connect(true)">{{t('重试连接')}}</button></section>
    <IntegrationGuide v-if="page==='api'&&docMode==='guide'" :t="t"/>
    <GatewayWorkspace v-show="gatewayVisible" :tab="gatewayTab" :locale="locale" :visible="gatewayVisible" :administrator="connected&&!demo&&nodes.length>0" @select="page=$event"/>

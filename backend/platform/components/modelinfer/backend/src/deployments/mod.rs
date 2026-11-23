@@ -1182,6 +1182,7 @@ mod tests {
             &crate::ssh::MockSshExec::new()
                 .with_rule("hostname", 0, hostname),
             crate::nodes::NodeCreate {
+                profile: None,
                 name: host.to_string(),
                 host: host.to_string(),
                 ssh_port: 22,

@@ -3,6 +3,7 @@
 //! SSH 用户可为 root 或 sudo 用户；认证方式 password / key；凭据只入不出。
 
 pub mod scan;
+pub mod profile;
 
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set};
 use serde::{Deserialize, Serialize};
@@ -21,6 +22,7 @@ pub const DEFAULT_NVIDIA_GPU_EXPORTER_PORT: i32 = crate::monitor::DEFAULT_NVIDIA
 /// 创建节点请求
 #[derive(Debug, Clone, Deserialize)]
 pub struct NodeCreate {
+    pub profile: Option<profile::Profile>,
     pub name: String,
     pub host: String,
     #[serde(default = "default_port")]
@@ -61,6 +63,7 @@ pub struct NodeCreate {
 /// 更新节点请求（字段可选；`ssh_password` / `ssh_key` 为空表示不改）
 #[derive(Debug, Clone, Deserialize)]
 pub struct NodeUpdate {
+    pub profile: Option<profile::Profile>,
     pub name: Option<String>,
     pub host: Option<String>,
     pub ssh_port: Option<i32>,
@@ -85,6 +88,9 @@ pub struct NodeUpdate {
 /// 节点视图（凭据脱敏）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeView {
+    pub profile: Option<String>,
+    pub profile_override: Option<String>,
+    pub detected_profile: Option<String>,
     pub id: String,
     pub name: String,
     pub host: String,
@@ -150,6 +156,9 @@ impl From<node::Model> for NodeView {
     fn from(m: node::Model) -> Self {
         Self {
             id: m.id,
+            profile: m.profile_override.clone().or_else(|| m.detected_profile.clone()),
+            profile_override: m.profile_override,
+            detected_profile: m.detected_profile,
             name: m.name,
             host: m.host,
             ssh_port: m.ssh_port,
@@ -528,6 +537,8 @@ pub async fn create_node(
     let now = time::now_iso();
     let am = node::ActiveModel {
         id: Set(ulid::Ulid::new().to_string()),
+        profile_override: Set(req.profile.and_then(profile::Profile::name).map(str::to_owned)),
+        detected_profile: Set(scan.detected_profile.clone()),
         name: Set(req.name.trim().to_string()),
         host: Set(host),
         ssh_port: Set(req.ssh_port),
@@ -575,6 +586,9 @@ pub async fn update_node(
 ) -> Result<NodeView, ModelinferError> {
     let current = get_node(db, id).await?;
     let mut am: node::ActiveModel = current.clone().into();
+    if let Some(profile) = req.profile {
+        am.profile_override = Set(profile.name().map(str::to_owned));
+    }
     if let Some(name) = req.name {
         if name.trim().is_empty() {
             return Err(ModelinferError::new(codes::PARAM_INVALID, "节点名称不能为空"));
@@ -718,6 +732,7 @@ pub async fn rescan_node(
     let mut am: node::ActiveModel = current.into();
     am.hostname = Set(scan.hostname);
     am.arch = Set(scan.arch);
+    am.detected_profile = Set(scan.detected_profile);
     am.kernel_version = Set(scan.kernel_version);
     am.gateway = Set(scan.gateway);
     let gpu = scan.gpu;
@@ -793,6 +808,7 @@ mod tests {
 
     fn sample(host: &str) -> NodeCreate {
         NodeCreate {
+            profile: None,
             name: format!("n-{host}"),
             host: host.to_string(),
             ssh_port: 22,
@@ -847,6 +863,9 @@ mod tests {
     #[test]
     fn apply_occupancy_collects_all_active_deployments() {
         let mut views = vec![NodeView {
+            profile_override: None,
+            detected_profile: None,
+            profile: None,
             id: "n1".into(),
             name: "node-1".into(),
             host: "10.0.0.1".into(),
@@ -1055,6 +1074,7 @@ mod tests {
             &ssh,
             &created.id,
             NodeUpdate {
+                profile: None,
                 name: None,
                 host: None,
                 ssh_port: None,
@@ -1081,6 +1101,7 @@ mod tests {
             &ssh,
             &created.id,
             NodeUpdate {
+                profile: None,
                 name: None,
                 host: None,
                 ssh_port: None,
@@ -1113,6 +1134,7 @@ mod tests {
             &ssh,
             &created.id,
             NodeUpdate {
+                profile: None,
                 name: None, host: None, ssh_port: None, ssh_user: None,
                 auth_method: Some("key".into()), ssh_password: None, ssh_key: None, sudo_password: None,
                 hostname: None, socket_ifname: None, ib_hca: None,
@@ -1128,6 +1150,7 @@ mod tests {
             &ssh,
             &created.id,
             NodeUpdate {
+                profile: None,
                 name: None, host: None, ssh_port: None, ssh_user: None,
                 auth_method: Some("key".into()), ssh_password: None,
                 ssh_key: Some("KEYDATA".into()), sudo_password: None,

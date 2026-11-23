@@ -96,6 +96,8 @@ v0.0.30 将 Router 与模型仓库合入 Scheduler 的同一 Rust 进程，安�
 
 ModelInfer 和 Image Hub 的 Rust 后端、管理页面及构建定义位于 [推理管理源码](backend/platform/README.md)。这一源码导入不改变当前 VOS 安装行为。
 
+在「节点管理 → SSH 算力节点」中，管理员可以保存密钥或密码连接、自动识别或指定 Profile，并验证节点拉取镜像和启动容器。登录 VOS 的用户和持有服务凭据的应用可查看脱敏清单。见 [SSH 算力节点](docs/node-management.md#ssh-算力节点--ssh-compute-nodes)。
+
 0.0.21 修复同日升级可能沿用旧控制器镜像的问题：所有运行配置均强制检查并拉取当前发布镜像，避免安装版本已更新而后台代码仍停留在旧版。
 
 同步模型后端现在可通过 `POST /api/v1/permits/{id}/verify` 核验并原子认领

@@ -1187,6 +1187,7 @@ mod tests {
             db,
             &MockSshExec::new().with_rule("hostname", 0, "h1"),
             NodeCreate {
+                profile: None,
                 name: "n1".into(),
                 host: "10.10.11.154".into(),
                 ssh_port: 22,

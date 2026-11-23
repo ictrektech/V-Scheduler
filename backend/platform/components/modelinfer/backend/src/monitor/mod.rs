@@ -948,6 +948,8 @@ mod tests {
     #[test]
     fn service_spec_uses_component() {
         let m = node::Model {
+            profile_override: None,
+            detected_profile: None,
             id: "n1".into(),
             name: "node-1".into(),
             host: "10.0.0.1".into(),
@@ -1038,6 +1040,8 @@ mod tests {
     /// 健康自愈测试用节点
     fn health_node() -> node::Model {
         node::Model {
+            profile_override: None,
+            detected_profile: None,
             id: "n1".into(),
             name: "node-1".into(),
             host: "10.0.0.1".into(),

@@ -11,6 +11,8 @@ pub struct Model {
     pub id: String,
     /// 节点名称
     pub name: String,
+    pub profile_override: Option<String>,
+    pub detected_profile: Option<String>,
     /// 主机地址（IP / hostname），全局唯一
     #[sea_orm(unique)]
     pub host: String,

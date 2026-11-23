@@ -53,7 +53,7 @@ profiles:
       arch: arm64
     conflicts: [amd, amd-without-cuda, arm, l4t, thor-spark]
   - name: l4t
-    title: {zh-CN: "Jetson / L4T", en: "Jetson / L4T", zh-TW: "Jetson / L4T"}
+    title: {zh-CN: "Jetson Orin", en: "Jetson Orin", zh-TW: "Jetson Orin"}
     description: {zh-CN: "内置本机资源采集，安装后自动启动", en: "Built-in host resource collection starts automatically", zh-TW: "內建本機資源取樣，安裝後自動啟動"}
     caps:
       arch: arm64
@@ -62,7 +62,7 @@ profiles:
         - any-of: [l4t, jetson]
     conflicts: [amd, amd-without-cuda, arm, arm-without-cuda, thor-spark]
   - name: thor-spark
-    title: {zh-CN: "Jetson Thor / Spark", en: "Jetson Thor / Spark", zh-TW: "Jetson Thor / Spark"}
+    title: {zh-CN: "Jetson Thor / DGX Spark", en: "Jetson Thor / DGX Spark", zh-TW: "Jetson Thor / DGX Spark"}
     description: {zh-CN: "内置本机资源采集，安装后自动启动", en: "Built-in host resource collection starts automatically", zh-TW: "內建本機資源取樣，安裝後自動啟動"}
     caps:
       arch: arm64

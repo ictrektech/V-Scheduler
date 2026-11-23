@@ -1,5 +1,30 @@
 # VOS 节点管理
 
+## SSH 算力节点 / SSH compute nodes
+
+VOS 登录用户可在「V-Scheduler → 节点管理 → SSH 算力节点」查看节点名称、在线状态、架构和 GPU。管理员可添加节点，填写主机、SSH 端口和用户，选择私钥或密码后点击「连接并保存」。保存前会验证连接并扫描硬件。编辑时留空的凭据继续使用保存值。点击「重新扫描」可重新连接并更新状态。使用登录用户执行扫描和容器验证；填写 sudo 密码时使用 sudo。目标账号须能访问 Docker。
+
+「验证容器运行」会在节点上拉取 `SCHEDULER_NODE_TEST_IMAGE`（默认 `docker.io/library/busybox:1.37.0`），启动一个执行 `/bin/true` 的临时容器并清理容器。镜像会留在节点的 Docker 缓存。部署在限制外网的网络时，将该设置指向节点可访问且包含 `/bin/true` 的镜像。完成验证的节点当前可用于状态和运行环境检查。模型部署和资源准入继续由对应的部署流程负责。
+
+Signed-in VOS users can open **V-Scheduler → Node Management → SSH compute nodes** to view node names, online status, architecture, and GPUs. Administrators can add a node with its host, SSH port, user, and private key or password. **Connect and save** verifies SSH and scans hardware before saving. Leaving a credential blank when editing retains the saved value. **Rescan** reconnects and updates status. Operations use the login account, or sudo if a sudo password is supplied. The account needs access to Docker.
+
+Profile 默认为自动识别。管理员可选择 `thor-spark`、`jetson-orin`、`arm-cpu`、`amd-cpu`、`amd-cuda`、`arm-cuda` 或 `sophon-bm1688`，选择自动识别可清除覆盖。已授权应用可使用自己的服务凭据读取脱敏清单，例如 `GET /managed-nodes?profile=jetson-orin`。
+
+The default profile is detected from the node. Administrators can override it with `thor-spark`, `jetson-orin`, `arm-cpu`, `amd-cpu`, `amd-cuda`, `arm-cuda`, or `sophon-bm1688`. Select Auto-detect to clear an override. Authorized applications can use their service credentials to read the public inventory, for example via `GET /managed-nodes?profile=jetson-orin`.
+
+**Check container runtime** pulls `SCHEDULER_NODE_TEST_IMAGE` (default `docker.io/library/busybox:1.37.0`), runs `/bin/true` in a temporary container, and removes the container. The image stays in the Docker cache. On restricted networks, configure a reachable image containing `/bin/true`. Model deployment and resource admission use their existing workflows.
+
+| Method and v1 path | Access | Operation |
+| --- | --- | --- |
+| `GET /managed-nodes` | Signed-in VOS users and authorized applications / 已登录 VOS 用户及已授权应用 | Returns `items` and `can_manage`. The public projection includes `id`, `name`, `status` (`online` or `offline`), `arch`, `gpu_model`, `profile`, and `last_checked_at`. Administrators also receive connection settings, credential-presence flags, and hardware scan details. |
+| `POST /managed-nodes` | Administrator / 管理员 | Verify and save an SSH node. Requires `name` and `host`. `ssh_port` defaults to 22 (1–65535), `ssh_user` defaults to `root`, and `auth_method` is `password` (default) or `key`. Supply `ssh_password` or `ssh_key` for the selected mode. Optional `sudo_password` enables sudo. |
+| `PUT /managed-nodes/{id}` | Administrator / 管理员 | Update provided connection fields. If changing the authentication mode, supply its credential. Omit a credential to retain it. An empty `sudo_password` clears explicit sudo. |
+| `POST /managed-nodes/{id}/rescan` | Administrator / 管理员 | Reconnect using saved credentials and refresh the hardware inventory. |
+| `POST /managed-nodes/{id}/runtime` | Administrator / 管理员 | Pull the configured test image and run the temporary container. Returns `image`, `pulled`, and `started`. |
+| `DELETE /managed-nodes/{id}` | Administrator / 管理员 | Remove the saved configuration. Returns `removed`. |
+
+Use the VOS Bearer token and the same-origin base `/api/com.ictrek.v-scheduler/scheduler/api/v1`. Sending an SSH password, sudo password, or private key does not cause it to be returned in API responses. A connection, image pull, or container error is surfaced as an operation-specific error code. The test uses the fixed image setting and a fixed command.
+
 用户通过 VOS 安装和管理本应用，无需 SSH 登录计算节点、下载程序或手工运行 Agent。本机采集组件随 App 自动运行；外部设备复用其所属 VOS 应用已有的管理能力。
 
 ## 在界面管理

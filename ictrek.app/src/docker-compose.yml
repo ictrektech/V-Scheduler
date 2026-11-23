@@ -87,6 +87,8 @@ x-controller: &controller
     V_ROUTER_STATE_PATH: /gateway-data/state.json
     V_ROUTER_USAGE_PATH: /gateway-data/usage.jsonl
     SCHEDULER_EMBEDDED_AGENT: "true"
+    SCHEDULER_NATIVE_NODES: "true"
+    SCHEDULER_NODE_TEST_IMAGE: "${SCHEDULER_NODE_TEST_IMAGE:-docker.io/library/busybox:1.37.0}"
     NVIDIA_VISIBLE_DEVICES: all
     NVIDIA_DRIVER_CAPABILITIES: compute,utility
     SCHEDULER_VOS_URL: "${SCHEDULER_VOS_URL:-}"

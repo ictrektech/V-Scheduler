@@ -5,6 +5,7 @@ mod controller;
 mod gpu;
 mod identity;
 mod local;
+mod managed_nodes;
 mod model;
 mod modelhub;
 mod modelinfer;
@@ -88,6 +89,7 @@ async fn main() -> anyhow::Result<()> {
                 url = bootstrap::database(&config)?;
             }
             let url = url.ok_or_else(|| anyhow::anyhow!("database setup incomplete"))?;
+            let node_manager = managed_nodes::start(&url);
             let mut previous_failure = None;
             let result = loop {
                 let result = tokio::select! {
@@ -134,6 +136,9 @@ async fn main() -> anyhow::Result<()> {
             }
             if let Some(model_hub) = model_hub {
                 model_hub.abort();
+            }
+            if let Some(node_manager) = node_manager {
+                node_manager.abort();
             }
             result
         }

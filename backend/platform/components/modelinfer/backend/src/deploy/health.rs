@@ -349,6 +349,7 @@ mod tests {
             db,
             &MockSshExec::new().with_rule("hostname", 0, "h1"),
             crate::nodes::NodeCreate {
+                profile: None,
                 name: "n1".into(),
                 host: "10.0.0.1".into(),
                 ssh_port: 22,

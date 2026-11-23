@@ -16,6 +16,8 @@ COPY providers/LICENSE.pi-reference ./LICENSE.pi-reference
 
 FROM ${RUST_BUILD_IMAGE} AS backend
 WORKDIR /build/backend
+RUN apt-get -o Acquire::Retries=3 update && apt-get install -y --no-install-recommends \
+    protobuf-compiler libprotobuf-dev libssl-dev liblzma-dev && rm -rf /var/lib/apt/lists/*
 COPY backend/ ./
 COPY api/ /build/api/
 COPY providers/catalog.json /build/providers/catalog.json
@@ -23,6 +25,9 @@ COPY providers/models-dev/ /build/providers/models-dev/
 ENV CARGO_TARGET_DIR=/build/target
 ARG CARGO_OFFLINE=false
 RUN if [ "$CARGO_OFFLINE" = true ]; then cargo build --release --locked --offline; else cargo build --release --locked; fi
+RUN if [ "$CARGO_OFFLINE" = true ]; then set -- --offline; else set --; fi; \
+    cargo build --release --locked "$@" \
+      --manifest-path platform/components/modelinfer/backend/Cargo.toml --bin scheduler-node-manager
 
 FROM debian:bookworm-slim
 RUN apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update && apt-get -o Acquire::ForceIPv4=true -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install -y --no-install-recommends ca-certificates curl bzip2 xz-utils libstdc++6 && rm -rf /var/lib/apt/lists/*
@@ -31,6 +36,7 @@ COPY --from=providers /usr/local/LICENSE /opt/v-scheduler/providers/NODE-LICENSE
 COPY --from=providers /build/providers /opt/v-scheduler/providers
 COPY providers/models-dev/LICENSE.* /opt/v-scheduler/providers/licenses/
 COPY --from=backend /build/target/release/v-scheduler /usr/local/bin/v-scheduler
+COPY --from=backend /build/target/release/scheduler-node-manager /usr/local/bin/scheduler-node-manager
 COPY --from=ui /build/frontend/dist /opt/v-scheduler/ui
 COPY config/voice-calibrations.json /opt/v-scheduler/voice-calibrations.json
 COPY config/app-calibrations.json /opt/v-scheduler/app-calibrations.json

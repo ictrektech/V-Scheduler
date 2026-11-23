@@ -59,6 +59,8 @@ pub struct NodeScanResult {
     pub hostname: String,
     /// CPU 架构（`uname -m`，如 `aarch64` / `x86_64`）
     pub arch: String,
+    #[serde(default)]
+    pub detected_profile: Option<String>,
     /// 内核版本（`uname -r`）
     pub kernel_version: String,
     /// 默认网关（无则空串）
@@ -348,12 +350,20 @@ pub async fn scan_node(ssh: &dyn SshExec, target: &SshTarget) -> Result<NodeScan
     };
     // GPU（best-effort；探测失败视为无 GPU）
     let gpu = detect_gpu(ssh, target).await;
+    let board = ssh
+        .run(target, "if [ -r /proc/device-tree/compatible ]; then tr '\\000' '\\n' </proc/device-tree/compatible; fi; cat /sys/class/dmi/id/product_name 2>/dev/null || true")
+        .await
+        .map(|result| result.stdout)
+        .unwrap_or_default();
+    let platform_signal = format!("{board}\n{}", gpu.model_summary());
+    let detected_profile = super::profile::detect(&arch, &platform_signal, &gpu.vendor).map(str::to_owned);
 
     let default_socket_ifname = pick_socket_ifname(&target.host, &interfaces);
     let suggested_ib_hca = pick_ib_hca(default_socket_ifname.as_deref(), &netdev_map, &ib_devices);
     Ok(NodeScanResult {
         hostname,
         arch,
+        detected_profile,
         kernel_version,
         gateway,
         interfaces,

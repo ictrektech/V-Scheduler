@@ -1,4 +1,14 @@
 configs:
+  - name: SCHEDULER_NODE_TEST_IMAGE
+    type: string
+    title:
+      zh-CN: 节点运行验证镜像
+      en: Node Runtime Test Image
+    description:
+      zh-CN: SSH 算力节点运行验证拉取的镜像。镜像须有 /bin/true，并能由计算节点直接拉取。
+      en: Image pulled by the SSH compute-node runtime check. It must contain /bin/true and be pullable by the compute node.
+    default: docker.io/library/busybox:1.37.0
+
   - name: V_ROUTER_HOST_PORT
     type: integer
     title:

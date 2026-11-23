@@ -230,6 +230,7 @@ pub trait SshExec: Send + Sync {
 pub struct RealSshExec {
     connect_timeout: Duration,
     command_timeout: Duration,
+    require_root: bool,
 }
 
 impl Default for RealSshExec {
@@ -237,6 +238,7 @@ impl Default for RealSshExec {
         Self {
             connect_timeout: Duration::from_secs(10),
             command_timeout: Duration::from_secs(90),
+            require_root: true,
         }
     }
 }
@@ -245,18 +247,38 @@ impl RealSshExec {
     pub fn new() -> Self {
         Self::default()
     }
+
+    pub fn node_manager() -> Self {
+        Self { require_root: false, ..Self::default() }
+    }
+
+    fn elevate(&self, target: &SshTarget) -> bool {
+        self.require_root || !target.sudo_password.is_empty()
+    }
 }
 
 #[async_trait]
 impl SshExec for RealSshExec {
+    async fn test(&self, target: &SshTarget) -> Result<(), ModelinferError> {
+        let elevated = self.elevate(target);
+        if self.run(target, if elevated { ROOT_CHECK } else { "true" }).await?.success() {
+            Ok(())
+        } else if elevated && target.user != "root" {
+            Err(sudo_error())
+        } else {
+            Err(ModelinferError::new(codes::SSH_COMMAND_FAILED, "SSH command check failed"))
+        }
+    }
+
     async fn run(&self, target: &SshTarget, cmd: &str) -> Result<SshOutput, ModelinferError> {
+        let elevate = self.elevate(target);
         let target = target.clone();
         let cmd = cmd.to_string();
         let connect_timeout = self.connect_timeout;
         let command_timeout = self.command_timeout;
 
         let join = tokio::task::spawn_blocking(move || {
-            run_blocking(&target, &cmd, connect_timeout, command_timeout)
+            run_blocking(&target, &cmd, connect_timeout, command_timeout, elevate)
         });
 
         match tokio::time::timeout(self.command_timeout, join).await {
@@ -279,12 +301,13 @@ impl SshExec for RealSshExec {
         cmd: &str,
         timeout: Duration,
     ) -> Result<SshOutput, ModelinferError> {
+        let elevate = self.elevate(target);
         let target = target.clone();
         let cmd = cmd.to_string();
         let connect_timeout = self.connect_timeout;
 
         let join = tokio::task::spawn_blocking(move || {
-            run_blocking(&target, &cmd, connect_timeout, timeout)
+            run_blocking(&target, &cmd, connect_timeout, timeout, elevate)
         });
 
         match tokio::time::timeout(timeout, join).await {
@@ -402,10 +425,15 @@ fn run_blocking(
     cmd: &str,
     connect_timeout: Duration,
     read_timeout: Duration,
+    elevate: bool,
 ) -> Result<SshOutput, ModelinferError> {
     let sess = connect_session(target, connect_timeout, read_timeout)?;
 
-    let channel = open_root_channel(&sess, target, cmd)?;
+    let channel = if elevate {
+        open_root_channel(&sess, target, cmd)?
+    } else {
+        open_channel(&sess, &format!("/bin/sh -c {}", crate::deploy::script::sh_quote(cmd)))?
+    };
     collect_output(&sess, channel, read_timeout)
 }
 

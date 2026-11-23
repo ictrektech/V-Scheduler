@@ -20,6 +20,733 @@
     }
   ],
   "paths": {
+    "/managed-nodes": {
+      "get": {
+        "operationId": "list_managed_compute_nodes",
+        "summary": "List SSH compute nodes",
+        "x-title": {
+          "zh-CN": "查看 SSH 算力节点",
+          "zh-TW": "查看 SSH 算力节点",
+          "en": "List SSH compute nodes"
+        },
+        "x-role": "vos-user",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "Signed-in VOS users and authorized application identities see the public inventory. Administrators also see connection settings, detected hardware and credential-presence flags. No credentials are returned.",
+        "responses": {
+          "200": {
+            "description": "List SSH compute nodes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "can_manage": {
+                              "type": "boolean"
+                            },
+                            "items": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "status": {
+                                    "enum": [
+                                      "online",
+                                      "offline"
+                                    ]
+                                  },
+                                  "arch": {
+                                    "type": "string"
+                                  },
+                                  "gpu_model": {
+                                    "type": "string"
+                                  },
+                                  "profile": {
+                                    "enum": [
+                                      null,
+                                      "thor-spark",
+                                      "jetson-orin",
+                                      "arm-cpu",
+                                      "amd-cpu",
+                                      "amd-cuda",
+                                      "arm-cuda",
+                                      "sophon-bm1688"
+                                    ]
+                                  },
+                                  "last_checked_at": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ],
+                                    "format": "date-time"
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credential."
+          },
+          "403": {
+            "description": "This operation requires the VOS administrator or an explicitly configured admin identity."
+          },
+          "404": {
+            "description": "Unknown node or native node management is disabled."
+          },
+          "503": {
+            "description": "Node manager unavailable."
+          },
+          "422": {
+            "description": "Invalid connection settings or unsupported profile (or invalid request payload)."
+          },
+          "502": {
+            "description": "SSH, Docker pull, Docker start, or node scan failure."
+          }
+        },
+        "parameters": [
+          {
+            "name": "profile",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional exact canonical profile filter. Omit it to request all nodes."
+          }
+        ]
+      },
+      "post": {
+        "operationId": "create_managed_compute_node",
+        "summary": "Connect and save an SSH compute node",
+        "x-title": {
+          "zh-CN": "连接并保存 SSH 算力节点",
+          "zh-TW": "连接并保存 SSH 算力节点",
+          "en": "Connect and save an SSH compute node"
+        },
+        "x-role": "admin",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "Node display name / 节点显示名称"
+                  },
+                  "host": {
+                    "type": "string",
+                    "description": "SSH hostname or IP / SSH 主机名或 IP"
+                  },
+                  "ssh_port": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 65535,
+                    "default": 22
+                  },
+                  "ssh_user": {
+                    "type": "string",
+                    "default": "root"
+                  },
+                  "auth_method": {
+                    "type": "string",
+                    "enum": [
+                      "key",
+                      "password"
+                    ],
+                    "default": "password"
+                  },
+                  "ssh_key": {
+                    "type": "string",
+                    "writeOnly": true,
+                    "description": "Required when creating a key-auth node or switching to key. OpenSSH or PEM private key."
+                  },
+                  "ssh_password": {
+                    "type": "string",
+                    "writeOnly": true,
+                    "description": "Required when creating a password-auth node or switching to password."
+                  },
+                  "sudo_password": {
+                    "type": "string",
+                    "writeOnly": true,
+                    "description": "Optional explicit sudo password. Omit on update to retain; send an empty value to remove."
+                  },
+                  "profile": {
+                    "type": "string",
+                    "enum": [
+                      "auto",
+                      "thor-spark",
+                      "jetson-orin",
+                      "arm-cpu",
+                      "amd-cpu",
+                      "amd-cuda",
+                      "arm-cuda",
+                      "sophon-bm1688"
+                    ],
+                    "description": "Optional hardware profile override. auto uses detected hardware and clears an existing override."
+                  }
+                },
+                "required": [
+                  "name",
+                  "host"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Connect and save an SSH compute node",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "status": {
+                              "enum": [
+                                "online",
+                                "offline"
+                              ]
+                            },
+                            "arch": {
+                              "type": "string"
+                            },
+                            "gpu_model": {
+                              "type": "string"
+                            },
+                            "profile": {
+                              "enum": [
+                                null,
+                                "thor-spark",
+                                "jetson-orin",
+                                "arm-cpu",
+                                "amd-cpu",
+                                "amd-cuda",
+                                "arm-cuda",
+                                "sophon-bm1688"
+                              ]
+                            },
+                            "last_checked_at": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "format": "date-time"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credential."
+          },
+          "403": {
+            "description": "This operation requires the VOS administrator or an explicitly configured admin identity."
+          },
+          "404": {
+            "description": "Unknown node or native node management is disabled."
+          },
+          "503": {
+            "description": "Node manager unavailable."
+          },
+          "422": {
+            "description": "Invalid connection settings or unsupported profile (or invalid request payload)."
+          },
+          "502": {
+            "description": "SSH, Docker pull, Docker start, or node scan failure."
+          }
+        }
+      }
+    },
+    "/managed-nodes/{id}": {
+      "put": {
+        "operationId": "update_managed_compute_node",
+        "summary": "Update SSH compute node settings",
+        "x-title": {
+          "zh-CN": "更新 SSH 算力节点",
+          "zh-TW": "更新 SSH 算力节点",
+          "en": "Update SSH compute node settings"
+        },
+        "x-role": "admin",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Node identifier returned by the inventory."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "Node display name / 节点显示名称"
+                  },
+                  "host": {
+                    "type": "string",
+                    "description": "SSH hostname or IP / SSH 主机名或 IP"
+                  },
+                  "ssh_port": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 65535,
+                    "default": 22
+                  },
+                  "ssh_user": {
+                    "type": "string",
+                    "default": "root"
+                  },
+                  "auth_method": {
+                    "type": "string",
+                    "enum": [
+                      "key",
+                      "password"
+                    ],
+                    "default": "password"
+                  },
+                  "ssh_key": {
+                    "type": "string",
+                    "writeOnly": true,
+                    "description": "Required when creating a key-auth node or switching to key. OpenSSH or PEM private key."
+                  },
+                  "ssh_password": {
+                    "type": "string",
+                    "writeOnly": true,
+                    "description": "Required when creating a password-auth node or switching to password."
+                  },
+                  "sudo_password": {
+                    "type": "string",
+                    "writeOnly": true,
+                    "description": "Optional explicit sudo password. Omit on update to retain; send an empty value to remove."
+                  },
+                  "profile": {
+                    "type": "string",
+                    "enum": [
+                      "auto",
+                      "thor-spark",
+                      "jetson-orin",
+                      "arm-cpu",
+                      "amd-cpu",
+                      "amd-cuda",
+                      "arm-cuda",
+                      "sophon-bm1688"
+                    ],
+                    "description": "Optional hardware profile override. auto uses detected hardware and clears an existing override."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Update SSH compute node settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "status": {
+                              "enum": [
+                                "online",
+                                "offline"
+                              ]
+                            },
+                            "arch": {
+                              "type": "string"
+                            },
+                            "gpu_model": {
+                              "type": "string"
+                            },
+                            "profile": {
+                              "enum": [
+                                null,
+                                "thor-spark",
+                                "jetson-orin",
+                                "arm-cpu",
+                                "amd-cpu",
+                                "amd-cuda",
+                                "arm-cuda",
+                                "sophon-bm1688"
+                              ]
+                            },
+                            "last_checked_at": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "format": "date-time"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credential."
+          },
+          "403": {
+            "description": "This operation requires the VOS administrator or an explicitly configured admin identity."
+          },
+          "404": {
+            "description": "Unknown node or native node management is disabled."
+          },
+          "503": {
+            "description": "Node manager unavailable."
+          },
+          "422": {
+            "description": "Invalid connection settings or unsupported profile (or invalid request payload)."
+          },
+          "502": {
+            "description": "SSH, Docker pull, Docker start, or node scan failure."
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_managed_compute_node",
+        "summary": "Remove saved compute node connection",
+        "x-title": {
+          "zh-CN": "移除已保存的节点连接",
+          "zh-TW": "移除已保存的节点连接",
+          "en": "Remove saved compute node connection"
+        },
+        "x-role": "admin",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Node identifier returned by the inventory."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Remove saved compute node connection",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "removed": {
+                              "const": true
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credential."
+          },
+          "403": {
+            "description": "This operation requires the VOS administrator or an explicitly configured admin identity."
+          },
+          "404": {
+            "description": "Unknown node or native node management is disabled."
+          },
+          "503": {
+            "description": "Node manager unavailable."
+          },
+          "422": {
+            "description": "Invalid connection settings or unsupported profile (or invalid request payload)."
+          },
+          "502": {
+            "description": "SSH, Docker pull, Docker start, or node scan failure."
+          }
+        }
+      }
+    },
+    "/managed-nodes/{id}/rescan": {
+      "post": {
+        "operationId": "rescan_managed_compute_node",
+        "summary": "Rescan SSH compute node",
+        "x-title": {
+          "zh-CN": "重新扫描 SSH 算力节点",
+          "zh-TW": "重新扫描 SSH 算力节点",
+          "en": "Rescan SSH compute node"
+        },
+        "x-role": "admin",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Node identifier returned by the inventory."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Rescan SSH compute node",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "status": {
+                              "enum": [
+                                "online",
+                                "offline"
+                              ]
+                            },
+                            "arch": {
+                              "type": "string"
+                            },
+                            "gpu_model": {
+                              "type": "string"
+                            },
+                            "profile": {
+                              "enum": [
+                                null,
+                                "thor-spark",
+                                "jetson-orin",
+                                "arm-cpu",
+                                "amd-cpu",
+                                "amd-cuda",
+                                "arm-cuda",
+                                "sophon-bm1688"
+                              ]
+                            },
+                            "last_checked_at": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "format": "date-time"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credential."
+          },
+          "403": {
+            "description": "This operation requires the VOS administrator or an explicitly configured admin identity."
+          },
+          "404": {
+            "description": "Unknown node or native node management is disabled."
+          },
+          "503": {
+            "description": "Node manager unavailable."
+          },
+          "422": {
+            "description": "Invalid connection settings or unsupported profile (or invalid request payload)."
+          },
+          "502": {
+            "description": "SSH, Docker pull, Docker start, or node scan failure."
+          }
+        }
+      }
+    },
+    "/managed-nodes/{id}/runtime": {
+      "post": {
+        "operationId": "check_managed_compute_node_runtime",
+        "summary": "Verify Docker image pull and container start",
+        "x-title": {
+          "zh-CN": "验证 Docker 镜像拉取和容器启动",
+          "zh-TW": "验证 Docker 镜像拉取和容器启动",
+          "en": "Verify Docker image pull and container start"
+        },
+        "x-role": "admin",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "Pulls the configured test image and runs a temporary container. The image stays in the cache.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Node identifier returned by the inventory."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Verify Docker image pull and container start",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "properties": {
+                            "image": {
+                              "type": "string"
+                            },
+                            "pulled": {
+                              "const": true
+                            },
+                            "started": {
+                              "const": true
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credential."
+          },
+          "403": {
+            "description": "This operation requires the VOS administrator or an explicitly configured admin identity."
+          },
+          "404": {
+            "description": "Unknown node or native node management is disabled."
+          },
+          "503": {
+            "description": "Node manager unavailable."
+          },
+          "422": {
+            "description": "Invalid connection settings or unsupported profile (or invalid request payload)."
+          },
+          "502": {
+            "description": "SSH, Docker pull, Docker start, or node scan failure."
+          }
+        }
+      }
+    },
     "/setup": {
       "get": {
         "operationId": "get_setup_status",

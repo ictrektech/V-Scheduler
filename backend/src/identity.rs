@@ -54,7 +54,7 @@ pub fn bearer(h: &HeaderMap) -> Option<&str> {
     (scheme.eq_ignore_ascii_case("Bearer") && fields.next().is_none()).then_some(token)
 }
 
-pub async fn verify(h: &HeaderMap) -> Result<Principal, StatusCode> {
+pub async fn verified_account(h: &HeaderMap) -> Result<bool, StatusCode> {
     let base = base().ok_or(StatusCode::UNAUTHORIZED)?;
     let token = bearer(h).ok_or(StatusCode::UNAUTHORIZED)?;
     let bearer = format!("Bearer {token}");
@@ -77,7 +77,20 @@ pub async fn verify(h: &HeaderMap) -> Result<Principal, StatusCode> {
         .await
         .map_err(|_| StatusCode::UNAUTHORIZED)?;
     validate_user_check(&v)?;
-    if !administrator(&v) {
+    let account = v.get("data").unwrap_or(&v);
+    if !(account["enable"] == 1 || account["enable"] == true)
+        || account["delete"] == 1
+        || account["delete"] == true
+        || !account["id"].as_str().is_some_and(|id| !id.is_empty())
+            && !account["sub"].as_str().is_some_and(|id| !id.is_empty())
+    {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    Ok(administrator(&v))
+}
+
+pub async fn verify(h: &HeaderMap) -> Result<Principal, StatusCode> {
+    if !verified_account(h).await? {
         return Err(StatusCode::FORBIDDEN);
     }
     Ok(Principal {
