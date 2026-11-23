@@ -81,7 +81,8 @@
                                   "profile": {
                                     "enum": [
                                       null,
-                                      "thor-spark",
+                                      "jetson-thor",
+                                      "dgx-spark",
                                       "jetson-orin",
                                       "arm-cpu",
                                       "amd-cpu",
@@ -96,6 +97,26 @@
                                       "null"
                                     ],
                                     "format": "date-time"
+                                  },
+                                  "detected_profile": {
+                                    "enum": [
+                                      null,
+                                      "jetson-thor",
+                                      "dgx-spark",
+                                      "jetson-orin",
+                                      "arm-cpu",
+                                      "amd-cpu",
+                                      "amd-cuda",
+                                      "arm-cuda",
+                                      "sophon-bm1688"
+                                    ]
+                                  },
+                                  "compatible_profiles": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    },
+                                    "description": "Accepted deployment profiles, with the preferred profile first."
                                   }
                                 }
                               }
@@ -135,7 +156,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Optional exact canonical profile filter. Omit it to request all nodes."
+            "description": "Optional compatible deployment profile. jetson-thor matches Jetson Thor and DGX Spark; dgx-spark matches DGX Spark."
           }
         ]
       },
@@ -205,7 +226,8 @@
                     "type": "string",
                     "enum": [
                       "auto",
-                      "thor-spark",
+                      "jetson-thor",
+                      "dgx-spark",
                       "jetson-orin",
                       "arm-cpu",
                       "amd-cpu",
@@ -261,7 +283,8 @@
                             "profile": {
                               "enum": [
                                 null,
-                                "thor-spark",
+                                "jetson-thor",
+                                "dgx-spark",
                                 "jetson-orin",
                                 "arm-cpu",
                                 "amd-cpu",
@@ -276,6 +299,26 @@
                                 "null"
                               ],
                               "format": "date-time"
+                            },
+                            "detected_profile": {
+                              "enum": [
+                                null,
+                                "jetson-thor",
+                                "dgx-spark",
+                                "jetson-orin",
+                                "arm-cpu",
+                                "amd-cpu",
+                                "amd-cuda",
+                                "arm-cuda",
+                                "sophon-bm1688"
+                              ]
+                            },
+                            "compatible_profiles": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              },
+                              "description": "Accepted deployment profiles, with the preferred profile first."
                             }
                           }
                         }
@@ -385,7 +428,8 @@
                     "type": "string",
                     "enum": [
                       "auto",
-                      "thor-spark",
+                      "jetson-thor",
+                      "dgx-spark",
                       "jetson-orin",
                       "arm-cpu",
                       "amd-cpu",
@@ -437,7 +481,8 @@
                             "profile": {
                               "enum": [
                                 null,
-                                "thor-spark",
+                                "jetson-thor",
+                                "dgx-spark",
                                 "jetson-orin",
                                 "arm-cpu",
                                 "amd-cpu",
@@ -452,6 +497,26 @@
                                 "null"
                               ],
                               "format": "date-time"
+                            },
+                            "detected_profile": {
+                              "enum": [
+                                null,
+                                "jetson-thor",
+                                "dgx-spark",
+                                "jetson-orin",
+                                "arm-cpu",
+                                "amd-cpu",
+                                "amd-cuda",
+                                "arm-cuda",
+                                "sophon-bm1688"
+                              ]
+                            },
+                            "compatible_profiles": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              },
+                              "description": "Accepted deployment profiles, with the preferred profile first."
                             }
                           }
                         }
@@ -619,7 +684,8 @@
                             "profile": {
                               "enum": [
                                 null,
-                                "thor-spark",
+                                "jetson-thor",
+                                "dgx-spark",
                                 "jetson-orin",
                                 "arm-cpu",
                                 "amd-cpu",
@@ -634,6 +700,26 @@
                                 "null"
                               ],
                               "format": "date-time"
+                            },
+                            "detected_profile": {
+                              "enum": [
+                                null,
+                                "jetson-thor",
+                                "dgx-spark",
+                                "jetson-orin",
+                                "arm-cpu",
+                                "amd-cpu",
+                                "amd-cuda",
+                                "arm-cuda",
+                                "sophon-bm1688"
+                              ]
+                            },
+                            "compatible_profiles": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              },
+                              "description": "Accepted deployment profiles, with the preferred profile first."
                             }
                           }
                         }

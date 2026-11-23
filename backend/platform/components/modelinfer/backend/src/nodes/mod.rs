@@ -89,6 +89,7 @@ pub struct NodeUpdate {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeView {
     pub profile: Option<String>,
+    pub compatible_profiles: Vec<String>,
     pub profile_override: Option<String>,
     pub detected_profile: Option<String>,
     pub id: String,
@@ -154,11 +155,16 @@ pub struct NodeView {
 
 impl From<node::Model> for NodeView {
     fn from(m: node::Model) -> Self {
+        let detected_profile = profile::saved(m.detected_profile, &m.gpu_model);
+        let profile_override = profile::saved(m.profile_override, "");
+        let profile = profile_override.clone().or_else(|| detected_profile.clone());
+        let compatible_profiles = profile::compatible(profile.as_deref());
         Self {
             id: m.id,
-            profile: m.profile_override.clone().or_else(|| m.detected_profile.clone()),
-            profile_override: m.profile_override,
-            detected_profile: m.detected_profile,
+            profile,
+            compatible_profiles,
+            profile_override,
+            detected_profile,
             name: m.name,
             host: m.host,
             ssh_port: m.ssh_port,
@@ -866,6 +872,7 @@ mod tests {
             profile_override: None,
             detected_profile: None,
             profile: None,
+            compatible_profiles: vec![],
             id: "n1".into(),
             name: "node-1".into(),
             host: "10.0.0.1".into(),

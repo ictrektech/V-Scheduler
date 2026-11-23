@@ -29,7 +29,7 @@ const feedback = ref('')
 const edit = ref<Node | null>(null)
 const form = ref<ReturnType<typeof fields> | null>(null)
 const base = 'managed-nodes'
-const profiles = ['thor-spark', 'jetson-orin', 'arm-cpu', 'amd-cpu', 'amd-cuda', 'arm-cuda', 'sophon-bm1688']
+const profiles = ['jetson-thor', 'dgx-spark', 'jetson-orin', 'arm-cpu', 'amd-cpu', 'amd-cuda', 'arm-cuda', 'sophon-bm1688']
 let timer: ReturnType<typeof setInterval>
 
 function fields(node?: Node) {

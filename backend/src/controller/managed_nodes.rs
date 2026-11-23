@@ -93,11 +93,17 @@ pub(super) async fn forward(
             StatusCode::BAD_GATEWAY,
             "NODE_MANAGER_INVALID_RESPONSE",
         ))?;
+        let profile = match filters.profile.as_deref() {
+            Some("thor" | "thor-spark") => Some("jetson-thor"),
+            Some("l4t") => Some("jetson-orin"),
+            other => other,
+        };
         let rows = rows.iter().filter(|row| {
-            filters
-                .profile
-                .as_ref()
-                .is_none_or(|profile| row["profile"].as_str() == Some(profile))
+            profile.is_none_or(|profile| {
+                row["compatible_profiles"]
+                    .as_array()
+                    .is_some_and(|profiles| profiles.iter().any(|value| value == profile))
+            })
         });
         if can_manage {
             json!({"items": rows.collect::<Vec<_>>(), "can_manage": true})
@@ -106,6 +112,8 @@ pub(super) async fn forward(
                 "items": rows.map(|row| json!({
                     "id": row["id"], "name": row["name"], "status": row["status"],
                     "arch": row["arch"], "gpu_model": row["gpu_model"], "profile": row["profile"],
+                    "detected_profile": row["detected_profile"],
+                    "compatible_profiles": row["compatible_profiles"],
                     "last_checked_at": row["last_checked_at"],
                 })).collect::<Vec<_>>(),
                 "can_manage": false
