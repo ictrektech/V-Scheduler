@@ -625,6 +625,7 @@
       "post": {
         "operationId": "rescan_managed_compute_node",
         "summary": "Rescan SSH compute node",
+        "description": "Refresh the hardware profile with saved SSH credentials. On SSH or hardware scan failure, the last successful result is preserved. / 使用已保存的 SSH 凭据刷新硬件 Profile。SSH 或硬件扫描失败时保留上次成功结果。",
         "x-title": {
           "zh-CN": "重新扫描 SSH 算力节点",
           "zh-TW": "重新扫描 SSH 算力节点",
@@ -746,7 +747,7 @@
             "description": "Invalid connection settings or unsupported profile (or invalid request payload)."
           },
           "502": {
-            "description": "SSH, Docker pull, Docker start, or node scan failure."
+            "description": "NODE_SSH_FAILED for unsuccessful SSH connection or command execution, or NODE_OPERATION_FAILED if the hardware probe fails. Retry after restoring SSH or fixing the node probe. / SSH 连接或执行失败时返回 NODE_SSH_FAILED，硬件探测失败时返回 NODE_OPERATION_FAILED。排查后重试。"
           }
         }
       }

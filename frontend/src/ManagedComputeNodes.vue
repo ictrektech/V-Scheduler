@@ -43,7 +43,7 @@ function fields(node?: Node) {
 function describe(reason: unknown) {
   const code = (reason as {code?: string})?.code
   const errors: Record<string, [string,string]> = {
-    NODE_SSH_FAILED: ['SSH 连接失败，请检查连接配置。', 'SSH connection failed. Check the connection settings.'],
+    NODE_SSH_FAILED: ['SSH 连接或命令执行失败。请检查连接配置，或稍后重试。', 'SSH connection or command failed. Check the connection settings or try again shortly.'],
     NODE_IMAGE_PULL_FAILED: ['镜像拉取失败，请检查节点到镜像仓库的连接。', 'Could not pull the image. Check registry access from the node.'],
     NODE_CONTAINER_START_FAILED: ['测试容器未成功启动。', 'The test container did not start successfully.'],
     NODE_MANAGER_UNAVAILABLE: ['节点服务暂不可用。', 'The node manager is temporarily unavailable.'],

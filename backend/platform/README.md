@@ -19,8 +19,13 @@ cargo check --locked --all-targets --manifest-path backend/platform/components/m
 cargo check --locked --all-targets --manifest-path backend/platform/components/image-hub/backend/Cargo.toml
 ```
 
-Use `backend/platform` as the build context for the Dockerfiles in
-`backend/platform/apps`. The VOS package currently uses its existing standalone
-ModelInfer discovery. The imported services still need to be wired into VOS
-packaging, app authorization, scheduling, and migration before taking over an
-existing deployment.
+The V-Scheduler image builds and starts ModelInfer's `scheduler-node-manager`
+binary. The scheduler controller exposes its SSH inventory, hardware scan, and
+container checks under `/api/v1/managed-nodes`.
+
+The VOS package still discovers inference deployments from a standalone
+ModelInfer service. The `modelinfer` service entry point and the Image Hub
+service remain separately buildable with the Dockerfiles in
+`backend/platform/apps`, using `backend/platform` as the build context. Taking
+over an existing deployment also requires wiring service packaging, app
+authorization, scheduling, and data migration.

@@ -3,7 +3,7 @@
 //! 解析逻辑为纯函数，便于单测；SSH 交互经 [`SshExec`] 注入。
 //!
 //! GPU 探测按 `nvidia → amd → intel` 顺序，**取第一个命中的厂商**（一个节点至多一个厂商），
-//! 并采集该厂商的**全部** GPU。探测命令失败 / 无输出 MUST 视为「无 GPU」，不影响节点可添加。
+//! 并采集该厂商的**全部** GPU。远端工具不可用时继续探测，SSH 失败时中止扫描。
 
 use serde::{Deserialize, Serialize};
 
@@ -348,13 +348,8 @@ pub async fn scan_node(ssh: &dyn SshExec, target: &SshTarget) -> Result<NodeScan
         Ok(o) => crate::images::parse_default_gateway(&o.stdout).unwrap_or_default(),
         Err(_) => String::new(),
     };
-    // GPU（best-effort；探测失败视为无 GPU）
-    let gpu = detect_gpu(ssh, target).await;
-    let board = ssh
-        .run(target, "if [ -r /proc/device-tree/compatible ]; then tr '\\000' '\\n' </proc/device-tree/compatible; fi; cat /sys/class/dmi/id/product_name 2>/dev/null || true")
-        .await
-        .map(|result| result.stdout)
-        .unwrap_or_default();
+    let board = run_trimmed(ssh, target, BOARD_ID_CMD).await?;
+    let gpu = detect_gpu(ssh, target).await?;
     let platform_signal = format!("{board}\n{}", gpu.model_summary());
     let detected_profile = super::profile::detect(&arch, &platform_signal, &gpu.vendor).map(str::to_owned);
 
@@ -377,6 +372,8 @@ pub async fn scan_node(ssh: &dyn SshExec, target: &SshTarget) -> Result<NodeScan
 /// 默认路由采集命令（JSON 优先，回退文本）
 const DEFAULT_GATEWAY_CMD: &str = "ip -j route show default 2>/dev/null || ip route show default";
 
+const BOARD_ID_CMD: &str = "if [ -r /proc/device-tree/compatible ]; then tr '\\000' '\\n' </proc/device-tree/compatible || exit 1; fi; cat /sys/class/dmi/id/product_name 2>/dev/null || true";
+
 /// NVIDIA GPU 查询命令（默认不查 `pci_bus_id`——Jetson 不支持该字段；未安装 / 不支持 → 回退 `-L`）
 const NVIDIA_QUERY_CMD: &str =
     "nvidia-smi --query-gpu=index,name,memory.total,driver_version --format=csv,noheader,nounits 2>/dev/null";
@@ -389,39 +386,39 @@ const INTEL_QUERY_CMD: &str = "xpu-smi discovery 2>/dev/null";
 
 /// GPU 探测：`nvidia → amd → intel`，取第一个命中的厂商（同厂商全部设备）。
 ///
-/// 探测命令失败 / 无输出 → 继续下一个厂商；全部未命中 → [`GpuInfo::none`]。
-pub async fn detect_gpu(ssh: &dyn SshExec, target: &SshTarget) -> GpuInfo {
+/// 远端命令非零退出或无输出时继续探测，SSH 失败交由调用方处理。
+async fn detect_gpu(ssh: &dyn SshExec, target: &SshTarget) -> Result<GpuInfo, ModelinferError> {
     if let Some(gpu) = try_vendor(ssh, target, NVIDIA_QUERY_CMD, "nvidia", |out| {
         let (driver, devices) = parse_nvidia_smi_csv(out);
         (driver, devices)
     })
-    .await
+    .await?
     {
-        return gpu;
+        return Ok(gpu);
     }
     // 回退：Jetson 等不支持 `--query-gpu` 时用 `nvidia-smi -L`（PCI / 显存 / 驱动缺失）
     if let Some(gpu) = try_vendor(ssh, target, NVIDIA_LIST_CMD, "nvidia", |out| {
         (String::new(), parse_nvidia_list(out))
     })
-    .await
+    .await?
     {
-        return gpu;
+        return Ok(gpu);
     }
     if let Some(gpu) = try_vendor(ssh, target, AMD_QUERY_CMD, "amd", |out| {
         (String::new(), parse_rocm_smi(out))
     })
-    .await
+    .await?
     {
-        return gpu;
+        return Ok(gpu);
     }
     if let Some(gpu) = try_vendor(ssh, target, INTEL_QUERY_CMD, "intel", |out| {
         (String::new(), parse_xpu_smi(out))
     })
-    .await
+    .await?
     {
-        return gpu;
+        return Ok(gpu);
     }
-    GpuInfo::none()
+    Ok(GpuInfo::none())
 }
 
 /// 尝试单个厂商：命令成功且解析出设备才算命中
@@ -431,20 +428,20 @@ async fn try_vendor(
     cmd: &str,
     vendor: &str,
     parse: impl Fn(&str) -> (String, Vec<GpuDevice>),
-) -> Option<GpuInfo> {
-    let out = ssh.run(target, cmd).await.ok()?;
+) -> Result<Option<GpuInfo>, ModelinferError> {
+    let out = ssh.run(target, cmd).await?;
     if out.exit_code != 0 || out.stdout.trim().is_empty() {
-        return None;
+        return Ok(None);
     }
     let (driver_version, devices) = parse(&out.stdout);
     if devices.is_empty() {
-        return None;
+        return Ok(None);
     }
-    Some(GpuInfo {
+    Ok(Some(GpuInfo {
         vendor: vendor.to_string(),
         driver_version,
         devices,
-    })
+    }))
 }
 
 /// 采集 `/sys/class/infiniband/<ibdev>/device/net/<netdev>` 的映射（纯 shell，无外部依赖）
@@ -672,5 +669,23 @@ mod tests {
         let r = scan_node(&ssh, &target).await.unwrap();
         assert_eq!(r.gpu, GpuInfo::none());
         assert!(r.gpu.model_summary().is_empty());
+    }
+
+    #[tokio::test]
+    async fn failed_board_probe_does_not_infer_a_cpu_profile() {
+        let ssh = MockSshExec::new()
+            .with_rule("uname -m", 0, "aarch64\n")
+            .with_rule("/proc/device-tree/compatible", 1, "");
+        let target = SshTarget::new("10.0.0.9", 22, "root", "x");
+        let error = scan_node(&ssh, &target).await.unwrap_err();
+        assert_eq!(error.code, codes::NODE_SCAN_FAILED);
+    }
+
+    #[tokio::test]
+    async fn failed_gpu_ssh_connection_is_not_a_missing_gpu() {
+        let ssh = MockSshExec::new().with_connect_failure();
+        let target = SshTarget::new("10.0.0.9", 22, "root", "x");
+        let error = detect_gpu(&ssh, &target).await.unwrap_err();
+        assert_eq!(error.code, codes::SSH_CONNECT_FAILED);
     }
 }

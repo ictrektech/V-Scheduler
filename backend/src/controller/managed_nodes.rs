@@ -76,7 +76,7 @@ pub(super) async fn forward(
             (Some(20701), _) => (StatusCode::UNPROCESSABLE_ENTITY, "INVALID_REQUEST"),
             (Some(20702), _) => (StatusCode::NOT_FOUND, "NODE_NOT_FOUND"),
             (Some(20703), _) => (StatusCode::CONFLICT, "NODE_ALREADY_EXISTS"),
-            (Some(20704), _) => (StatusCode::BAD_GATEWAY, "NODE_SSH_FAILED"),
+            (Some(20704 | 20705), _) => (StatusCode::BAD_GATEWAY, "NODE_SSH_FAILED"),
             (Some(_), _) => (StatusCode::BAD_GATEWAY, "NODE_OPERATION_FAILED"),
             (None, _) => (status, "NODE_OPERATION_FAILED"),
         };

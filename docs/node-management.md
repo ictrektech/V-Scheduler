@@ -19,7 +19,7 @@ The default profile is detected from the node. Administrators can override it wi
 | `GET /managed-nodes` | Signed-in VOS users and authorized applications / 已登录 VOS 用户及已授权应用 | Returns `items` and `can_manage`. The public projection includes `id`, `name`, `status` (`online` or `offline`), `arch`, `gpu_model`, `profile`, `detected_profile`, `compatible_profiles`, and `last_checked_at`. Administrators also receive connection settings, credential-presence flags, and hardware scan details. |
 | `POST /managed-nodes` | Administrator / 管理员 | Verify and save an SSH node. Requires `name` and `host`. `ssh_port` defaults to 22 (1–65535), `ssh_user` defaults to `root`, and `auth_method` is `password` (default) or `key`. Supply `ssh_password` or `ssh_key` for the selected mode. Optional `sudo_password` enables sudo. |
 | `PUT /managed-nodes/{id}` | Administrator / 管理员 | Update provided connection fields. If changing the authentication mode, supply its credential. Omit a credential to retain it. An empty `sudo_password` clears explicit sudo. |
-| `POST /managed-nodes/{id}/rescan` | Administrator / 管理员 | Reconnect using saved credentials and refresh the hardware inventory. |
+| `POST /managed-nodes/{id}/rescan` | Administrator / 管理员 | Reconnect using saved credentials and refresh the hardware inventory. An SSH failure returns HTTP 502 with `NODE_SSH_FAILED` and preserves the last successful result. / 复用已保存的凭据刷新硬件清单。SSH 失败时返回 HTTP 502 和 `NODE_SSH_FAILED`，保留上一次成功的结果。 |
 | `POST /managed-nodes/{id}/runtime` | Administrator / 管理员 | Pull the configured test image and run the temporary container. Returns `image`, `pulled`, and `started`. |
 | `DELETE /managed-nodes/{id}` | Administrator / 管理员 | Remove the saved configuration. Returns `removed`. |
 
