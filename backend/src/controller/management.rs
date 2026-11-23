@@ -77,6 +77,10 @@ async fn idle_executor(tx: &mut Transaction<'_, Postgres>, id: &str) -> Api<()> 
 }
 
 pub(super) async fn restore(db: &PgPool, runtime: &crate::voice::Runtime) -> anyhow::Result<()> {
+    runtime.set_management(load(db).await?)
+}
+
+pub(super) async fn load(db: &PgPool) -> anyhow::Result<ManagedConfig> {
     let mut managed = ManagedConfig::default();
     for row in sqlx::query("SELECT definition FROM vrs_node_settings ORDER BY node_id")
         .fetch_all(db)
@@ -109,8 +113,7 @@ pub(super) async fn restore(db: &PgPool, runtime: &crate::voice::Runtime) -> any
         .execute(db)
         .await?;
     }
-    runtime.set_management(managed)?;
-    Ok(())
+    Ok(managed)
 }
 async fn publish(a: &App) -> Api<()> {
     restore(&a.db, &a.voice_config).await.map_err(|_| {

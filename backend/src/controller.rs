@@ -409,7 +409,7 @@ pub async fn serve(
     for n in &config.nodes {
         sqlx::query("INSERT INTO vrs_nodes(id,capacities,resident_baseline,safety_reserve) VALUES($1,$2,$3,$4) ON CONFLICT(id) DO UPDATE SET capacities=excluded.capacities,resident_baseline=excluded.resident_baseline,safety_reserve=excluded.safety_reserve").bind(&n.id).bind(json!(n.capacities)).bind(json!(n.resident_baseline)).bind(json!(n.safety_reserve)).execute(&db).await?;
     }
-    management::restore(&db, &runtime).await?;
+    runtime.restore_management(management::load(&db).await?)?;
     let config = runtime.snapshot();
     let a = App {
         db,

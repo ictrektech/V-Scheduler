@@ -19,6 +19,17 @@ const UPSTREAM: &str = "http://v-voice-backend:7070/v1";
 const URL: &str = "http://v-router:8080/scheduler/api/v1";
 const CANONICAL_URL: &str = "http://v-scheduler:8080/scheduler/api/v1";
 
+#[derive(Debug)]
+struct UnapprovedExecutionNode;
+
+impl std::fmt::Display for UnapprovedExecutionNode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("unapproved execution node")
+    }
+}
+
+impl std::error::Error for UnapprovedExecutionNode {}
+
 fn binding_controller_url(contract: &Value) -> anyhow::Result<&'static str> {
     if contract["capabilities"].as_array().is_some_and(|items| items.iter().any(|v|v=="canonical-v-scheduler-v1")) {
         return Ok(CANONICAL_URL);
@@ -108,10 +119,28 @@ impl Runtime {
         config
     }
     pub fn set_management(&self, managed: ManagedConfig) -> anyhow::Result<()> {
+        self.apply_management(managed, false)
+    }
+
+    pub fn restore_management(&self, managed: ManagedConfig) -> anyhow::Result<()> {
+        self.apply_management(managed, true)
+    }
+
+    fn apply_management(&self, managed: ManagedConfig, startup: bool) -> anyhow::Result<()> {
         let mut overlays = self.overlays.write().expect("overlay lock");
         let mut config = self.base_with_management(&managed);
         if let Some(binding) = &overlays.binding {
-            config = with_binding(config, binding)?;
+            match with_binding(config, binding) {
+                Ok(bound) => config = bound,
+                Err(error) if startup && error.is::<UnapprovedExecutionNode>() => {
+                    // Reconciliation still reads the private snapshot to keep its revision and
+                    // credentials. Only a binding checked against current telemetry can run.
+                    eprintln!("V-Voice binding awaiting revalidation against current node resources");
+                    overlays.binding = None;
+                    config = self.base_with_management(&managed);
+                }
+                Err(error) => return Err(error),
+            }
         }
         overlays.managed = managed;
         *self.current.write().expect("configuration lock") = Arc::new(config);
@@ -179,7 +208,7 @@ fn with_binding(mut config: Config, state: &Value) -> anyhow::Result<Config> {
                 && executor
                     .resources
                     .fits(&node.resident_baseline, &node.capacities)),
-            "unapproved execution node"
+            UnapprovedExecutionNode
         );
     }
     config.principals.extend(principals);
@@ -1383,6 +1412,25 @@ mod tests {
         assert!(Arc::ptr_eq(&installed, &runtime.snapshot()));
         approved.capacities.cpu_millicores = 4000;
         assert!(build_for_node(&approved, &contract, &approvals, None).is_err());
+    }
+
+    #[test]
+    fn stale_voice_binding_does_not_block_management_at_startup() {
+        let (runtime, contract, approvals) = fixtures();
+        let binding = build(&runtime, &contract, &approvals, None).unwrap();
+        runtime.install(&binding).unwrap();
+
+        let mut node = runtime.snapshot().nodes[0].clone();
+        node.capacities.cpu_millicores = 1000;
+        let mut managed = ManagedConfig::default();
+        managed.nodes.push(node);
+
+        assert!(runtime.set_management(managed.clone()).is_err());
+        runtime.restore_management(managed).unwrap();
+        assert_eq!(runtime.snapshot().nodes[0].capacities.cpu_millicores, 1000);
+        assert!(runtime.snapshot().executors.is_empty());
+        assert!(runtime.snapshot().principals.is_empty());
+        assert!(runtime.install(&binding).is_err());
     }
 
     #[test]
