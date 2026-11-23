@@ -49,6 +49,24 @@ class PackageManifestValidationTests(unittest.TestCase):
             with self.subTest(service=name):
                 self.assertEqual(service.get('pull_policy'), 'always')
 
+    def test_only_service_image_variables_must_be_rendered_at_packaging(self):
+        script = (self.root / 'scripts/package.sh').read_text()
+        line = next(line.strip() for line in script.splitlines()
+                    if "grep -Eq '^[[:space:]]*image:" in line)
+        check = line + " exit 9; else exit 0; fi"
+        for compose_text, expected in (
+            ('    image: registry.example/app:v1\n'
+             '    SCHEDULER_NODE_TEST_IMAGE: "${SCHEDULER_NODE_TEST_IMAGE:-registry.example/test:v1}"', 0),
+            ('    image: "${V_SCHEDULER_ARM_IMAGE}"', 9),
+            ('    image: ${V_SCHEDULER_ARM_IMAGE:-registry.example/app:v1}', 9),
+        ):
+            with self.subTest(compose_text=compose_text):
+                result = subprocess.run(
+                    ['bash', '-c', 'compose_text="$1"; ' + check, 'bash', compose_text],
+                    capture_output=True,
+                )
+                self.assertEqual(result.returncode, expected, result.stderr)
+
     def test_resolved_manifest_format_is_accepted(self):
         result = self.validate(self.manifest)
         self.assertEqual(result.returncode, 0, result.stderr)

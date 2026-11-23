@@ -319,7 +319,7 @@ assert manifest.get("icon") == "icon.png", "manifest.yml must declare icon.png"
 assert manifest.get("require-profiles") is True, "manifest.yml must require at least one profile"
 PYPROFILES
   compose_text="$(tar xOf "$app_tarball" docker-compose.yml)"
-  if printf '%s\n' "$compose_text" | grep -Eq '\$\{[A-Z0-9_]*_IMAGE(:-[^}]*)?\}'; then
+  if printf '%s\n' "$compose_text" | grep -Eq '^[[:space:]]*image:[[:space:]]*.*\$\{[A-Z0-9_]*_IMAGE(:-[^}]*)?\}'; then
     die "unrendered image variable remains in docker-compose.yml"
   fi
   if printf '%s\n' "$compose_text" | awk '/^[[:space:]]*image:/ {print $2}' | grep -v '^[^/[:space:]]\+\.[^/[:space:]]\+/' | grep -q .; then
