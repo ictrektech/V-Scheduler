@@ -153,4 +153,5 @@ onUnmounted(() => clearInterval(timer))
 .node-form input, .node-form textarea, .node-form select { width: 100%; }
 .node-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .compute-node { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 12px 0; border-top: 1px solid #e6edf3; }
+.compute-node small { display: block; margin-top: 3px; }
 </style>
