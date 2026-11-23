@@ -72,6 +72,8 @@ profiles:
     conflicts: [amd, amd-without-cuda, arm, arm-without-cuda, l4t]
 require-profiles: true
 projects:
+  - name: scheduler-app-backend
+    title: {zh-CN: 应用远程后端, en: Remote application backend}
   - name: etcd
     title: {zh-CN: 集群状态存储, en: Cluster State Store}
   - name: postgres-ha

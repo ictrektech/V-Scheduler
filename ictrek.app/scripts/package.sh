@@ -455,7 +455,7 @@ if [[ -f "${SRC_DIR}/README.en.md" ]]; then
   render_text_file "${SRC_DIR}/README.en.md" "${STAGE_DIR}/README.en.md"
 fi
 render_compose_file "${SRC_DIR}/docker-compose.yml" "${STAGE_DIR}/docker-compose.yml" "$ENV_FILE"
-for project in etcd postgres-ha haproxy temporal keepalived; do
+for project in etcd postgres-ha haproxy temporal keepalived scheduler-app-backend; do
   mkdir -p "${STAGE_DIR}/projects/$project"
   render_text_file "${SRC_DIR}/projects/$project/docker-compose.yml" "${STAGE_DIR}/projects/$project/docker-compose.yml"
 done

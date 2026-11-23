@@ -8,6 +8,7 @@ mod management;
 mod managed_nodes;
 mod model_budget;
 mod compute_catalog;
+mod backend_deployments;
 mod modelinfer_discovery;
 mod modelinfer_migration;
 mod modelinfer_runtime;
@@ -430,6 +431,7 @@ pub async fn serve(
     ollama::start(shared.clone());
     modelinfer_discovery::start();
     integrations::controls::start_loop(shared.clone());
+    backend_deployments::run(a.db.clone());
     let ticker_state = shared.clone();
     tokio::spawn(async move {
         loop {
@@ -462,6 +464,11 @@ pub async fn serve(
         .route("/managed-nodes/{id}", axum::routing::put(managed_nodes::forward).delete(managed_nodes::forward))
         .route("/managed-nodes/{id}/rescan", post(managed_nodes::forward))
         .route("/managed-nodes/{id}/runtime", post(managed_nodes::forward))
+        .route("/backend-deployment-access/{app_id}", get(backend_deployments::get_access).put(backend_deployments::set_access))
+        .route("/backend-deployments", get(backend_deployments::list).post(backend_deployments::create))
+        .route("/backend-deployments/{id}", get(backend_deployments::detail).delete(backend_deployments::remove))
+        .route("/backend-deployments/{id}/start", post(backend_deployments::start))
+        .route("/backend-deployments/{id}/stop", post(backend_deployments::stop))
         .route("/compute-profiles", get(compute_catalog::list_profiles).post(compute_catalog::register_profile))
         .route("/inference/images", get(compute_catalog::list_images).post(compute_catalog::register_image))
         .route("/inference/migration/preview", get(modelinfer_migration::preview))

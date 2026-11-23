@@ -1,3 +1,7 @@
+#[path = "../../../../../shared/application_backend.rs"]
+mod application_backend;
+
+use application_backend::{Instance, Operation, RuntimeState};
 use std::{net::Ipv4Addr, sync::Arc, time::Duration};
 
 use axum::{
@@ -54,6 +58,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/nodes/{id}/rescan", post(rescan))
         .route("/nodes/{id}/resources", get(resources))
         .route("/nodes/{id}/runtime", post(runtime))
+        .route("/nodes/{id}/application-backend", post(application_backend))
         .with_state(Arc::new(Manager {
             db,
             ssh: RealSshExec::node_manager(),
@@ -208,4 +213,78 @@ fn valid_image(value: &str) -> bool {
         && value
             .bytes()
             .all(|ch| ch.is_ascii_alphanumeric() || b"./_:@-".contains(&ch))
+}
+
+async fn application_backend(
+    State(app): App,
+    Path(id): Path<String>,
+    Json(instance): Json<Instance>,
+) -> Result<RuntimeState> {
+    let node = nodes::get_node(&app.db, &id).await?;
+    if !instance.valid() || node.host.parse::<Ipv4Addr>() != Ok(instance.host) {
+        return Err(ModelinferError::new(
+            codes::PARAM_INVALID,
+            "invalid_backend_target",
+        ));
+    }
+    let name = instance.name();
+    let state_check = format!(
+        "docker info >/dev/null || exit 1\n\
+         current=$(docker ps -aq --filter 'name=^/{name}$') || exit 1\n\
+         if test -n \"$current\"; then\n\
+           owner=$(docker inspect --format '{{{{index .Config.Labels \"com.ictrek.v-scheduler.backend\"}}}}' \"$current\") || exit 1\n\
+           test \"$owner\" = '{}' || exit 1\n\
+           running=$(docker inspect --format '{{{{.State.Running}}}}' \"$current\") || exit 1\n\
+         fi\n",
+        instance.id,
+    );
+    let operation = match instance.operation {
+        Operation::Status => String::from(
+            "if test -z \"$current\"; then echo absent; elif test \"$running\" = true; then echo running; else echo stopped; fi",
+        ),
+        Operation::Remove => String::from(
+            "if test -n \"$current\"; then docker rm -f \"$current\" >/dev/null || exit 1; fi; echo absent",
+        ),
+        Operation::Ensure => {
+            let gpu = if instance.nvidia {
+                "--runtime=nvidia --env NVIDIA_VISIBLE_DEVICES=all --env NVIDIA_DRIVER_CAPABILITIES=compute,utility "
+            } else {
+                ""
+            };
+            format!(
+                "if test -n \"$current\"; then\n\
+                   test \"$running\" = true || docker start \"$current\" >/dev/null || exit 1\n\
+                 else\n\
+                   docker run --detach --pull=missing --name '{name}' --restart unless-stopped \
+                     --label 'com.ictrek.v-scheduler.backend={}' --security-opt no-new-privileges \
+                     -p '{}:{}/tcp' {gpu}'{}' >/dev/null || exit 1\n\
+                 fi\n\
+                 docker inspect --format '{{{{.State.Running}}}}' '{name}' | grep -qx true || exit 1\n\
+                 echo running",
+                instance.id, instance.host_port, instance.container_port, instance.image,
+            )
+        }
+    };
+    let target = nodes::ssh_target_of(&node);
+    let output = app
+        .ssh
+        .run_with_timeout(
+            &target,
+            &format!("{state_check}{operation}"),
+            Duration::from_secs(if instance.operation == Operation::Ensure {
+                150
+            } else {
+                15
+            }),
+        )
+        .await?;
+    match (output.success(), output.stdout.lines().last()) {
+        (true, Some("running")) => Ok(Json(RuntimeState::Running)),
+        (true, Some("stopped")) => Ok(Json(RuntimeState::Stopped)),
+        (true, Some("absent")) => Ok(Json(RuntimeState::Absent)),
+        _ => Err(ModelinferError::new(
+            codes::SSH_COMMAND_FAILED,
+            "backend_container_operation_failed",
+        )),
+    }
 }

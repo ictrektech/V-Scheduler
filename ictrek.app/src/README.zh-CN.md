@@ -79,3 +79,7 @@ V-Voice 就绪模型自动继承应用资源预算并进入模型目录，已配
 在使用 Traefik v3 的 VOS 上，从浏览器直接打开应用根地址会跳转到 VOS 应用页面。嵌入页面和 API 请求沿用原有路由。
 
 管理员可在「资源与任务 → 执行资源」查看仅观察节点的逻辑 CPU 数和利用率、内存已用／总量／可用、GPU 利用率与采样时间。共享内存只计一次。内置推理使用已保存的 SSH 连接采集，缺失或过期的数据会明确标出。数据也可通过管理员调度 API GET /nodes 读取。
+
+### 应用后端部署
+
+在「API 文档 → 调度管理 API → 应用后端部署」查看完整权限、字段和状态。管理员先登记节点和 Profile，再为应用创建服务凭据，并通过 PUT /backend-deployment-access/{app_id} 授权目标及仓库。应用提交镜像、节点和容器端口到 POST /backend-deployments；轮询状态为 running 后读取 endpoint。SSH 节点使用 Docker，受信 VOS 集群成员使用 VOS Projects。停止保留宿主机端口，删除并确认清理后释放。

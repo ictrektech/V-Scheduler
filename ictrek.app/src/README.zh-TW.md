@@ -77,3 +77,7 @@ V-Voice 就緒模型自動繼承應用資源預算並進入模型目錄，已設
 在使用 Traefik v3 的 VOS 上，從瀏覽器直接開啟應用根網址會跳轉到 VOS 應用頁面。嵌入頁面和 API 請求沿用原有路由。
 
 管理員可在「資源與任務 → 執行資源」查看僅觀察節點的邏輯 CPU 數和使用率、記憶體已用／總量／可用、GPU 使用率與取樣時間。共用記憶體僅計算一次。內建推理使用已儲存的 SSH 連線取樣，缺失或過期的資料會明確標示。資料也可透過管理員排程 API GET /nodes 讀取。
+
+### 應用後端部署
+
+在「API 文件 → 排程管理 API → 應用後端部署」查閱權限、欄位、狀態及範例。登記節點和 Profile 後，為應用建立服務憑據，透過 PUT /backend-deployment-access/{app_id} 授權節點和倉庫。以 POST /backend-deployments 提交映像檔、目標和容器連接埠。輪詢至 running 後讀取 endpoint。SSH 節點使用 Docker，受信的 VOS 叢集成員使用 VOS Projects。停止保留主機連接埠，確認刪除後釋放。

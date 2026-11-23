@@ -44,6 +44,33 @@ pub(super) async fn forward(
         return Err(invalid());
     }
     let body = to_bytes(body, 64 * 1024).await.map_err(|_| invalid())?;
+    if let Some(node_id) = suffix
+        .strip_prefix('/')
+        .filter(|id| !id.is_empty() && !id.contains('/'))
+    {
+        let host_change = if parts.method == axum::http::Method::PUT {
+            serde_json::from_slice::<Value>(&body)
+                .ok()
+                .and_then(|input| input["host"].as_str().map(str::to_owned))
+        } else {
+            None
+        };
+        if parts.method == axum::http::Method::DELETE || host_change.is_some() {
+            let in_use: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM vrs_backend_deployments
+                 WHERE target_kind='ssh' AND target_id=$1 AND state<>'removed'
+                 AND ($2::text IS NULL OR host<>$2))",
+            )
+            .bind(node_id)
+            .bind(host_change)
+            .fetch_one(&app.db)
+            .await
+            .map_err(unavailable)?;
+            if in_use {
+                return Err(Error(StatusCode::CONFLICT, "NODE_HAS_BACKEND_DEPLOYMENTS"));
+            }
+        }
+    }
     static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
     let client = CLIENT.get_or_init(|| {
         reqwest::Client::builder()
@@ -126,12 +153,18 @@ pub(super) async fn forward(
         if let Some(members) = crate::cluster_runtime::members(client).await {
             let mut inventory = Vec::with_capacity(members.len());
             for member in members {
-                let Some(id) = member["member_id"].as_str() else { continue };
-                let node_ip = member["node_ip"].as_str().and_then(|ip| ip.parse::<std::net::IpAddr>().ok());
-                let ssh_node_id = node_ip.and_then(|ip| value.as_array()?.iter().find_map(|row| {
-                    let host = row["host"].as_str()?.parse::<std::net::IpAddr>().ok()?;
-                    (ip == host).then(|| row["id"].as_str()).flatten()
-                }));
+                let Some(id) = member["member_id"].as_str() else {
+                    continue;
+                };
+                let node_ip = member["node_ip"]
+                    .as_str()
+                    .and_then(|ip| ip.parse::<std::net::IpAddr>().ok());
+                let ssh_node_id = node_ip.and_then(|ip| {
+                    value.as_array()?.iter().find_map(|row| {
+                        let host = row["host"].as_str()?.parse::<std::net::IpAddr>().ok()?;
+                        (ip == host).then(|| row["id"].as_str()).flatten()
+                    })
+                });
                 inventory.push(json!({
                     "id":id,
                     "name":member["display_name"].as_str().filter(|name| !name.is_empty()).unwrap_or(id),

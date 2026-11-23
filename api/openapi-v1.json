@@ -1833,6 +1833,9 @@
           },
           "502": {
             "description": "SSH, Docker pull, Docker start, or node scan failure."
+          },
+          "409": {
+            "description": "NODE_HAS_BACKEND_DEPLOYMENTS when a saved SSH node with undeleted deployments is removed or its address is changed."
           }
         }
       },
@@ -1906,6 +1909,9 @@
           },
           "502": {
             "description": "SSH, Docker pull, Docker start, or node scan failure."
+          },
+          "409": {
+            "description": "NODE_HAS_BACKEND_DEPLOYMENTS when a saved SSH node with undeleted deployments is removed or its address is changed."
           }
         }
       }
@@ -7962,6 +7968,880 @@
         ],
         "x-contract-source": "backend/src/controller.rs and backend/src/controller/"
       }
+    },
+    "/backend-deployment-access/{app_id}": {
+      "get": {
+        "operationId": "read_backend_deployment_access",
+        "summary": "Read application backend access",
+        "description": "Read exact approved repositories and targets. Missing grants produce empty arrays.",
+        "x-title": {
+          "en": "Read application backend access",
+          "zh-CN": "读取应用后端部署授权",
+          "zh-TW": "读取应用后端部署授权"
+        },
+        "x-description": {
+          "en": "Read exact approved repositories and targets. Missing grants produce empty arrays.",
+          "zh-CN": "读取应用获准仓库和目标。尚未授权时返回两个空数组。",
+          "zh-TW": "读取应用获准仓库和目标。尚未授权时返回两个空数组。"
+        },
+        "x-role": "administrator or owner",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "required": true,
+            "description": "Application identifier",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Request accepted or resource read. Inspect data.state for asynchronous operations.",
+            "x-description": {
+              "en": "Request accepted or resource read. Inspect data.state for asynchronous operations.",
+              "zh-CN": "已受理或读取成功。异步操作请查看 data.state。",
+              "zh-TW": "已受理或读取成功。异步操作请查看 data.state。"
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/ApplicationBackendAccess"
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid Bearer credential.",
+            "x-description": {
+              "en": "Missing or invalid Bearer credential.",
+              "zh-CN": "Bearer 凭据缺失或无效。",
+              "zh-TW": "Bearer 凭据缺失或无效。"
+            }
+          },
+          "403": {
+            "description": "Role or scope denied, including FORBIDDEN and BACKEND_DEPLOYMENT_FORBIDDEN.",
+            "x-description": {
+              "en": "Role or scope denied, including FORBIDDEN and BACKEND_DEPLOYMENT_FORBIDDEN.",
+              "zh-CN": "角色或授权不足，包括 FORBIDDEN 和 BACKEND_DEPLOYMENT_FORBIDDEN。",
+              "zh-TW": "角色或授权不足，包括 FORBIDDEN 和 BACKEND_DEPLOYMENT_FORBIDDEN。"
+            }
+          },
+          "503": {
+            "description": "BACKEND_TARGET_UNAVAILABLE when the inventory, host address or target adapter is unavailable. TEMPORARILY_UNAVAILABLE for database failures.",
+            "x-description": {
+              "en": "BACKEND_TARGET_UNAVAILABLE when the inventory, host address or target adapter is unavailable. TEMPORARILY_UNAVAILABLE for database failures.",
+              "zh-CN": "节点清单、地址或适配器不可用时返回 BACKEND_TARGET_UNAVAILABLE；数据库不可用时返回 TEMPORARILY_UNAVAILABLE。",
+              "zh-TW": "节点清单、地址或适配器不可用时返回 BACKEND_TARGET_UNAVAILABLE；数据库不可用时返回 TEMPORARILY_UNAVAILABLE。"
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "set_backend_deployment_access",
+        "summary": "Grant application backend access",
+        "description": "Replace the application policy. Use empty arrays to withdraw new placement and restart authorization. Running deployments retain their lifecycle record.",
+        "x-title": {
+          "en": "Grant application backend access",
+          "zh-CN": "设置应用后端部署授权",
+          "zh-TW": "设置应用后端部署授权"
+        },
+        "x-description": {
+          "en": "Replace the application policy. Use empty arrays to withdraw new placement and restart authorization. Running deployments retain their lifecycle record.",
+          "zh-CN": "替换应用授权。空数组可撤销新建和重新启动权限。运行中的实例仍可查询、停止和删除。",
+          "zh-TW": "替换应用授权。空数组可撤销新建和重新启动权限。运行中的实例仍可查询、停止和删除。"
+        },
+        "x-role": "admin",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "required": true,
+            "description": "Application identifier",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplicationBackendAccess"
+              },
+              "example": {
+                "targets": [
+                  {
+                    "kind": "ssh",
+                    "id": "node-35",
+                    "profile": "jetson-thor"
+                  }
+                ],
+                "repositories": [
+                  "registry.example.com/demo/backend"
+                ]
+              }
+            }
+          }
+        },
+        "x-example": {
+          "targets": [
+            {
+              "kind": "ssh",
+              "id": "node-35",
+              "profile": "jetson-thor"
+            }
+          ],
+          "repositories": [
+            "registry.example.com/demo/backend"
+          ]
+        },
+        "responses": {
+          "200": {
+            "description": "Request accepted or resource read. Inspect data.state for asynchronous operations.",
+            "x-description": {
+              "en": "Request accepted or resource read. Inspect data.state for asynchronous operations.",
+              "zh-CN": "已受理或读取成功。异步操作请查看 data.state。",
+              "zh-TW": "已受理或读取成功。异步操作请查看 data.state。"
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/ApplicationBackendAccess"
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed JSON request.",
+            "x-description": {
+              "en": "Malformed JSON request.",
+              "zh-CN": "JSON 请求格式错误。",
+              "zh-TW": "JSON 请求格式错误。"
+            }
+          },
+          "401": {
+            "description": "Missing or invalid Bearer credential.",
+            "x-description": {
+              "en": "Missing or invalid Bearer credential.",
+              "zh-CN": "Bearer 凭据缺失或无效。",
+              "zh-TW": "Bearer 凭据缺失或无效。"
+            }
+          },
+          "403": {
+            "description": "Role or scope denied, including FORBIDDEN and BACKEND_DEPLOYMENT_FORBIDDEN.",
+            "x-description": {
+              "en": "Role or scope denied, including FORBIDDEN and BACKEND_DEPLOYMENT_FORBIDDEN.",
+              "zh-CN": "角色或授权不足，包括 FORBIDDEN 和 BACKEND_DEPLOYMENT_FORBIDDEN。",
+              "zh-TW": "角色或授权不足，包括 FORBIDDEN 和 BACKEND_DEPLOYMENT_FORBIDDEN。"
+            }
+          },
+          "415": {
+            "description": "Expected application/json for an operation with a request body.",
+            "x-description": {
+              "en": "Expected application/json for an operation with a request body.",
+              "zh-CN": "含请求体的操作需使用 application/json。",
+              "zh-TW": "含请求体的操作需使用 application/json。"
+            }
+          },
+          "422": {
+            "description": "INVALID_REQUEST for invalid fields, or JSON field/schema validation failed.",
+            "x-description": {
+              "en": "INVALID_REQUEST for invalid fields, or JSON field/schema validation failed.",
+              "zh-CN": "参数校验失败返回 INVALID_REQUEST，或 JSON 字段无法按协议解析。",
+              "zh-TW": "参数校验失败返回 INVALID_REQUEST，或 JSON 字段无法按协议解析。"
+            }
+          },
+          "503": {
+            "description": "BACKEND_TARGET_UNAVAILABLE when the inventory, host address or target adapter is unavailable. TEMPORARILY_UNAVAILABLE for database failures.",
+            "x-description": {
+              "en": "BACKEND_TARGET_UNAVAILABLE when the inventory, host address or target adapter is unavailable. TEMPORARILY_UNAVAILABLE for database failures.",
+              "zh-CN": "节点清单、地址或适配器不可用时返回 BACKEND_TARGET_UNAVAILABLE；数据库不可用时返回 TEMPORARILY_UNAVAILABLE。",
+              "zh-TW": "节点清单、地址或适配器不可用时返回 BACKEND_TARGET_UNAVAILABLE；数据库不可用时返回 TEMPORARILY_UNAVAILABLE。"
+            }
+          }
+        }
+      }
+    },
+    "/backend-deployments": {
+      "get": {
+        "operationId": "list_backend_deployments",
+        "summary": "List application backend deployments",
+        "description": "Applications read their own deployments; administrators can list all. Returns up to 200 records.",
+        "x-title": {
+          "en": "List application backend deployments",
+          "zh-CN": "列出应用后端部署",
+          "zh-TW": "列出应用后端部署"
+        },
+        "x-description": {
+          "en": "Applications read their own deployments; administrators can list all. Returns up to 200 records.",
+          "zh-CN": "应用只查看所属部署，管理员可查看所有部署。最多返回 200 条。",
+          "zh-TW": "应用只查看所属部署，管理员可查看所有部署。最多返回 200 条。"
+        },
+        "x-role": "administrator or owner",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Request accepted or resource read. Inspect data.state for asynchronous operations.",
+            "x-description": {
+              "en": "Request accepted or resource read. Inspect data.state for asynchronous operations.",
+              "zh-CN": "已受理或读取成功。异步操作请查看 data.state。",
+              "zh-TW": "已受理或读取成功。异步操作请查看 data.state。"
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/ApplicationBackendList"
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid Bearer credential.",
+            "x-description": {
+              "en": "Missing or invalid Bearer credential.",
+              "zh-CN": "Bearer 凭据缺失或无效。",
+              "zh-TW": "Bearer 凭据缺失或无效。"
+            }
+          },
+          "403": {
+            "description": "Role or scope denied, including FORBIDDEN and BACKEND_DEPLOYMENT_FORBIDDEN.",
+            "x-description": {
+              "en": "Role or scope denied, including FORBIDDEN and BACKEND_DEPLOYMENT_FORBIDDEN.",
+              "zh-CN": "角色或授权不足，包括 FORBIDDEN 和 BACKEND_DEPLOYMENT_FORBIDDEN。",
+              "zh-TW": "角色或授权不足，包括 FORBIDDEN 和 BACKEND_DEPLOYMENT_FORBIDDEN。"
+            }
+          },
+          "503": {
+            "description": "BACKEND_TARGET_UNAVAILABLE when the inventory, host address or target adapter is unavailable. TEMPORARILY_UNAVAILABLE for database failures.",
+            "x-description": {
+              "en": "BACKEND_TARGET_UNAVAILABLE when the inventory, host address or target adapter is unavailable. TEMPORARILY_UNAVAILABLE for database failures.",
+              "zh-CN": "节点清单、地址或适配器不可用时返回 BACKEND_TARGET_UNAVAILABLE；数据库不可用时返回 TEMPORARILY_UNAVAILABLE。",
+              "zh-TW": "节点清单、地址或适配器不可用时返回 BACKEND_TARGET_UNAVAILABLE；数据库不可用时返回 TEMPORARILY_UNAVAILABLE。"
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "create_backend_deployment",
+        "summary": "Deploy an application backend",
+        "description": "Submit an approved image, node, Profile and TCP port through the application service credential. A background worker starts the container or VOS Project. Poll GET /backend-deployments/{id} before using its endpoint.",
+        "x-title": {
+          "en": "Deploy an application backend",
+          "zh-CN": "创建应用后端部署",
+          "zh-TW": "创建应用后端部署"
+        },
+        "x-description": {
+          "en": "Submit an approved image, node, Profile and TCP port through the application service credential. A background worker starts the container or VOS Project. Poll GET /backend-deployments/{id} before using its endpoint.",
+          "zh-CN": "应用用服务凭据提交获准的镜像、节点、Profile 和 TCP 端口。后台通过容器或 VOS Project 启动。轮询 GET /backend-deployments/{id} 后使用 endpoint。",
+          "zh-TW": "应用用服务凭据提交获准的镜像、节点、Profile 和 TCP 端口。后台通过容器或 VOS Project 启动。轮询 GET /backend-deployments/{id} 后使用 endpoint。"
+        },
+        "x-role": "submitter",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplicationBackendCreate"
+              },
+              "example": {
+                "request_key": "backend-dev-1",
+                "target": {
+                  "kind": "ssh",
+                  "id": "node-35",
+                  "profile": "jetson-thor"
+                },
+                "image": "registry.example.com/demo/backend:1.0",
+                "container_port": 8080
+              }
+            }
+          }
+        },
+        "x-example": {
+          "request_key": "backend-dev-1",
+          "target": {
+            "kind": "ssh",
+            "id": "node-35",
+            "profile": "jetson-thor"
+          },
+          "image": "registry.example.com/demo/backend:1.0",
+          "container_port": 8080
+        },
+        "responses": {
+          "200": {
+            "description": "Request accepted or resource read. Inspect data.state for asynchronous operations.",
+            "x-description": {
+              "en": "Request accepted or resource read. Inspect data.state for asynchronous operations.",
+              "zh-CN": "已受理或读取成功。异步操作请查看 data.state。",
+              "zh-TW": "已受理或读取成功。异步操作请查看 data.state。"
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/ApplicationBackendDeployment"
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed JSON request.",
+            "x-description": {
+              "en": "Malformed JSON request.",
+              "zh-CN": "JSON 请求格式错误。",
+              "zh-TW": "JSON 请求格式错误。"
+            }
+          },
+          "401": {
+            "description": "Missing or invalid Bearer credential.",
+            "x-description": {
+              "en": "Missing or invalid Bearer credential.",
+              "zh-CN": "Bearer 凭据缺失或无效。",
+              "zh-TW": "Bearer 凭据缺失或无效。"
+            }
+          },
+          "403": {
+            "description": "Role or scope denied, including FORBIDDEN and BACKEND_DEPLOYMENT_FORBIDDEN.",
+            "x-description": {
+              "en": "Role or scope denied, including FORBIDDEN and BACKEND_DEPLOYMENT_FORBIDDEN.",
+              "zh-CN": "角色或授权不足，包括 FORBIDDEN 和 BACKEND_DEPLOYMENT_FORBIDDEN。",
+              "zh-TW": "角色或授权不足，包括 FORBIDDEN 和 BACKEND_DEPLOYMENT_FORBIDDEN。"
+            }
+          },
+          "409": {
+            "description": "BACKEND_REQUEST_CONFLICT for changed idempotent input; BACKEND_PROFILE_UNSUPPORTED for SSH Profile mismatch; BACKEND_NO_PORTS for a full allocation range; BACKEND_BUSY for an operation in progress; BACKEND_STATE_CONFLICT for a prohibited state transition.",
+            "x-description": {
+              "en": "BACKEND_REQUEST_CONFLICT for changed idempotent input; BACKEND_PROFILE_UNSUPPORTED for SSH Profile mismatch; BACKEND_NO_PORTS for a full allocation range; BACKEND_BUSY for an operation in progress; BACKEND_STATE_CONFLICT for a prohibited state transition.",
+              "zh-CN": "幂等请求参数不一致为 BACKEND_REQUEST_CONFLICT，SSH Profile 不匹配为 BACKEND_PROFILE_UNSUPPORTED，端口耗尽为 BACKEND_NO_PORTS，操作正执行为 BACKEND_BUSY，状态不允许为 BACKEND_STATE_CONFLICT。",
+              "zh-TW": "幂等请求参数不一致为 BACKEND_REQUEST_CONFLICT，SSH Profile 不匹配为 BACKEND_PROFILE_UNSUPPORTED，端口耗尽为 BACKEND_NO_PORTS，操作正执行为 BACKEND_BUSY，状态不允许为 BACKEND_STATE_CONFLICT。"
+            }
+          },
+          "415": {
+            "description": "Expected application/json for an operation with a request body.",
+            "x-description": {
+              "en": "Expected application/json for an operation with a request body.",
+              "zh-CN": "含请求体的操作需使用 application/json。",
+              "zh-TW": "含请求体的操作需使用 application/json。"
+            }
+          },
+          "422": {
+            "description": "INVALID_REQUEST for invalid fields, or JSON field/schema validation failed.",
+            "x-description": {
+              "en": "INVALID_REQUEST for invalid fields, or JSON field/schema validation failed.",
+              "zh-CN": "参数校验失败返回 INVALID_REQUEST，或 JSON 字段无法按协议解析。",
+              "zh-TW": "参数校验失败返回 INVALID_REQUEST，或 JSON 字段无法按协议解析。"
+            }
+          },
+          "503": {
+            "description": "BACKEND_TARGET_UNAVAILABLE when the inventory, host address or target adapter is unavailable. TEMPORARILY_UNAVAILABLE for database failures.",
+            "x-description": {
+              "en": "BACKEND_TARGET_UNAVAILABLE when the inventory, host address or target adapter is unavailable. TEMPORARILY_UNAVAILABLE for database failures.",
+              "zh-CN": "节点清单、地址或适配器不可用时返回 BACKEND_TARGET_UNAVAILABLE；数据库不可用时返回 TEMPORARILY_UNAVAILABLE。",
+              "zh-TW": "节点清单、地址或适配器不可用时返回 BACKEND_TARGET_UNAVAILABLE；数据库不可用时返回 TEMPORARILY_UNAVAILABLE。"
+            }
+          }
+        }
+      }
+    },
+    "/backend-deployments/{id}": {
+      "get": {
+        "operationId": "get_backend_deployment",
+        "summary": "Read a backend deployment",
+        "description": "Read the current status, assignments and latest error. Poll until running, stopped, failed or removed as appropriate.",
+        "x-title": {
+          "en": "Read a backend deployment",
+          "zh-CN": "读取一个应用后端部署",
+          "zh-TW": "读取一个应用后端部署"
+        },
+        "x-description": {
+          "en": "Read the current status, assignments and latest error. Poll until running, stopped, failed or removed as appropriate.",
+          "zh-CN": "读取当前状态、端口和最近一次错误。根据操作轮询至 running、stopped、failed 或 removed。",
+          "zh-TW": "读取当前状态、端口和最近一次错误。根据操作轮询至 running、stopped、failed 或 removed。"
+        },
+        "x-role": "administrator or owner",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Deployment identifier",
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Request accepted or resource read. Inspect data.state for asynchronous operations.",
+            "x-description": {
+              "en": "Request accepted or resource read. Inspect data.state for asynchronous operations.",
+              "zh-CN": "已受理或读取成功。异步操作请查看 data.state。",
+              "zh-TW": "已受理或读取成功。异步操作请查看 data.state。"
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/ApplicationBackendDeployment"
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid Bearer credential.",
+            "x-description": {
+              "en": "Missing or invalid Bearer credential.",
+              "zh-CN": "Bearer 凭据缺失或无效。",
+              "zh-TW": "Bearer 凭据缺失或无效。"
+            }
+          },
+          "403": {
+            "description": "Role or scope denied, including FORBIDDEN and BACKEND_DEPLOYMENT_FORBIDDEN.",
+            "x-description": {
+              "en": "Role or scope denied, including FORBIDDEN and BACKEND_DEPLOYMENT_FORBIDDEN.",
+              "zh-CN": "角色或授权不足，包括 FORBIDDEN 和 BACKEND_DEPLOYMENT_FORBIDDEN。",
+              "zh-TW": "角色或授权不足，包括 FORBIDDEN 和 BACKEND_DEPLOYMENT_FORBIDDEN。"
+            }
+          },
+          "404": {
+            "description": "BACKEND_DEPLOYMENT_NOT_FOUND when record is absent or owned by another application.",
+            "x-description": {
+              "en": "BACKEND_DEPLOYMENT_NOT_FOUND when record is absent or owned by another application.",
+              "zh-CN": "记录不存在或属于其他应用时返回 BACKEND_DEPLOYMENT_NOT_FOUND。",
+              "zh-TW": "记录不存在或属于其他应用时返回 BACKEND_DEPLOYMENT_NOT_FOUND。"
+            }
+          },
+          "503": {
+            "description": "BACKEND_TARGET_UNAVAILABLE when the inventory, host address or target adapter is unavailable. TEMPORARILY_UNAVAILABLE for database failures.",
+            "x-description": {
+              "en": "BACKEND_TARGET_UNAVAILABLE when the inventory, host address or target adapter is unavailable. TEMPORARILY_UNAVAILABLE for database failures.",
+              "zh-CN": "节点清单、地址或适配器不可用时返回 BACKEND_TARGET_UNAVAILABLE；数据库不可用时返回 TEMPORARILY_UNAVAILABLE。",
+              "zh-TW": "节点清单、地址或适配器不可用时返回 BACKEND_TARGET_UNAVAILABLE；数据库不可用时返回 TEMPORARILY_UNAVAILABLE。"
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "remove_backend_deployment",
+        "summary": "Remove an application backend",
+        "description": "Stops and removes the runtime asynchronously. After confirmed removal, the port is released and the idempotency record stays.",
+        "x-title": {
+          "en": "Remove an application backend",
+          "zh-CN": "删除应用后端部署",
+          "zh-TW": "删除应用后端部署"
+        },
+        "x-description": {
+          "en": "Stops and removes the runtime asynchronously. After confirmed removal, the port is released and the idempotency record stays.",
+          "zh-CN": "异步停止并移除实例。确认清理后释放端口，并保留幂等记录。",
+          "zh-TW": "异步停止并移除实例。确认清理后释放端口，并保留幂等记录。"
+        },
+        "x-role": "administrator or owner",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Deployment identifier",
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Request accepted or resource read. Inspect data.state for asynchronous operations.",
+            "x-description": {
+              "en": "Request accepted or resource read. Inspect data.state for asynchronous operations.",
+              "zh-CN": "已受理或读取成功。异步操作请查看 data.state。",
+              "zh-TW": "已受理或读取成功。异步操作请查看 data.state。"
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/ApplicationBackendDeployment"
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid Bearer credential.",
+            "x-description": {
+              "en": "Missing or invalid Bearer credential.",
+              "zh-CN": "Bearer 凭据缺失或无效。",
+              "zh-TW": "Bearer 凭据缺失或无效。"
+            }
+          },
+          "403": {
+            "description": "Role or scope denied, including FORBIDDEN and BACKEND_DEPLOYMENT_FORBIDDEN.",
+            "x-description": {
+              "en": "Role or scope denied, including FORBIDDEN and BACKEND_DEPLOYMENT_FORBIDDEN.",
+              "zh-CN": "角色或授权不足，包括 FORBIDDEN 和 BACKEND_DEPLOYMENT_FORBIDDEN。",
+              "zh-TW": "角色或授权不足，包括 FORBIDDEN 和 BACKEND_DEPLOYMENT_FORBIDDEN。"
+            }
+          },
+          "404": {
+            "description": "BACKEND_DEPLOYMENT_NOT_FOUND when record is absent or owned by another application.",
+            "x-description": {
+              "en": "BACKEND_DEPLOYMENT_NOT_FOUND when record is absent or owned by another application.",
+              "zh-CN": "记录不存在或属于其他应用时返回 BACKEND_DEPLOYMENT_NOT_FOUND。",
+              "zh-TW": "记录不存在或属于其他应用时返回 BACKEND_DEPLOYMENT_NOT_FOUND。"
+            }
+          },
+          "409": {
+            "description": "BACKEND_REQUEST_CONFLICT for changed idempotent input; BACKEND_PROFILE_UNSUPPORTED for SSH Profile mismatch; BACKEND_NO_PORTS for a full allocation range; BACKEND_BUSY for an operation in progress; BACKEND_STATE_CONFLICT for a prohibited state transition.",
+            "x-description": {
+              "en": "BACKEND_REQUEST_CONFLICT for changed idempotent input; BACKEND_PROFILE_UNSUPPORTED for SSH Profile mismatch; BACKEND_NO_PORTS for a full allocation range; BACKEND_BUSY for an operation in progress; BACKEND_STATE_CONFLICT for a prohibited state transition.",
+              "zh-CN": "幂等请求参数不一致为 BACKEND_REQUEST_CONFLICT，SSH Profile 不匹配为 BACKEND_PROFILE_UNSUPPORTED，端口耗尽为 BACKEND_NO_PORTS，操作正执行为 BACKEND_BUSY，状态不允许为 BACKEND_STATE_CONFLICT。",
+              "zh-TW": "幂等请求参数不一致为 BACKEND_REQUEST_CONFLICT，SSH Profile 不匹配为 BACKEND_PROFILE_UNSUPPORTED，端口耗尽为 BACKEND_NO_PORTS，操作正执行为 BACKEND_BUSY，状态不允许为 BACKEND_STATE_CONFLICT。"
+            }
+          },
+          "503": {
+            "description": "BACKEND_TARGET_UNAVAILABLE when the inventory, host address or target adapter is unavailable. TEMPORARILY_UNAVAILABLE for database failures.",
+            "x-description": {
+              "en": "BACKEND_TARGET_UNAVAILABLE when the inventory, host address or target adapter is unavailable. TEMPORARILY_UNAVAILABLE for database failures.",
+              "zh-CN": "节点清单、地址或适配器不可用时返回 BACKEND_TARGET_UNAVAILABLE；数据库不可用时返回 TEMPORARILY_UNAVAILABLE。",
+              "zh-TW": "节点清单、地址或适配器不可用时返回 BACKEND_TARGET_UNAVAILABLE；数据库不可用时返回 TEMPORARILY_UNAVAILABLE。"
+            }
+          }
+        }
+      }
+    },
+    "/backend-deployments/{id}/start": {
+      "post": {
+        "operationId": "restart_backend_deployment",
+        "summary": "Start a stopped or failed backend",
+        "description": "Retry with the original node, port and approved image. Grants are rechecked before launch. Repeating start on pending or running returns current state.",
+        "x-title": {
+          "en": "Start a stopped or failed backend",
+          "zh-CN": "启动已停止或失败的后端",
+          "zh-TW": "启动已停止或失败的后端"
+        },
+        "x-description": {
+          "en": "Retry with the original node, port and approved image. Grants are rechecked before launch. Repeating start on pending or running returns current state.",
+          "zh-CN": "按原节点、端口和镜像重试。启动前重新检查授权。已在 pending 或 running 时返回现有状态。",
+          "zh-TW": "按原节点、端口和镜像重试。启动前重新检查授权。已在 pending 或 running 时返回现有状态。"
+        },
+        "x-role": "administrator or owner",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Deployment identifier",
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Request accepted or resource read. Inspect data.state for asynchronous operations.",
+            "x-description": {
+              "en": "Request accepted or resource read. Inspect data.state for asynchronous operations.",
+              "zh-CN": "已受理或读取成功。异步操作请查看 data.state。",
+              "zh-TW": "已受理或读取成功。异步操作请查看 data.state。"
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/ApplicationBackendDeployment"
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid Bearer credential.",
+            "x-description": {
+              "en": "Missing or invalid Bearer credential.",
+              "zh-CN": "Bearer 凭据缺失或无效。",
+              "zh-TW": "Bearer 凭据缺失或无效。"
+            }
+          },
+          "403": {
+            "description": "Role or scope denied, including FORBIDDEN and BACKEND_DEPLOYMENT_FORBIDDEN.",
+            "x-description": {
+              "en": "Role or scope denied, including FORBIDDEN and BACKEND_DEPLOYMENT_FORBIDDEN.",
+              "zh-CN": "角色或授权不足，包括 FORBIDDEN 和 BACKEND_DEPLOYMENT_FORBIDDEN。",
+              "zh-TW": "角色或授权不足，包括 FORBIDDEN 和 BACKEND_DEPLOYMENT_FORBIDDEN。"
+            }
+          },
+          "404": {
+            "description": "BACKEND_DEPLOYMENT_NOT_FOUND when record is absent or owned by another application.",
+            "x-description": {
+              "en": "BACKEND_DEPLOYMENT_NOT_FOUND when record is absent or owned by another application.",
+              "zh-CN": "记录不存在或属于其他应用时返回 BACKEND_DEPLOYMENT_NOT_FOUND。",
+              "zh-TW": "记录不存在或属于其他应用时返回 BACKEND_DEPLOYMENT_NOT_FOUND。"
+            }
+          },
+          "409": {
+            "description": "BACKEND_REQUEST_CONFLICT for changed idempotent input; BACKEND_PROFILE_UNSUPPORTED for SSH Profile mismatch; BACKEND_NO_PORTS for a full allocation range; BACKEND_BUSY for an operation in progress; BACKEND_STATE_CONFLICT for a prohibited state transition.",
+            "x-description": {
+              "en": "BACKEND_REQUEST_CONFLICT for changed idempotent input; BACKEND_PROFILE_UNSUPPORTED for SSH Profile mismatch; BACKEND_NO_PORTS for a full allocation range; BACKEND_BUSY for an operation in progress; BACKEND_STATE_CONFLICT for a prohibited state transition.",
+              "zh-CN": "幂等请求参数不一致为 BACKEND_REQUEST_CONFLICT，SSH Profile 不匹配为 BACKEND_PROFILE_UNSUPPORTED，端口耗尽为 BACKEND_NO_PORTS，操作正执行为 BACKEND_BUSY，状态不允许为 BACKEND_STATE_CONFLICT。",
+              "zh-TW": "幂等请求参数不一致为 BACKEND_REQUEST_CONFLICT，SSH Profile 不匹配为 BACKEND_PROFILE_UNSUPPORTED，端口耗尽为 BACKEND_NO_PORTS，操作正执行为 BACKEND_BUSY，状态不允许为 BACKEND_STATE_CONFLICT。"
+            }
+          },
+          "503": {
+            "description": "BACKEND_TARGET_UNAVAILABLE when the inventory, host address or target adapter is unavailable. TEMPORARILY_UNAVAILABLE for database failures.",
+            "x-description": {
+              "en": "BACKEND_TARGET_UNAVAILABLE when the inventory, host address or target adapter is unavailable. TEMPORARILY_UNAVAILABLE for database failures.",
+              "zh-CN": "节点清单、地址或适配器不可用时返回 BACKEND_TARGET_UNAVAILABLE；数据库不可用时返回 TEMPORARILY_UNAVAILABLE。",
+              "zh-TW": "节点清单、地址或适配器不可用时返回 BACKEND_TARGET_UNAVAILABLE；数据库不可用时返回 TEMPORARILY_UNAVAILABLE。"
+            }
+          }
+        }
+      }
+    },
+    "/backend-deployments/{id}/stop": {
+      "post": {
+        "operationId": "stop_backend_deployment",
+        "summary": "Stop an application backend",
+        "description": "Remove the runtime asynchronously while retaining the port for restart. Only deletion frees the port.",
+        "x-title": {
+          "en": "Stop an application backend",
+          "zh-CN": "停止应用后端",
+          "zh-TW": "停止应用后端"
+        },
+        "x-description": {
+          "en": "Remove the runtime asynchronously while retaining the port for restart. Only deletion frees the port.",
+          "zh-CN": "异步清理实例，保留端口供重新启动。删除后才释放端口。",
+          "zh-TW": "异步清理实例，保留端口供重新启动。删除后才释放端口。"
+        },
+        "x-role": "administrator or owner",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Deployment identifier",
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Request accepted or resource read. Inspect data.state for asynchronous operations.",
+            "x-description": {
+              "en": "Request accepted or resource read. Inspect data.state for asynchronous operations.",
+              "zh-CN": "已受理或读取成功。异步操作请查看 data.state。",
+              "zh-TW": "已受理或读取成功。异步操作请查看 data.state。"
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Envelope"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/ApplicationBackendDeployment"
+                        }
+                      },
+                      "required": [
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid Bearer credential.",
+            "x-description": {
+              "en": "Missing or invalid Bearer credential.",
+              "zh-CN": "Bearer 凭据缺失或无效。",
+              "zh-TW": "Bearer 凭据缺失或无效。"
+            }
+          },
+          "403": {
+            "description": "Role or scope denied, including FORBIDDEN and BACKEND_DEPLOYMENT_FORBIDDEN.",
+            "x-description": {
+              "en": "Role or scope denied, including FORBIDDEN and BACKEND_DEPLOYMENT_FORBIDDEN.",
+              "zh-CN": "角色或授权不足，包括 FORBIDDEN 和 BACKEND_DEPLOYMENT_FORBIDDEN。",
+              "zh-TW": "角色或授权不足，包括 FORBIDDEN 和 BACKEND_DEPLOYMENT_FORBIDDEN。"
+            }
+          },
+          "404": {
+            "description": "BACKEND_DEPLOYMENT_NOT_FOUND when record is absent or owned by another application.",
+            "x-description": {
+              "en": "BACKEND_DEPLOYMENT_NOT_FOUND when record is absent or owned by another application.",
+              "zh-CN": "记录不存在或属于其他应用时返回 BACKEND_DEPLOYMENT_NOT_FOUND。",
+              "zh-TW": "记录不存在或属于其他应用时返回 BACKEND_DEPLOYMENT_NOT_FOUND。"
+            }
+          },
+          "409": {
+            "description": "BACKEND_REQUEST_CONFLICT for changed idempotent input; BACKEND_PROFILE_UNSUPPORTED for SSH Profile mismatch; BACKEND_NO_PORTS for a full allocation range; BACKEND_BUSY for an operation in progress; BACKEND_STATE_CONFLICT for a prohibited state transition.",
+            "x-description": {
+              "en": "BACKEND_REQUEST_CONFLICT for changed idempotent input; BACKEND_PROFILE_UNSUPPORTED for SSH Profile mismatch; BACKEND_NO_PORTS for a full allocation range; BACKEND_BUSY for an operation in progress; BACKEND_STATE_CONFLICT for a prohibited state transition.",
+              "zh-CN": "幂等请求参数不一致为 BACKEND_REQUEST_CONFLICT，SSH Profile 不匹配为 BACKEND_PROFILE_UNSUPPORTED，端口耗尽为 BACKEND_NO_PORTS，操作正执行为 BACKEND_BUSY，状态不允许为 BACKEND_STATE_CONFLICT。",
+              "zh-TW": "幂等请求参数不一致为 BACKEND_REQUEST_CONFLICT，SSH Profile 不匹配为 BACKEND_PROFILE_UNSUPPORTED，端口耗尽为 BACKEND_NO_PORTS，操作正执行为 BACKEND_BUSY，状态不允许为 BACKEND_STATE_CONFLICT。"
+            }
+          },
+          "503": {
+            "description": "BACKEND_TARGET_UNAVAILABLE when the inventory, host address or target adapter is unavailable. TEMPORARILY_UNAVAILABLE for database failures.",
+            "x-description": {
+              "en": "BACKEND_TARGET_UNAVAILABLE when the inventory, host address or target adapter is unavailable. TEMPORARILY_UNAVAILABLE for database failures.",
+              "zh-CN": "节点清单、地址或适配器不可用时返回 BACKEND_TARGET_UNAVAILABLE；数据库不可用时返回 TEMPORARILY_UNAVAILABLE。",
+              "zh-TW": "节点清单、地址或适配器不可用时返回 BACKEND_TARGET_UNAVAILABLE；数据库不可用时返回 TEMPORARILY_UNAVAILABLE。"
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -11124,6 +12004,371 @@
         "required": [
           "observed_at",
           "gpus"
+        ],
+        "additionalProperties": false
+      },
+      "ApplicationBackendTarget": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "description": "Backend adapter: ssh runs an OCI container, cluster uses the peer VOS Projects template.",
+            "x-description": {
+              "en": "Backend adapter: ssh runs an OCI container, cluster uses the peer VOS Projects template.",
+              "zh-CN": "执行方式。ssh 在节点启动 OCI 容器，cluster 通过对端 VOS Projects 模板部署。",
+              "zh-TW": "执行方式。ssh 在节点启动 OCI 容器，cluster 通过对端 VOS Projects 模板部署。"
+            },
+            "enum": [
+              "ssh",
+              "cluster"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "description": "SSH node or cluster member ID from GET /managed-nodes.",
+            "x-description": {
+              "en": "SSH node or cluster member ID from GET /managed-nodes.",
+              "zh-CN": "GET /managed-nodes 返回的 SSH 节点或集群成员 ID。",
+              "zh-TW": "GET /managed-nodes 返回的 SSH 节点或集群成员 ID。"
+            },
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}$"
+          },
+          "profile": {
+            "type": "string",
+            "description": "Registered compute Profile. A dgx-spark grant can also authorize jetson-thor.",
+            "x-description": {
+              "en": "Registered compute Profile. A dgx-spark grant can also authorize jetson-thor.",
+              "zh-CN": "已登记的算力 Profile。dgx-spark 授权兼容 jetson-thor。",
+              "zh-TW": "已登记的算力 Profile。dgx-spark 授权兼容 jetson-thor。"
+            },
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}$"
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "profile"
+        ],
+        "additionalProperties": false
+      },
+      "ApplicationBackendAccess": {
+        "type": "object",
+        "properties": {
+          "targets": {
+            "type": "array",
+            "description": "Approved target and Profile pairs. Omit none of the fields. An empty list denies new placements.",
+            "x-description": {
+              "en": "Approved target and Profile pairs. Omit none of the fields. An empty list denies new placements.",
+              "zh-CN": "获准的目标和 Profile 组合。字段必填，空列表禁止新建部署。",
+              "zh-TW": "获准的目标和 Profile 组合。字段必填，空列表禁止新建部署。"
+            },
+            "maxItems": 64,
+            "items": {
+              "$ref": "#/components/schemas/ApplicationBackendTarget"
+            }
+          },
+          "repositories": {
+            "type": "array",
+            "description": "Exact OCI repositories including the registry, without tag or digest. An empty list denies new placements.",
+            "x-description": {
+              "en": "Exact OCI repositories including the registry, without tag or digest. An empty list denies new placements.",
+              "zh-CN": "精确的 OCI 仓库路径，含 registry，省略 tag 与摘要。空列表禁止新建部署。",
+              "zh-TW": "精确的 OCI 仓库路径，含 registry，省略 tag 与摘要。空列表禁止新建部署。"
+            },
+            "maxItems": 64,
+            "items": {
+              "type": "string",
+              "description": "Scope includes tags and SHA-256 digests within this repository.",
+              "x-description": {
+                "en": "Scope includes tags and SHA-256 digests within this repository.",
+                "zh-CN": "授权范围涵盖该仓库下各 tag 和 SHA-256 摘要。",
+                "zh-TW": "授权范围涵盖该仓库下各 tag 和 SHA-256 摘要。"
+              },
+              "maxLength": 383
+            }
+          }
+        },
+        "required": [
+          "targets",
+          "repositories"
+        ],
+        "additionalProperties": false
+      },
+      "ApplicationBackendCreate": {
+        "type": "object",
+        "properties": {
+          "request_key": {
+            "type": "string",
+            "description": "Stable idempotency key unique within the calling application. Reuse with the same input returns the existing deployment, including after removal.",
+            "x-description": {
+              "en": "Stable idempotency key unique within the calling application. Reuse with the same input returns the existing deployment, including after removal.",
+              "zh-CN": "调用应用内唯一的幂等键。同参数重试返回现有部署，删除后也保留记录。",
+              "zh-TW": "调用应用内唯一的幂等键。同参数重试返回现有部署，删除后也保留记录。"
+            },
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}$"
+          },
+          "target": {
+            "$ref": "#/components/schemas/ApplicationBackendTarget"
+          },
+          "image": {
+            "type": "string",
+            "description": "Complete OCI registry/repository:tag or registry/repository@sha256:digest. Must match a granted repository.",
+            "x-description": {
+              "en": "Complete OCI registry/repository:tag or registry/repository@sha256:digest. Must match a granted repository.",
+              "zh-CN": "完整 OCI 镜像引用，含 registry、仓库和 tag 或 sha256 摘要。须匹配授权仓库。",
+              "zh-TW": "完整 OCI 镜像引用，含 registry、仓库和 tag 或 sha256 摘要。须匹配授权仓库。"
+            },
+            "maxLength": 512
+          },
+          "container_port": {
+            "type": "integer",
+            "description": "TCP port on which the container listens.",
+            "x-description": {
+              "en": "TCP port on which the container listens.",
+              "zh-CN": "容器监听的 TCP 端口。",
+              "zh-TW": "容器监听的 TCP 端口。"
+            },
+            "minimum": 1,
+            "maximum": 65535
+          }
+        },
+        "required": [
+          "request_key",
+          "target",
+          "image",
+          "container_port"
+        ],
+        "additionalProperties": false
+      },
+      "ApplicationBackendDeployment": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Deployment identifier, which also derives the runtime instance name.",
+            "x-description": {
+              "en": "Deployment identifier, which also derives the runtime instance name.",
+              "zh-CN": "部署标识，也用于生成实际运行实例名称。",
+              "zh-TW": "部署标识，也用于生成实际运行实例名称。"
+            },
+            "pattern": "^[a-f0-9]{32}$"
+          },
+          "app_id": {
+            "type": "string",
+            "description": "Owning application principal.",
+            "x-description": {
+              "en": "Owning application principal.",
+              "zh-CN": "部署所属应用凭据的应用 ID。",
+              "zh-TW": "部署所属应用凭据的应用 ID。"
+            },
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}$"
+          },
+          "request_key": {
+            "type": "string",
+            "description": "Stable idempotency key unique within the calling application. Reuse with the same input returns the existing deployment, including after removal.",
+            "x-description": {
+              "en": "Stable idempotency key unique within the calling application. Reuse with the same input returns the existing deployment, including after removal.",
+              "zh-CN": "调用应用内唯一的幂等键。同参数重试返回现有部署，删除后也保留记录。",
+              "zh-TW": "调用应用内唯一的幂等键。同参数重试返回现有部署，删除后也保留记录。"
+            },
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}$"
+          },
+          "target_kind": {
+            "type": "string",
+            "description": "Backend adapter: ssh runs an OCI container, cluster uses the peer VOS Projects template.",
+            "x-description": {
+              "en": "Backend adapter: ssh runs an OCI container, cluster uses the peer VOS Projects template.",
+              "zh-CN": "执行方式。ssh 在节点启动 OCI 容器，cluster 通过对端 VOS Projects 模板部署。",
+              "zh-TW": "执行方式。ssh 在节点启动 OCI 容器，cluster 通过对端 VOS Projects 模板部署。"
+            },
+            "enum": [
+              "ssh",
+              "cluster"
+            ]
+          },
+          "target_id": {
+            "type": "string",
+            "description": "SSH node or cluster member ID from GET /managed-nodes.",
+            "x-description": {
+              "en": "SSH node or cluster member ID from GET /managed-nodes.",
+              "zh-CN": "GET /managed-nodes 返回的 SSH 节点或集群成员 ID。",
+              "zh-TW": "GET /managed-nodes 返回的 SSH 节点或集群成员 ID。"
+            },
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}$"
+          },
+          "profile": {
+            "type": "string",
+            "description": "Registered compute Profile. A dgx-spark grant can also authorize jetson-thor.",
+            "x-description": {
+              "en": "Registered compute Profile. A dgx-spark grant can also authorize jetson-thor.",
+              "zh-CN": "已登记的算力 Profile。dgx-spark 授权兼容 jetson-thor。",
+              "zh-TW": "已登记的算力 Profile。dgx-spark 授权兼容 jetson-thor。"
+            },
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}$"
+          },
+          "host": {
+            "type": "string",
+            "description": "Target IPv4 address from the approved node inventory.",
+            "x-description": {
+              "en": "Target IPv4 address from the approved node inventory.",
+              "zh-CN": "获准节点清单中的目标 IPv4 地址。",
+              "zh-TW": "获准节点清单中的目标 IPv4 地址。"
+            },
+            "format": "ipv4"
+          },
+          "host_port": {
+            "type": "integer",
+            "description": "Reserved host TCP port. Scope is one controller database and target IP address.",
+            "x-description": {
+              "en": "Reserved host TCP port. Scope is one controller database and target IP address.",
+              "zh-CN": "预留的宿主机 TCP 端口，作用域为控制器数据库和目标 IP。",
+              "zh-TW": "预留的宿主机 TCP 端口，作用域为控制器数据库和目标 IP。"
+            },
+            "minimum": 42000,
+            "maximum": 42999
+          },
+          "container_port": {
+            "type": "integer",
+            "description": "TCP port on which the container listens.",
+            "x-description": {
+              "en": "TCP port on which the container listens.",
+              "zh-CN": "容器监听的 TCP 端口。",
+              "zh-TW": "容器监听的 TCP 端口。"
+            },
+            "minimum": 1,
+            "maximum": 65535
+          },
+          "image": {
+            "type": "string",
+            "description": "Complete OCI registry/repository:tag or registry/repository@sha256:digest. Must match a granted repository.",
+            "x-description": {
+              "en": "Complete OCI registry/repository:tag or registry/repository@sha256:digest. Must match a granted repository.",
+              "zh-CN": "完整 OCI 镜像引用，含 registry、仓库和 tag 或 sha256 摘要。须匹配授权仓库。",
+              "zh-TW": "完整 OCI 镜像引用，含 registry、仓库和 tag 或 sha256 摘要。须匹配授权仓库。"
+            },
+            "maxLength": 512
+          },
+          "nvidia": {
+            "type": "boolean",
+            "description": "True when the NVIDIA runtime is selected for the assigned Profile.",
+            "x-description": {
+              "en": "True when the NVIDIA runtime is selected for the assigned Profile.",
+              "zh-CN": "所选 Profile 启用 NVIDIA 容器运行时时为 true。",
+              "zh-TW": "所选 Profile 启用 NVIDIA 容器运行时时为 true。"
+            }
+          },
+          "state": {
+            "type": "string",
+            "description": "`pending` Queued or VOS Projects is deploying.\n`running` Runtime reports the instance running.\n`failed` Start failed; inspect the error before retrying.\n`stopping` Stopping and removing the runtime while retaining its port.\n`stopped` Runtime absent or exited; port remains reserved for restart.\n`deleting` Removing runtime before releasing the port.\n`removed` Removal confirmed and port released; idempotency record retained.\n`cleanup_failed` Cleanup could not be confirmed. The port stays reserved. Retry stop or deletion..",
+            "x-description": {
+              "en": "`pending` Queued or VOS Projects is deploying.\n`running` Runtime reports the instance running.\n`failed` Start failed; inspect the error before retrying.\n`stopping` Stopping and removing the runtime while retaining its port.\n`stopped` Runtime absent or exited; port remains reserved for restart.\n`deleting` Removing runtime before releasing the port.\n`removed` Removal confirmed and port released; idempotency record retained.\n`cleanup_failed` Cleanup could not be confirmed. The port stays reserved. Retry stop or deletion..",
+              "zh-CN": "`pending` 已入队或 VOS Projects 正在部署.\n`running` 运行时报告实例正在运行.\n`failed` 启动失败，可检查错误后重试.\n`stopping` 正在停止和移除实例，保留端口.\n`stopped` 实例已退出或移除，端口保留以便重启.\n`deleting` 正在清理实例，等确认后释放端口.\n`removed` 已确认移除并释放端口，保留幂等记录.\n`cleanup_failed` 未能确认清理，端口保持预留。可重试停止或删除。.",
+              "zh-TW": "`pending` 已入队或 VOS Projects 正在部署.\n`running` 运行时报告实例正在运行.\n`failed` 启动失败，可检查错误后重试.\n`stopping` 正在停止和移除实例，保留端口.\n`stopped` 实例已退出或移除，端口保留以便重启.\n`deleting` 正在清理实例，等确认后释放端口.\n`removed` 已确认移除并释放端口，保留幂等记录.\n`cleanup_failed` 未能确认清理，端口保持预留。可重试停止或删除。."
+            },
+            "enum": [
+              "pending",
+              "running",
+              "failed",
+              "stopping",
+              "stopped",
+              "deleting",
+              "removed",
+              "cleanup_failed"
+            ]
+          },
+          "last_error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`BACKEND_DEPLOYMENT_FORBIDDEN` Deployment authorization was withdrawn.\n`BACKEND_START_FAILED` Start failed or runtime cannot be contacted; verify image, port, runtime and peer.\n`BACKEND_RUNTIME_PENDING` Previously running project now reports a pending state.\n`BACKEND_RUNTIME_UNAVAILABLE` The last runtime status check failed.\n`BACKEND_CLEANUP_FAILED` Stop or removal failed or could not be confirmed. Null when there is no current operation error.",
+            "x-description": {
+              "en": "`BACKEND_DEPLOYMENT_FORBIDDEN` Deployment authorization was withdrawn.\n`BACKEND_START_FAILED` Start failed or runtime cannot be contacted; verify image, port, runtime and peer.\n`BACKEND_RUNTIME_PENDING` Previously running project now reports a pending state.\n`BACKEND_RUNTIME_UNAVAILABLE` The last runtime status check failed.\n`BACKEND_CLEANUP_FAILED` Stop or removal failed or could not be confirmed. Null when there is no current operation error.",
+              "zh-CN": "`BACKEND_DEPLOYMENT_FORBIDDEN` 部署授权已撤销.\n`BACKEND_START_FAILED` 启动失败或运行时无法连接，检查镜像、端口、运行时和对端.\n`BACKEND_RUNTIME_PENDING` 此前运行的项目当前处于过渡态.\n`BACKEND_RUNTIME_UNAVAILABLE` 最近一次运行状态检查失败.\n`BACKEND_CLEANUP_FAILED` 停止或清理失败，或暂无法确认. 当前无操作错误时为 null。",
+              "zh-TW": "`BACKEND_DEPLOYMENT_FORBIDDEN` 部署授权已撤销.\n`BACKEND_START_FAILED` 启动失败或运行时无法连接，检查镜像、端口、运行时和对端.\n`BACKEND_RUNTIME_PENDING` 此前运行的项目当前处于过渡态.\n`BACKEND_RUNTIME_UNAVAILABLE` 最近一次运行状态检查失败.\n`BACKEND_CLEANUP_FAILED` 停止或清理失败，或暂无法确认. 当前无操作错误时为 null。"
+            },
+            "enum": [
+              "BACKEND_DEPLOYMENT_FORBIDDEN",
+              "BACKEND_START_FAILED",
+              "BACKEND_RUNTIME_PENDING",
+              "BACKEND_RUNTIME_UNAVAILABLE",
+              "BACKEND_CLEANUP_FAILED",
+              null
+            ]
+          },
+          "endpoint": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Direct HTTP address when running and the last runtime check has no error, null otherwise. The app may use its own proxy.",
+            "x-description": {
+              "en": "Direct HTTP address when running and the last runtime check has no error, null otherwise. The app may use its own proxy.",
+              "zh-CN": "运行中且最近运行状态无错误时返回 HTTP 直连地址，否则为 null。应用可通过自己的后端代理访问。",
+              "zh-TW": "运行中且最近运行状态无错误时返回 HTTP 直连地址，否则为 null。应用可通过自己的后端代理访问。"
+            },
+            "format": "uri"
+          },
+          "created_at": {
+            "type": "string",
+            "description": "Creation timestamp, UTC.",
+            "x-description": {
+              "en": "Creation timestamp, UTC.",
+              "zh-CN": "创建时间，UTC。",
+              "zh-TW": "创建时间，UTC。"
+            },
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "description": "Last state check or transition timestamp, UTC.",
+            "x-description": {
+              "en": "Last state check or transition timestamp, UTC.",
+              "zh-CN": "最近一次状态检查或变更时间，UTC。",
+              "zh-TW": "最近一次状态检查或变更时间，UTC。"
+            },
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "app_id",
+          "request_key",
+          "target_kind",
+          "target_id",
+          "profile",
+          "host",
+          "host_port",
+          "container_port",
+          "image",
+          "nvidia",
+          "state",
+          "last_error",
+          "endpoint",
+          "created_at",
+          "updated_at"
+        ],
+        "additionalProperties": false
+      },
+      "ApplicationBackendList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "description": "Up to 200 newest deployments, including stopped and removed records; ordered by creation time descending then ID.",
+            "x-description": {
+              "en": "Up to 200 newest deployments, including stopped and removed records; ordered by creation time descending then ID.",
+              "zh-CN": "最近 200 条部署，含停止和已删除记录，按创建时间降序、ID 排序。",
+              "zh-TW": "最近 200 条部署，含停止和已删除记录，按创建时间降序、ID 排序。"
+            },
+            "items": {
+              "$ref": "#/components/schemas/ApplicationBackendDeployment"
+            },
+            "maxItems": 200
+          }
+        },
+        "required": [
+          "items"
         ],
         "additionalProperties": false
       }

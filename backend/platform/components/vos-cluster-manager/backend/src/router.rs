@@ -32,6 +32,8 @@ pub fn build_router(state: AppState) -> Router {
     // API 路由（相对路径；url_base 前缀由外部统一挂载）
     let api = Router::new()
         .route("/health", get(handlers::health::health))
+        .route("/application-backend", axum::routing::post(handlers::application_backend::local))
+        .route("/application-backend/{member_id}/dispatch", axum::routing::post(handlers::application_backend::dispatch))
         .route("/cluster/status", get(handlers::cluster::cluster_status))
         .route("/cluster/init", axum::routing::post(handlers::cluster::cluster_init))
         .route("/nodes", axum::routing::post(handlers::nodes::node_add))

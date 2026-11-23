@@ -65,3 +65,7 @@ Node management now combines application heartbeats, node health, approved budge
 On VOS with Traefik v3, opening the app root directly in a browser redirects to its VOS page. Embedded pages and API requests use their existing routes.
 
 In Resources and tasks → Execution resources, administrators can read the observed nodes’ logical CPU count and utilization, available and total system memory, and GPU utilization. Shared memory is counted once. Reports require a working saved SSH connection when using the embedded inference runtime; unavailable samples are identified in the panel. The data is also exposed by the administrator GET /nodes scheduling API.
+
+### Application backend deployments
+
+Open API Documentation → Scheduling API → Application backend deployments for roles, fields, states, and examples. Register the target and Profile, issue an application service credential, and grant repositories and targets with PUT /backend-deployment-access/{app_id}. Submit the selected image, target, and container port to POST /backend-deployments. Poll until running and read endpoint. SSH targets use Docker. Trusted cluster members use VOS Projects. Stop retains the host port. Confirmed deletion releases it.

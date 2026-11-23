@@ -1,0 +1,12 @@
+services:
+  backend:
+    image: "${SCHEDULER_BACKEND_IMAGE:?missing application backend image}"
+    runtime: "${SCHEDULER_BACKEND_RUNTIME:-runc}"
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      NVIDIA_VISIBLE_DEVICES: "${SCHEDULER_BACKEND_VISIBLE_DEVICES:-void}"
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    ports:
+      - "${SCHEDULER_BACKEND_HOST_PORT:?missing host port}:${SCHEDULER_BACKEND_PORT:?missing application port}/tcp"
+    restart: unless-stopped

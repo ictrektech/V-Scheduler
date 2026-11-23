@@ -348,6 +348,14 @@ Base: `http://v-scheduler:38120/api/v1`. [Complete OpenAPI](../api/openapi-v1.js
 | DELETE | `/managed-nodes/{id}` | Remove a saved node connection / 移除节点连接 |
 | POST | `/managed-nodes/{id}/rescan` | Rescan a saved node / 重新扫描节点 |
 | POST | `/managed-nodes/{id}/runtime` | Verify image pull and container start / 验证镜像拉取和容器启动 |
+| GET | `/backend-deployment-access/{app_id}` | Read application backend access / 读取应用后端部署授权 |
+| PUT | `/backend-deployment-access/{app_id}` | Grant application backend access / 设置应用后端部署授权 |
+| GET | `/backend-deployments` | List application backend deployments / 列出应用后端部署 |
+| POST | `/backend-deployments` | Deploy an application backend / 创建应用后端部署 |
+| GET | `/backend-deployments/{id}` | Read a backend deployment / 读取一个应用后端部署 |
+| DELETE | `/backend-deployments/{id}` | Remove an application backend / 删除应用后端部署 |
+| POST | `/backend-deployments/{id}/start` | Start a stopped or failed backend / 启动已停止或失败的后端 |
+| POST | `/backend-deployments/{id}/stop` | Stop an application backend / 停止应用后端 |
 | GET | `/compute-profiles` | List built-in and custom compute Profiles / 读取内置及自定义 Profile |
 | POST | `/compute-profiles` | Register a custom compute Profile / 登记自定义 Profile |
 | GET | `/inference/images` | List or filter registered inference images / 读取或筛选已登记的推理镜像 |
@@ -566,3 +574,5 @@ Additional `/v1/*` resource routes are transparent native forwarding. Their avai
 | 方法 | 路径 | 功能 |
 | --- | --- | --- |
 | GET | `/api/v1/model-speed` | [模型速度趋势：生成速度、首 Token 等待及逐次调用数据](model-speed.md) |
+
+[应用后端部署与授权示例 / Application backend placement and access examples](application-backend-deployment.md)

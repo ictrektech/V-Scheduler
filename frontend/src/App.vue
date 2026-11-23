@@ -61,8 +61,8 @@ const pageTitle=computed(()=>(({overview:'模型与调用',models:'模型与上�
 const spec=ref<any>(null),operationKey=ref('GET /discovery'),exampleTab=ref('curl'),discoveryResult=ref<unknown>(null)
 const operations=computed(()=>Object.entries(spec.value?.paths||{}).flatMap(([path,methods])=>Object.entries(methods as any).filter(([method])=>['get','post','put','patch','delete'].includes(method)).map(([method,op])=>({path,method,key:method.toUpperCase()+' '+path,...op as any}))))
 const operation=computed(()=>operations.value.find(op=>op.key===operationKey.value)||operations.value[0])
-const groupFor=(path:string)=>path==='/discovery'||path==='/openapi.json'?'公开发现':path.startsWith('/tasks')||path==='/events'?'任务接口':path.startsWith('/permits')?'资源许可':path.startsWith('/workers')||path.startsWith('/attempts')?'节点与执行':'管理接口'
-const groups=computed(()=>['公开发现','任务接口','资源许可','节点与执行','管理接口'].map(name=>({name,items:operations.value.filter(op=>groupFor(op.path)===name)})).filter(group=>group.items.length))
+const groupFor=(path:string)=>path==='/discovery'||path==='/openapi.json'?'公开发现':path.startsWith('/tasks')||path==='/events'?'任务接口':path.startsWith('/permits')?'资源许可':path.startsWith('/backend-deploy')?'应用后端部署':path.startsWith('/workers')||path.startsWith('/attempts')?'节点与执行':'管理接口'
+const groups=computed(()=>['公开发现','任务接口','资源许可','节点与执行','应用后端部署','管理接口'].map(name=>({name,items:operations.value.filter(op=>groupFor(op.path)===name)})).filter(group=>group.items.length))
 function resolve(schema:any):any {if(!schema?.$ref)return schema||{};return schema.$ref.split('/').slice(1).reduce((obj:any,key:string)=>obj?.[key],spec.value)||{}}
 const requestSchema=computed(()=>resolve(operation.value?.requestBody?.content?.['application/json']?.schema))
 const fields=computed(()=>Object.entries(requestSchema.value.properties||{}).map(([name,value])=>({name,...resolve(value),required:requestSchema.value.required?.includes(name)})))
