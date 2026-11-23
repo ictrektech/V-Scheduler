@@ -59,7 +59,7 @@ profiles:
       arch: arm64
       software: [cuda]
       device-type:
-        - any-of: [l4t, jetson]
+        - any-of: [jetson-orin, l4t, jetson]
     conflicts: [amd, amd-without-cuda, arm, arm-without-cuda, thor-spark]
   - name: thor-spark
     title: {zh-CN: "Jetson Thor / DGX Spark", en: "Jetson Thor / DGX Spark", zh-TW: "Jetson Thor / DGX Spark"}
@@ -68,7 +68,7 @@ profiles:
       arch: arm64
       software: [cuda]
       device-type:
-        - any-of: [thor-spark, thor]
+        - any-of: [jetson-thor, dgx-spark, thor-spark, thor, spark]
     conflicts: [amd, amd-without-cuda, arm, arm-without-cuda, l4t]
 require-profiles: true
 storage:

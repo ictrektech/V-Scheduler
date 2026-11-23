@@ -338,6 +338,12 @@ Base: `http://v-scheduler:38120/api/v1`. [Complete OpenAPI](../api/openapi-v1.js
 | POST | `/service-identities/{id}/revoke` | Revoke scoped service identity |
 | POST | `/node-sources/modelinfer/{id}` | Save VOS App node budget plan |
 | POST | `/node-sources/modelinfer/{id}/control` | Reserved VOS App remote control contract |
+| GET | `/managed-nodes` | List SSH compute nodes with optional compatibility filtering / 查看和筛选 SSH 算力节点 |
+| POST | `/managed-nodes` | Verify and save a node connection / 验证并保存节点连接 |
+| PUT | `/managed-nodes/{id}` | Update a saved node / 更新节点 |
+| DELETE | `/managed-nodes/{id}` | Remove a saved node connection / 移除节点连接 |
+| POST | `/managed-nodes/{id}/rescan` | Rescan a saved node / 重新扫描节点 |
+| POST | `/managed-nodes/{id}/runtime` | Verify image pull and container start / 验证镜像拉取和容器启动 |
 | POST | `/inference-waiters` | Internal bounded admission priority hints |
 | POST | `/permits/{id}/reuse-resident` | Rotate a reserved built-in resident execution proof |
 | POST | `/permits/inspect` | Inspect current binding and execution-node eligibility without reserving resources |
