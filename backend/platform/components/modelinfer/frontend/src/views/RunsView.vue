@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { getSchedulerRuntime } from '@scheduler-auth';
 import { computed, onBeforeUnmount, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
@@ -137,17 +138,18 @@ const form = reactive({
   auto_restart_fail_minutes: DEFAULT_FAIL_MINUTES,
 });
 
+const workspace = Boolean(getSchedulerRuntime());
 const columns = computed(() => {
   void locale.value;
   return [
-    { title: t('runs.columns.name'), key: 'name', width: 210 },
-    { title: t('runs.columns.model'), key: 'model', width: 290 },
-    { title: t('runs.columns.nodeCount'), key: 'node_count', width: 90 },
-    { title: t('runs.columns.headNode'), key: 'head_node', width: 150 },
-    { title: t('runs.columns.state'), key: 'state', width: 110 },
-    { title: t('runs.columns.health'), key: 'health_status', width: 100 },
-    { title: t('runs.columns.updatedAt'), key: 'updated_at', width: 150 },
-    { title: t('runs.columns.action'), key: 'action', width: 230 },
+    { title: t('runs.columns.name'), key: 'name', width: workspace ? 160 : 210 },
+    { title: t('runs.columns.model'), key: 'model', width: workspace ? 205 : 290 },
+    { title: t('runs.columns.nodeCount'), key: 'node_count', width: workspace ? 68 : 90 },
+    { title: t('runs.columns.headNode'), key: 'head_node', width: workspace ? 120 : 150 },
+    { title: t('runs.columns.state'), key: 'state', width: workspace ? 90 : 110 },
+    { title: t('runs.columns.health'), key: 'health_status', width: workspace ? 84 : 100 },
+    { title: t('runs.columns.updatedAt'), key: 'updated_at', width: workspace ? 130 : 150 },
+    { title: t('runs.columns.action'), key: 'action', width: workspace ? 204 : 230 },
   ];
 });
 
@@ -854,6 +856,7 @@ onUnmounted(() => {
   <PageShell
     :title="t('runs.title')"
     :subtitle="t('runs.subtitle')"
+    :hide-heading="workspace"
     :loading="loading"
   >
     <template #stats>
@@ -900,7 +903,7 @@ onUnmounted(() => {
       :columns="columns"
       :data-source="rows"
       :pagination="pagination"
-      :scroll="{ x: 1330 }"
+      :scroll="{ x: workspace ? 1061 : 1330 }"
       @change="onTableChange"
     >
       <template #bodyCell="{ column, record }">

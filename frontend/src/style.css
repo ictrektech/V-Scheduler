@@ -11,3 +11,5 @@
 .source-observation-note{grid-column:1/-1;border-top:1px solid #e5edf3;padding-top:16px;color:#53718b;font-size:12px;line-height:1.8}.source-observation-note p{margin:6px 0 0;color:#7c8fa3}
 
 @media(max-width:540px){aside nav{overflow-x:auto}aside nav button{flex:0 0 auto}}
+
+.documentation-tabs{display:flex;gap:8px;margin-bottom:20px}.documentation-tabs button{background:transparent;color:#64748b}.documentation-tabs button.current{background:#e7effc;color:#265cc2}

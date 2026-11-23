@@ -4,20 +4,21 @@ defineProps<{
   title: string;
   subtitle?: string;
   loading?: boolean;
+  hideHeading?: boolean;
 }>();
 </script>
 
 <template>
   <div class="mi-page">
-    <header class="mi-page__head">
-      <div class="mi-page__titles">
+    <header v-if="!hideHeading || $slots.actions" class="mi-page__head">
+      <div v-if="!hideHeading" class="mi-page__titles">
         <h1 class="mi-page__title">
           <span class="mi-page__mark" aria-hidden="true" />
           {{ title }}
         </h1>
         <p v-if="subtitle" class="mi-page__subtitle">{{ subtitle }}</p>
       </div>
-      <div v-if="$slots.actions" class="mi-page__actions">
+      <div v-if="$slots.actions" class="mi-page__actions" :class="{'mi-page__actions--alone':hideHeading}">
         <slot name="actions" />
       </div>
     </header>
@@ -76,6 +77,9 @@ defineProps<{
   display: flex;
   gap: 8px;
   flex-shrink: 0;
+}
+.mi-page__actions--alone {
+  margin-inline-start: auto;
 }
 .mi-page__stats {
   display: flex;

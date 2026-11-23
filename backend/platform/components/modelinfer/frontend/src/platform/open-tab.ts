@@ -1,3 +1,4 @@
+import { getSchedulerRuntime } from '@scheduler-auth';
 /**
  * 平台新标签页打开工具（`vos_platform.platform.openTab`）。
  *
@@ -94,6 +95,7 @@ export function normalizeTitleForPlatform(
  *          `false` 表示桥接不可用或调用失败，调用方应回退当前页导航。
  */
 export async function openDetailInNewTab(options: OpenDetailTabOptions): Promise<boolean> {
+  if (getSchedulerRuntime()) return false
   const platform = getInjectedVosPlatform()
   const openTab = platform?.platform?.openTab
   if (typeof openTab !== 'function') return false

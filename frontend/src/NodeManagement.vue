@@ -4,7 +4,7 @@ import {ref,onMounted,onUnmounted,computed} from 'vue'
 import Icon from './Icon.vue'
 import ApplicationIntegrations from './ApplicationIntegrations.vue'
 const props=defineProps<{request:(path:string,body?:unknown,method?:string)=>Promise<any>,nodes:any[],apiUrl:string,t:(value:string)=>string,locale:string}>()
-const emit=defineEmits<{refresh:[]}>()
+const emit=defineEmits<{refresh:[];select:[page:'inference'|'cluster']}>()
 const data=ref<any>({nodes:[],executors:[],enrollments:[],service_identities:[],events:[]})
 const busy=ref(false),error=ref(''),tab=ref('nodes'),dialog=ref(''),secret=ref<any>(null),nodeForm=ref<any>(null),executorForm=ref<any>(null),confirm=ref<any>(null)
 const identityApp=ref(''),permitGrants=ref<string[]>([]),delegatedGrants=ref<string[]>([]),copied=ref(false)
@@ -79,9 +79,9 @@ onUnmounted(()=>{clearInterval(timer);secret.value=null})
   <div class="management-intro panel">
    <div><h2>{{t('节点管理')}}</h2><p>{{t('管理 SSH 算力节点、VOS 集群成员和推理部署。')}}</p></div>
    <div class="dialog-actions">
-    <a v-if="inferenceReady" class="button quiet" href="/app/com.ictrek.v-scheduler/inference/#/runs">{{t('推理部署')}}</a>
+    <button v-if="inferenceReady" type="button" class="quiet" @click="emit('select','inference')">{{t('推理部署')}}</button>
     <button v-else type="button" class="quiet" :disabled="migration.pending" @click="loadMigration">{{t('迁移 ModelInfer 部署')}}</button>
-    <a v-if="clusterReady" class="button quiet" href="/app/com.ictrek.v-scheduler/cluster/">{{t('VOS 集群管理')}}</a>
+    <button v-if="clusterReady" type="button" class="quiet" @click="emit('select','cluster')">{{t('VOS 集群管理')}}</button>
    </div>
   </div>
   <div v-if="error" class="error" role="alert">{{error}}</div>

@@ -13,3 +13,9 @@ body,
 * {
   box-sizing: border-box;
 }
+[data-scheduler-workspace],
+[data-scheduler-workspace] :is(body, #app) {
+  height: auto;
+  background: transparent;
+  font-family: Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+}

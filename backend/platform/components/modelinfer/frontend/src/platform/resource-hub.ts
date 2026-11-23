@@ -1,3 +1,4 @@
+import { getSchedulerRuntime } from '@scheduler-auth';
 import { getInjectedVosPlatform } from './open-tab';
 
 export type ResourceHub = 'weights' | 'images';
@@ -9,6 +10,11 @@ export function resourceHubUrl(hub: ResourceHub): string {
 
 /** 保留运行配置页面，优先通过平台标签页访问下载应用。 */
 export async function openResourceHub(hub: ResourceHub): Promise<void> {
+  const runtime = getSchedulerRuntime();
+  if (runtime && hub === 'weights') {
+    runtime.openWeights();
+    return;
+  }
   const url = resourceHubUrl(hub);
   const openTab = getInjectedVosPlatform()?.platform?.openTab;
   if (openTab) {

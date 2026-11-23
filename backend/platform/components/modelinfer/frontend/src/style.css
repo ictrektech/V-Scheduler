@@ -133,3 +133,22 @@ body,
   margin-top: 16px;
   flex-wrap: wrap;
 }
+
+/* The scheduler supplies the outer layout and the navigation. */
+html[data-scheduler-workspace] {
+  --mi-bg: transparent;
+  --mi-text: #10213d;
+  --mi-text-secondary: #60758d;
+  --mi-border: #d9e3ee;
+  --mi-primary: #087f8a;
+  --mi-primary-2: #087f8a;
+  --mi-primary-soft: #e5f4f3;
+  --mi-primary-gradient: #087f8a;
+  --mi-shadow-sm: none;
+}
+[data-scheduler-workspace] :is(body, #app) {min-height:0;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+[data-scheduler-workspace] .mi-page {max-width:none}
+[data-scheduler-workspace] .mi-page__head {flex-wrap:wrap}
+[data-scheduler-workspace] .mi-page__title {font-size:18px}
+[data-scheduler-workspace] .mi-page__subtitle {margin-left:0}
+html[data-scheduler-workspace] :is(.mi-page__mark,.mi-row-mark) {display:none}

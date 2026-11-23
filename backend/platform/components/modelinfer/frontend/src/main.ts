@@ -8,6 +8,10 @@ import 'ant-design-vue/dist/reset.css';
 import './style.css';
 import { initPlatformSync } from './platform/vos-platform';
 import { useAppStore } from './stores/app';
+import { getSchedulerRuntime } from '@scheduler-auth';
+
+const runtime = getSchedulerRuntime();
+if (runtime) document.documentElement.dataset.schedulerWorkspace = '';
 
 const app = createApp(App);
 app.use(createPinia());
@@ -25,7 +29,11 @@ watch(
 // 平台语言/主题联动（非阻塞，不阻塞首屏挂载）：
 // - 嵌入 VOS 平台时跟随平台的 locale 与明暗主题；
 // - 独立访问（无 window.vos_platform）时保持本地设置（localStorage / 浅色）。
-void initPlatformSync({
+if (runtime) {
+  const applyLocale = () => useAppStore().changeLanguage(runtime.locale() === 'en' ? 'en' : 'zh-CN');
+  applyLocale();
+  window.addEventListener('scheduler:locale', applyLocale);
+} else void initPlatformSync({
   onLocale: (locale) => useAppStore().changeLanguage(locale),
   onTheme: (theme) => useAppStore().setTheme(theme),
 });

@@ -30,6 +30,8 @@ The dashboard shows 24-hour queue wait, occupancy P50/P95, task failure rate and
 
 Node management reuses the installed ModelInfer app’s remote-node inventory and existing monitoring. Users do not install Agents on individual machines. Save budget plans, manage approved nodes, executors and scoped service credentials, and inspect activity. Plans do not grant execution; remote scheduling control awaits verification. Existing deployments remain managed by their owning VOS app.
 
+Administrators open **Inference deployments** from the V-Scheduler sidebar or go to **Advanced Management → VOS Cluster Manager**. Deployment lists, details, model cards, and cluster views open in this workspace. To import existing deployments, use **Node Management → Migrate ModelInfer deployments**. **API Documentation → Scheduler Management API** lists the existing migration and runtime endpoints.
+
 ## Docker aliases and host ports
 
 The defaults below apply to every profile. Replace `<vos-host>` with the installed VOS host IP/name. Docker aliases resolve on `vos_default`; prefix addresses with `http://`. All listed host ports are installer parameters. The in-app API guide displays the configured values.

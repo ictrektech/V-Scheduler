@@ -44,6 +44,20 @@ declare global {
   }
 }
 
+interface SchedulerRuntimeContext {
+  token: () => Promise<string | null>
+  locale: () => string
+  openWeights: () => void
+}
+
+export interface SchedulerRuntimeFrame extends HTMLIFrameElement {
+  schedulerRuntime?: SchedulerRuntimeContext
+}
+
+export function getSchedulerRuntime(): SchedulerRuntimeContext | undefined {
+  return (window.frameElement as SchedulerRuntimeFrame | null)?.schedulerRuntime
+}
+
 const CLIENT_ID = 'com.ictrek.v-scheduler'
 const SCOPE = 'openid profile email'
 const TOKEN_CACHE_KEY = 'v_scheduler_vos_token'
@@ -60,6 +74,8 @@ let platformSubject:string|null=null,platformLoggedOut=false
 const AUTHORIZE_MIN_INTERVAL_MS = 30_000
 
 export async function getVOSBearerToken(): Promise<string | null> {
+  const runtime = getSchedulerRuntime()
+  if (runtime) return runtime.token()
   if (tokenPromise) return tokenPromise
   tokenPromise = resolveVOSBearerToken().catch(error=>{recordDiagnostic(authDiagnosticCode(error),"token_resolve");return null}).finally(() => {
     tokenPromise = null

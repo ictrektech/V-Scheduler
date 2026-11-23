@@ -99,7 +99,7 @@ ModelInfer 和 Image Hub 的 Rust 后端、管理页面及构建定义位于 [�
 在「节点管理 → SSH 算力节点」中，管理员可以保存密钥或密码连接、自动识别或指定 Profile，并验证节点拉取镜像和启动容器。登录 VOS 的用户和持有服务凭据的应用可查看脱敏清单。见 [SSH 算力节点](docs/node-management.md#ssh-算力节点--ssh-compute-nodes)。
 重新扫描会在硬件探测成功后刷新识别结果。SSH 临时中断时，节点保留上一次成功识别的 Profile，可以稍后重试。
 
-管理员可在「节点管理 → 迁移 ModelInfer 部署」预览并导入已有部署。接管后在同一页面打开「推理部署」。对应端点可在「API 文档 → 调度管理 API」查看。文件备份、运行时启用和集群配置见 [迁移与集群节点指南](docs/inference-migration.md)。
+管理员可在「节点管理 → 迁移 ModelInfer 部署」预览并导入已有部署。接管后从 V-Scheduler 左侧导航打开「推理部署」。集群入口位于「高级管理 → VOS 集群管理」。列表、详情和集群成员在同一工作区操作。对应端点可在「API 文档 → 调度管理 API」查看，现有 API 契约保持一致。文件备份、运行时启用和集群配置见 [迁移与集群节点指南](docs/inference-migration.md)。
 
 接管已有部署、打开应用内推理和集群管理，以及配置跨主机管理凭据，见 [推理接管与集群节点](docs/inference-migration.md)。
 
