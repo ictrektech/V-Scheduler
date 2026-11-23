@@ -249,6 +249,7 @@ async fn collect(db: &PgPool, headers: &HeaderMap) -> anyhow::Result<Value> {
                 .json::<Value>()
                 .await
                 .ok()
+                .filter(|sample| sample["observed_at"].is_string() && sample["gpus"].is_array())
             };
             let (measurements, resources) = tokio::join!(measurements, resources);
             (id, measurements, resources)

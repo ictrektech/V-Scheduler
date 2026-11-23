@@ -95,10 +95,11 @@ async fn rescan(State(app): App, Path(id): Path<String>) -> Result<NodeView> {
 async fn resources(State(app): App, Path(id): Path<String>) -> Result<Value> {
     let node = nodes::get_node(&app.db, &id).await?;
     let script = include_str!("../../assets/scheduler-host-resources.sh");
-    let cmd = format!("sh -c '{}'", script.replace('\'', "'\\''"));
+    let target = nodes::ssh_target_of(&node).with_sudo_password("");
+    // SshExec invokes the system shell and quotes the command once.
     let output = app
         .ssh
-        .run_with_timeout(&nodes::ssh_target_of(&node), &cmd, Duration::from_secs(6))
+        .run_with_timeout(&target, script, Duration::from_secs(6))
         .await?;
     let mut sample = json!({"observed_at": chrono::Utc::now().to_rfc3339(), "gpus": []});
     let mut gpus = Vec::new();
