@@ -23,13 +23,14 @@
 
 ## 交接字段与执行责任
 
-绑定包含 `protocol_version=1`、单调递增 `binding_revision`、`app_id`、固定调度 `url=http://v-router:8080/scheduler/api/v1`、本应用的 `token` 与 `executor_token`、固定 `upstream_url`、`execution_settings`、`models`、`gateway_executors`、`model_limits` 及 Image Studio 的 `model_parameters`。客户端先核验 VOS 身份、固定地址和控制器执行器，再以 0600 原子落盘；服务凭据不得交给业务用户。
+绑定包含 `protocol_version=1`、单调递增 `binding_revision`、`app_id`、固定调度 `url=http://v-router:8080/scheduler/api/v1`、本应用的 `token` 与 `executor_token`、固定 `upstream_url`、`execution_settings`、`models`、`gateway_executors`、`model_limits` 及 Image Studio 的 `model_parameters` 与 `reference_models`。客户端先核验 VOS 身份、固定地址和控制器执行器，再以 0600 原子落盘；服务凭据不得交给业务用户。
 
 这里的 `v-router` 是上述三款已发布旧客户端的固定兼容契约，实际指向 `v-scheduler` 统一容器。新客户端推荐正式 `v-scheduler` 地址；这些旧客户端后续切换时须同步核验收发两端契约，不能只改文档或放宽地址白名单。
 
 - Music 限额包含 `duration_seconds`、`prompt_characters`、`negative_prompt_characters`。
 - Desensitize NER 包含 `text_characters`、`max_tokens`；OCR 包含 `input_bytes`、`input_width`、`input_height`、`input_pixels`、`input_pages`。解码前及实际推理前均检查。
-- Image Studio 包含图像、批次、视频、hires 和文本范围；`model_parameters` 完整匹配实测 JobRecord 的 19 个运行参数及 `has_reference`，使用 `model@variant` 原生 ID。不能用默认参数的预算放行其他 offload、缓存、后端或参考图组合。
+- Image Studio 包含图像、批次、视频、hires 和文本范围；`model_parameters` 完整匹配实测 JobRecord 的 19 个运行参数，使用 `model@variant` 原生 ID。`has_reference` 只记录，不参与相等比较。不能用默认参数的预算放行其他 offload、缓存、后端或参考图组合。
+- Image Studio 的参考图许可单独下发：校准条目声明 `reference_allowed: true` 后，绑定里该模型出现在 `reference_models`。应用只对清单中的模型放行参考图作业，其余仍拒绝；未声明时默认不允许。参考图作业与同名模型的运行参数校准相同。
 
 直接同步调用由应用取得、续租和释放自己的许可。经统一网关调用时，应用使用独立身份核验并认领网关许可，不重复预约。Image Studio 使用持久任务、outbox 和现有 `start/inspect/cancel` 执行适配；网关的异步桥接许可经控制器核验后移交。原生业务接口、输入文件、输出权限仍由业务应用管理，业务 API 不必全部改写成网关 API。
 
