@@ -9577,6 +9577,14 @@
               "zh-CN": "节点清单、地址或适配器不可用时返回 BACKEND_TARGET_UNAVAILABLE；数据库不可用时返回 TEMPORARILY_UNAVAILABLE。",
               "zh-TW": "节点清单、地址或适配器不可用时返回 BACKEND_TARGET_UNAVAILABLE；数据库不可用时返回 TEMPORARILY_UNAVAILABLE。"
             }
+          },
+          "409": {
+            "description": "BACKEND_IMAGE_CATALOG_INVALID if the installed image catalog is malformed.",
+            "x-description": {
+              "en": "BACKEND_IMAGE_CATALOG_INVALID if the installed image catalog is malformed.",
+              "zh-CN": "已安装的镜像清单无效时为 BACKEND_IMAGE_CATALOG_INVALID。",
+              "zh-TW": "已安裝的映像檔清單無效時為 BACKEND_IMAGE_CATALOG_INVALID。"
+            }
           }
         }
       },
@@ -9927,11 +9935,11 @@
             }
           },
           "409": {
-            "description": "BACKEND_REQUEST_CONFLICT for changed idempotent input; BACKEND_PROFILE_UNSUPPORTED for SSH Profile mismatch; BACKEND_NO_PORTS for a full allocation range; BACKEND_BUSY for an operation in progress; BACKEND_STATE_CONFLICT for a prohibited state transition. BACKEND_PORT_IN_USE indicates the requested host port is already reserved by this controller.",
+            "description": "BACKEND_REQUEST_CONFLICT for changed idempotent input; BACKEND_PROFILE_UNSUPPORTED for SSH Profile mismatch; BACKEND_NO_PORTS for a full allocation range; BACKEND_BUSY for an operation in progress; BACKEND_STATE_CONFLICT for a prohibited state transition. BACKEND_PORT_IN_USE indicates the requested host port is already reserved by this controller. BACKEND_IMAGE_NOT_PUBLISHED if the image differs from the declared image or the Profile has no image. BACKEND_IMAGE_CATALOG_INVALID for a malformed installed catalog.",
             "x-description": {
-              "en": "BACKEND_REQUEST_CONFLICT for changed idempotent input; BACKEND_PROFILE_UNSUPPORTED for SSH Profile mismatch; BACKEND_NO_PORTS for a full allocation range; BACKEND_BUSY for an operation in progress; BACKEND_STATE_CONFLICT for a prohibited state transition. BACKEND_PORT_IN_USE indicates the requested host port is already reserved by this controller.",
-              "zh-CN": "幂等请求参数不一致为 BACKEND_REQUEST_CONFLICT，SSH Profile 不匹配为 BACKEND_PROFILE_UNSUPPORTED，端口耗尽为 BACKEND_NO_PORTS，操作正执行为 BACKEND_BUSY，状态不允许为 BACKEND_STATE_CONFLICT。 端口已预留时返回 BACKEND_PORT_IN_USE。",
-              "zh-TW": "幂等请求参数不一致为 BACKEND_REQUEST_CONFLICT，SSH Profile 不匹配为 BACKEND_PROFILE_UNSUPPORTED，端口耗尽为 BACKEND_NO_PORTS，操作正执行为 BACKEND_BUSY，状态不允许为 BACKEND_STATE_CONFLICT。 端口已预留时返回 BACKEND_PORT_IN_USE。"
+              "en": "BACKEND_REQUEST_CONFLICT for changed idempotent input; BACKEND_PROFILE_UNSUPPORTED for SSH Profile mismatch; BACKEND_NO_PORTS for a full allocation range; BACKEND_BUSY for an operation in progress; BACKEND_STATE_CONFLICT for a prohibited state transition. BACKEND_PORT_IN_USE indicates the requested host port is already reserved by this controller. BACKEND_IMAGE_NOT_PUBLISHED if the image differs from the declared image or the Profile has no image. BACKEND_IMAGE_CATALOG_INVALID for a malformed installed catalog.",
+              "zh-CN": "幂等请求参数不一致为 BACKEND_REQUEST_CONFLICT，SSH Profile 不匹配为 BACKEND_PROFILE_UNSUPPORTED，端口耗尽为 BACKEND_NO_PORTS，操作正执行为 BACKEND_BUSY，状态不允许为 BACKEND_STATE_CONFLICT。 端口已预留时返回 BACKEND_PORT_IN_USE。 镜像与声明不符或所选 Profile 未声明镜像时为 BACKEND_IMAGE_NOT_PUBLISHED。已安装的镜像清单无效时为 BACKEND_IMAGE_CATALOG_INVALID。",
+              "zh-TW": "幂等请求参数不一致为 BACKEND_REQUEST_CONFLICT，SSH Profile 不匹配为 BACKEND_PROFILE_UNSUPPORTED，端口耗尽为 BACKEND_NO_PORTS，操作正执行为 BACKEND_BUSY，状态不允许为 BACKEND_STATE_CONFLICT。 端口已预留时返回 BACKEND_PORT_IN_USE。 映像檔與宣告不符或所選 Profile 未宣告映像檔時為 BACKEND_IMAGE_NOT_PUBLISHED。已安裝的映像檔清單無效時為 BACKEND_IMAGE_CATALOG_INVALID。"
             }
           },
           "415": {
@@ -10524,6 +10532,14 @@
           },
           "503": {
             "description": "Database unavailable."
+          },
+          "409": {
+            "description": "BACKEND_IMAGE_CATALOG_INVALID if an installed image catalog is malformed.",
+            "x-description": {
+              "en": "BACKEND_IMAGE_CATALOG_INVALID if an installed image catalog is malformed.",
+              "zh-CN": "已安装的镜像清单无效时为 BACKEND_IMAGE_CATALOG_INVALID。",
+              "zh-TW": "已安裝的映像檔清單無效時為 BACKEND_IMAGE_CATALOG_INVALID。"
+            }
           }
         }
       }

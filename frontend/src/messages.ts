@@ -378,6 +378,8 @@ export const messages:Record<string,[string,string]>={
 "部署到其他 VOS 集群成员":["Deploy to another VOS cluster member", "部署至其他 VOS 叢集成員"],
 "后端镜像把 V_SCHEDULER_BACKEND_CONFIG_B64 解码为 UTF-8 JSON，再读取 workers、batch_size 等自己的配置。CPU 和内存字段限制容器使用量。应用凭据通过各自的机密配置渠道管理。":["Decode V_SCHEDULER_BACKEND_CONFIG_B64 into UTF-8 JSON to read settings such as workers and batch_size. The CPU and memory fields cap container usage. Use the application’s secret configuration channel for credentials.", "後端映像檔將 V_SCHEDULER_BACKEND_CONFIG_B64 解碼為 UTF-8 JSON，讀取 workers、batch_size 等設定。CPU 和記憶體欄位限制容器使用量。應用憑據透過各自的機密設定管道管理。"],
 "当前应用身份或镜像不符合部署要求。":["The current application identity or image does not meet the deployment requirements.", "目前的應用身分或映像檔不符合部署要求。"],
+"应用没有为此节点的硬件 Profile 发布匹配镜像。":["The app has no matching published image for this node’s hardware Profile.", "應用沒有為此節點的硬體 Profile 發行相符的映像檔。"],
+"应用的发布镜像清单格式无效，请检查已安装的软件包。":["The app’s published image catalog is invalid. Check the installed package.", "應用的發行映像檔清單格式無效，請檢查已安裝的套件。"],
 "目标节点未登记、地址已更改或暂不可读。":["The target is unregistered, has moved, or cannot be read.", "目標節點未登記、位址已變更或暫時無法讀取。"],
 "目标节点与所选 Profile 不兼容。":["The selected profile is incompatible with the node.", "目標節點與所選 Profile 不相容。"],
 "宿主机端口已被占用，请选择其他端口。":["This host port is in use. Choose another port.", "主機連接埠已被占用，請選擇其他連接埠。"],

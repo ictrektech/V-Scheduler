@@ -22,6 +22,8 @@ const deploymentForm=ref<{app_id:string,request_key:string,targetKey:string,imag
 const states:Record<string,string>={pending:'等待部署',running:'运行中',failed:'部署失败',stopped:'已停止',stopping:'正在停止',deleting:'正在删除',removed:'已删除',cleanup_failed:'清理未确认'}
 const failureLabels:Record<string,string>={
  BACKEND_DEPLOYMENT_FORBIDDEN:'当前应用身份或镜像不符合部署要求。',
+ BACKEND_IMAGE_NOT_PUBLISHED:'应用没有为此节点的硬件 Profile 发布匹配镜像。',
+ BACKEND_IMAGE_CATALOG_INVALID:'应用的发布镜像清单格式无效，请检查已安装的软件包。',
  BACKEND_TARGET_UNAVAILABLE:'目标节点未登记、地址已更改或暂不可读。',
  BACKEND_PROFILE_UNSUPPORTED:'目标节点与所选 Profile 不兼容。',
  BACKEND_PORT_IN_USE:'宿主机端口已被占用，请选择其他端口。',
