@@ -275,6 +275,9 @@ onUnmounted(()=>{clearInterval(timer);language.dispose();window.removeEventListe
 </template>
 
 <style scoped>
+@media (min-width: 541px) {
+  .shell > aside { overflow-y: auto; overscroll-behavior-y: contain; }
+}
 .table-toolbar{flex-wrap:wrap}.table-toolbar .search{flex:1;min-width:220px}.task-list-footer{display:flex;align-items:center;gap:14px;flex-wrap:wrap}.task-list-footer>span{flex:1;min-width:180px}
 .unified-summary{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:16px;margin-bottom:20px}.unified-summary>span{margin-left:auto;color:#64748b;font-size:12px}
 </style>

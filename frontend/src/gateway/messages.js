@@ -39,6 +39,7 @@ export const VRouterMessages = {
 "首 Token 等待": {"en": "Time to first token"},
 "生成速度": {"en": "Generation speed"},
 "逐次调用数据": {"en": "Per-call data"},
+"调用序号": {"en": "Call number", "zh-TW": "呼叫序號"},
 "完成时间": {"en": "Completion time"},
 "暂无此指标的数据。": {"en": "No data for this metric yet."},
 "实际模型": {"en": "Resolved model"},

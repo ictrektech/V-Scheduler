@@ -426,8 +426,9 @@ summary:focus-visible, #nav button:focus-visible { outline: 2px solid var(--prim
 .speed-chart-area { position: relative; display: flex; align-items: stretch; gap: 8px; }
 .speed-chart-area svg { display: block; width: 100%; min-width: 0; }
 .speed-y { display: flex; flex-direction: column; justify-content: space-between; padding-block: 2px; text-align: right; }
-.speed-y, .speed-times { font-size: .75rem; color: var(--muted, #62748a); }
-.speed-times { display: flex; justify-content: space-between; gap: 8px; padding-inline-start: 28px; }
+.speed-y, .speed-call-axis { font-size: .75rem; color: var(--muted, #62748a); }
+.speed-call-axis { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; padding-inline-start: 28px; }
+.speed-call-axis > :last-child { text-align: end; }
 .speed-axis { stroke: currentColor; opacity: .15; fill: none; }
 .speed-graph polyline { fill: none; stroke: var(--speed-color); stroke-width: 2; vector-effect: non-scaling-stroke; }
 .speed-graph circle { fill: var(--speed-color); stroke: transparent; stroke-width: 10; vector-effect: non-scaling-stroke; paint-order: stroke; cursor: help; }

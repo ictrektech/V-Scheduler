@@ -559,19 +559,20 @@ const app = {
           ${dots.map(dot => {
             const point = points[dot.index];
             const value = fmt(dot.value) + " " + unit;
-            const context = time(point.time) + (auto ? " · " + source(point) : "");
+            const context = `${t("调用序号")} ${dot.index + 1} · ${time(point.time)}` + (auto ? " · " + source(point) : "");
             return `<circle cx="${dot.x}" cy="${dot.y}" r="4" tabindex="0" role="img"
               aria-label="${esc(t(title) + ": " + value + " · " + context)}"
               data-speed-point="${esc(value)}" data-speed-context="${esc(context)}"/>`;
           }).join('')}
-        </svg><div class="speed-tooltip" aria-hidden="true" hidden><strong></strong><span></span></div></div><div class="speed-times"><span>${esc(time(points[0].time))}</span><span>${esc(time(points.at(-1).time))}</span></div>
+        </svg><div class="speed-tooltip" aria-hidden="true" hidden><strong></strong><span></span></div></div>
+        <div class="speed-call-axis"><span>${points.length > 1 ? 1 : ""}</span><span>${t("调用序号")}${points.length === 1 ? " 1" : ""}</span><span>${points.length > 1 ? points.length : ""}</span></div>
       ` : `<p class="empty">${t("暂无此指标的数据。")}</p>`}</section>`;
     };
     return chart("tokens_per_second", "生成速度", "token/s", "speed-tps")
       + chart("ttft_ms", "首 Token 等待", "ms", "speed-ttft")
       + `<details class="speed-details"><summary>${t("逐次调用数据")} · ${points.length}</summary><div class="speed-rows">${table(
-        [t("完成时间"), ...(auto ? [t("实际模型")] : []), t("输出 Token"), "token/s", t("首 Token 等待") + " (ms)"],
-        [...points].reverse().map(p => [esc(time(p.time)), ...(auto ? [esc(source(p))] : []), fmt(p.output_tokens), fmt(p.tokens_per_second), fmt(p.ttft_ms)])
+        [t("调用序号"), t("完成时间"), ...(auto ? [t("实际模型")] : []), t("输出 Token"), "token/s", t("首 Token 等待") + " (ms)"],
+        points.map((p, index) => [index + 1, esc(time(p.time)), ...(auto ? [esc(source(p))] : []), fmt(p.output_tokens), fmt(p.tokens_per_second), fmt(p.ttft_ms)]).reverse()
       )}</div></details>`;
   },
 
