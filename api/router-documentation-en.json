@@ -510,7 +510,7 @@
           "method": "DELETE",
           "path": "/api/v1/api-keys/{id}",
           "summary": "Revoke an API key",
-          "desc": "A VOS account token revokes its own key. Subsequent private-model access is denied; public models remain anonymously accessible. A VOS administrator can manage keys for models registered by the V-Scheduler or ModelInfer application identity. The issuing VOS administrator owns the key.",
+          "desc": "A VOS account token revokes its own key. Subsequent private-model access is denied; public models remain anonymously accessible.",
           "example": "curl -X DELETE \"$GATEWAY/api/v1/api-keys/{id}\" -H \"Authorization: Bearer $VOS_TOKEN\""
         },
         {
@@ -519,7 +519,7 @@
           "method": "PUT",
           "path": "/api/v1/models/access-key",
           "summary": "Set, rotate or revoke a model access key",
-          "desc": "Requires the model owner’s or administrator’s VOS token. access_key=true generates a key, a string sets a 16..512 printable ASCII secret, null revokes it. Authorizes only this model; replaces its previous key. Does not change public/private visibility or the upstream provider api_key. Only generation returns model_access_keys[].api_key once. Custom keys are not echoed; revocation returns key:null. Subsequent list queries never return secrets.",
+          "desc": "Requires the model owner’s or administrator’s VOS token. access_key=true generates a key, a string sets a 16..512 printable ASCII secret, null revokes it. Authorizes only this model; replaces its previous key. Does not change public/private visibility or the upstream provider api_key. Only generation returns model_access_keys[].api_key once. Custom keys are not echoed; revocation returns key:null. Subsequent list queries never return secrets. A VOS administrator can manage keys for models registered by the V-Scheduler or ModelInfer application identity. The issuing VOS administrator owns the key.",
           "example": "curl -X PUT \"$GATEWAY/api/v1/models/access-key\" -H \"Authorization: Bearer $VOS_TOKEN\" -H \"Content-Type: application/json\" -d '{\"upstream_id\":\"deepseek\",\"model\":\"api.deepseek.com/deepseek-flash\",\"access_key\":true}'"
         },
         {
