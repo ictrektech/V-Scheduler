@@ -77,6 +77,9 @@ pub(super) async fn cluster(
     request: Request,
 ) -> Api<Response> {
     require(&auth(&app, request.headers()).await?, "admin")?;
+    if path.starts_with("application-backend/") && path.ends_with("/channel") {
+        return Err(Error(StatusCode::FORBIDDEN, "FORBIDDEN"));
+    }
     if !crate::cluster_runtime::enabled() {
         return Err(Error(StatusCode::NOT_FOUND, "CLUSTER_MANAGER_DISABLED"));
     }

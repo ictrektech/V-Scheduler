@@ -2642,3 +2642,33 @@ async fn anthropic_upstream_detects_and_persists_auth_independently_of_client_he
     server.abort();
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[tokio::test]
+async fn scheduler_reasoning_control_is_explicit_and_applies_to_any_model() {
+    let control = json!({"format":"openai","efforts":{"off":"none","medium":"middle"},"default":"medium"});
+    let raw = json!({"models":[{"id":"new-model","reasoning_control":control}]});
+    let models = super::manage::select_models(&raw, vec![]).expect("declared model");
+    assert_eq!(json!(&models[0])["reasoning_control"],control);
+    let inherited = registry::ModelMetadata::from_model(&models[0]);
+    let mut rediscovered = Model { id: "new-model".into(), ..Default::default() };
+    inherited.apply(&mut rediscovered, true);
+    assert_eq!(json!(&rediscovered)["reasoning_control"],control);
+    let root = temp();
+    let gateway = gateway(&root, Router::new());
+    gateway.registry.lock().unwrap().put(upstream("fixture"), vec![rediscovered, model("regular")]);
+    let request = Request::builder().uri("/v1/models").body(Body::empty()).unwrap();
+    let response = proxy::handle(gateway, principal("alice"), request).await.unwrap();
+    let catalog: Value = serde_json::from_slice(&axum::body::to_bytes(response.into_body(), 1 << 20).await.unwrap()).unwrap();
+    let rows = catalog["data"].as_array().unwrap();
+    assert!(rows.iter().any(|row| row["id"].as_str().is_some_and(|id| id.ends_with("/new-model")) && row["reasoning_control"] == control));
+    assert!(rows.iter().any(|row| row["id"].as_str().is_some_and(|id| id.ends_with("/regular")) && row.get("reasoning_control").is_none()));
+    std::fs::remove_dir_all(root).unwrap();
+    for invalid in [
+        json!({"format":"unknown","efforts":{"high":"high"}}),
+        json!({"format":"openai","efforts":{"off":"none"}}),
+        json!({"format":"openai","efforts":{"high":null}}),
+        json!({"format":"openai","efforts":{"high":"high"},"default":"max"}),
+    ] {
+        assert!(registry::ReasoningControl::parse(&invalid).is_none());
+    }
+}

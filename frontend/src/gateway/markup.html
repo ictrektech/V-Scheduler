@@ -294,6 +294,11 @@
         <div id="ufSingleCapabilities" class="metadata-choices" role="group" aria-label="模型能力"></div>
         <label>支持接口</label>
         <div id="ufSingleEndpoints" class="metadata-choices" role="group" aria-label="支持接口"></div>
+      <div class="field">
+        <label for="ufSingleReasoning">思考级别配置（可选）</label>
+        <textarea id="ufSingleReasoning" rows="3" spellcheck="false" placeholder='{"format":"openai","efforts":{"off":"none","high":"high"},"default":"high"}'></textarea>
+        <div class="hint">按后端支持的 Chat Completions 参数填写 JSON。留空时采用上游声明。</div>
+      </div>
         <div class="hint">类型、能力和接口留空时按探测或默认值处理</div>
       </div>
       <div class="field">
@@ -400,6 +405,11 @@
         <label for="modelEditEndpoints">支持接口</label>
         <div id="modelEditEndpoints" class="metadata-choices" role="group" aria-label="支持接口"></div>
         <div class="hint">选择实际支持的接口；普通聊天上游默认 Chat Completions，Jev 使用 System One。</div>
+      </div>
+      <div class="field">
+        <label for="modelEditReasoning">思考级别配置（可选）</label>
+        <textarea id="modelEditReasoning" rows="3" spellcheck="false" placeholder='{"format":"openai","efforts":{"off":"none","high":"high"},"default":"high"}'></textarea>
+        <div class="hint">按后端支持的 Chat Completions 参数填写 JSON。留空时采用上游声明。</div>
       </div>
       <div class="field" id="modelEditDomainsField"><label>适用领域（可多选）</label><div id="modelEditDomains" class="metadata-choices" role="group" aria-label="适用领域"></div><div class="hint">默认通用；领域仅用于分类，不改变模型能力或调度。</div><div class="form-actions"><input id="modelEditDomainsName" maxlength="80" placeholder="新增共享分类名称" /><button type="button" class="btn" onclick="app.addDomain('modelEditDomains')">新增分类</button></div></div>
       <div class="form-error" id="modelEditError"></div>

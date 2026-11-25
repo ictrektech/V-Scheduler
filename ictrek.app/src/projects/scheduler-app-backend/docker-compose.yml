@@ -9,8 +9,14 @@ services:
       - no-new-privileges:true
     environment:
       V_SCHEDULER_BACKEND_CONFIG_B64: "${SCHEDULER_BACKEND_CONFIG_B64:-e30=}"
+      V_SCHEDULER_BACKEND_CHANNEL_TOKEN: "${V_SCHEDULER_BACKEND_CHANNEL_TOKEN:-}"
       NVIDIA_VISIBLE_DEVICES: "${SCHEDULER_BACKEND_VISIBLE_DEVICES:-void}"
       NVIDIA_DRIVER_CAPABILITIES: compute,utility
     ports:
       - "${SCHEDULER_BACKEND_HOST_PORT:-0}:${SCHEDULER_BACKEND_PORT:-65535}/tcp"
+    volumes:
+      - deployment-data:/data
     restart: unless-stopped
+
+volumes:
+  deployment-data:

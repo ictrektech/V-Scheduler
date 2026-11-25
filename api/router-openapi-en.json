@@ -81,6 +81,96 @@
       }
     },
     "schemas": {
+      "ReasoningControl": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "format",
+          "efforts"
+        ],
+        "description": "Declares the model’s Chat Completions thinking parameters. At least one effort other than off is required. If specified, default must also be present in efforts.",
+        "properties": {
+          "format": {
+            "type": "string",
+            "enum": [
+              "openai",
+              "deepseek",
+              "openrouter",
+              "together",
+              "baseten",
+              "zai",
+              "qwen",
+              "chat-template",
+              "qwen-chat-template",
+              "string-thinking",
+              "ant-ling"
+            ]
+          },
+          "efforts": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "off": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "minLength": 1,
+                "maxLength": 32,
+                "pattern": "^\\S+$"
+              },
+              "minimal": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 32,
+                "pattern": "^\\S+$"
+              },
+              "low": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 32,
+                "pattern": "^\\S+$"
+              },
+              "medium": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 32,
+                "pattern": "^\\S+$"
+              },
+              "high": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 32,
+                "pattern": "^\\S+$"
+              },
+              "xhigh": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 32,
+                "pattern": "^\\S+$"
+              },
+              "max": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 32,
+                "pattern": "^\\S+$"
+              }
+            }
+          },
+          "default": {
+            "type": "string",
+            "enum": [
+              "off",
+              "minimal",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ]
+          }
+        }
+      },
       "RoutingPolicy": {
         "type": "object",
         "properties": {
@@ -129,6 +219,9 @@
       "GatewayModel": {
         "type": "object",
         "properties": {
+          "reasoning_control": {
+            "$ref": "#/components/schemas/ReasoningControl"
+          },
           "id": {
             "type": "string",
             "description": "Native model ID (or a virtual/business operation ID). Use qualified for a source-specific inference call."
@@ -3880,6 +3973,9 @@
             "items": {
               "type": "object",
               "properties": {
+                "reasoning_control": {
+                  "$ref": "#/components/schemas/ReasoningControl"
+                },
                 "id": {
                   "type": "string",
                   "description": "Exact canonical id from GET /v1/models, or auto. Do not rebuild/reverse its upstream prefix."
@@ -4403,6 +4499,17 @@
                   "model"
                 ],
                 "properties": {
+                  "reasoning_control": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/ReasoningControl"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "Omit to use the discovered or existing value. An explicit null clears it."
+                  },
                   "model": {
                     "type": "string"
                   },
@@ -4636,6 +4743,9 @@
                         "id"
                       ],
                       "properties": {
+                        "reasoning_control": {
+                          "$ref": "#/components/schemas/ReasoningControl"
+                        },
                         "id": {
                           "type": "string"
                         },
@@ -5531,6 +5641,17 @@
                         {
                           "type": "object",
                           "properties": {
+                            "reasoning_control": {
+                              "anyOf": [
+                                {
+                                  "$ref": "#/components/schemas/ReasoningControl"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "Omit to use the discovered or existing value. An explicit null clears it."
+                            },
                             "id": {
                               "type": "string"
                             },
@@ -6062,6 +6183,17 @@
                         {
                           "type": "object",
                           "properties": {
+                            "reasoning_control": {
+                              "anyOf": [
+                                {
+                                  "$ref": "#/components/schemas/ReasoningControl"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "Omit to use the discovered or existing value. An explicit null clears it."
+                            },
                             "id": {
                               "type": "string"
                             },

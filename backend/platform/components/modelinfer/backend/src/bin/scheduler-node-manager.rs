@@ -1,5 +1,9 @@
 #[path = "../../../../../shared/application_backend.rs"]
 mod application_backend;
+#[path = "../../../../../shared/application_backend_channel.rs"]
+mod backend_channel;
+
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 
 use application_backend::{Instance, Operation, RuntimeState};
 use std::{collections::HashMap, net::Ipv4Addr, sync::Arc, time::Duration};
@@ -13,8 +17,10 @@ use clap::Parser;
 use modelinfer::{
     db,
     error::{ModelinferError, codes},
+    nfs::{self, ResolveInput},
     nodes::{self, NodeCreate, NodeUpdate, NodeView},
-    ssh::{RealSshExec, SshExec},
+    platform::{RealPlatformClient, context_token_path, platform_base_from_env},
+    ssh::{RealSshExec, SshExec, SshTarget},
 };
 use sea_orm::DatabaseConnection;
 use serde_json::{Value, json};
@@ -67,6 +73,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/nodes/{id}/resources", get(resources))
         .route("/nodes/{id}/runtime", post(runtime))
         .route("/nodes/{id}/application-backend", post(application_backend))
+        .route("/nodes/{id}/application-backend/channel", post(application_backend_channel))
         .with_state(manager);
     let socket = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, config.port)).await?;
     axum::serve(socket, app).await?;
@@ -284,6 +291,46 @@ fn valid_image(value: &str) -> bool {
             .all(|ch| ch.is_ascii_alphanumeric() || b"./_:@-".contains(&ch))
 }
 
+fn model_hub_mount_dir(deployment_id: &str) -> String {
+    format!("/var/lib/v-scheduler/model-hub/{deployment_id}")
+}
+
+async fn mount_model_hub(target: &SshTarget, deployment_id: &str) -> Option<String> {
+    let env = std::env::vars().collect::<HashMap<_, _>>();
+    let token_path = context_token_path(&env).filter(|path| path.is_file())?;
+    let platform = RealPlatformClient::new(
+        platform_base_from_env(&env), Some(token_path), "com.ictrek.v-scheduler",
+    );
+    let node_hosts = [target.host.clone()];
+    let input = ResolveInput {
+        config_name: nfs::MODEL_HUB_CONFIG,
+        fallback_hub_path: env.get("MODELINFER_MODEL_HUB_PATH").map_or("", String::as_str),
+        nfs_server_override: env.get("MODELINFER_NFS_SERVER").map_or("", String::as_str),
+        node_hosts: &node_hosts,
+    };
+    let resolved = tokio::time::timeout(Duration::from_secs(8), nfs::resolve_nfs(&platform, &input))
+        .await.ok()?.ok()?;
+    let path = std::path::Path::new(&resolved.host_path);
+    let export = std::path::Path::new(&resolved.nfs_export_path);
+    if !path.is_absolute() || !export.is_absolute() || !path.starts_with(export)
+        || path.components().any(|component| matches!(component, std::path::Component::ParentDir))
+        || resolved.host_path.contains(['\'', ',', '\n', '\r', '\0'])
+    {
+        return None;
+    }
+    let server = resolved.nfs_server.parse::<Ipv4Addr>().ok()?;
+    let source = format!("{server}:{}", resolved.host_path);
+    let dir = model_hub_mount_dir(deployment_id);
+    let mount = nfs::build_mount_cmd(&dir, &source, true, false);
+    let command = format!(
+        "{mount}\n\
+         test \"$(findmnt -rn -M '{dir}' -o SOURCE)\" = '{source}' && \
+         findmnt -rn -M '{dir}' -o OPTIONS | grep -Eq '(^|,)ro(,|$)'",
+    );
+    RealSshExec::new().run_with_timeout(target, &command, Duration::from_secs(15))
+        .await.ok()?.success().then_some(dir)
+}
+
 async fn application_backend(
     State(app): App,
     Path(id): Path<String>,
@@ -297,6 +344,7 @@ async fn application_backend(
         ));
     }
     let name = instance.name();
+    let target = nodes::ssh_target_of(&node);
     let state_check = format!(
         "docker info >/dev/null || exit 1\n\
          current=$(docker ps -aq --filter 'name=^/{name}$') || exit 1\n\
@@ -311,9 +359,14 @@ async fn application_backend(
         Operation::Status => String::from(
             "if test -z \"$current\"; then echo absent; elif test \"$running\" = true; then echo running; else echo stopped; fi",
         ),
-        Operation::Remove => String::from(
-            "if test -n \"$current\"; then docker rm -f \"$current\" >/dev/null || exit 1; fi; echo absent",
-        ),
+        Operation::Remove => {
+            let dir = model_hub_mount_dir(&instance.id);
+            format!(
+                "if test -n \"$current\"; then docker rm -f \"$current\" >/dev/null || exit 1; fi; \
+                 if mountpoint -q '{dir}'; then umount '{dir}' 2>/dev/null || sudo -n umount '{dir}' || exit 1; fi; \
+                 rmdir '{dir}' 2>/dev/null || true; echo absent"
+            )
+        }
         Operation::Ensure => {
             let gpu = if instance.nvidia {
                 "--runtime=nvidia --env NVIDIA_VISIBLE_DEVICES=all --env NVIDIA_DRIVER_CAPABILITIES=compute,utility "
@@ -328,6 +381,17 @@ async fn application_backend(
                 limits.push_str(&format!("--memory {memory}m "));
             }
             let config = instance.config_b64.as_deref().unwrap_or("e30=");
+            let channel_env = instance.channel_token.as_deref()
+                .map(|token| format!("--mount 'type=volume,source={name}-data,target=/data' --env 'V_SCHEDULER_BACKEND_CHANNEL_TOKEN={token}' "))
+                .unwrap_or_default();
+            let model_hub = if instance.channel_token.is_some() {
+                mount_model_hub(&target, &instance.id).await
+            } else {
+                None
+            };
+            let model_hub_mount = model_hub.map(|dir| {
+                format!("--mount 'type=bind,src={dir},target=/modelhub-shared,readonly' ")
+            }).unwrap_or_default();
             format!(
                 "if test -n \"$current\"; then\n\
                    test \"$running\" = true || docker start \"$current\" >/dev/null || exit 1\n\
@@ -336,7 +400,7 @@ async fn application_backend(
 \
                    docker run --detach --pull=never --name '{name}' --restart unless-stopped \
                      --label 'com.ictrek.v-scheduler.backend={}' --security-opt no-new-privileges \
-                     -p '{}:{}/tcp' {gpu}{limits}--env 'V_SCHEDULER_BACKEND_CONFIG_B64={config}' '{}' >/dev/null || exit 1\n\
+                     -p '{}:{}/tcp' {gpu}{limits}{channel_env}{model_hub_mount}--env 'V_SCHEDULER_BACKEND_CONFIG_B64={config}' '{}' >/dev/null || exit 1\n\
                  fi\n\
                  docker inspect --format '{{{{.State.Running}}}}' '{name}' | grep -qx true || exit 1\n\
                  echo running",
@@ -344,7 +408,6 @@ async fn application_backend(
             )
         }
     };
-    let target = nodes::ssh_target_of(&node);
     let output = app
         .ssh
         .run_with_timeout(
@@ -386,4 +449,53 @@ async fn application_backend(
             "backend_container_operation_failed",
         )),
     }
+}
+
+async fn application_backend_channel(
+    State(app): App,
+    Path(id): Path<String>,
+    Json(packet): Json<backend_channel::Packet>,
+) -> Result<backend_channel::Reply> {
+    fn unavailable() -> ModelinferError {
+        ModelinferError::new(codes::SSH_COMMAND_FAILED, "application backend channel unavailable")
+    }
+    let node = nodes::get_node(&app.db, &id).await?;
+    if !packet.valid_target() || node.host.parse::<Ipv4Addr>() != Ok(packet.host) {
+        return Err(ModelinferError::new(codes::PARAM_INVALID, "invalid backend channel target"));
+    }
+    let bytes = STANDARD.decode(&packet.body_b64).map_err(|_| unavailable())?;
+    let (method, path, content_type) = packet.operation.request(bytes.len()).ok_or_else(unavailable)?;
+    let mut input = packet.token.into_bytes();
+    input.push(b'\n');
+    input.extend_from_slice(&bytes);
+    // Pass the bearer outside command arguments. The destination and path come
+    // from the port allocator and the fixed operation enum, never caller URLs.
+    let data = content_type.map(|kind| format!("--header 'Content-Type: {kind}' --data-binary @- "))
+        .unwrap_or_default();
+    let timeout = packet.operation.timeout_seconds();
+    let limit = packet.operation.max_reply_bytes();
+    let command = format!(
+        "umask 077; IFS= read -r token || exit 1; \
+         headers=$(mktemp) || exit 1; trap 'rm -f \"$headers\"' EXIT; \
+         printf 'Authorization: Bearer %s\\n' \"$token\" >\"$headers\" || exit 1; unset token; \
+         curl --silent --max-time {timeout} --max-filesize {limit} --noproxy '*' \
+         --request {method} --header @\"$headers\" {data}--write-out '\\n%{{http_code}}' \
+         'http://127.0.0.1:{}{path}'",
+        packet.host_port
+    );
+    let output = app.ssh.run_with_input(&nodes::ssh_target_of(&node), &command, input, Duration::from_secs(timeout + 5))
+        .await.map_err(|_| unavailable())?;
+    if !output.success() {
+        return Err(unavailable());
+    }
+    let (body, status) = output.stdout.rsplit_once('\n').ok_or_else(unavailable)?;
+    if body.len() > limit { return Err(unavailable()); }
+    let status = status.parse::<u16>().ok().filter(|status| (200..=599).contains(status))
+        .ok_or_else(unavailable)?;
+    let data = if (200..300).contains(&status) {
+        serde_json::from_str(body).map_err(|_| unavailable())?
+    } else {
+        backend_channel::shared_unavailable(status, body.as_bytes())
+    };
+    Ok(Json(backend_channel::Reply { status, data }))
 }

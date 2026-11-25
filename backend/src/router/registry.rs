@@ -112,6 +112,34 @@ impl Upstream {
             || self.protocol.is_empty() && self.source == "model-hub"
     }
 }
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct ReasoningControl {
+    format: String,
+    efforts: std::collections::BTreeMap<String, Option<String>>,
+    #[serde(rename = "default", skip_serializing_if = "Option::is_none")]
+    default_level: Option<String>,
+}
+
+impl ReasoningControl {
+    pub fn parse(value: &Value) -> Option<Self> {
+        let control: Self = serde_json::from_value(value.clone()).ok()?;
+        const FORMATS: &[&str] = &["openai", "deepseek", "openrouter", "together",
+            "baseten", "zai", "qwen", "chat-template", "qwen-chat-template", "string-thinking", "ant-ling"];
+        const LEVELS: &[&str] = &["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+        (FORMATS.contains(&control.format.as_str())
+            && control.efforts.keys().any(|level| level != "off")
+            && control.efforts.iter().all(|(level, wire)| {
+                LEVELS.contains(&level.as_str()) && match wire {
+                    Some(value) => (1..=32).contains(&value.len()) && !value.chars().any(|c| c.is_whitespace() || c.is_control()),
+                    None => level == "off",
+                }
+            })
+            && control.default_level.as_ref().is_none_or(|level| control.efforts.contains_key(level)))
+            .then_some(control)
+    }
+}
+
 #[derive(Clone, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub(super) struct Model {
@@ -123,6 +151,8 @@ pub(super) struct Model {
     pub capabilities: Vec<String>,
     #[serde(deserialize_with = "null_default")]
     pub endpoints: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_control: Option<ReasoningControl>,
     pub owned_by: String,
     pub metadata_override: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -154,6 +184,8 @@ pub(super) struct ModelMetadata {
     kind: String,
     capabilities: Vec<String>,
     endpoints: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    reasoning_control: Option<ReasoningControl>,
     owned_by: String,
 }
 impl ModelMetadata {
@@ -162,6 +194,7 @@ impl ModelMetadata {
             kind: model.kind.clone(),
             capabilities: model.capabilities.clone(),
             endpoints: model.endpoints.clone(),
+            reasoning_control: model.reasoning_control.clone(),
             owned_by: model.owned_by.clone(),
         }
     }
@@ -170,6 +203,7 @@ impl ModelMetadata {
         model.kind.clone_from(&self.kind);
         model.capabilities.clone_from(&self.capabilities);
         model.endpoints.clone_from(&self.endpoints);
+        model.reasoning_control.clone_from(&self.reasoning_control);
         model.owned_by.clone_from(&self.owned_by);
         model.metadata_override = overridden;
     }

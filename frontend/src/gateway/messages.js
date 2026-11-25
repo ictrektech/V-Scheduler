@@ -165,6 +165,8 @@ export const VRouterMessages = {
  "部分内置推理后端不可用，请在模型仓库检查推理服务；其他就绪模型仍可调用。":{"en":"Some built-in inference backends are unavailable. Check Inference services in Model library; other ready models remain available.","zh-TW":"部分內建推理後端無法使用，請在模型儲存庫檢查推理服務；其他就緒模型仍可呼叫。"},
  "等待服务响应":{"en":"Waiting for service response","zh-TW":"等待服務回應"},
  "等待模型输出":{"en":"Waiting for model output","zh-TW":"等待模型輸出"},
+ "思考级别配置（可选）":{"en":"Reasoning controls (optional)","zh-TW":"思考級別設定（選填）"},
+ "按后端支持的 Chat Completions 参数填写 JSON。留空时采用上游声明。":{"en":"Enter JSON using the Chat Completions parameters supported by the backend. A blank field uses upstream metadata when available.","zh-TW":"依後端支援的 Chat Completions 參數填寫 JSON。留白時採用上游宣告。"},
  "模型正在思考":{"en":"Model is thinking","zh-TW":"模型正在思考"},
  "正在接收回复":{"en":"Receiving answer","zh-TW":"正在接收回覆"},
  "思考字符":{"en":"reasoning characters","zh-TW":"思考字元"},

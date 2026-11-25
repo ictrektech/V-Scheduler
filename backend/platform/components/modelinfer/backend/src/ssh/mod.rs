@@ -188,6 +188,17 @@ pub trait SshExec: Send + Sync {
         self.run(target, cmd).await
     }
 
+    /// Send private input over the authenticated SSH session to an unprivileged command.
+    async fn run_with_input(
+        &self,
+        _target: &SshTarget,
+        _cmd: &str,
+        _input: Vec<u8>,
+        _timeout: Duration,
+    ) -> Result<SshOutput, ModelinferError> {
+        Err(ModelinferError::new(codes::SSH_COMMAND_FAILED, "SSH stdin is unavailable"))
+    }
+
     /// 连通性与 root 执行权限测试；非零退出不可视为成功。
     async fn test(&self, target: &SshTarget) -> Result<(), ModelinferError> {
         let out = self.run(target, ROOT_CHECK).await?;
@@ -320,6 +331,33 @@ impl SshExec for RealSshExec {
                 codes::SSH_COMMAND_FAILED,
                 format!("SSH 命令执行超时（{}s）", timeout.as_secs()),
             )),
+        }
+    }
+
+    async fn run_with_input(
+        &self,
+        target: &SshTarget,
+        cmd: &str,
+        input: Vec<u8>,
+        timeout: Duration,
+    ) -> Result<SshOutput, ModelinferError> {
+        let target = target.clone();
+        let cmd = format!("/bin/sh -c {}", crate::deploy::script::sh_quote(cmd));
+        let connect_timeout = self.connect_timeout;
+        let operation = tokio::task::spawn_blocking(move || {
+            let session = connect_session(&target, connect_timeout, timeout)?;
+            let mut channel = open_channel(&session, &cmd)?;
+            channel.write_all(&input).map_err(|_| {
+                ModelinferError::new(codes::SSH_COMMAND_FAILED, "Unable to write SSH stdin")
+            })?;
+            channel.send_eof().map_err(|_| {
+                ModelinferError::new(codes::SSH_COMMAND_FAILED, "Unable to close SSH stdin")
+            })?;
+            collect_output(&session, channel, timeout)
+        });
+        match tokio::time::timeout(timeout, operation).await {
+            Ok(Ok(result)) => result,
+            _ => Err(ModelinferError::new(codes::SSH_COMMAND_FAILED, "SSH input operation failed")),
         }
     }
 

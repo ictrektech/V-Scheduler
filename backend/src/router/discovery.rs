@@ -34,6 +34,7 @@ fn models(rows: &Value) -> Vec<Model> {
                 .into(),
                 endpoints,
                 capabilities: strings(&v["capabilities"]),
+                reasoning_control: registry::ReasoningControl::parse(&v["reasoning_control"]),
                 owned_by: text(v, "owned_by").into(),
                 metadata_override: false,
                 ..Default::default()

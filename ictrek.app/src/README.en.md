@@ -1,5 +1,11 @@
 # V-Scheduler Resource Scheduling
 
+The Inference Deployment page resumes the VOS session automatically. Loaded data stays visible while the page shows a single recovery status. The current view refreshes once the session is restored.
+
+To run Image Studio on another node, use **Advanced Management → Node Management → Application Backends** to grant Image Studio access to the node and image repository. In Image Studio, deploy the backend and prepare a model. The backend uses a read-only Model Hub NFS share when available. Otherwise, weight transfer resumes from the recorded byte offsets. Scheduler registers the executor after the files pass SHA-256 validation and the target node matches the model's measured calibration. See the deployment, transfer and execution routes in the Scheduler API reference.
+
+When adding or editing a model in **Models & Providers**, use **Thinking control** to declare the Chat Completions format and effort values supported by the upstream. A compatible client can read these settings from the optional `reasoning_control` model catalog field.
+
 ## Image Registry
 
 Sign in as a VOS administrator and open **V-Scheduler → Image Registry**. Pull an upstream image into the local registry, then synchronize the repository or a specific tag. To work offline, import a Docker or OCI archive. Omit the destination to keep the archive's image name. The task panel shows progress and failure details. Management state and image layers persist in the app's `image-hub/` and `image-registry/` directories.

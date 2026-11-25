@@ -34,6 +34,8 @@ pub fn build_router(state: AppState) -> Router {
         .route("/health", get(handlers::health::health))
         .route("/application-backend", axum::routing::post(handlers::application_backend::local))
         .route("/application-backend/{member_id}/dispatch", axum::routing::post(handlers::application_backend::dispatch))
+        .route("/application-backend/channel", axum::routing::post(handlers::application_backend::local_channel))
+        .route("/application-backend/{member_id}/channel", axum::routing::post(handlers::application_backend::dispatch_channel))
         .route("/cluster/status", get(handlers::cluster::cluster_status))
         .route("/cluster/init", axum::routing::post(handlers::cluster::cluster_init))
         .route("/nodes", axum::routing::post(handlers::nodes::node_add))

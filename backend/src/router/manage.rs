@@ -337,7 +337,15 @@ pub(super) fn select_models(payload: &Value, probed: Vec<Model>) -> Api<Vec<Mode
             if !endpoints.is_empty() {
                 model.endpoints = endpoints;
             }
-            if item.get("kind").is_some() || item.get("capabilities").is_some() || item.get("endpoints").is_some() {
+            if let Some(value) = item.get("reasoning_control") {
+                model.reasoning_control = if value.is_null() {
+            None
+        } else {
+            Some(registry::ReasoningControl::parse(value)
+                .ok_or_else(|| Failure::new(400, "invalid reasoning_control"))?)
+        };
+            }
+            if ["kind", "capabilities", "endpoints", "reasoning_control"].iter().any(|key| item.get(key).is_some()) {
                 model.metadata_override = item["metadata_override"].as_bool().unwrap_or(true);
             }
         }
@@ -432,6 +440,13 @@ fn update_model(g: &Arc<Gateway>, id: &Identity, payload: Value) -> Api<Response
     if payload.get("endpoints").is_some_and(|v| !v.is_null()) {
         model.endpoints = strings(&payload["endpoints"]);
     }
+    if let Some(value) = payload.get("reasoning_control") {
+        model.reasoning_control = if value.is_null() {
+                    None
+                } else {
+                    Some(registry::ReasoningControl::parse(value).ok_or_else(|| Failure::new(400, "invalid reasoning_control"))?)
+                };
+    }
     if explicit.is_empty()
         && (payload.get("capabilities").is_some() || payload.get("endpoints").is_some())
     {
@@ -441,7 +456,7 @@ fn update_model(g: &Arc<Gateway>, id: &Identity, payload: Value) -> Api<Response
         model.visibility = visibility;
     }
     if payload.get("visibility").is_none() || payload.as_object().is_some_and(|v| {
-        ["metadata_override", "kind", "capabilities", "endpoints", "owned_by"].iter().any(|key| v.contains_key(*key))
+        ["metadata_override", "kind", "capabilities", "endpoints", "owned_by", "reasoning_control"].iter().any(|key| v.contains_key(*key))
     }) {
         model.metadata_override = payload["metadata_override"].as_bool().unwrap_or(true);
     }
@@ -616,6 +631,7 @@ async fn configured_models(g: &Gateway, u: &mut Upstream) -> Api<Vec<Model>> {
                 .into(),
                 capabilities: strings(&v["capabilities"]),
                 endpoints: strings(&v["endpoints"]),
+                reasoning_control: registry::ReasoningControl::parse(&v["reasoning_control"]),
                 owned_by: text(v, "owned_by").into(),
                 metadata_override: false,
                 visibility: None,
@@ -1138,7 +1154,7 @@ pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) ->
                 let ids: std::collections::BTreeSet<_> = previous.iter().map(|m| m.id.as_str()).collect();
                 probed.into_iter().filter(|m| ids.contains(m.id.as_str())).map(|mut model| {
                     if let Some(old)=previous.iter().find(|old|old.id==model.id && old.metadata_override) {
-                        model.kind=old.kind.clone();model.capabilities=old.capabilities.clone();model.endpoints=old.endpoints.clone();model.metadata_override=true;
+                        model.kind=old.kind.clone();model.capabilities=old.capabilities.clone();model.endpoints=old.endpoints.clone();model.reasoning_control=old.reasoning_control.clone();model.metadata_override=true;
                     }
                     model
                 }).collect()
@@ -1306,6 +1322,7 @@ async fn register(g: &Gateway, id: &Identity, p: Value, recovery: bool) -> Api<R
                 .into(),
                 capabilities: strings(&m["capabilities"]),
                 endpoints: strings(&m["endpoints"]),
+                reasoning_control: registry::ReasoningControl::parse(&m["reasoning_control"]),
                 owned_by: text(m, "owned_by").into(),
                 ..Default::default()
             })

@@ -399,7 +399,11 @@ async fn handle_inner(g: Arc<Gateway>, id: Identity, request: Request, classifie
         let r=g.registry.lock().unwrap();
         let mut models = r.list_models(&id).iter().map(|m| {
             let name = r.catalog_ref(&m.upstream_id, &m.qualified, &id);
-            json!({"id":name,"name":name,"object":"model","created":0,"owned_by":m.owned_by,"domains":domains::effective(&r,m)})
+            let mut model = json!({"id":name,"name":name,"object":"model","created":0,"owned_by":m.owned_by,"domains":domains::effective(&r,m)});
+            if let Some(control) = &m.reasoning_control {
+                model["reasoning_control"] = json!(control);
+            }
+            model
         }).collect::<Vec<_>>();
         if auto::advertised(&g,&id) {models.push(json!({"id":"auto","object":"model","created":0,"owned_by":"v-scheduler","domains":r.auto.domains}));}
         return Ok(axum::Json(json!({"object":"list","data":models})).into_response());

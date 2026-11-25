@@ -5,6 +5,7 @@ use std::{net::Ipv4Addr, sync::OnceLock, time::Duration};
 #[path = "../../platform/shared/application_backend.rs"]
 mod wire;
 use wire::{Instance, Operation, PORT_MAX, PORT_MIN, RuntimeState};
+use super::backend_transfers::wire as channel;
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -50,6 +51,8 @@ struct Deployment {
     cpu_millicores: Option<i32>,
     memory_mib: Option<i32>,
     config: Value,
+    #[serde(skip_serializing)]
+    channel_token: Option<String>,
     container_port: i32,
     image: String,
     nvidia: bool,
@@ -107,6 +110,7 @@ impl Deployment {
             config_b64: Some(
                 STANDARD.encode(serde_json::to_vec(&self.config).map_err(|_| UNAVAILABLE)?),
             ),
+            channel_token: (operation == Operation::Ensure).then(|| self.channel_token.clone()).flatten(),
             operation,
         };
         let endpoint = if self.target_kind == "ssh" {
@@ -400,6 +404,9 @@ pub(super) async fn create(
         input.target.profile.as_str(),
         "arm-cuda" | "amd-cuda" | "jetson-orin" | "jetson-thor" | "dgx-spark"
     );
+    let channel_token = (app_id == "com.ictrek.image-studio"
+        && input.config.get("mode").and_then(Value::as_str) == Some("image-studio-worker-v1"))
+        .then(|| format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple()));
     let uuid = Uuid::new_v4();
     let offset = i32::from(u16::from_be_bytes([uuid.as_bytes()[0], uuid.as_bytes()[1]])) % 1000;
     let mut tx = app.db.begin().await.map_err(unavailable)?;
@@ -430,12 +437,12 @@ pub(super) async fn create(
     ).bind(i32::from(PORT_MIN)).bind(i32::from(PORT_MAX)).bind(&host).bind(offset).bind(input.host_port.map(i32::from))
         .fetch_optional(&mut *tx).await.map_err(unavailable)?.ok_or_else(|| conflict(if input.host_port.is_some() { "BACKEND_PORT_IN_USE" } else { "BACKEND_NO_PORTS" }))?;
     sqlx::query(
-        "INSERT INTO vrs_backend_deployments(id,app_id,request_key,target_id,target_kind,profile,host,host_port,container_port,image,nvidia,state,requested_host_port,cpu_millicores,memory_mib,config)
-         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'pending',$12,$13,$14,$15) ON CONFLICT(app_id,request_key) DO NOTHING",
+        "INSERT INTO vrs_backend_deployments(id,app_id,request_key,target_id,target_kind,profile,host,host_port,container_port,image,nvidia,state,requested_host_port,cpu_millicores,memory_mib,config,channel_token)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'pending',$12,$13,$14,$15,$16) ON CONFLICT(app_id,request_key) DO NOTHING",
     ).bind(uuid.simple().to_string()).bind(app_id).bind(&input.request_key)
         .bind(&input.target.id).bind(&input.target.kind).bind(&input.target.profile).bind(&host)
         .bind(port).bind(i32::from(input.container_port)).bind(&input.image).bind(nvidia).bind(input.host_port.map(i32::from))
-        .bind(input.cpu_millicores.map(|value| value as i32)).bind(input.memory_mib.map(|value| value as i32)).bind(json!(&input.config))
+        .bind(input.cpu_millicores.map(|value| value as i32)).bind(input.memory_mib.map(|value| value as i32)).bind(json!(&input.config)).bind(channel_token)
         .execute(&mut *tx).await.map_err(unavailable)?;
     let row = sqlx::query_as::<_, Deployment>(
         "SELECT * FROM vrs_backend_deployments WHERE app_id=$1 AND request_key=$2",
@@ -488,6 +495,101 @@ pub(super) async fn detail(
     Ok(ok(row.view()))
 }
 
+pub(super) async fn image_studio_target(
+    app: &App,
+    headers: &HeaderMap,
+    id: &str,
+) -> Api<(String, String, String)> {
+    let principal = auth(app, headers).await?;
+    let row = sqlx::query_as::<_, Deployment>(
+        "SELECT * FROM vrs_backend_deployments WHERE id=$1 AND ($2::text IS NULL OR app_id=$2)",
+    )
+    .bind(id).bind(owner(&principal)?)
+    .fetch_optional(&app.db).await.map_err(unavailable)?.ok_or_else(missing)?;
+    if row.app_id != "com.ictrek.image-studio" || row.channel_token.is_none() {
+        return Err(denied());
+    }
+    if row.state != "running" || row.last_error.is_some() {
+        return Err(conflict("BACKEND_STATE_CONFLICT"));
+    }
+    let profile = match row.profile.as_str() {
+        "amd-cpu" => "amd",
+        "arm-cpu" => "arm",
+        "jetson-orin" => "l4t",
+        "jetson-thor" | "dgx-spark" => "thor",
+        "amd-cuda" => "amd-cuda",
+        "arm-cuda" => "arm-cuda",
+        _ => return Err(conflict("BACKEND_PROFILE_UNSUPPORTED")),
+    };
+    if row.config["profile"] != profile {
+        return Err(conflict("BACKEND_PROFILE_MISMATCH"));
+    }
+    Ok((row.target_kind, row.target_id, profile.to_owned()))
+}
+
+pub(super) async fn exchange(
+    app: &App,
+    headers: &HeaderMap,
+    id: &str,
+    operation: channel::Operation,
+    bytes: &[u8],
+) -> Api<Json<Value>> {
+    if operation.request(bytes.len()).is_none() {
+        return Err(invalid());
+    }
+    let principal = auth(app, headers).await?;
+    let row = sqlx::query_as::<_, Deployment>(
+        "SELECT * FROM vrs_backend_deployments WHERE id=$1 AND ($2::text IS NULL OR app_id=$2)",
+    )
+    .bind(id).bind(owner(&principal)?)
+    .fetch_optional(&app.db).await.map_err(unavailable)?.ok_or_else(missing)?;
+    let token = row.channel_token.ok_or_else(denied)?;
+    if row.state != "running" || row.last_error.is_some() {
+        return Err(conflict("BACKEND_STATE_CONFLICT"));
+    }
+    let target = Target { kind: row.target_kind, id: row.target_id, profile: row.profile };
+    let repo = wire::image_repository(&row.image).ok_or_else(denied)?;
+    if !permits(&access(&app.db, &row.app_id).await?, &target, repo) {
+        return Err(denied());
+    }
+    let failed = || Error(StatusCode::BAD_GATEWAY, "BACKEND_CHANNEL_UNAVAILABLE");
+    let packet = channel::Packet {
+        deployment_id: row.id,
+        host: row.host.parse().map_err(|_| failed())?,
+        host_port: row.host_port.try_into().map_err(|_| failed())?,
+        token,
+        operation,
+        body_b64: STANDARD.encode(bytes),
+    };
+    let endpoint = if target.kind == "cluster" {
+        format!("{}/api/application-backend/{}/channel", crate::cluster_runtime::ORIGIN, target.id)
+    } else {
+        format!("{}/nodes/{}/application-backend/channel", crate::managed_nodes::origin(), target.id)
+    };
+    let response = client().post(endpoint).json(&packet).timeout(Duration::from_secs(packet.operation.timeout_seconds() + 15))
+        .send().await.map_err(|_| failed())?.error_for_status().map_err(|_| failed())?;
+    let payload = response.json::<Value>().await.map_err(|_| failed())?;
+    let data = if target.kind == "cluster" {
+        if payload["code"] != 0 { return Err(failed()); }
+        payload["data"].clone()
+    } else {
+        payload
+    };
+    let reply: channel::Reply = serde_json::from_value(data).map_err(|_| failed())?;
+    match reply.status {
+        200..=299 => Ok(ok(reply.data)),
+        400 | 422 => Err(Error(StatusCode::UNPROCESSABLE_ENTITY, "BACKEND_TRANSFER_INVALID")),
+        404 => Err(Error(StatusCode::NOT_FOUND, "BACKEND_TRANSFER_NOT_FOUND")),
+        409 if reply.data["detail"] == "WEIGHT_SHARED_UNAVAILABLE" => {
+            Err(conflict("BACKEND_SHARED_MODEL_HUB_UNAVAILABLE"))
+        }
+        409 => Err(conflict("BACKEND_TRANSFER_CONFLICT")),
+        413 => Err(Error(StatusCode::PAYLOAD_TOO_LARGE, "BACKEND_TRANSFER_TOO_LARGE")),
+        429 => Err(Error(StatusCode::TOO_MANY_REQUESTS, "BACKEND_TRANSFER_BUSY")),
+        _ => Err(failed()),
+    }
+}
+
 async fn change(app: App, h: HeaderMap, id: String, desired: &str) -> Api<Json<Value>> {
     let principal = auth(&app, &h).await?;
     let mut tx = app.db.begin().await.map_err(unavailable)?;
@@ -510,6 +612,16 @@ async fn change(app: App, h: HeaderMap, id: String, desired: &str) -> Api<Json<V
         _ => return Err(conflict("BACKEND_STATE_CONFLICT")),
     };
     if desired != row.state {
+        if matches!(desired, "stopping" | "deleting") {
+            let active: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM vrs_backend_executor_bindings b
+                 JOIN vrs_tasks t ON t.body->'executor'->>'id'=b.executor_id
+                 WHERE b.deployment_id=$1 AND t.status IN ('queued','assigned','running','cancelling','recovering'))",
+            ).bind(&id).fetch_one(&mut *tx).await.map_err(unavailable)?;
+            if active {
+                return Err(conflict("BACKEND_TASKS_ACTIVE"));
+            }
+        }
         row = sqlx::query_as::<_, Deployment>(
             "UPDATE vrs_backend_deployments SET state=$1,retry_at=now(),last_error=NULL,updated_at=now() WHERE id=$2 RETURNING *",
         ).bind(desired).bind(id).fetch_one(&mut *tx).await.map_err(unavailable)?;

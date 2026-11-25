@@ -388,6 +388,7 @@ pub(crate) async fn probe(previous: &mut Option<CpuSnapshot>) -> Value {
         }
     }
     report["gpus"] = json!(gpus);
+    report["application_backend_dispatch"] = json!(true);
     report
 }
 pub async fn run(path: PathBuf) -> anyhow::Result<()> {
@@ -557,12 +558,12 @@ pub async fn run(path: PathBuf) -> anyhow::Result<()> {
             eprintln!("heartbeat unavailable: {e}");
         }
         // The executor watchdog is independent of this Agent process and network.
-        if !cfg.executors.is_empty() {
+        {
             if let Ok(v) = post(
                 &client,
                 &format!("{base}/workers/{}/commands/claim", cfg.node_id),
                 &cfg.token,
-                json!({"session_id":journal.session_id}),
+                json!({"session_id":journal.session_id,"application_backends_only":cfg.executors.is_empty()}),
             )
             .await
             {
@@ -578,11 +579,11 @@ pub async fn run(path: PathBuf) -> anyhow::Result<()> {
             }
         }
         if let Some(cmd) = journal.command.clone() {
-            let adapter = cfg
-                .executors
-                .iter()
-                .find(|e| e.id == cmd.executor_id)
-                .context("command has unknown adapter; reservation remains held")?;
+            let adapter = cfg.executors.iter().find(|e| e.id == cmd.executor_id);
+            let remote = cmd.executor_id.starts_with("app-remote-image-studio-");
+            if adapter.is_none() && !remote {
+                anyhow::bail!("command has unknown adapter; reservation remains held");
+            }
             let lease = post(
                 &client,
                 &format!("{base}/attempts/{}/renew", cmd.attempt_id),
@@ -591,22 +592,23 @@ pub async fn run(path: PathBuf) -> anyhow::Result<()> {
             )
             .await;
             let action = if !cmd.cancel && lease.is_ok() { "start" } else { "cancel" };
-            let body = json!({"attempt_id":cmd.attempt_id,"task_id":cmd.task_id,"fence":cmd.fence,"lease_seconds":cmd.lease_seconds,"preempted":cmd.cancel && cmd.preempted,"parameters":cmd.parameters});
-            let url = format!(
-                "{}/scheduler/executions/{}/{}",
-                adapter.url.trim_end_matches('/'),
-                cmd.attempt_id,
-                action
-            );
-            if let Err(e) = post(&client, &url, &adapter.token, body.clone()).await {
+            let body = if remote {
+                json!({"session_id":journal.session_id, "fence":cmd.fence})
+            } else {
+                json!({"attempt_id":cmd.attempt_id,"task_id":cmd.task_id,"fence":cmd.fence,
+                    "lease_seconds":cmd.lease_seconds,"preempted":cmd.cancel && cmd.preempted,"parameters":cmd.parameters})
+            };
+            let (endpoint, token) = if let Some(adapter) = adapter.filter(|_| !remote) {
+                (format!("{}/scheduler/executions/{}",adapter.url.trim_end_matches('/'),cmd.attempt_id),&adapter.token)
+            } else {
+                (format!("{base}/workers/{}/application-executions/{}", cfg.node_id, cmd.attempt_id), &cfg.token)
+            };
+            let url = format!("{endpoint}/{action}");
+            if let Err(e) = post(&client, &url, token, body.clone()).await {
                 eprintln!("executor {action} unavailable: {e}");
             }
-            let inspect = format!(
-                "{}/scheduler/executions/{}/inspect",
-                adapter.url.trim_end_matches('/'),
-                cmd.attempt_id
-            );
-            if let Ok(v) = post(&client, &inspect, &adapter.token, body).await {
+            let inspect = format!("{endpoint}/inspect");
+            if let Ok(v) = post(&client, &inspect, token, body).await {
                 let status = v["status"].as_str().unwrap_or("unknown");
                 let stopped = v["stopped"].as_bool().unwrap_or(false);
                 let terminal = ["succeeded", "failed", "cancelled"].contains(&status) && stopped;

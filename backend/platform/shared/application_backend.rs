@@ -13,7 +13,7 @@ pub enum Operation {
     Remove,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Instance {
     pub id: String,
@@ -25,6 +25,8 @@ pub struct Instance {
     pub cpu_millicores: Option<u32>,
     pub memory_mib: Option<u32>,
     pub config_b64: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channel_token: Option<String>,
     pub operation: Operation,
 }
 
@@ -43,6 +45,7 @@ impl Instance {
             && (PORT_MIN..=PORT_MAX).contains(&self.host_port)
             && image_repository(&self.image).is_some()
             && valid_limits(self.cpu_millicores, self.memory_mib)
+            && self.channel_token.as_deref().is_none_or(valid_channel_token)
             && self.config_b64.as_ref().is_none_or(|value| {
                 value.len() <= 10924
                     && value.len() % 4 == 0
@@ -53,6 +56,11 @@ impl Instance {
                     && value.bytes().rev().take_while(|&b| b == b'=').count() <= 2
             })
     }
+}
+
+pub fn valid_channel_token(token: &str) -> bool {
+    token.len() == 64
+        && token.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
 }
 
 pub fn valid_limits(cpu: Option<u32>, memory: Option<u32>) -> bool {

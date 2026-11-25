@@ -450,6 +450,7 @@ const app = {
     $('ufSingleKind').innerHTML = modelKindOptions("");
     setChoices($('ufSingleCapabilities'), CAPABILITIES, []);
     setChoices($('ufSingleEndpoints'), ENDPOINTS, []);
+    $('ufSingleReasoning').value = '';
     this.updateUpstreamProtocol();
     VRouterI18n.bind($('upstreamDialogTitle'),'textContent',()=>VRouterI18n.t('添加单个模型'));
     VRouterI18n.bind(root.querySelector('label[for="ufTestModel"]'),'textContent',()=>VRouterI18n.t('模型 ID'));
@@ -890,6 +891,9 @@ const app = {
     setChoices($("modelEditCapabilities"), CAPABILITIES, metadata.capabilities);
     setChoices($("modelEditEndpoints"), ENDPOINTS, metadata.endpoints);
     this.modelEditMetadataBaseline = JSON.stringify([$("modelEditKind").value, readChoices($("modelEditCapabilities")), readChoices($("modelEditEndpoints"))]);
+    const reasoning = $("modelEditReasoning");
+    reasoning.value = model.reasoning_control ? JSON.stringify(model.reasoning_control, null, 2) : "";
+    reasoning.dataset.original = reasoning.value;
     $("modelEditError").textContent = "";
     $("modelDialog").showModal();
   },
@@ -911,6 +915,11 @@ const app = {
       if (JSON.stringify([kind, capabilities, endpoints]) !== this.modelEditMetadataBaseline) {
         payload.capabilities = capabilities; payload.endpoints = endpoints;
         if (kind) payload.kind = kind;
+      }
+      const reasoning = $("modelEditReasoning");
+      if (reasoning.value !== reasoning.dataset.original) {
+        const raw = reasoning.value.trim();
+        payload.reasoning_control = raw ? JSON.parse(raw) : null;
       }
       await this.api("PATCH", "/api/v1/models", payload);
       $("modelDialog").close();
@@ -1645,6 +1654,11 @@ const app = {
         model.metadata_override = true;
       } else if (found) {
         Object.assign(model, found);
+      }
+      const reasoning = $("ufSingleReasoning").value.trim();
+      if (reasoning) {
+        model.reasoning_control = JSON.parse(reasoning);
+        model.metadata_override = true;
       }
       payload.models = [model];
     }

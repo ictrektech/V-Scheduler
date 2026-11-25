@@ -321,7 +321,7 @@ Base: `http://v-scheduler:38120/api/v1`. [Complete OpenAPI](../api/openapi-v1.js
 | POST | `/permits/{id}/confirm-stopped` | Confirm stopped execution |
 | GET | `/workers/{id}/resources` | Read one node's resource snapshot |
 | POST | `/workers/{id}/heartbeat` | Worker heartbeat |
-| POST | `/workers/{id}/commands/claim` | Claim execution commands |
+| POST | `/workers/{id}/commands/claim` | Claim execution commands. Optional `application_backends_only` defaults to false. / 领取执行命令，可用 `application_backends_only` 仅领取应用后端任务，默认 false。 |
 | POST | `/attempts/{id}/renew` | Renew execution lease |
 | POST | `/attempts/{id}/report` | Report execution status |
 | POST | `/permits/{id}/delegate` | Transfer asynchronous ownership |
@@ -375,6 +375,28 @@ Base: `http://v-scheduler:38120/api/v1`. [Complete OpenAPI](../api/openapi-v1.js
 | POST | `/cluster/runtime/{*path}` | Forward administrator Cluster Manager requests / 转发管理员集群管理请求 |
 | PUT | `/cluster/runtime/{*path}` | Forward administrator Cluster Manager requests / 转发管理员集群管理请求 |
 | DELETE | `/cluster/runtime/{*path}` | Forward administrator Cluster Manager requests / 转发管理员集群管理请求 |
+| GET | `/backend-deployments/{id}/model-hub` | Check access to the read-only Model Hub share / 检查只读 Model Hub 共享 |
+| POST | `/backend-deployments/{id}/transfers` | Prepare shared weights or create/resume a weight transfer / 准备共享权重或创建、续传权重 |
+| GET | `/backend-deployments/{id}/transfers/{transfer_id}` | Read received offsets / 查询已接收偏移 |
+| PUT | `/backend-deployments/{id}/transfers/{transfer_id}/files/{file_id}` | Write one chunk at a byte offset / 按字节偏移上传分块 |
+| POST | `/backend-deployments/{id}/transfers/{transfer_id}/complete` | Verify file sizes and SHA-256 / 验证文件尺寸和 SHA-256 |
+| POST | `/backend-deployments/{id}/models` | Bind a verified model to the calibrated target executor / 将已校验的模型登记到目标节点的校准执行器 |
+| POST | `/backend-deployments/{id}/executions/{attempt_id}/{action}` | Start, inspect or cancel a fenced attempt / 启动、查询或取消指定代次的执行 |
+| PUT | `/backend-deployments/{id}/executions/{attempt_id}/inputs/reference` | Upload a reference image chunk / 上传参考图分块 |
+| GET | `/backend-deployments/{id}/executions/{attempt_id}/outputs/{file_id}` | Download a result chunk / 下载产物分块 |
+| POST | `/workers/{id}/application-executions/{attempt_id}/{action}` | Dispatch an assigned attempt for the active worker session / 为当前节点会话分派执行 |
+
+Check `model-hub` first. When `state` is `ready`, send `source: "shared"` and each file's `shared_path` relative to the Model Hub root. Run `complete` to verify the files. If the probe returns `unavailable` or preparation returns `409 BACKEND_SHARED_MODEL_HUB_UNAVAILABLE`, omit `source` and `shared_path` and upload the files in chunks. Each request still requires the deployment's current grants.
+
+先查询 `model-hub`。若 `state` 为 `ready`，创建清单时传 `source: "shared"` 和每个文件相对 Model Hub 根目录的 `shared_path`，再调用 `complete` 校验文件。若探测返回 `unavailable` 或准备时返回 `409 BACKEND_SHARED_MODEL_HUB_UNAVAILABLE`，省略 `source` 和 `shared_path`，按分块上传文件。每个请求仍需要部署的当前授权。
+
+After a transfer reports `verified: true`, post its `model_id` and `transfer_id` to `/backend-deployments/{id}/models`. The response gives `executor_id`, `node_id`, the runtime `profile`, and the calibrated `model_limits` and `model_parameters`. Scheduler requires a matching node report and a measured calibration. Deployment owners need current grants for the target and image repository. Stop or removal returns `409 BACKEND_TASKS_ACTIVE` while the deployment has queued or active work.
+
+传输返回 `verified: true` 后，将 `model_id` 和 `transfer_id` 提交到 `/backend-deployments/{id}/models`。响应提供 `executor_id`、`node_id`、运行 `profile` 及实测校准的 `model_limits` 和 `model_parameters`。Scheduler 检查实际节点报告与实测校准是否匹配，部署所有方需要当前节点和镜像仓库授权。有排队或执行中的任务时，停止或移除返回 `409 BACKEND_TASKS_ACTIVE`。
+
+The execution actions are `start`, `inspect`, and `cancel`. The app sends `task_id` and `fence`, and provides a job description when starting. Worker dispatch uses `session_id` and `fence`. File requests use the `X-Scheduler-Fence` header and the byte `offset` query field. Upload at most 1 MiB per request and 20 MiB per reference image. Download receipts contain `file_id`, `offset`, `size_bytes`, `sha256`, and `data_b64`. Check the total size and SHA-256 before storing the output.
+
+执行动作包括 `start`、`inspect` 和 `cancel`。应用提交 `task_id` 和 `fence`，启动时同时提交任务描述。节点分派使用 `session_id` 和 `fence`。文件请求使用 `X-Scheduler-Fence` 请求头和字节偏移查询参数 `offset`。每次最多上传 1 MiB，单份参考图最多 20 MiB。下载回执包含 `file_id`、`offset`、`size_bytes`、`sha256` 和 `data_b64`。保存产物前检查完整文件的长度和 SHA-256。
 | GET | `/image-hub/runtime/{*path}` | Stream administrator Image Hub requests / 流式转发管理员镜像仓库请求 |
 | POST | `/image-hub/runtime/{*path}` | Stream administrator Image Hub requests / 流式转发管理员镜像仓库请求 |
 | PUT | `/image-hub/runtime/{*path}` | Stream administrator Image Hub requests / 流式转发管理员镜像仓库请求 |

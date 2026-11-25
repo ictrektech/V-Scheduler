@@ -9,6 +9,8 @@ mod managed_nodes;
 mod model_budget;
 mod compute_catalog;
 mod backend_deployments;
+mod backend_transfers;
+mod backend_models;
 mod modelinfer_discovery;
 mod modelinfer_migration;
 mod modelinfer_runtime;
@@ -153,6 +155,9 @@ fn report_fresh(report: &Value) -> bool {
     report["observed_at"].is_null() || timestamp_fresh(&report["observed_at"], 30)
 }
 fn probe_ready(report: &Value, executor: &str) -> bool {
+    if executor.starts_with(backend_models::EXECUTOR_PREFIX) {
+        return report["application_backend_dispatch"] == true;
+    }
     if (executor.starts_with("v-voice.auto.") || executor.starts_with("v-scheduler.voice."))
         && report["executor_health"][executor].is_null()
     {
@@ -470,6 +475,24 @@ pub async fn serve(
         .route("/backend-deployments/{id}", get(backend_deployments::detail).delete(backend_deployments::remove))
         .route("/backend-deployments/{id}/start", post(backend_deployments::start))
         .route("/backend-deployments/{id}/stop", post(backend_deployments::stop))
+        .route("/backend-deployments/{id}/models", post(backend_models::register))
+        .route("/backend-deployments/{id}/model-hub", get(backend_transfers::model_hub))
+        .route("/backend-deployments/{id}/executions/{attempt_id}/{action}", post(backend_models::execute))
+        .route(
+            "/backend-deployments/{id}/executions/{attempt_id}/inputs/reference",
+            axum::routing::put(backend_models::reference)
+                .layer(axum::extract::DefaultBodyLimit::max(backend_transfers::wire::MAX_CHUNK_BYTES)),
+        )
+        .route("/backend-deployments/{id}/executions/{attempt_id}/outputs/{file_id}", get(backend_models::output))
+        .route("/workers/{id}/application-executions/{attempt_id}/{action}", post(backend_models::dispatch))
+        .route("/backend-deployments/{id}/transfers", post(backend_transfers::create))
+        .route("/backend-deployments/{id}/transfers/{transfer_id}", get(backend_transfers::read))
+        .route(
+            "/backend-deployments/{id}/transfers/{transfer_id}/files/{file_id}",
+            axum::routing::put(backend_transfers::write)
+                .layer(axum::extract::DefaultBodyLimit::max(backend_transfers::wire::MAX_CHUNK_BYTES)),
+        )
+        .route("/backend-deployments/{id}/transfers/{transfer_id}/complete", post(backend_transfers::complete))
         .route("/compute-profiles", get(compute_catalog::list_profiles).post(compute_catalog::register_profile))
         .route("/inference/images", get(compute_catalog::list_images).post(compute_catalog::register_image))
         .route("/inference/migration/preview", get(modelinfer_migration::preview))
@@ -653,6 +676,7 @@ async fn submit(State(a): State<App>, h: HeaderMap, Json(body): Json<TaskSubmit>
         .map_err(unavailable)?;
     management::admit(&mut tx, e, &p).await?;
     integrations::admit(&mut tx,e).await?;
+    backend_models::admit(&mut tx, e).await?;
     let insert=sqlx::query("INSERT INTO vrs_tasks(id,app,idem,hash,body,node) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(app,idem) DO NOTHING RETURNING *").bind(&id).bind(&p.app_id).bind(key).bind(&hash).bind(value).bind(&e.node_id).fetch_optional(&mut *tx).await.map_err(unavailable)?;
     let fresh = insert.is_some();
     if fresh {
@@ -939,6 +963,8 @@ async fn heartbeat(
 #[derive(Deserialize)]
 struct Session {
     session_id: String,
+    #[serde(default)]
+    application_backends_only: bool,
 }
 fn command(r: &sqlx::postgres::PgRow) -> Command {
     let body: Value = r.get("body");
@@ -969,8 +995,11 @@ async fn claim(
     if node.get::<Option<String>, _>("session").as_deref() != Some(&b.session_id) {
         return Err(Error(StatusCode::CONFLICT, "WORKER_SESSION_CONFLICT"));
     }
-    let waiting=sqlx::query("SELECT id,body FROM vrs_tasks WHERE node=$1 AND status='queued' ORDER BY vrs_priority(body->'scheduling')+floor(extract(epoch FROM (now()-created_at))/30) DESC,created_at,id LIMIT 1")
-        .bind(&id).fetch_optional(&mut *tx).await.map_err(unavailable)?;
+    let prefix = b.application_backends_only.then_some(backend_models::EXECUTOR_PREFIX);
+    let waiting=sqlx::query("SELECT id,body FROM vrs_tasks WHERE node=$1 AND status='queued'
+        AND ($2::text IS NULL OR starts_with(body->'executor'->>'id',$2))
+        ORDER BY vrs_priority(body->'scheduling')+floor(extract(epoch FROM (now()-created_at))/30) DESC,created_at,id LIMIT 1")
+        .bind(&id).bind(prefix).fetch_optional(&mut *tx).await.map_err(unavailable)?;
     if let Some(waiting) = waiting.filter(|_| node.get::<bool,_>("management_enabled") && !node.get::<bool,_>("draining") && node.get::<Option<bool>,_>("fresh").unwrap_or(false) && report_fresh(&node.get::<Value,_>("report"))) {
         let options = scheduling::task_options(&waiting.get("body"));
         let requester: String = waiting.get("id");
@@ -982,9 +1011,10 @@ async fn claim(
     // MVP Agent has one execution lane; no hidden queue holding GPU reservations.
     if !existing.is_empty() {
         tx.commit().await.map_err(unavailable)?;
-        return Ok(ok(
-            json!({"commands":existing.iter().map(command).collect::<Vec<_>>()}),
-        ));
+        let commands = existing.iter().map(command)
+            .filter(|command| prefix.is_none_or(|prefix| command.executor_id.starts_with(prefix)))
+            .collect::<Vec<_>>();
+        return Ok(ok(json!({"commands":commands})));
     }
     if !node.get::<bool, _>("management_enabled")
         || node.get::<bool, _>("draining")
@@ -1006,7 +1036,10 @@ async fn claim(
     {
         used.add(&serde_json::from_value(r.get("resources")).map_err(|_| invalid())?);
     }
-    let queued=sqlx::query("SELECT * FROM vrs_tasks WHERE node=$1 AND status='queued' ORDER BY vrs_priority(body->'scheduling')+floor(extract(epoch FROM (now()-created_at))/30) DESC,created_at,id LIMIT 32 FOR UPDATE SKIP LOCKED").bind(&id).fetch_all(&mut *tx).await.map_err(unavailable)?;
+    let queued=sqlx::query("SELECT * FROM vrs_tasks WHERE node=$1 AND status='queued'
+        AND ($2::text IS NULL OR starts_with(body->'executor'->>'id',$2))
+        ORDER BY vrs_priority(body->'scheduling')+floor(extract(epoch FROM (now()-created_at))/30) DESC,created_at,id LIMIT 32 FOR UPDATE SKIP LOCKED")
+        .bind(&id).bind(prefix).fetch_all(&mut *tx).await.map_err(unavailable)?;
     let mut memory_pressure = false;
     for r in queued {
         let created:DateTime<Utc>=r.get("created_at");
@@ -1034,6 +1067,9 @@ async fn claim(
             continue;
         };
         if management::admit(&mut tx, e, &p).await.is_err() || integrations::admit(&mut tx,e).await.is_err() {
+            continue;
+        }
+        if backend_models::admit(&mut tx, e).await.is_err() {
             continue;
         }
         if voice_admission(&a, &e.id).is_err() {

@@ -8,7 +8,10 @@
 //! 列为后续安全强化（decisions.md / roadmap §后续）。
 
 use crate::error::codes;
-use crate::handlers::application_backend::wire::{Instance, RuntimeState};
+use crate::handlers::application_backend::{
+    channel::{Packet, Reply},
+    wire::{Instance, RuntimeState},
+};
 use crate::error::VcmError;
 
 /// 目标节点应用 HTTP 端口（container host 网络直连；可经 env `REMOTE_APP_PORT` 覆盖）
@@ -24,6 +27,10 @@ pub fn default_remote_app_port() -> u16 {
 pub trait RemoteNodeClient: Send + Sync {
     async fn application_backend(&self, _instance: &Instance) -> Result<RuntimeState, VcmError> {
         Err(map_remote_err("application backend", "trusted scheduler peer required"))
+    }
+
+    async fn application_backend_channel(&self, _packet: &Packet) -> Result<Reply, VcmError> {
+        Err(map_remote_err("application backend channel", "trusted scheduler peer required"))
     }
 
     /// 目标节点应用探活：返回版本号（GET `/<url_base>/api/health`）
@@ -273,6 +280,19 @@ impl RemoteNodeClient for RealRemoteNodeClient {
         )?.json(instance).send().await.map_err(|error| map_remote_err("application backend", error))?;
         let data = self.parse_body(response, "application backend").await?;
         serde_json::from_value(data).map_err(|error| map_remote_err("application backend", error))
+    }
+
+    async fn application_backend_channel(&self, packet: &Packet) -> Result<Reply, VcmError> {
+        if self.peers.is_none() {
+            return Err(map_remote_err("application backend channel", "trusted scheduler peer required"));
+        }
+        let response = self.request(
+            &self.http, reqwest::Method::POST, &packet.host.to_string(), "application-backend/channel",
+        )?.json(packet).timeout(std::time::Duration::from_secs(packet.operation.timeout_seconds() + 10)).send().await
+            .map_err(|_| map_remote_err("application backend channel", "request failed"))?;
+        let data = self.parse_body(response, "application backend channel").await?;
+        serde_json::from_value(data)
+            .map_err(|_| map_remote_err("application backend channel", "invalid response"))
     }
 
     async fn probe(&self, node_ip: &str) -> Result<String, VcmError> {

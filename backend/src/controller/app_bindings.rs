@@ -94,6 +94,44 @@ fn supported_profile(application: Application, profile: &str) -> bool {
     profiles.contains(&profile)
 }
 
+pub(super) fn remote_image_approval(
+    profile: &str,
+    architecture: &str,
+    report: &Value,
+    contract: &Value,
+    model_id: &str,
+    approvals: &Value,
+) -> Option<(String, Value)> {
+    let application = APPLICATIONS.iter().copied().find(|application| application.slug == "image-studio")?;
+    if !supported_profile(application, profile) || contract["protocol_version"] != 1
+        || approvals["protocol_version"] != 1 {
+        return None;
+    }
+    let task_type = contract["async_models"].as_array()?.iter()
+        .find(|model| model["id"] == model_id)?["task_type"].as_str()?;
+    if !["image.generate", "video.generate"].contains(&task_type) { return None; }
+    let actual_hardware = hardware(report);
+    let mut matches = approvals["approvals"].as_array()?.iter().filter(|policy| {
+        policy["app_id"] == application.id && policy["architecture"] == architecture
+            && policy["profile"] == profile && policy["hardware"] == actual_hardware
+            && policy["model_id"] == model_id && policy["task_type"] == task_type
+            && execution_settings_match(application, &policy["execution_settings"], &contract["execution_settings"])
+            && policy["evidence"]["confirmed_stopped"] == true
+            && policy["evidence"]["id"].as_str().is_some_and(|id| !id.is_empty())
+            && policy["model_limits"].as_object().is_some_and(|values| !values.is_empty())
+            && policy["model_parameters"].as_object().is_some_and(|values| !values.is_empty())
+    });
+    let matching = matches.next()?;
+    if matches.next().is_some() { return None; }
+    Some((task_type.into(), matching.clone()))
+}
+
+pub(super) fn image_studio_executor_token() -> anyhow::Result<String> {
+    let binding = read_private(Path::new("/config/app-bindings/image-studio.json"))?;
+    binding["binding"]["executor_token"].as_str().filter(|value| !value.is_empty())
+        .map(str::to_owned).context("main Image Studio executor binding required")
+}
+
 fn upstream(application: Application) -> String {
     if application.asynchronous || application.native_permit_only {
         application.origin.to_owned()

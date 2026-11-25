@@ -20,6 +20,1223 @@
     }
   ],
   "paths": {
+    "/backend-deployments/{id}/model-hub": {
+      "get": {
+        "summary": "Check read-only Model Hub access / 检查只读 Model Hub",
+        "description": "Checks the authorized running Image Studio deployment. Unavailable means the app can use its chunk transfer fallback. / 检查授权且运行中的 Image Studio 实例。不可用时可使用分块传输。",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": {
+            "description": "Read-only share status / 只读共享状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["code", "data"],
+                  "properties": {
+                    "code": { "const": "OK" },
+                    "data": {
+                      "type": "object",
+                      "required": ["state"],
+                      "properties": { "state": { "enum": ["ready", "unavailable"] } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Authentication required / 需要鉴权" },
+          "403": { "description": "Current authorization required / 需要当前授权" },
+          "404": { "description": "Deployment not found / 实例不存在" },
+          "409": { "description": "Deployment state or profile conflict / 部署状态或 Profile 冲突" }
+        }
+      }
+    },
+    "/backend-deployments/{id}/transfers": {
+      "post": {
+        "operationId": "backend_weight_transfer_create",
+        "summary": "Create/resume a weight transfer / 创建或续传权重",
+        "description": "Only a deployment owner with current target and repository authorization or a VOS administrator can access an enabled running Image Studio deployment. / 实例所有方须持有当前节点和仓库授权，VOS 管理员同样受实例状态和部署授权约束。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Verified operation result / 操作结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "const": "OK"
+                    },
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "transfer_id",
+                        "model_id",
+                        "files",
+                        "verified"
+                      ],
+                      "properties": {
+                        "transfer_id": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}$"
+                        },
+                        "model_id": {
+                          "type": "string"
+                        },
+                        "files": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "file_id",
+                              "received_bytes"
+                            ],
+                            "properties": {
+                              "file_id": {
+                                "type": "string"
+                              },
+                              "received_bytes": {
+                                "type": "integer",
+                                "minimum": 0
+                              }
+                            }
+                          }
+                        },
+                        "verified": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required / 需要认证"
+          },
+          "403": {
+            "description": "Deployment or target grant denied / 部署或目标未授权"
+          },
+          "404": {
+            "description": "Deployment or transfer not found / 实例或传输不存在"
+          },
+          "409": {
+            "description": "Worker offset or deployment state conflict / 偏移或实例状态冲突"
+          },
+          "413": {
+            "description": "Payload is too large / 内容过大"
+          },
+          "422": {
+            "description": "Invalid request or manifest / 请求或清单有误"
+          },
+          "502": {
+            "description": "Worker channel unavailable / 节点通道不可用"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "model_id",
+                  "files"
+                ],
+                "properties": {
+                  "model_id": {
+                    "type": "string"
+                  },
+                  "source": {
+                    "enum": ["shared", null],
+                    "description": "Use the verified read-only Model Hub mount. Omit or pass null for byte transfer. / 使用已探测的只读 Model Hub。省略或传 null 时走分块上传。"
+                  },
+                  "files": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 32,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "file_id",
+                        "path",
+                        "size_bytes",
+                        "sha256"
+                      ],
+                      "properties": {
+                        "file_id": {
+                          "type": "string"
+                        },
+                        "path": {
+                          "type": "string",
+                          "maxLength": 200,
+                          "description": "File basename / 文件名"
+                        },
+                        "shared_path": {
+                          "type": "string",
+                          "maxLength": 1024,
+                          "description": "Required for shared source. Relative to the Model Hub root, with no empty, dot, or parent components. / 共享来源必填。相对 Model Hub 根，不接受空路径段、点或上级目录。"
+                        },
+                        "size_bytes": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 1099511627776
+                        },
+                        "sha256": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}$"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/backend-deployments/{id}/transfers/{transfer_id}": {
+      "get": {
+        "operationId": "backend_weight_transfer_read",
+        "summary": "Read received offsets / 查询已接收偏移",
+        "description": "Only a deployment owner with current target and repository authorization or a VOS administrator can access an enabled running Image Studio deployment. / 实例所有方须持有当前节点和仓库授权，VOS 管理员同样受实例状态和部署授权约束。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "transfer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Verified operation result / 操作结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "const": "OK"
+                    },
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "transfer_id",
+                        "model_id",
+                        "files",
+                        "verified"
+                      ],
+                      "properties": {
+                        "transfer_id": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}$"
+                        },
+                        "model_id": {
+                          "type": "string"
+                        },
+                        "files": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "file_id",
+                              "received_bytes"
+                            ],
+                            "properties": {
+                              "file_id": {
+                                "type": "string"
+                              },
+                              "received_bytes": {
+                                "type": "integer",
+                                "minimum": 0
+                              }
+                            }
+                          }
+                        },
+                        "verified": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required / 需要认证"
+          },
+          "403": {
+            "description": "Deployment or target grant denied / 部署或目标未授权"
+          },
+          "404": {
+            "description": "Deployment or transfer not found / 实例或传输不存在"
+          },
+          "409": {
+            "description": "Worker offset or deployment state conflict / 偏移或实例状态冲突"
+          },
+          "413": {
+            "description": "Payload is too large / 内容过大"
+          },
+          "422": {
+            "description": "Invalid request or manifest / 请求或清单有误"
+          },
+          "502": {
+            "description": "Worker channel unavailable / 节点通道不可用"
+          }
+        }
+      }
+    },
+    "/backend-deployments/{id}/transfers/{transfer_id}/files/{file_id}": {
+      "put": {
+        "operationId": "backend_weight_transfer_write",
+        "summary": "Write one chunk at a byte offset / 按字节偏移上传分块",
+        "description": "Only a deployment owner with current target and repository authorization or a VOS administrator can access an enabled running Image Studio deployment. / 实例所有方须持有当前节点和仓库授权，VOS 管理员同样受实例状态和部署授权约束。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "transfer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "file_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Verified operation result / 操作结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "const": "OK"
+                    },
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "received_bytes"
+                      ],
+                      "properties": {
+                        "received_bytes": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required / 需要认证"
+          },
+          "403": {
+            "description": "Deployment or target grant denied / 部署或目标未授权"
+          },
+          "404": {
+            "description": "Deployment or transfer not found / 实例或传输不存在"
+          },
+          "409": {
+            "description": "Worker offset or deployment state conflict / 偏移或实例状态冲突"
+          },
+          "413": {
+            "description": "Payload is too large / 内容过大"
+          },
+          "422": {
+            "description": "Invalid request or manifest / 请求或清单有误"
+          },
+          "502": {
+            "description": "Worker channel unavailable / 节点通道不可用"
+          },
+          "415": {
+            "description": "Expected application/octet-stream / 需要 application/octet-stream"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary",
+                "description": "One chunk of up to 1 MiB / 单块最多 1 MiB"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/backend-deployments/{id}/transfers/{transfer_id}/complete": {
+      "post": {
+        "operationId": "backend_weight_transfer_complete",
+        "summary": "Verify file sizes and SHA-256 / 验证文件尺寸和 SHA-256",
+        "description": "Only a deployment owner with current target and repository authorization or a VOS administrator can access an enabled running Image Studio deployment. / 实例所有方须持有当前节点和仓库授权，VOS 管理员同样受实例状态和部署授权约束。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "transfer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Verified operation result / 操作结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "const": "OK"
+                    },
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "transfer_id",
+                        "model_id",
+                        "files",
+                        "verified"
+                      ],
+                      "properties": {
+                        "transfer_id": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}$"
+                        },
+                        "model_id": {
+                          "type": "string"
+                        },
+                        "files": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "file_id",
+                              "received_bytes"
+                            ],
+                            "properties": {
+                              "file_id": {
+                                "type": "string"
+                              },
+                              "received_bytes": {
+                                "type": "integer",
+                                "minimum": 0
+                              }
+                            }
+                          }
+                        },
+                        "verified": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required / 需要认证"
+          },
+          "403": {
+            "description": "Deployment or target grant denied / 部署或目标未授权"
+          },
+          "404": {
+            "description": "Deployment or transfer not found / 实例或传输不存在"
+          },
+          "409": {
+            "description": "Worker offset or deployment state conflict / 偏移或实例状态冲突"
+          },
+          "413": {
+            "description": "Payload is too large / 内容过大"
+          },
+          "422": {
+            "description": "Invalid request or manifest / 请求或清单有误"
+          },
+          "502": {
+            "description": "Worker channel unavailable / 节点通道不可用"
+          }
+        }
+      }
+    },
+    "/backend-deployments/{id}/models": {
+      "post": {
+        "summary": "Register a verified worker model / 登记已校验的模型",
+        "description": "Requires deployment ownership and current node/repository authorization for a running Image Studio worker. / 需要拥有运行中的 Image Studio 实例及当前节点和镜像仓库授权。 The worker model and actual node must match a single measured approval. / 模型和实际节点须匹配唯一实测校准。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Operation result / 操作结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "const": "OK"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "executor_id": {
+                          "type": "string"
+                        },
+                        "node_id": {
+                          "type": "string"
+                        },
+                        "profile": {
+                          "type": "string",
+                          "enum": [
+                            "amd",
+                            "amd-cuda",
+                            "arm",
+                            "arm-cuda",
+                            "l4t",
+                            "thor"
+                          ]
+                        },
+                        "model_limits": {
+                          "type": "object"
+                        },
+                        "model_parameters": {
+                          "type": "object"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required / 需要鉴权"
+          },
+          "403": {
+            "description": "Current authorization required / 需要当前授权"
+          },
+          "404": {
+            "description": "Resource not found / 资源不存在"
+          },
+          "409": {
+            "description": "State or fence conflict / 状态或执行代次冲突"
+          },
+          "422": {
+            "description": "Invalid request / 请求无效"
+          },
+          "502": {
+            "description": "Worker channel or adapter unavailable / Worker 通道或适配器不可用"
+          },
+          "503": {
+            "description": "Scheduler unavailable / Scheduler 暂不可用"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "model_id",
+                  "transfer_id"
+                ],
+                "properties": {
+                  "model_id": {
+                    "type": "string"
+                  },
+                  "transfer_id": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/backend-deployments/{id}/executions/{attempt_id}/{action}": {
+      "post": {
+        "summary": "Execute a fenced attempt / 执行指定代次的任务",
+        "description": "Requires deployment ownership and current node/repository authorization for a running Image Studio worker. / 需要拥有运行中的 Image Studio 实例及当前节点和镜像仓库授权。 Start requires a live lease and a JobRecord without node-local paths. The registered weight and calibrated limits are chosen by Scheduler. / 启动需要有效租约和不含节点本地路径的任务信息，权重及校准限额由 Scheduler 选取。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          },
+          {
+            "name": "attempt_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "action",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "start",
+                "inspect",
+                "cancel"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Operation result / 操作结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "const": "OK"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "unknown",
+                            "running",
+                            "succeeded",
+                            "failed",
+                            "cancelled"
+                          ]
+                        },
+                        "stopped": {
+                          "type": "boolean"
+                        },
+                        "progress": {
+                          "type": "object",
+                          "properties": {
+                            "percent": {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 1
+                            }
+                          }
+                        },
+                        "result": {
+                          "type": "object"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required / 需要鉴权"
+          },
+          "403": {
+            "description": "Current authorization required / 需要当前授权"
+          },
+          "404": {
+            "description": "Resource not found / 资源不存在"
+          },
+          "409": {
+            "description": "State or fence conflict / 状态或执行代次冲突"
+          },
+          "422": {
+            "description": "Invalid request / 请求无效"
+          },
+          "502": {
+            "description": "Worker channel or adapter unavailable / Worker 通道或适配器不可用"
+          },
+          "503": {
+            "description": "Scheduler unavailable / Scheduler 暂不可用"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "task_id",
+                  "fence"
+                ],
+                "properties": {
+                  "task_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "fence": {
+                    "type": "integer",
+                    "format": "int64",
+                    "minimum": 1
+                  },
+                  "job": {
+                    "type": "object",
+                    "description": "Required for start / start 时必填"
+                  },
+                  "reference": {
+                    "description": "Null or descriptor required for a start that uses a reference image / 使用参考图启动时需要文件描述",
+                    "anyOf": [
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "type": "object",
+                        "required": [
+                          "extension",
+                          "size_bytes",
+                          "sha256"
+                        ],
+                        "properties": {
+                          "extension": {
+                            "type": "string"
+                          },
+                          "size_bytes": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 20971520
+                          },
+                          "sha256": {
+                            "type": "string",
+                            "pattern": "^[0-9a-f]{64}$"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/backend-deployments/{id}/executions/{attempt_id}/inputs/reference": {
+      "put": {
+        "summary": "Upload a reference chunk / 上传参考图分块",
+        "description": "Requires deployment ownership and current node/repository authorization for a running Image Studio worker. / 需要拥有运行中的 Image Studio 实例及当前节点和镜像仓库授权。 Binary chunks are at most 1 MiB, up to 20 MiB per attempt. The receipt gives the next offset. / 每块最多 1 MiB，每次执行最多 20 MiB，回执返回下一个偏移。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          },
+          {
+            "name": "attempt_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "X-Scheduler-Fence",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Operation result / 操作结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "const": "OK"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "received_bytes": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 20971520
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required / 需要鉴权"
+          },
+          "403": {
+            "description": "Current authorization required / 需要当前授权"
+          },
+          "404": {
+            "description": "Resource not found / 资源不存在"
+          },
+          "409": {
+            "description": "State or fence conflict / 状态或执行代次冲突"
+          },
+          "422": {
+            "description": "Invalid request / 请求无效"
+          },
+          "502": {
+            "description": "Worker channel or adapter unavailable / Worker 通道或适配器不可用"
+          },
+          "503": {
+            "description": "Scheduler unavailable / Scheduler 暂不可用"
+          },
+          "413": {
+            "description": "Chunk or total too large / 分块或总文件太大"
+          },
+          "415": {
+            "description": "Unsupported content type / 内容类型不符"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/backend-deployments/{id}/executions/{attempt_id}/outputs/{file_id}": {
+      "get": {
+        "summary": "Download an output chunk / 下载产物分块",
+        "description": "Requires deployment ownership and current node/repository authorization for a running Image Studio worker. / 需要拥有运行中的 Image Studio 实例及当前节点和镜像仓库授权。 Compare each receipt offset, total size and SHA-256 before publishing the assembled file. / 合并文件后发布前须校验分块偏移、总长度及 SHA-256。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          },
+          {
+            "name": "attempt_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "file_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^output(?:_[0-9]{2})?\\.(png|webm)$"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "X-Scheduler-Fence",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Operation result / 操作结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "const": "OK"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "file_id": {
+                          "type": "string"
+                        },
+                        "offset": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "size_bytes": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "sha256": {
+                          "type": "string",
+                          "pattern": "^[0-9a-f]{64}$"
+                        },
+                        "data_b64": {
+                          "type": "string",
+                          "contentEncoding": "base64"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required / 需要鉴权"
+          },
+          "403": {
+            "description": "Current authorization required / 需要当前授权"
+          },
+          "404": {
+            "description": "Resource not found / 资源不存在"
+          },
+          "409": {
+            "description": "State or fence conflict / 状态或执行代次冲突"
+          },
+          "422": {
+            "description": "Invalid request / 请求无效"
+          },
+          "502": {
+            "description": "Worker channel or adapter unavailable / Worker 通道或适配器不可用"
+          },
+          "503": {
+            "description": "Scheduler unavailable / Scheduler 暂不可用"
+          }
+        }
+      }
+    },
+    "/workers/{id}/application-executions/{attempt_id}/{action}": {
+      "post": {
+        "summary": "Dispatch the assigned application attempt / 分派已指派的应用任务",
+        "description": "Requires this worker identity, its current session, and the current attempt fence. / 需要该节点身份、当前会话及当前执行代次。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "attempt_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "action",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "start",
+                "inspect",
+                "cancel"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Operation result / 操作结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "const": "OK"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "unknown",
+                            "running",
+                            "succeeded",
+                            "failed",
+                            "cancelled"
+                          ]
+                        },
+                        "stopped": {
+                          "type": "boolean"
+                        },
+                        "progress": {
+                          "type": "object",
+                          "properties": {
+                            "percent": {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 1
+                            }
+                          }
+                        },
+                        "result": {
+                          "type": "object"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required / 需要鉴权"
+          },
+          "403": {
+            "description": "Current authorization required / 需要当前授权"
+          },
+          "404": {
+            "description": "Resource not found / 资源不存在"
+          },
+          "409": {
+            "description": "State or fence conflict / 状态或执行代次冲突"
+          },
+          "422": {
+            "description": "Invalid request / 请求无效"
+          },
+          "502": {
+            "description": "Worker channel or adapter unavailable / Worker 通道或适配器不可用"
+          },
+          "503": {
+            "description": "Scheduler unavailable / Scheduler 暂不可用"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "session_id",
+                  "fence"
+                ],
+                "properties": {
+                  "session_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "fence": {
+                    "type": "integer",
+                    "format": "int64",
+                    "minimum": 1
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/compute-profiles": {
       "get": {
         "operationId": "list_compute_profiles",
@@ -9839,6 +11056,11 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
+          "application_backends_only": {
+            "type": "boolean",
+            "default": false,
+            "description": "Claim only application backend deployment tasks when true. / 为 true 时仅领取应用后端部署的任务。"
+          },
           "session_id": {
             "type": "string"
           }
