@@ -15,7 +15,7 @@ export function apiError(payload,status) {
  const id=typeof payload?.request_id==='string'?payload.request_id:'';
  const message=typeof reason==='string'?reason:`HTTP ${status}`;
  const error=new Error(message+(code&&code!==message?` [${code}]`:'')+(id?` · ${id}`:''));
- Object.assign(error,{status,code:code||'',requestId:id,sessionError:status===401&&!String(code||'').startsWith('PROVIDER_')&&(payload?.category==='v-scheduler'||['UNAUTHENTICATED','UNAUTHORIZED'].includes(code))});return error;
+ Object.assign(error,{status,code:code||'',requestId:id,gatewayRouteMissing:status===404&&!payload,sessionError:status===401&&isBrowserIdentityPayload(payload)});return error;
 }
 export async function jsonResponse(response) {
  const text=await response.text();let payload=null;
@@ -28,7 +28,7 @@ export async function jsonResponse(response) {
 const transientStatuses=new Set([408,502,503,504]);
 const wait=milliseconds=>new Promise(resolve=>setTimeout(resolve,milliseconds));
 export function isTemporaryReadFailure(error) {
- return transientStatuses.has(error?.status)||error instanceof TypeError||error?.code==='INVALID_RESPONSE';
+ return transientStatuses.has(error?.status)||error?.gatewayRouteMissing===true||error instanceof TypeError||error?.code==='INVALID_RESPONSE';
 }
 export async function retryReadFetch(url,init={},fetcher=fetch) {
  const method=(init.method||'GET').toUpperCase();
@@ -41,7 +41,8 @@ export async function retryReadFetch(url,init={},fetcher=fetch) {
   const signal=init.signal?AbortSignal.any([init.signal,timeout.signal]):timeout.signal;
   try {
    const response=await fetcher(url,{...init,signal});
-   if(!transientStatuses.has(response.status)||delay===850)return response;
+   const routeMissing=response.status===404&&!response.headers.get('content-type')?.includes('json');
+   if((!transientStatuses.has(response.status)&&!routeMissing)||delay===850)return response;
    await response.body?.cancel();
   }catch(error){
    if(init.signal?.aborted||delay===850)throw error;
@@ -77,6 +78,12 @@ export async function authenticatedFetch(url,init={},auth={}) {
  return response;
 }
 
+function isBrowserIdentityPayload(payload) {
+ const code=payload?.error?.code||payload?.code;
+ if(String(code||'').startsWith('PROVIDER_')||String(payload?.error?.message||payload?.msg||'').startsWith('API key owner is'))return false;
+ if(payload?.category==='v-scheduler'||['UNAUTHENTICATED','UNAUTHORIZED'].includes(code))return true;
+ return !['invalid_api_key','authentication_error'].includes(payload?.error?.type);
+}
 export async function browserIdentityFailure(response){
- try{const payload=await response.clone().json();const code=payload?.error?.code||payload?.code;if(String(code||'').startsWith('PROVIDER_')||String(payload?.error?.message||payload?.msg||'').startsWith('API key owner is'))return false;if(payload?.category==='v-scheduler'||['UNAUTHENTICATED','UNAUTHORIZED'].includes(code))return true;return !String(code||'').startsWith('PROVIDER_')&&!['invalid_api_key','authentication_error'].includes(payload?.error?.type);}catch{return true;}
+ try{return isBrowserIdentityPayload(await response.clone().json());}catch{return true;}
 }

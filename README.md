@@ -474,6 +474,8 @@ English readers can use the [complete API integration handbook](docs/api-referen
 
 「模型与上游」中的 Image Studio 生图模型在同一行显示可调用的执行节点。打开「测试」或「调用方式」选择节点，通过 VOS 用户身份提交，网关请求携带所选节点对应的 `compute_deployment_id`。默认位置沿用原调用方式。「测试」会用 Image Studio 返回的任务编号查询结果，成功时显示任务编号和所选节点。
 
+节点管理遇到调度服务重启或 VOS 会话暂时失效时，会保留已读取的节点和部署记录，并自动恢复读取。写入操作仍需由用户提交，API 地址和请求格式保持原样。
+
 管理员可在「节点管理 → 应用后端」查看节点和固定 Profile、提交部署参数并管理部署。资源、SSH 节点和集群列表使用主机名显示同一设备，IP 与 Profile 各自展示。VOS 会话恢复、SSH 定期复验和读取失败提示见[节点管理与连接状态](docs/node-management.md)。
 
 推理应用登记的模型可由 VOS 管理员在「模型与上游 → 模型访问 Key」生成、设置或撤销专用 Key。该 Key 归签发管理员管理，仍只授权所选私有模型。公共模型可直接调用。

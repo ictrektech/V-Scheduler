@@ -1,5 +1,5 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
-import {apiBases,lanBaseURL,apiError,jsonResponse,authenticatedFetch} from '../src/http-client.js';
+import {apiBases,lanBaseURL,apiError,jsonResponse,authenticatedFetch,isTemporaryReadFailure} from '../src/http-client.js';
 test('all service bases use the same VOS namespace',()=>{
  for(const path of ['/app/com.ictrek.v-scheduler/','/api/com.ictrek.v-scheduler/'])assert.deepEqual(apiBases(path),{gateway:'/api/com.ictrek.v-scheduler',scheduler:'/api/com.ictrek.v-scheduler/scheduler/api/v1/',models:'/api/com.ictrek.v-scheduler/model-hub'});
  assert.equal(apiBases('/').scheduler,'/scheduler/api/v1/');
@@ -49,6 +49,27 @@ test('a temporary gateway response does not replay mutations', async () => {
  })
  assert.equal(response.status,503)
  assert.equal(attempts,1)
+})
+test('reads retry a missing gateway route while preserving application 404s', async () => {
+ let attempts=0
+ const fetch=async()=>++attempts===1?new Response('404 page not found',{status:404}):Response.json({items:[]})
+ assert.deepEqual(await jsonResponse(await authenticatedFetch('/managed-nodes',{},{fetch})),{items:[]})
+ assert.equal(attempts,2)
+ const proxy404=await jsonResponse(new Response('404 page not found',{status:404})).catch(error=>error)
+ assert.equal(isTemporaryReadFailure(proxy404),true)
+
+ attempts=0
+ const app404=await authenticatedFetch('/nodes/missing',{},{fetch:async()=>{
+  attempts++
+  return Response.json({code:'NODE_NOT_FOUND',category:'v-scheduler'},{status:404})
+ }})
+ const error=await jsonResponse(app404).catch(error=>error)
+ assert.equal(isTemporaryReadFailure(error),false)
+ assert.equal(attempts,1)
+})
+test('a bare gateway 401 is a recoverable browser session error', async () => {
+ const error=await jsonResponse(new Response('Unauthorized',{status:401})).catch(error=>error)
+ assert.equal(error.sessionError,true)
 })
 
 test('LAN addresses use the configured gateway port and client-facing host',()=>{

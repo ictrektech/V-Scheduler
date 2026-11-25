@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {nodeIdentity} from './node-identity'
 import {isSessionError,userErrorMessage} from "./diagnostics.js"
+import {isTemporaryReadFailure} from './http-client.js'
 import {ref,onMounted,onUnmounted,computed} from 'vue'
 import Icon from './Icon.vue'
 import NodeTelemetry from './NodeTelemetry.vue'
@@ -41,19 +42,23 @@ async function importMigration(){
   finally{state.pending=false}
   await refresh()
 }
+let refreshing=false
 async function refresh(){
-  if(busy.value)return
+  if(busy.value||refreshing)return
+  refreshing=true
   const [management, inference, cluster] = await Promise.allSettled([
     props.request('management'),
     props.request('inference/runtime/health'),
     props.request('cluster/runtime/health'),
   ])
-  if(management.status==='fulfilled'){
-    data.value=management.value
-    error.value=''
-  }else error.value=failureText(management.reason)
-  inferenceReady.value=inference.status==='fulfilled'&&inference.value?.ready===true
-  clusterReady.value=cluster.status==='fulfilled'
+  refreshing=false
+  if(management.status==='fulfilled')data.value=management.value
+  error.value=management.status==='rejected'&&!isSessionError(management.reason)&&!isTemporaryReadFailure(management.reason)
+    ? failureText(management.reason) : ''
+  if(inference.status==='fulfilled')inferenceReady.value=inference.value?.ready===true
+  else if(!isTemporaryReadFailure(inference.reason)&&!isSessionError(inference.reason))inferenceReady.value=false
+  if(cluster.status==='fulfilled')clusterReady.value=true
+  else if(!isTemporaryReadFailure(cluster.reason)&&!isSessionError(cluster.reason))clusterReady.value=false
 }
 async function action(fn:()=>Promise<void>){if(busy.value)return;busy.value=true;error.value='';try{await fn();emit('refresh')}catch(e){error.value=failureText(e)}finally{busy.value=false}await refresh()}
 function close(){dialog.value='';secret.value=null;nodeForm.value=null;executorForm.value=null;copied.value=false}

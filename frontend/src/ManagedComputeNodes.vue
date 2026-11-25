@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import {isSessionError,recordDiagnostic} from './diagnostics.js'
+import {isTemporaryReadFailure} from './http-client.js'
 import {computed,onMounted,onUnmounted,ref} from 'vue'
 import {nodeIdentity} from './node-identity'
 
@@ -91,8 +92,11 @@ async function refresh() {
     if (!canManage.value) form.value = null
   } catch (reason) {
     if (revision !== refreshRevision) return
-    recovering.value=isSessionError(reason)
-    if(recovering.value){recordDiagnostic('AUTH_REQUEST_REJECTED','managed_nodes');return}
+    recovering.value=isSessionError(reason)||isTemporaryReadFailure(reason)
+    if(recovering.value){
+      if(isSessionError(reason))recordDiagnostic('AUTH_REQUEST_REJECTED','managed_nodes')
+      return
+    }
     failures+=1
     lastFailure.value=describe(reason)
     listFailed.value=failures>=2
@@ -156,7 +160,7 @@ onUnmounted(() => clearInterval(timer))
       <button v-if="listFailed" class="quiet" :disabled="busy||refreshing" @click="refresh">{{label('重试读取', 'Retry loading')}}</button>
     </div>
     <p v-if="error" class="error" role="alert">{{error}}</p>
-    <p v-if="recovering&&!loaded" role="status">{{label('正在恢复连接，节点列表将自动刷新。','Recovering the connection. The node list will refresh automatically.')}}</p>
+    <p v-if="recovering" role="status">{{label('正在恢复连接，节点列表将自动刷新。','Recovering the connection. The node list will refresh automatically.')}}</p>
   <p v-if="!loaded&&!listFailed&&!recovering" role="status">{{label('正在读取节点列表…','Loading nodes…')}}</p>
     <p v-if="listFailed&&!recovering" role="status">
       {{loaded

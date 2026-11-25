@@ -363,6 +363,7 @@ export const messages:Record<string,[string,string]>={
 "应用镜像可从 V_SCHEDULER_BACKEND_CONFIG_B64 读取配置。":["The backend image can read this configuration from V_SCHEDULER_BACKEND_CONFIG_B64.", "應用映像檔可從 V_SCHEDULER_BACKEND_CONFIG_B64 讀取設定。"],
 "部署参数":["Deployment settings", "部署參數"],
 "正在恢复 VOS 会话，已加载的数据仍可查看。":["Recovering the VOS session. Previously loaded data remains available.", "正在恢復 VOS 工作階段，仍可檢視已載入的資料。"],
+"正在等待调度服务恢复，页面会自动重新连接。":["Waiting for the scheduler service. This page will reconnect automatically.", "正在等待排程服務恢復，頁面會自動重新連線。"],
 "正在加载接口文档":["Loading the API reference", "正在載入 API 文件"],
 "接口文档暂时无法读取，正在重试。":["Could not load the API reference. Retrying.", "暫時無法讀取 API 文件，正在重試。"],
 "接口文档暂时无法更新，当前显示上次读取的版本。":["Could not refresh the API reference. Showing the last loaded version.", "暫時無法更新 API 文件，目前顯示最近載入的版本。"],

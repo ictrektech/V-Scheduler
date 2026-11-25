@@ -1,10 +1,18 @@
 <script setup lang="ts">
 import {userErrorMessage} from "./diagnostics.js"
+import {isTemporaryReadFailure} from './http-client.js'
 import {ref,onMounted,onUnmounted} from 'vue'
 const props=defineProps<{request:(path:string,body?:unknown,method?:string)=>Promise<any>,t:(value:string)=>string}>()
 const items=ref<any[]>([]),error=ref(''),busy=ref(false),startForm=ref<any>(null),notice=ref('')
 let disposed=false,timer:ReturnType<typeof setInterval>|undefined
-async function refresh(){try{const value=await props.request('integrations');if(!disposed){items.value=value.items;error.value=''}}catch(e){if(!disposed)error.value=userErrorMessage(e)}}
+let refreshing=false
+async function refresh(){
+ if(refreshing)return
+ refreshing=true
+ try{const value=await props.request('integrations');if(!disposed){items.value=value.items;error.value=''}}
+ catch(e){if(!disposed)error.value=isTemporaryReadFailure(e)?'':userErrorMessage(e)}
+ finally{refreshing=false}
+}
 async function cancelTask(id:string){if(busy.value)return;busy.value=true;try{await props.request('tasks/'+encodeURIComponent(id)+'/cancel',{});await refresh()}catch(e){error.value=userErrorMessage(e)}finally{busy.value=false}}
 function randomToken(){return [...crypto.getRandomValues(new Uint8Array(32))].map(n=>n.toString(16).padStart(2,'0')).join('')}
 function openStart(item:any,e:any){startForm.value={app_id:item.app_id,executor:e.definition,model_id:'',input:'{}',key:randomToken(),execution_token:randomToken()}}

@@ -5,7 +5,7 @@ import {isSessionError,recordDiagnostic} from './diagnostics.js'
 import AboutDialog from './AboutDialog.vue'
 import ApiKeysDialog from './ApiKeysDialog.vue'
 import AutoRouting from './AutoRouting.vue'
-import {apiBases,authenticatedFetch,jsonResponse,retryReadFetch} from './http-client.js'
+import {apiBases,authenticatedFetch,isTemporaryReadFailure,jsonResponse,retryReadFetch} from './http-client.js'
 import ModelHub from './ModelHub.vue'
 import GatewayWorkspace from './GatewayWorkspace.vue'
 import IntegrationGuide from './IntegrationGuide.vue'
@@ -64,7 +64,7 @@ const gatewayPages=['overview','models','upstreams','playground']
 const gatewayTab=computed(()=>page.value==='api'?'apidoc':page.value==='upstreams'?'models':page.value)
 const gatewayVisible=computed(()=>gatewayPages.includes(page.value)||(page.value==='api'&&docMode.value==='gateway'))
 const pageTitle=computed(()=>(({overview:'模型与调用',models:'模型与上游',upstreams:'模型与上游',playground:'试聊',auto:'Auto 自动选型',api:'API 文档',resources:'资源与任务',nodes:'节点管理',inference:'推理部署',images:'推理镜像',cluster:'VOS 集群管理','image-hub':'镜像仓库','model-hub':'权重管理',logs:'诊断日志'} as Record<string,string>)[page.value]||page.value))
-const specError=ref(false),specLoading=ref(false),sessionStale=ref(false)
+const specError=ref(false),specLoading=ref(false),sessionStale=ref(false),runtimeStale=ref(false)
 const spec=ref<any>(null),operationKey=ref('GET /discovery'),exampleTab=ref('curl'),discoveryResult=ref<unknown>(null)
 const operations=computed(()=>Object.entries(spec.value?.paths||{}).flatMap(([path,methods])=>Object.entries(methods as any).filter(([method])=>['get','post','put','patch','delete'].includes(method)).map(([method,op])=>({path,method,key:method.toUpperCase()+' '+path,...op as any}))))
 const operation=computed(()=>operations.value.find(op=>op.key===operationKey.value)||operations.value[0])
@@ -109,6 +109,12 @@ function resumeWorkspace(){
  if(!spec.value||specError.value)void loadSpec()
 }
 function showError(e:unknown){if(isSessionError(e)){recordDiagnostic("AUTH_REQUEST_REJECTED","scheduler_request");return}const failure=e as {code?:string;requestId?:string};errorRequestId.value=failure?.requestId||'';error.value=failure?.code&&errors[failure.code]?failure.code:(e instanceof Error?e.message:String(e)).replace(/^Error: /,'')}
+function handleRefreshFailure(e:unknown){
+ runtimeStale.value=isTemporaryReadFailure(e)
+ if(isSessionError(e))sessionStale.value=true
+ if(runtimeStale.value||isSessionError(e)){error.value='';errorRequestId.value=''}
+ else showError(e)
+}
 async function refresh(){
  if(!connected.value||busy.value||nodeViewerOnly.value)return
  busy.value=true
@@ -116,9 +122,9 @@ async function refresh(){
   const taskData:Task[]=[];let cursor:string|null='0'
   for(let index=0;index<taskPages.value&&cursor!==null;index++){const data=await api(`tasks?limit=200&cursor=${cursor}`);taskData.push(...data.items);cursor=data.next_cursor}
   const [nodeData,reserved]=await Promise.all([api('nodes'),api('reservations')])
-  tasks.value=[...new Map(taskData.map(task=>[task.task_id,task])).values()];taskCursor.value=cursor;nodes.value=nodeData;reservations.value=reserved;error.value=''
+  tasks.value=[...new Map(taskData.map(task=>[task.task_id,task])).values()];taskCursor.value=cursor;nodes.value=nodeData;reservations.value=reserved;error.value='';runtimeStale.value=false
   if(selected.value)selected.value=tasks.value.find(task=>task.task_id===selected.value?.task_id)||selected.value
- }catch(e){showError(e)}finally{busy.value=false}
+ }catch(e){handleRefreshFailure(e)}finally{busy.value=false}
 }
 async function loadMoreTasks(){if(busy.value||!taskCursor.value)return;taskPages.value++;await refresh()}
 function resetFilters(){filter.value='all';search.value='';appFilter.value='';nodeFilter.value=''}
@@ -130,8 +136,8 @@ async function connect(manual=false){
  nodeViewerOnly.value=false
  demo.value=false;error.value='';busy.value=true
  try{
-  if(!await getVOSBearerToken()){error.value='';return}
-  const state=(await jsonResponse(await fetch(apiBase+'setup',{cache:'no-store'})))?.data
+  if(!await getVOSBearerToken()){if(vosEmbedded)sessionStale.value=true;return}
+  const state=(await jsonResponse(await retryReadFetch(apiBase+'setup',{cache:'no-store'})))?.data
   appVersion.value=state?.version||''
   if(state?.ready===false){
    if(state.error_code){
@@ -147,9 +153,9 @@ async function connect(manual=false){
    }
    return
   }
-  setupError.value=''
+  setupError.value='';runtimeStale.value=false
   tasks.value=[];nodes.value=[];reservations.value=[];taskPages.value=1;taskCursor.value=null;connected.value=true
- }catch(e){showError(e)}finally{busy.value=false}
+ }catch(e){handleRefreshFailure(e)}finally{busy.value=false}
  await refresh()
  if(error.value && vosEmbedded){
   try {
@@ -217,8 +223,8 @@ onUnmounted(()=>{clearInterval(timer);language.dispose();window.removeEventListe
   <aside><div class="brand"><img :src="logoUrl" alt=""><div>V-Scheduler<small>{{t('模型路由与资源调度')}}</small></div></div><nav :aria-label="t('主导航')"><button v-for="item in [{id:'overview',label:'模型与调用'},{id:'models',label:'模型与上游'},...(connected&&!demo?[nodeViewerOnly?{id:'images',label:'推理镜像'}:{id:'inference',label:'推理部署'}]:[]),{id:'playground',label:'试聊'},{id:'model-hub',label:'权重管理'},...(connected&&!nodeViewerOnly&&!demo?[{id:'image-hub',label:'镜像仓库'}]:[]),{id:'resources',label:'资源与任务'}]" :key="item.id" :class="{current:page===item.id||(item.id==='models'&&page==='upstreams')||(item.id==='inference'&&page==='images')}" @click="page=item.id"><Icon :name="item.id==='resources'?'queue':'server'"/>{{t(item.label)}}</button><details class="advanced-nav" :open="['auto','nodes','cluster','logs'].includes(page)"><summary>{{t('高级管理')}}</summary><button :class="{current:page==='auto'}" @click="page='auto'"><Icon name="server"/>{{t('Auto 自动选型')}}</button><button :class="{current:page==='nodes'}" @click="page='nodes'"><Icon name="server"/>{{t('节点管理')}}</button><button v-if="connected&&!nodeViewerOnly&&!demo" :class="{current:page==='cluster'}" @click="page='cluster'"><Icon name="server"/>{{t('VOS 集群管理')}}</button><button :class="{current:page==='logs'}" @click="page='logs'"><Icon name="book"/>{{t('诊断日志')}}</button></details><button :class="{current:page==='api'}" @click="page='api'"><Icon name="book"/>{{t('API 文档')}}</button></nav><div class="aside-note"><span class="connection-dot" :class="{on:connected}"></span>{{t(error==='FORBIDDEN'?'调度管理需管理员身份':demo?'演示模式':connected?'已连接':'调度未连接')}}<small>{{t('按能力分配')}}<br>{{t('确认停止后释放')}}</small><small v-if="appVersion">v{{appVersion}}</small></div></aside>
   <main>
    <header><div><h1>{{t(pageTitle)}}</h1><p v-if="page!=='inference'&&page!=='cluster'&&page!=='images'&&page!=='image-hub'">{{t(page==='api'?'接口标准、认证方式与可复制的请求示例。':page==='nodes'?'登记、审批与管理执行节点和服务权限。':page==='resources'?'查看执行资源、预约与排队任务。':'统一管理模型、上游和调用；本地计算经过资源准入。')}}</p></div><div class="header-actions"><label class="locale-control"><Icon name="globe"/><select v-model="preference" :aria-label="t('界面语言')" @change="language.setPreference(preference)"><option value="auto">{{t('跟随 VOS')}}</option><option value="zh-CN">简体中文</option><option value="en">English</option><option value="zh-TW">繁體中文</option></select></label><ApiKeysDialog :t="t"/><AboutDialog :t="t"/></div></header>
-   <div v-if="sessionStale&&!(['inference','cluster','image-hub'].includes(page)&&connected&&!nodeViewerOnly)" class="panel session-notice" role="status">
-    <span>{{t('正在恢复 VOS 会话，已加载的数据仍可查看。')}}</span>
+   <div v-if="(sessionStale||runtimeStale)&&!(['inference','cluster','image-hub'].includes(page)&&connected&&!nodeViewerOnly)" class="panel session-notice" role="status">
+    <span>{{t(runtimeStale?'正在等待调度服务恢复，页面会自动重新连接。':'正在恢复 VOS 会话，已加载的数据仍可查看。')}}</span>
     <button class="quiet" type="button" @click="resumeWorkspace">{{t('重试连接')}}</button>
    </div>
    <div v-if="error&&(page==='resources'||page==='nodes')" class="error" role="alert">{{t(errors[error]||error)}}<code v-if="errors[error]">{{error}}</code><code v-if="errorRequestId">{{errorRequestId}}</code></div>
@@ -247,7 +253,7 @@ onUnmounted(()=>{clearInterval(timer);language.dispose();window.removeEventListe
     <template #images><ImageCatalog :locale="locale" :request="api" :t="t"/></template>
    </RuntimeWorkspace>
    <ImageCatalog v-if="connected&&nodeViewerOnly&&page==='images'" :locale="locale" :request="api" :t="t"/>
-   <section v-if="(page==='nodes'||page==='inference'||page==='cluster'||page==='images'||page==='image-hub')&&!connected&&!setupError" class="login"><h2>{{t('连接 VOS')}}</h2><button :disabled="busy" @click="connect(true)">{{t('重试连接')}}</button></section>
+   <section v-if="(page==='nodes'||page==='inference'||page==='cluster'||page==='images'||page==='image-hub')&&!connected&&!setupError&&!runtimeStale&&!sessionStale" class="login"><h2>{{t('连接 VOS')}}</h2><button :disabled="busy" @click="connect(true)">{{t('重试连接')}}</button></section>
    <IntegrationGuide v-if="page==='api'&&docMode==='guide'" :t="t"/>
    <GatewayWorkspace v-show="gatewayVisible" :tab="gatewayTab" :locale="locale" :visible="gatewayVisible" :administrator="connected&&!demo&&nodes.length>0" @select="selectGatewayPage" @service="openInferenceService"/>
    <template v-if="page==='resources'">

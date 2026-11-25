@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import {isSessionError,recordDiagnostic} from './diagnostics.js'
+import {isTemporaryReadFailure} from './http-client.js'
 import {computed,onMounted,onUnmounted,ref,watch} from 'vue'
 import {nodeIdentity} from './node-identity'
 
@@ -62,7 +63,12 @@ async function run(fn:()=>Promise<void>, userAction=false) {
  if(busy.value)return
  busy.value=true
  error.value=''
- try {await fn()} catch(err) {if(isSessionError(err)){recordDiagnostic('AUTH_REQUEST_REJECTED','application_backends');if(userAction)error.value=t('连接恢复后可重试，输入已保留。')}else error.value=failure((err as {code?:string})?.code)||(err instanceof Error?err.message:t('无法读取应用后端'))}
+ try {await fn()} catch(err) {
+  if(isSessionError(err))recordDiagnostic('AUTH_REQUEST_REJECTED','application_backends')
+  if(isSessionError(err)||(!userAction&&isTemporaryReadFailure(err))){
+   if(userAction)error.value=t('连接恢复后可重试，输入已保留。')
+  }else error.value=failure((err as {code?:string})?.code)||(err instanceof Error?err.message:t('无法读取应用后端'))
+ }
  finally {busy.value=false}
 }
 async function loadDeployments() {
