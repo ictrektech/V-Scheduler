@@ -271,8 +271,8 @@ fn available(r: &Registry, u: &Upstream) -> bool {
             .is_some_and(|(_, until)| *until > Utc::now())
 }
 // Discovery describes the virtual model, not the momentary health of its pool.
-pub(super) fn advertised(_r: &Registry, _id: &Identity) -> bool {
-    true
+pub(super) fn advertised(g: &Gateway, id: &Identity) -> bool {
+    api_keys::auto_access(g, id).is_ok()
 }
 fn supports_chat(u: &Upstream, m: &Model) -> bool {
     registry::supports(u, m, "/chat/completions") || registry::supports(u, m, "/messages")
@@ -289,7 +289,7 @@ fn candidate_pool(r: &Registry, config: &Config) -> Vec<Candidate> {
     }).collect()
 }
 pub(super) fn model_view() -> Value {
-    json!({"id":"auto","qualified":"auto","kind":"chat","capabilities":["chat","completion"],"endpoints":["chat_completions","messages"],"owned_by":"v-scheduler","upstream_name":"Auto","upstream_kind":"virtual","upstream_source":"auto","model_prefix":"auto","domains":["general"],"virtual":true,"configuration_url":"/api/v1/auto-routing","candidates_url":"/api/v1/auto-routing/candidates"})
+    json!({"id":"auto","qualified":"auto","upstream_id":"auto","kind":"chat","capabilities":["chat","completion"],"endpoints":["chat_completions","messages"],"owned_by":"v-scheduler","upstream_name":"Auto","upstream_kind":"virtual","upstream_source":"auto","model_prefix":"auto","domains":["general"],"virtual":true,"configuration_url":"/api/v1/auto-routing","candidates_url":"/api/v1/auto-routing/candidates"})
 }
 
 #[derive(Clone, Serialize)]

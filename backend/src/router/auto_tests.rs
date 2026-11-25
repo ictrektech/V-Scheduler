@@ -789,7 +789,7 @@ async fn auto_is_discoverable_and_routes_without_enable_or_candidate_setup() {
     let root = temp();
     let g = gateway(&root, Router::new());
     let user = principal("alice");
-    assert!(auto::advertised(&g.registry.lock().unwrap(), &user));
+    assert!(auto::advertised(&g, &user));
     setup(&g);
     // Persisted disabled configurations from older releases must also work.
     g.registry.lock().unwrap().auto.enabled = false;
@@ -812,7 +812,7 @@ async fn auto_is_discoverable_and_routes_without_enable_or_candidate_setup() {
     let saved = auto::configure(&g, &admin(), json!({"enabled":false,"candidates":[]})).unwrap();
     assert_eq!(saved["enabled"], true);
     g.registry.lock().unwrap().upstreams.clear();
-    assert!(auto::advertised(&g.registry.lock().unwrap(), &user));
+    assert!(auto::advertised(&g, &user));
     let result = auto::resolve(&g, &user, &body("hello"), &HeaderMap::new()).await.unwrap();
     assert!(result.resolved_model.is_empty());
     std::fs::remove_dir_all(root).unwrap();

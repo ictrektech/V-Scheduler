@@ -496,7 +496,7 @@ const app = {
             if (!m.virtual && m.kind !== "service" && m.upstream_source !== "api" && m.upstream_manageable) {
               actions.push(`<button class="btn" onclick="app.openModelDomains(${jsArg(m.qualified)}, ${jsArg(m.upstream_id)})">${VRouterI18n.t("适用领域")}</button>`);
             }
-            if (m.visibility_manageable && !m.virtual && m.kind !== "service") {
+            if (m.visibility_manageable && m.kind !== "service") {
               actions.push(`<button class="btn" onclick="app.openModelKey(${jsArg(m.upstream_id)}, ${jsArg(m.id)})">${VRouterI18n.t("模型访问 Key")}</button>`);
             }
             if (admin && !m.virtual && !m.upstream_direct && m.kind !== "service") {

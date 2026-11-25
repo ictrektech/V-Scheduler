@@ -401,7 +401,7 @@ async fn handle_inner(g: Arc<Gateway>, id: Identity, request: Request, classifie
             let name = r.catalog_ref(&m.upstream_id, &m.qualified, &id);
             json!({"id":name,"name":name,"object":"model","created":0,"owned_by":m.owned_by,"domains":domains::effective(&r,m)})
         }).collect::<Vec<_>>();
-        if auto::advertised(&r,&id) {models.push(json!({"id":"auto","object":"model","created":0,"owned_by":"v-scheduler","domains":r.auto.domains}));}
+        if auto::advertised(&g,&id) {models.push(json!({"id":"auto","object":"model","created":0,"owned_by":"v-scheduler","domains":r.auto.domains}));}
         return Ok(axum::Json(json!({"object":"list","data":models})).into_response());
     }
     let slot = g
@@ -490,6 +490,7 @@ async fn handle_inner(g: Arc<Gateway>, id: Identity, request: Request, classifie
     }
     let mut auto_decision = None;
     let requested = if requested == "auto" {
+        api_keys::auto_access(&g, &id)?;
         let endpoint = match (classifier, method.as_str(), path.as_str()) {
             (false, "POST", "/v1/chat/completions") => "/chat/completions",
             (false, "POST", "/v1/messages") => "/messages",

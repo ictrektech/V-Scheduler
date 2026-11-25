@@ -200,3 +200,65 @@ async fn administrator_model_key_is_scoped_even_for_unowned_models() {
     user.lock().unwrap()["role_code"]=json!("user");
     let identity=api_keys::authenticate(&g,secret).await.unwrap();assert!(g.registry.lock().unwrap().list_models(&identity).is_empty());task.abort();
 }
+
+#[tokio::test]
+async fn auto_key_is_admin_managed_and_does_not_delegate_private_model_access() {
+    let (g, mut alice, user, task) = fixture().await;
+    let auto_key = |access_key: Value| request("PUT", "/api/v1/models/access-key",
+        json!({"upstream_id":"auto","model":"auto","access_key":access_key}));
+    let anon = Identity::default();
+    let body = json!({"model":"auto","messages":[{"role":"user","content":"hello"}]});
+    assert!(auto::advertised(&g, &anon));
+    assert_eq!(api_keys::model_access(&g, &alice, auto_key(json!(true))).await.unwrap_err().status, 403);
+
+    alice.admin = true;
+    assert_eq!(api_keys::model_access(&g, &alice, auto_key(json!(true))).await.unwrap_err().status, 403);
+    user.lock().unwrap()["role_code"] = json!("system_admin");
+    let generated = value(api_keys::model_access(&g, &alice, auto_key(json!(true))).await.unwrap()).await;
+    let secret = generated["model_access_keys"][0]["api_key"].as_str().unwrap();
+    assert_eq!(generated["model_access_keys"][0]["model"], "auto/auto");
+    let identity = api_keys::authenticate(&g, secret).await.unwrap();
+    assert!(!identity.admin);
+    assert!(auto::advertised(&g, &identity));
+    assert!(auto::advertised(&g, &alice));
+    assert!(!auto::advertised(&g, &anon));
+    let denial = proxy::handle(g.clone(), anon.clone(), request("POST", "/v1/chat/completions", body.clone())).await.unwrap_err();
+    assert_eq!(denial.status, 401);
+
+    let personal = create(&g, &alice).await;
+    let personal = api_keys::authenticate(&g, personal["api_key"].as_str().unwrap()).await.unwrap();
+    assert!(auto::advertised(&g, &personal));
+    let mut private = tests::upstream("hidden");
+    private.owner = alice.owner.clone();
+    private.visibility = "private".into();
+    let mut public = tests::upstream("published");
+    public.visibility = "public".into();
+    public.base_url = "http://public-fixture/v1".into();
+    {
+        let mut registry = g.registry.lock().unwrap();
+        registry.put(private, vec![tests::model("hidden")]);
+        registry.put(public, vec![tests::model("published")]);
+        assert!(registry.acquire("manual/hidden", "/chat/completions", "", &identity).is_err());
+    }
+    let decision = auto::resolve_for(&g, &identity, &body, &HeaderMap::new(), "/chat/completions").await.unwrap();
+    assert_eq!(decision.resolved_model, "manual/published");
+    assert!(!serde_json::to_string(&decision.candidates).unwrap().contains("hidden"));
+    assert_eq!(api_keys::model_access(&g, &alice, request("PUT", "/api/v1/models/access-key",
+        json!({"upstream_id":"hidden","model":"manual/hidden","access_key":secret}))).await.unwrap_err().status, 409);
+
+    let scoped = value(api_keys::model_access(&g, &alice, request("PUT", "/api/v1/models/access-key",
+        json!({"upstream_id":"hidden","model":"manual/hidden","access_key":true}))).await.unwrap()).await;
+    let scoped = api_keys::authenticate(&g, scoped["model_access_keys"][0]["api_key"].as_str().unwrap()).await.unwrap();
+    assert_eq!(api_keys::auto_access(&g, &scoped).unwrap_err().status, 403);
+    let updated = value(api_keys::model_access(&g, &alice, auto_key(json!("fixture-auto-custom-secret"))).await.unwrap()).await;
+    assert!(updated["model_access_keys"][0].get("api_key").is_none());
+    assert!(api_keys::authenticate(&g, secret).await.is_err());
+    assert!(api_keys::authenticate(&g, "fixture-auto-custom-secret").await.is_ok());
+    user.lock().unwrap()["role_code"] = json!("user");
+    assert!(api_keys::authenticate(&g, "fixture-auto-custom-secret").await.is_err());
+    user.lock().unwrap()["role_code"] = json!("system_admin");
+    let revoked = value(api_keys::model_access(&g, &alice, auto_key(Value::Null)).await.unwrap()).await;
+    assert_eq!(revoked["model_access_keys"][0], json!({"model":"auto/auto","key":null}));
+    assert!(auto::advertised(&g, &anon));
+    task.abort();
+}

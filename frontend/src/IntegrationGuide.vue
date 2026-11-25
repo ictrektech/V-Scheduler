@@ -99,6 +99,7 @@ curl -i "$GATEWAY/v1/chat/completions" -H "Authorization: Bearer $VOS_TOKEN" -H 
   <p>{{t('个人 Key 继承所属 VOS 用户的模型权限；模型专用 Key 仅授权指定模型。两者只允许推理和模型发现。创建、设置与撤销 Key 使用 VOS 账户 token，不能使用另一把 Key 代替。VOS 用户鉴权继续支持，不需要同时发送 token 和 Key。')}}</p>
   <p>{{t('public 模型接受无 Key、有效 Key 或任意填写的 Key；无效凭据仅获得匿名公开权限，不能访问 private 模型。private 模型需要有权限的 VOS 账户、个人 Key 或该模型的专用 Key。切换 public/private 不会修改已有 Key。')}}</p>
   <pre>{{keyExamples}}</pre>
+  <p>{{t('管理员可在「高级管理 → Auto 自动选型 → Auto 访问 Key」管理专用 Key。客户端填写模型 ID auto。可复用 PUT /api/v1/models/access-key，将 upstream_id 和 model 都填 auto。')}}</p>
   <h4 id="integration-key-responses" tabindex="-1">{{t('模型 Key 的请求与响应')}}</h4>
   <p>{{t('access_key=true 自动生成时，仅本次响应的 model_access_keys[].api_key 返回完整 Key；请立即保存。字符串表示设置调用方已有的自定义 Key，成功响应只返回模型与 Key 元数据，不回显 api_key。null 表示撤销，返回 key:null。省略 access_key 的注册请求保留已有 Key，不返回原 Key。')}}</p>
   <p>{{t('推理应用登记的模型可由 VOS 管理员在「模型与上游 → 模型访问 Key」生成、设置或撤销专用 Key。该 Key 归签发管理员管理，仍只授权所选私有模型。公共模型可直接调用。')}}</p>

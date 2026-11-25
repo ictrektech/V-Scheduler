@@ -28,7 +28,7 @@
   },
   {
     "auth": "inference",
-    "desc": "合并所有健康上游的模型。只返回带来源前缀的模型名，例如 model-hub/xxx、image-studio/xxx、registered/xxx、manual/xxx、com.ictrek.ai/xxx。",
+    "desc": "合并所有健康上游的模型。只返回带来源前缀的模型名，例如 model-hub/xxx、image-studio/xxx、registered/xxx、manual/xxx、com.ictrek.ai/xxx。 Auto 仅向有调用权限的身份显示。配置 Auto Key 后调用 Auto 需要认证。",
     "example": "curl http://\u003cvos-host\u003e:22888/v1/models",
     "group": "openai",
     "method": "GET",
@@ -37,7 +37,7 @@
   },
   {
     "auth": "inference",
-    "desc": "OpenAI 兼容。model 必须使用 /v1/models 返回的带来源前缀名称；请求原样透传到上游，stream=true 时逐 token 转发。",
+    "desc": "OpenAI 兼容。model 必须使用 /v1/models 返回的带来源前缀名称；请求原样透传到上游，stream=true 时逐 token 转发。 配置 Auto Key 后，匿名请求 model=auto 返回 401，其他模型专用 Key 返回 403。Auto 专用 Key 只在公开候选中选型。VOS 账号和个人 Key 沿用原有权限。",
     "example": "curl -N http://\u003cvos-host\u003e:22888/v1/chat/completions \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"model\":\"v-scheduler/ollama-qa/qwen3.5:2b\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"你好\"}]}'",
     "group": "openai",
     "method": "POST",
@@ -64,7 +64,7 @@
   },
   {
     "auth": "manage",
-    "desc": "管理视图：每个模型带上游名称、上游类型、是否短名别名等元数据。",
+    "desc": "管理视图：每个模型带上游名称、上游类型、是否短名别名等元数据。 Auto 仅向有调用权限的身份显示。配置 Auto Key 后调用 Auto 需要认证。",
     "example": "",
     "group": "manage",
     "method": "GET",
@@ -190,7 +190,7 @@
   },
   {
     "auth": "inference",
-    "desc": "支持指定模型或 model=auto。原生 Anthropic 上游直接转发。支持 Chat Completions 的 openai、chat_completions 等上游可转换文本、图片输入和函数工具，支持 SSE。Auto Messages 使用可转换字段，转换模式不支持 thinking、提示缓存或服务端工具。图片与工具能力取决于实际模型。支持 x-api-key 网关身份。",
+    "desc": "支持指定模型或 model=auto。原生 Anthropic 上游直接转发。支持 Chat Completions 的 openai、chat_completions 等上游可转换文本、图片输入和函数工具，支持 SSE。Auto Messages 使用可转换字段，转换模式不支持 thinking、提示缓存或服务端工具。图片与工具能力取决于实际模型。支持 x-api-key 网关身份。 配置 Auto Key 后，匿名请求 model=auto 返回 401，其他模型专用 Key 返回 403。Auto 专用 Key 只在公开候选中选型。VOS 账号和个人 Key 沿用原有权限。",
     "example": "",
     "group": "anthropic",
     "method": "POST",
@@ -1883,7 +1883,7 @@
     "method": "PUT",
     "path": "/api/v1/models/access-key",
     "summary": "设置、轮换或撤销模型 Key",
-    "desc": "仅模型所属 VOS 用户或管理员凭 VOS token 可修改。access_key=true 生成，字符串设置（16..512 位可打印 ASCII），null 撤销。只授权该模型，旧 Key 立即失效；不改变 public/private，不修改上游厂商 api_key。",
+    "desc": "仅模型所属 VOS 用户或管理员凭 VOS token 可修改。access_key=true 生成，字符串设置（16..512 位可打印 ASCII），null 撤销。只授权该模型，旧 Key 立即失效；不改变 public/private，不修改上游厂商 api_key。 Auto 的 upstream_id 和 model 均填写 auto，需当前 VOS 管理员。响应标识为 auto/auto。设置后关闭匿名 Auto 调用，专用 Key 只在公开候选中选型。撤销后恢复匿名调用。Auto Key 不与实体模型共用。",
     "example": "curl -X PUT \"$GATEWAY/api/v1/models/access-key\" -H \"Authorization: Bearer $VOS_TOKEN\" -H \"Content-Type: application/json\" -d '{\"upstream_id\":\"deepseek\",\"model\":\"api.deepseek.com/deepseek-flash\",\"access_key\":true}'"
   },
   {

@@ -105,7 +105,7 @@ async function copy(value:string){try{await navigator.clipboard.writeText(value)
 <template>
  <button class="quiet" @click="open()">API Key</button>
  <dialog ref="dialog" class="keys-dialog" @cancel.prevent="close">
-  <div class="title"><h2>{{t(contextual?'模型访问 Key':'API Key 管理')}}</h2><button class="quiet" :aria-label="t('关闭')" @click="close">×</button></div>
+  <div class="title"><h2>{{t(contextual?(model==='auto/auto'?'Auto 访问 Key':'模型访问 Key'):'API Key 管理')}}</h2><button class="quiet" :aria-label="t('关闭')" @click="close">×</button></div>
   <p>{{t('外部 Agent 使用 Key 调用；VOS 账户鉴权继续可用。Key 只允许推理和查询模型，不允许管理配置。')}}</p>
   <div v-if="!contextual" class="tabs"><button class="quiet" :aria-pressed="mode==='personal'" @click="mode='personal';clearResult();confirm=''">{{t('个人 Key')}}</button><button class="quiet" :aria-pressed="mode==='model'" @click="mode='model';clearResult();confirm=''">{{t('模型专用 Key')}}</button></div>
   <p v-if="error" class="error" role="alert">{{error}}</p>
@@ -117,11 +117,12 @@ async function copy(value:string){try{await navigator.clipboard.writeText(value)
    <button type="submit" :disabled="locked||!name.trim()">{{t('生成 Key')}}</button>
   </form>
   <section v-else>
-   <p>{{t('模型专用 Key 仅授权选中的私有模型；public 模型无需 Key，也接受有效或任意填写的 Key。')}}</p>
-   <label>{{t('模型')}}<select v-model="model" :disabled="contextual||locked" @change="clearResult();confirm=''"><option value="" disabled>{{t('选择模型')}}</option><option v-for="m in models" :key="m.upstream_id+'/'+m.id" :value="m.upstream_id+'/'+m.id">{{m.qualified}} · {{m.effective_visibility}}</option></select></label>
+   <p v-if="model==='auto/auto'">{{t('设置 Auto 专用 Key 会关闭匿名 Auto 调用。VOS 登录和个人 Key 仍可调用。Auto 专用 Key 只会路由到公开候选模型。撤销后恢复匿名 Auto 调用。')}}</p>
+   <p v-else>{{t('模型专用 Key 仅授权选中的私有模型；public 模型无需 Key，也接受有效或任意填写的 Key。')}}</p>
+   <label>{{t('模型')}}<select v-model="model" :disabled="contextual||locked" @change="clearResult();confirm=''"><option value="" disabled>{{t('选择模型')}}</option><option v-for="m in models" :key="m.upstream_id+'/'+m.id" :value="m.upstream_id+'/'+m.id">{{m.qualified}}{{m.effective_visibility?' · '+m.effective_visibility:''}}</option></select></label>
    <div class="actions"><button :disabled="locked||!model" @click="modelKey(true)">{{t('生成并替换模型 Key')}}</button><button class="quiet" :disabled="locked||!model" @click="confirm='model'">{{t('撤销模型 Key')}}</button></div>
    <details><summary>{{t('设置已有 Key')}}</summary><label>{{t('访问 Key（至少 16 个字符）')}}<input v-model="supplied" type="password" autocomplete="off" minlength="16" maxlength="512"></label><button :disabled="locked||!model||supplied.length<16" @click="modelKey(supplied)">{{t('设置并替换')}}</button></details>
-   <div v-if="confirm==='model'" class="actions"><span>{{t('撤销后该 Key 无法访问私有模型，确认撤销？')}}</span><button :disabled="locked" @click="modelKey(null);confirm=''">{{t('确认撤销')}}</button><button class="quiet" @click="confirm=''">{{t('取消')}}</button></div>
+   <div v-if="confirm==='model'" class="actions"><span>{{t(model==='auto/auto'?'撤销后将恢复匿名 Auto 调用，确认撤销？':'撤销后该 Key 无法访问私有模型，确认撤销？')}}</span><button :disabled="locked" @click="modelKey(null);confirm=''">{{t('确认撤销')}}</button><button class="quiet" @click="confirm=''">{{t('取消')}}</button></div>
   </section>
   <section v-if="connection" class="new-secret" aria-labelledby="key-lan-title">
    <h3 id="key-lan-title">{{t('局域网客户端配置')}}</h3>

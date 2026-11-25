@@ -108,7 +108,7 @@ pub(super) fn model_view(r: &Registry, m: &Model, id: &Identity) -> Value {
     v["effective_visibility"] = json!(m.visibility.as_deref().unwrap_or(&u.visibility));
     v
 }
-fn model_views(r: &Registry, id: &Identity) -> Vec<Value> {
+fn model_views(g: &Gateway, r: &Registry, id: &Identity) -> Vec<Value> {
     // Management needs every source's own model/settings. Only inference discovery
     // collapses identical qualified IDs into one routable catalog entry.
     let mut rows = r.upstreams.values()
@@ -117,7 +117,7 @@ fn model_views(r: &Registry, id: &Identity) -> Vec<Value> {
         .map(|m| model_view(r, m, id))
         .collect::<Vec<_>>();
     rows.extend(business_views(r).1);
-    if auto::advertised(r,id) { let mut model=auto::model_view();model["domains"]=json!(r.auto.domains);rows.push(model); }
+    if auto::advertised(g,id) { let mut model=auto::model_view();model["visibility_manageable"]=json!(id.vos_user && id.admin);model["domains"]=json!(r.auto.domains);rows.push(model); }
     rows
 }
 pub(super) fn normalize(value: &Value) -> Api<Upstream> {
@@ -790,7 +790,7 @@ pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) ->
             "/api/v1/auth/me"=>return Ok(Json(json!({"identity":{"sub":id.owner,"username":id.username,"email":id.email,"admin":id.admin},"auth_method":if env("V_ROUTER_AUTH_DISABLED","")=="true"{"auth_disabled"}else if id.api_key_id.is_some(){"api_key"}else if id.vos_user{"vos_oidc"}else if id.admin{"gateway_key"}else{"anonymous"},"permissions":if id.api_key_id.is_some(){vec!["inference","model_discovery"]}else{vec!["inference","management","upstream_resources"]},"resource_isolation":true,"registration_scopes":["public","private"]})).into_response()),
             "/api/v1/upstreams"=>return Ok(Json(json!({"upstreams":upstream_views(&r,id)})).into_response()),
             "/api/v1/model-domains"=>return Ok(Json(json!({"domains":domains::catalog(&r)})).into_response()),
-            "/api/v1/models"=>return Ok(Json(json!({"models":model_views(&r,id),"domain_catalog":domains::catalog(&r)})).into_response()),
+            "/api/v1/models"=>return Ok(Json(json!({"models":model_views(g,&r,id),"domain_catalog":domains::catalog(&r)})).into_response()),
             "/api/v1/status"=>return Ok(Json(json!({"version":version(),"upstreams_total":r.upstreams.values().filter(|u|u.visible(id)).count(),"upstreams_healthy":r.upstreams.values().filter(|u|u.visible(id)&&u.live()).count(),"models":r.list_models(id).len(),"requests_total":g.usage.lock().unwrap().len(),"key_required":env("V_ROUTER_REQUIRE_KEY","")=="true","oidc_enabled":true,"user":id.username,"is_admin":id.admin,"base_urls":gateway_base_urls(),"catalog_readiness":catalog_readiness})).into_response()),
             "/api/v1/model-speed" => {
                 let query = request.uri().query().unwrap_or("");

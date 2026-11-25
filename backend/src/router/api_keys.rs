@@ -5,6 +5,25 @@ use sha2::{Digest, Sha256};
 use std::io::{Read, Write};
 use std::os::unix::fs::OpenOptionsExt;
 
+pub(super) const AUTO_MODEL_KEY: &str = "auto/auto";
+
+pub(super) fn auto_access(g: &Gateway, id: &Identity) -> Api<()> {
+    if id.vos_user || !id.service_app.is_empty() || id.admin && id.api_key_id.is_none() {
+        return Ok(());
+    }
+    let store = g.api_keys.lock().unwrap();
+    let protected = store.keys.iter().any(|key| key.active() && targets_auto(key.models.as_deref()));
+    if !protected || id.api_key_id.is_some() && (id.key_models.is_none() || targets_auto(id.key_models.as_deref())) {
+        return Ok(());
+    }
+    let status = if id.api_key_id.is_some() { 403 } else { id.auth_failure.unwrap_or(401) };
+    Err(Failure::new(status, "Auto access requires a VOS account, personal Key, or Auto access Key"))
+}
+
+fn targets_auto(models: Option<&[String]>) -> bool {
+    models.is_some_and(|models| models.iter().any(|model| model == AUTO_MODEL_KEY))
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 struct Key {
     id: String,
@@ -111,7 +130,7 @@ pub(super) fn configure_models(g: &Gateway, owner: &str, settings: Vec<(String,V
             else {Some(value.as_str().filter(|s|s.len()>=16 && s.len()<=512 && s.bytes().all(|c|c.is_ascii_graphic()))
                 .ok_or_else(||Failure::new(422,"access_key must be null, true, or a 16..512 character secret"))?.to_owned())};
         let hash=secret.as_ref().map(|s|format!("{:x}",Sha256::digest(s)));
-        if hash.as_ref().is_some_and(|hash|next.keys.iter().any(|k|safe_secret_eq(&k.hash,hash) && (k.owner!=owner || k.models.is_none() || !k.active()))) {
+        if hash.as_ref().is_some_and(|hash|next.keys.iter().any(|k|safe_secret_eq(&k.hash,hash) && (k.owner!=owner || k.models.is_none() || !k.active() || targets_auto(k.models.as_deref()) != (model == AUTO_MODEL_KEY)))) {
             return Err(Failure::new(409,"access key is already used or revoked; choose a new secret"));
         }
         // A model has one active model credential. Rotating it leaves personal
@@ -145,6 +164,13 @@ pub(super) async fn model_access(g: &Gateway, identity: &Identity, request: Requ
     if !identity.vos_user || identity.api_key_id.is_some() {return Err(Failure::new(403,"model access key management requires a VOS account token"));}
     let bytes=axum::body::to_bytes(request.into_body(),8192).await.map_err(|_|Failure::new(413,"model key request too large"))?;
     let payload:Value=serde_json::from_slice(&bytes).map_err(|_|Failure::new(422,"invalid model key request"))?;
+    if text(&payload, "upstream_id") == "auto" && text(&payload, "model") == "auto" {
+        if !identity.admin || !owner(g, &identity.owner).await?.admin {
+            return Err(Failure::new(403, "Auto access key management requires a current VOS administrator"));
+        }
+        let value = payload.get("access_key").ok_or_else(|| Failure::new(422, "access_key is required"))?.clone();
+        return Ok(model_key_response(configure_models(g, &identity.owner, vec![(AUTO_MODEL_KEY.into(), value)])?));
+    }
     let target={
         let r=g.registry.lock().unwrap();
         let u=r.upstreams.get(text(&payload,"upstream_id")).ok_or_else(||Failure::new(404,"upstream not found"))?;
@@ -167,7 +193,13 @@ pub(super) async fn model_access(g: &Gateway, identity: &Identity, request: Requ
         if r.model_by_id(u,text(&payload,"model"),identity).is_none(){return Err(Failure::new(404,"model not found"));}
         configure_models(g,&target.0,vec![(target.1,value)])?
     };
-    let mut response=axum::Json(result).into_response();response.headers_mut().insert("cache-control","no-store".parse().unwrap());Ok(response)
+    Ok(model_key_response(result))
+}
+
+fn model_key_response(result: Value) -> Response {
+    let mut response = axum::Json(result).into_response();
+    response.headers_mut().insert("cache-control", axum::http::HeaderValue::from_static("no-store"));
+    response
 }
 
 pub(super) fn known(g: &Gateway, secret: &str) -> bool {
@@ -183,6 +215,12 @@ pub(super) async fn authenticate(g: &Gateway, secret: &str) -> Api<Identity> {
     // Recheck after the platform call: revocation may race account verification.
     let current=g.api_keys.lock().unwrap().keys.iter().find(|k|k.id==key.id && k.active()).cloned()
         .ok_or_else(||Failure::new(401,"invalid or revoked API key"))?;
+    if targets_auto(current.models.as_deref()) {
+        if !identity.admin {
+            return Err(Failure::new(401, "Auto access key owner is no longer a VOS administrator"));
+        }
+        identity.admin = false;
+    }
     identity.api_key_id=Some(current.id);
     identity.key_models=current.models;
     Ok(identity)

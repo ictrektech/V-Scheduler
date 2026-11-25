@@ -8,7 +8,7 @@ Auto 选用 Ollama 时，Chat Completions 和 Messages 默认关闭隐式思考�
 
 使用 VOS 管理员或网关管理员 Key 打开「Auto 自动选型」。在候选目录勾选模型，每条记录绑定 **qualified model + upstream_id**；同名模型的不同实例分别勾选。已选但暂时离线的条目保留，可移除，恢复发现后再次参与选型。普通调用者不能修改配置，也不能通过 Auto 使用别人的私有模型。
 
-Auto 始终出现在 `/v1/models` 中，无需开启开关。默认策略为 `balanced`，分类使用本地 `rules`；候选留空时，自动使用调用者可见且可用的聊天模型，默认沿用 32768/4096 token 的保守输入输出配置，未知质量不作为硬性档位限制。自动候选不会绕过云端许可（默认关闭）、能力过滤或资源准入；没有合格候选时实际调用返回 503，Auto 仍可被发现。勾选候选后只使用指定候选，并执行以下档位约束。每个候选默认 `standard` 档位；根据实际任务评测设置 `simple`、`standard`、`complex`，不能单凭模型名字或参数量设置质量。复杂任务要求 complex，无合格模型时明确失败。可填写任务范围（空为全部）：`general,code,translation,summary,reasoning`。
+默认可在 `/v1/models` 发现 Auto。配置专用 Key 后，目录按 Auto 访问权限显示。默认策略为 `balanced`，分类使用本地 `rules`；候选留空时，自动使用调用者可见且可用的聊天模型，默认沿用 32768/4096 token 的保守输入输出配置，未知质量不作为硬性档位限制。自动候选不会绕过云端许可（默认关闭）、能力过滤或资源准入；没有合格候选时实际调用返回 503，Auto 仍可被发现。勾选候选后只使用指定候选，并执行以下档位约束。每个候选默认 `standard` 档位；根据实际任务评测设置 `simple`、`standard`、`complex`，不能单凭模型名字或参数量设置质量。复杂任务要求 complex，无合格模型时明确失败。可填写任务范围（空为全部）：`general,code,translation,summary,reasoning`。
 
 配置真实服务的上下文和最大输出限制。Auto 使用 UTF-8 字节数加消息开销作为保守文本 token 上界；因此可能提前排除实际能装下的输入。支持图片还需要真实 `vision` 能力及管理员填写的每张图片 token 预算；该预算应覆盖后端允许的图片处理上限。工具、并行工具、结构化输出分别要求 `tools`、`parallel_tools`、`structured_output` 能力；未知不默认为支持。自动生成的通用元数据不证明这些特性可用。
 
@@ -218,3 +218,25 @@ curl -fsS -X PUT "$GATEWAY/api/v1/auto-routing" -H "Authorization: Bearer $VOS_T
 
 
 领域多选、共享分类及每步专业匹配的完整 UI/API、回退规则与工具会话边界见 [模型适用领域](model-domains.md#auto-按步骤选择领域与复杂度)。
+
+## Auto access key / Auto 专用 Key
+
+管理员打开「高级管理 → Auto 自动选型 → Auto 访问 Key」。可生成、设置、替换或撤销。生成或设置后，复制弹窗内的 Base URL、API Key 和模型 ID `auto` 到 OpenAI 兼容客户端。设置后匿名调用返回 401，其他模型专用 Key 调用返回 403。VOS 登录、个人 Key 和现有获准应用身份仍按各自权限使用 Auto。Auto 专用 Key 仅在公开候选中选型，仍受云端许可、候选设置和资源准入限制；无合格候选返回 503。公开模型原有直连规则保持适用。
+
+Open **Advanced management → Auto routing → Auto access key** as a VOS administrator. Generate, set, replace, or revoke the key. Copy the Base URL, API key, and model ID `auto` into an OpenAI-compatible client. With a key configured, anonymous Auto calls return 401 and other model keys receive 403. Signed-in VOS users, personal keys, and existing authorized application identities keep their existing Auto permissions. The Auto key only routes to public candidates, subject to cloud permission, candidate policy, and resource admission. No eligible candidate returns 503. Existing direct access to public models still applies.
+
+`PUT /api/v1/models/access-key` uses the existing endpoint, base URLs and response envelope, with `upstream_id="auto"` and `model="auto"`. `access_key=true` generates and returns `model_access_keys[].api_key` once, a 16–512 character ASCII graphic string sets a custom key without echoing it, and `null` revokes it and restores anonymous Auto access. Responses identify the target as `model="auto/auto"` and use `key:null` for revocation. A current VOS administrator is required (401 missing/invalid authentication, 403 insufficient privilege); invalid input returns 422 and reusing a personal, other model, or revoked key returns 409. Identity verification or storage failures use the existing error contract. Only the administrator who owns the active key can see its metadata in their personal key list. Disabled, deleted, or demoted issuers cannot authenticate using that key. Another current administrator may replace or revoke it.
+
+`GET /v1/models` and `GET /api/v1/models` include Auto only for callers that can use it. Management catalog results expose `upstream_id="auto"` and the `visibility_manageable` boolean. `POST /v1/chat/completions` and `POST /v1/messages` use `model="auto"` with `Authorization: Bearer $AUTO_KEY` or Anthropic `x-api-key: $AUTO_KEY`, respectively. Request/response payloads, routing headers, and streaming behavior are unchanged. See **API Documentation → Model and gateway API → Set, rotate or revoke a model access key** for the shared schemas.
+
+使用现有 `PUT /api/v1/models/access-key`，请求中的 `upstream_id` 和 `model` 均填 `auto`，响应中的内部模型标识为 `auto/auto`。仅当前 VOS 管理员可修改。生成用 `true`，自定义用 16–512 个不含空格的可打印 ASCII 字符，撤销用 `null`。自动生成的 Key 只在当次响应返回，传入的自定义 Key 不回显。撤销返回 `key:null` 并恢复匿名调用。旧 Key 不再通过 Auto 认证。禁用、删除或降权签发账号后，该 Key 无法通过认证。其他管理员仍可替换或撤销。错误和响应字段沿用「API 文档 → 模型与网关 API → 设置、轮换或撤销模型 Key」。配置后，无调用权限时两套模型目录都隐藏 Auto；Chat Completions 和 Messages 的请求格式、流式和路由参数保持一致。
+
+```sh
+curl -fsS -X PUT "$GATEWAY/api/v1/models/access-key" \
+  -H "Authorization: Bearer $VOS_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"upstream_id":"auto","model":"auto","access_key":true}'
+
+curl -fsS "$GATEWAY/v1/chat/completions" \
+  -H "Authorization: Bearer $AUTO_KEY" -H 'Content-Type: application/json' \
+  -d '{"model":"auto","messages":[{"role":"user","content":"Hello"}]}'
+```

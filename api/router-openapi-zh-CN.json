@@ -4305,7 +4305,7 @@
     },
     "/api/v1/models": {
       "get": {
-        "description": "管理视图：每个模型带上游名称、上游类型、是否短名别名等元数据。",
+        "description": "管理视图：每个模型带上游名称、上游类型、是否短名别名等元数据。 Auto 仅向有调用权限的身份显示。配置 Auto Key 后调用 Auto 需要认证。",
         "responses": {
           "200": {
             "description": "网关自身生成的成功 JSON 响应。",
@@ -10253,7 +10253,7 @@
         "x-native-passthrough": true
       },
       "post": {
-        "description": "OpenAI 兼容。model 必须使用 /v1/models 返回的带来源前缀名称；请求原样透传到上游，stream=true 时逐 token 转发。\ndata: JSON chat.completion.chunk events with choices[].delta; terminal data: [DONE]. Tool arguments and text may arrive in separate fragments; a final usage-only chunk may have empty choices. Client disconnect requests cancellation; do not assume upstream resources are released until the execution stop is confirmed. 上游 HTTP 响应包含 X-VScheduler-Upstream-Responded: true。网关传输错误返回 502 UPSTREAM_NETWORK_UNREACHABLE 或 UPSTREAM_UNAVAILABLE，超时返回 504 UPSTREAM_REQUEST_TIMEOUT；X-VRouter-Upstream 标识尝试连接的上游。",
+        "description": "OpenAI 兼容。model 必须使用 /v1/models 返回的带来源前缀名称；请求原样透传到上游，stream=true 时逐 token 转发。\ndata: JSON chat.completion.chunk events with choices[].delta; terminal data: [DONE]. Tool arguments and text may arrive in separate fragments; a final usage-only chunk may have empty choices. Client disconnect requests cancellation; do not assume upstream resources are released until the execution stop is confirmed. 上游 HTTP 响应包含 X-VScheduler-Upstream-Responded: true。网关传输错误返回 502 UPSTREAM_NETWORK_UNREACHABLE 或 UPSTREAM_UNAVAILABLE，超时返回 504 UPSTREAM_REQUEST_TIMEOUT；X-VRouter-Upstream 标识尝试连接的上游。 配置 Auto Key 后，匿名请求 model=auto 返回 401，其他模型专用 Key 返回 403。Auto 专用 Key 只在公开候选中选型。VOS 账号和个人 Key 沿用原有权限。",
         "parameters": [
           {
             "description": "指定上游 ID；严格固定，不自动切换，需身份与原生模型名。不指定时按匹配模型、协议及健康状态，以进行中请求/权重选择，平局在当前模型与接口范围内按权重平滑轮换；全满返回429。模型前缀限定来源，短名跨来源（包括云端）。资源接口必须指定。",
@@ -14170,7 +14170,7 @@
         "x-native-passthrough": true
       },
       "post": {
-        "description": "支持指定模型或 model=auto。原生 Anthropic 上游直接转发。支持 Chat Completions 的 openai、chat_completions 等上游可转换文本、图片输入和函数工具，支持 SSE。Auto Messages 使用可转换字段，转换模式不支持 thinking、提示缓存或服务端工具。图片与工具能力取决于实际模型。支持 x-api-key 网关身份。\nNamed message_start/content_block_start/content_block_delta/content_block_stop/message_delta/message_stop events. text_delta/input_json_delta/thinking_delta are distinct. error can occur after HTTP200; message_stop is the terminal success event. Client disconnect requests cancellation; do not assume upstream resources are released until the execution stop is confirmed. 请求可用 Authorization: Bearer <V-Scheduler Key 或 VOS token> 或 x-api-key: <同一凭据>。同时发送两个头时，有效身份要求两个值一致。两种头只验证网关身份，不转发给上游。 上游 HTTP 响应包含 X-VScheduler-Upstream-Responded: true。网关传输错误返回 502 UPSTREAM_NETWORK_UNREACHABLE 或 UPSTREAM_UNAVAILABLE，超时返回 504 UPSTREAM_REQUEST_TIMEOUT；X-VRouter-Upstream 标识尝试连接的上游。",
+        "description": "支持指定模型或 model=auto。原生 Anthropic 上游直接转发。支持 Chat Completions 的 openai、chat_completions 等上游可转换文本、图片输入和函数工具，支持 SSE。Auto Messages 使用可转换字段，转换模式不支持 thinking、提示缓存或服务端工具。图片与工具能力取决于实际模型。支持 x-api-key 网关身份。\nNamed message_start/content_block_start/content_block_delta/content_block_stop/message_delta/message_stop events. text_delta/input_json_delta/thinking_delta are distinct. error can occur after HTTP200; message_stop is the terminal success event. Client disconnect requests cancellation; do not assume upstream resources are released until the execution stop is confirmed. 请求可用 Authorization: Bearer <V-Scheduler Key 或 VOS token> 或 x-api-key: <同一凭据>。同时发送两个头时，有效身份要求两个值一致。两种头只验证网关身份，不转发给上游。 上游 HTTP 响应包含 X-VScheduler-Upstream-Responded: true。网关传输错误返回 502 UPSTREAM_NETWORK_UNREACHABLE 或 UPSTREAM_UNAVAILABLE，超时返回 504 UPSTREAM_REQUEST_TIMEOUT；X-VRouter-Upstream 标识尝试连接的上游。 配置 Auto Key 后，匿名请求 model=auto 返回 401，其他模型专用 Key 返回 403。Auto 专用 Key 只在公开候选中选型。VOS 账号和个人 Key 沿用原有权限。",
         "parameters": [
           {
             "description": "指定上游 ID；严格固定，不自动切换，需身份与原生模型名。不指定时按匹配模型、协议及健康状态，以进行中请求/权重选择，平局在当前模型与接口范围内按权重平滑轮换；全满返回429。模型前缀限定来源，短名跨来源（包括云端）。资源接口必须指定。",
@@ -14943,7 +14943,7 @@
         "x-native-passthrough": true
       },
       "get": {
-        "description": "合并所有健康上游的模型。只返回带来源前缀的模型名，例如 model-hub/xxx、image-studio/xxx、registered/xxx、manual/xxx、com.ictrek.ai/xxx。",
+        "description": "合并所有健康上游的模型。只返回带来源前缀的模型名，例如 model-hub/xxx、image-studio/xxx、registered/xxx、manual/xxx、com.ictrek.ai/xxx。 Auto 仅向有调用权限的身份显示。配置 Auto Key 后调用 Auto 需要认证。",
         "responses": {
           "200": {
             "description": "Successful native protocol response; schema includes the compatible common fields and preserves upstream extensions.",
@@ -21202,7 +21202,7 @@
     "/api/v1/models/access-key": {
       "put": {
         "summary": "设置、轮换或撤销模型 Key",
-        "description": "仅模型所属 VOS 用户或管理员凭 VOS token 可修改。access_key=true 生成，字符串设置（16..512 位可打印 ASCII），null 撤销。只授权该模型，旧 Key 立即失效；不改变 public/private，不修改上游厂商 api_key。 Only access_key=true returns the generated secret once in model_access_keys[].api_key. A custom string returns metadata WITHOUT an api_key field; null returns key:null. GET /api/v1/api-keys never retrieves complete keys. Response model is internal upstream_id/native_model_id. 由 V-Scheduler 或 ModelInfer 应用身份登记的模型可由 VOS 管理员设置，模型 Key 由签发管理员的 VOS 账户持有。",
+        "description": "仅模型所属 VOS 用户或管理员凭 VOS token 可修改。access_key=true 生成，字符串设置（16..512 位可打印 ASCII），null 撤销。只授权该模型，旧 Key 立即失效；不改变 public/private，不修改上游厂商 api_key。 Only access_key=true returns the generated secret once in model_access_keys[].api_key. A custom string returns metadata WITHOUT an api_key field; null returns key:null. GET /api/v1/api-keys never retrieves complete keys. Response model is internal upstream_id/native_model_id. 由 V-Scheduler 或 ModelInfer 应用身份登记的模型可由 VOS 管理员设置，模型 Key 由签发管理员的 VOS 账户持有。 Auto 的 upstream_id 和 model 均填写 auto，需当前 VOS 管理员。响应标识为 auto/auto。设置后关闭匿名 Auto 调用，专用 Key 只对公开候选选型。撤销后恢复匿名调用。Auto Key 不与实体模型共用。",
         "tags": [
           "manage"
         ],
