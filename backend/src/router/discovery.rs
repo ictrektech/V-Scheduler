@@ -214,7 +214,7 @@ pub(super) fn start(g: Arc<Gateway>) -> Vec<tokio::task::JoinHandle<()>> {
     }));
     tasks
 }
-async fn ollama(g: &Gateway, role: &str) {
+pub(super) async fn ollama(g: &Gateway, role: &str) {
     let base = env(
         &format!("V_SCHEDULER_OLLAMA_{}_URL", role.to_ascii_uppercase()),
         &format!("http://v-scheduler-ollama-{role}:11535"),

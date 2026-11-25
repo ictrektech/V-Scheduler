@@ -745,7 +745,7 @@ pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) ->
     // Reuse the controller's verified role check for these administrative APIs;
     // never infer an administrator from a username or a gateway registration.
     let mut scoped_identity = id.clone();
-    if !id.admin && (matches!(path.as_str(), "/api/v1/model-residency" | "/api/v1/model-lifecycle" | "/api/v1/inference-queue" | "/api/v1/auto-routing" | "/api/v1/auto-routing/candidates")
+    if !id.admin && (matches!(path.as_str(), "/api/v1/model-residency" | "/api/v1/ollama-preload" | "/api/v1/model-lifecycle" | "/api/v1/inference-queue" | "/api/v1/auto-routing" | "/api/v1/auto-routing/candidates")
         || path.starts_with("/api/v1/inference-queue/")) {
         match crate::identity::verify(request.headers()).await {
             Ok(_) => scoped_identity.admin = true,
@@ -756,6 +756,9 @@ pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) ->
         }
     }
     let id = &scoped_identity;
+    if path == "/api/v1/ollama-preload" && !id.admin {
+        return Err(Failure::new(403, "Ollama preload management requires an administrator"));
+    }
     if method=="GET" {if let Some(provider)=path.strip_prefix("/api/v1/provider-catalog/"){let value=g.models_dev.snapshot().detail(provider).ok_or_else(||Failure::new(404,"provider not found"))?;return Ok(Json(value).into_response());}}
     if path=="/api/v1/provider-catalog"&&method=="GET" {return Ok(Json(g.models_dev.snapshot().summary()).into_response());}
     if path=="/api/v1/inference-queue" && method=="GET" {
@@ -766,6 +769,9 @@ pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) ->
         if method=="DELETE" {return Ok(Json(g.queue.lock().unwrap().cancel(id,request_id)?).into_response());}
     }
     if path=="/api/v1/model-lifecycle" && method=="GET" {return Ok(Json(lifecycle::snapshot(g,id).await?).into_response());}
+    if path=="/api/v1/ollama-preload" && method=="GET" {
+        return Ok(Json(g.preload.snapshot()).into_response());
+    }
     if path=="/api/v1/model-residency" && method=="GET" {
         if !id.admin {return Err(Failure::new(403,"residency management requires an administrator"));}
         return Ok(Json(g.residency.snapshot().await).into_response());
@@ -826,6 +832,11 @@ pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) ->
     let domain_declarations=domains::declarations(&g.registry.lock().unwrap(),&payload)?;
     if path=="/api/v1/auto-routing" && method=="PUT" { return Ok(Json(auto::configure(g,id,payload)?).into_response()); }
     if path=="/api/v1/auto-routing/test" && method=="POST" { return Ok(Json(auto::resolve(g,id,&payload,&auto_headers).await?).into_response()); }
+    if path=="/api/v1/ollama-preload" && method=="PUT" {
+        let enabled=payload["enabled"].as_bool().ok_or_else(||Failure::new(422,"enabled must be a boolean"))?;
+        g.preload.configure(text(&payload,"role"), enabled)?;
+        return Ok(Json(g.preload.snapshot()).into_response());
+    }
     if path=="/api/v1/model-residency" && method=="PUT" {
         if !id.admin {return Err(Failure::new(403,"residency management requires an administrator"));}
         let seconds=payload["idle_seconds"].as_u64().ok_or_else(||Failure::new(422,"idle_seconds must be 0..600"))?;

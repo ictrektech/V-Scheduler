@@ -395,6 +395,22 @@
         },
         {
           "method": "GET",
+          "path": "/api/v1/ollama-preload",
+          "auth": "manage",
+          "summary": "读取内置 Ollama 预热设置",
+          "desc": "需 VOS 管理员 Bearer 令牌。GET 无参数。PUT 提交 role（qa、embedding、rerank）及 enabled（布尔值）；省略、null 或错误类型返回 422。重复提交相同设置不会重复预热。首次使用各角色的安装值（默认 false）；修改存入当前实例。开启后异步拉取缺失的配置模型并按调度预算预热。关闭取消尚未开始的预热，已提交的请求可完成。items 固定按上述角色顺序，model 为配置标签，enabled 为生效开关。state 为 disabled（关闭）、pending（等待）、preparing（处理中）、completed（本轮预热已确认）、failed（失败）。失败时 error 为诊断文本，其余为 null。模型空闲卸载后状态仍记录最近一次预热结果。",
+          "example": ""
+        },
+        {
+          "method": "PUT",
+          "path": "/api/v1/ollama-preload",
+          "auth": "manage",
+          "summary": "更新指定 Ollama 实例的预热开关",
+          "desc": "需 VOS 管理员 Bearer 令牌。GET 无参数。PUT 提交 role（qa、embedding、rerank）及 enabled（布尔值）；省略、null 或错误类型返回 422。重复提交相同设置不会重复预热。首次使用各角色的安装值（默认 false）；修改存入当前实例。开启后异步拉取缺失的配置模型并按调度预算预热。关闭取消尚未开始的预热，已提交的请求可完成。items 固定按上述角色顺序，model 为配置标签，enabled 为生效开关。state 为 disabled（关闭）、pending（等待）、preparing（处理中）、completed（本轮预热已确认）、failed（失败）。失败时 error 为诊断文本，其余为 null。模型空闲卸载后状态仍记录最近一次预热结果。",
+          "example": "curl -X PUT \"$VOS_ORIGIN/api/com.ictrek.v-scheduler/api/v1/ollama-preload\" -H \"Authorization: Bearer $VOS_TOKEN\" -H \"Content-Type: application/json\" -d '{\"role\":\"qa\",\"enabled\":true}'"
+        },
+        {
+          "method": "GET",
           "path": "/api/v1/model-residency",
           "auth": "manage",
           "summary": "模型驻留与卸载策略",

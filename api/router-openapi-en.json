@@ -19900,6 +19900,297 @@
         "x-contract-source": "backend/src/router/manage.rs"
       }
     },
+    "/api/v1/ollama-preload": {
+      "get": {
+        "summary": "Read built-in Ollama preload settings",
+        "description": "Requires a VOS administrator Bearer token. GET has no parameters. PUT requires role (qa, embedding or rerank) and enabled (boolean); missing, null or invalid values return 422. Repeating the same value does not repeat preload. Each role initially uses its installation value (default false); overrides persist on this instance. Enabling asynchronously pulls the configured model if missing and warms it through scheduler admission. Disabling cancels pending work; submitted requests may finish. items are ordered by role as above. model is the configured tag. enabled is the effective switch. state is disabled, pending, preparing, completed (warmup confirmed) or failed. error is a diagnostic string on failure and null otherwise. Completed describes the last preload attempt even after idle eviction.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful gateway-owned JSON response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "items"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "minItems": 3,
+                      "maxItems": 3,
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "role",
+                          "model",
+                          "enabled",
+                          "state",
+                          "error"
+                        ],
+                        "properties": {
+                          "role": {
+                            "type": "string",
+                            "enum": [
+                              "qa",
+                              "embedding",
+                              "rerank"
+                            ]
+                          },
+                          "model": {
+                            "type": "string"
+                          },
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "state": {
+                            "type": "string",
+                            "enum": [
+                              "disabled",
+                              "pending",
+                              "preparing",
+                              "completed",
+                              "failed"
+                            ]
+                          },
+                          "error": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Gateway error; inspect HTTP status, code and request_id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Gateway error; inspect HTTP status, code and request_id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Gateway error; inspect HTTP status, code and request_id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Gateway error; inspect HTTP status, code and request_id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            }
+          }
+        },
+        "x-contract-source": "backend/src/router/manage.rs"
+      },
+      "put": {
+        "summary": "Update one Ollama preload switch",
+        "description": "Requires a VOS administrator Bearer token. GET has no parameters. PUT requires role (qa, embedding or rerank) and enabled (boolean); missing, null or invalid values return 422. Repeating the same value does not repeat preload. Each role initially uses its installation value (default false); overrides persist on this instance. Enabling asynchronously pulls the configured model if missing and warms it through scheduler admission. Disabling cancels pending work; submitted requests may finish. items are ordered by role as above. model is the configured tag. enabled is the effective switch. state is disabled, pending, preparing, completed (warmup confirmed) or failed. error is a diagnostic string on failure and null otherwise. Completed describes the last preload attempt even after idle eviction.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful gateway-owned JSON response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "items"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "minItems": 3,
+                      "maxItems": 3,
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "role",
+                          "model",
+                          "enabled",
+                          "state",
+                          "error"
+                        ],
+                        "properties": {
+                          "role": {
+                            "type": "string",
+                            "enum": [
+                              "qa",
+                              "embedding",
+                              "rerank"
+                            ]
+                          },
+                          "model": {
+                            "type": "string"
+                          },
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "state": {
+                            "type": "string",
+                            "enum": [
+                              "disabled",
+                              "pending",
+                              "preparing",
+                              "completed",
+                              "failed"
+                            ]
+                          },
+                          "error": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Gateway error; inspect HTTP status, code and request_id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Gateway error; inspect HTTP status, code and request_id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Gateway error; inspect HTTP status, code and request_id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Gateway error; inspect HTTP status, code and request_id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Gateway error; inspect HTTP status, code and request_id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Gateway error; inspect HTTP status, code and request_id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Gateway error; inspect HTTP status, code and request_id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "role",
+                  "enabled"
+                ],
+                "properties": {
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "qa",
+                      "embedding",
+                      "rerank"
+                    ]
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                }
+              },
+              "example": {
+                "role": "qa",
+                "enabled": true
+              }
+            }
+          }
+        },
+        "x-contract-source": "backend/src/router/manage.rs"
+      }
+    },
     "/api/v1/model-residency": {
       "get": {
         "summary": "Model residency and unloading policy",

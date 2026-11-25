@@ -395,6 +395,22 @@
         },
         {
           "method": "GET",
+          "path": "/api/v1/ollama-preload",
+          "auth": "manage",
+          "summary": "Read built-in Ollama preload settings",
+          "desc": "Requires a VOS administrator Bearer token. GET has no parameters. PUT requires role (qa, embedding or rerank) and enabled (boolean); missing, null or invalid values return 422. Repeating the same value does not repeat preload. Each role initially uses its installation value (default false); overrides persist on this instance. Enabling asynchronously pulls the configured model if missing and warms it through scheduler admission. Disabling cancels pending work; submitted requests may finish. items are ordered by role as above. model is the configured tag. enabled is the effective switch. state is disabled, pending, preparing, completed (warmup confirmed) or failed. error is a diagnostic string on failure and null otherwise. Completed describes the last preload attempt even after idle eviction.",
+          "example": ""
+        },
+        {
+          "method": "PUT",
+          "path": "/api/v1/ollama-preload",
+          "auth": "manage",
+          "summary": "Update one Ollama preload switch",
+          "desc": "Requires a VOS administrator Bearer token. GET has no parameters. PUT requires role (qa, embedding or rerank) and enabled (boolean); missing, null or invalid values return 422. Repeating the same value does not repeat preload. Each role initially uses its installation value (default false); overrides persist on this instance. Enabling asynchronously pulls the configured model if missing and warms it through scheduler admission. Disabling cancels pending work; submitted requests may finish. items are ordered by role as above. model is the configured tag. enabled is the effective switch. state is disabled, pending, preparing, completed (warmup confirmed) or failed. error is a diagnostic string on failure and null otherwise. Completed describes the last preload attempt even after idle eviction.",
+          "example": "curl -X PUT \"$VOS_ORIGIN/api/com.ictrek.v-scheduler/api/v1/ollama-preload\" -H \"Authorization: Bearer $VOS_TOKEN\" -H \"Content-Type: application/json\" -d '{\"role\":\"qa\",\"enabled\":true}'"
+        },
+        {
+          "method": "GET",
           "path": "/api/v1/model-residency",
           "auth": "manage",
           "summary": "Model residency and unloading policy",

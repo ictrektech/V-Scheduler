@@ -75,3 +75,7 @@ In Resources and tasks → Execution resources, administrators can read the obse
 Open API Documentation → Scheduling API → Application backend deployments for roles, fields, states, and examples. Register the target and Profile, issue an application service credential, and grant repositories and targets with PUT /backend-deployment-access/{app_id}. Submit the selected image, target, and container port to POST /backend-deployments. Poll until running and read endpoint. SSH targets use Docker. Trusted cluster members use VOS Projects. Stop retains the host port. Confirmed deletion releases it.
 
 Administrators can register applications and select target profiles in Node Management → Application backends. The deployment form saves the image, container port, optional host port, CPU and memory caps, and backend JSON settings. API Documentation → Scheduling API → Application backend deployments has examples for SSH and cluster targets.
+
+Under Model weights → Inference services, administrators can set Automatic preload independently for the built-in chat, embedding, and rerank instances. Each switch starts with its installation setting and saved changes persist. Enabling downloads the configured tag if missing and preloads it through scheduler admission. Disabling prevents new preload attempts and lets submitted requests finish. Idle eviction still follows model idle retention. Check the card for preload status.
+
+GET /api/v1/ollama-preload · PUT /api/v1/ollama-preload

@@ -19900,6 +19900,297 @@
         "x-contract-source": "backend/src/router/manage.rs"
       }
     },
+    "/api/v1/ollama-preload": {
+      "get": {
+        "summary": "读取内置 Ollama 预热设置",
+        "description": "需 VOS 管理员 Bearer 令牌。GET 无参数。PUT 提交 role（qa、embedding、rerank）及 enabled（布尔值）；省略、null 或错误类型返回 422。重复提交相同设置不会重复预热。首次使用各角色的安装值（默认 false）；修改存入当前实例。开启后异步拉取缺失的配置模型并按调度预算预热。关闭取消尚未开始的预热，已提交的请求可完成。items 固定按上述角色顺序，model 为配置标签，enabled 为生效开关。state 为 disabled（关闭）、pending（等待）、preparing（处理中）、completed（本轮预热已确认）、failed（失败）。失败时 error 为诊断文本，其余为 null。模型空闲卸载后状态仍记录最近一次预热结果。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "网关自身生成的成功 JSON 响应。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "items"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "minItems": 3,
+                      "maxItems": 3,
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "role",
+                          "model",
+                          "enabled",
+                          "state",
+                          "error"
+                        ],
+                        "properties": {
+                          "role": {
+                            "type": "string",
+                            "enum": [
+                              "qa",
+                              "embedding",
+                              "rerank"
+                            ]
+                          },
+                          "model": {
+                            "type": "string"
+                          },
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "state": {
+                            "type": "string",
+                            "enum": [
+                              "disabled",
+                              "pending",
+                              "preparing",
+                              "completed",
+                              "failed"
+                            ]
+                          },
+                          "error": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "网关错误；检查 HTTP 状态、code 与 request_id。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "网关错误；检查 HTTP 状态、code 与 request_id。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "网关错误；检查 HTTP 状态、code 与 request_id。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "网关错误；检查 HTTP 状态、code 与 request_id。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            }
+          }
+        },
+        "x-contract-source": "backend/src/router/manage.rs"
+      },
+      "put": {
+        "summary": "更新指定 Ollama 实例的预热开关",
+        "description": "需 VOS 管理员 Bearer 令牌。GET 无参数。PUT 提交 role（qa、embedding、rerank）及 enabled（布尔值）；省略、null 或错误类型返回 422。重复提交相同设置不会重复预热。首次使用各角色的安装值（默认 false）；修改存入当前实例。开启后异步拉取缺失的配置模型并按调度预算预热。关闭取消尚未开始的预热，已提交的请求可完成。items 固定按上述角色顺序，model 为配置标签，enabled 为生效开关。state 为 disabled（关闭）、pending（等待）、preparing（处理中）、completed（本轮预热已确认）、failed（失败）。失败时 error 为诊断文本，其余为 null。模型空闲卸载后状态仍记录最近一次预热结果。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "网关自身生成的成功 JSON 响应。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "items"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "minItems": 3,
+                      "maxItems": 3,
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "role",
+                          "model",
+                          "enabled",
+                          "state",
+                          "error"
+                        ],
+                        "properties": {
+                          "role": {
+                            "type": "string",
+                            "enum": [
+                              "qa",
+                              "embedding",
+                              "rerank"
+                            ]
+                          },
+                          "model": {
+                            "type": "string"
+                          },
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "state": {
+                            "type": "string",
+                            "enum": [
+                              "disabled",
+                              "pending",
+                              "preparing",
+                              "completed",
+                              "failed"
+                            ]
+                          },
+                          "error": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "网关错误；检查 HTTP 状态、code 与 request_id。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "网关错误；检查 HTTP 状态、code 与 request_id。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "网关错误；检查 HTTP 状态、code 与 request_id。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "网关错误；检查 HTTP 状态、code 与 request_id。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "网关错误；检查 HTTP 状态、code 与 request_id。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "网关错误；检查 HTTP 状态、code 与 request_id。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "网关错误；检查 HTTP 状态、code 与 request_id。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "role",
+                  "enabled"
+                ],
+                "properties": {
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "qa",
+                      "embedding",
+                      "rerank"
+                    ]
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                }
+              },
+              "example": {
+                "role": "qa",
+                "enabled": true
+              }
+            }
+          }
+        },
+        "x-contract-source": "backend/src/router/manage.rs"
+      }
+    },
     "/api/v1/model-residency": {
       "get": {
         "summary": "模型驻留与卸载策略",

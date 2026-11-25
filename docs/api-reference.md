@@ -271,6 +271,8 @@ Base: `http://v-scheduler:8080`. [Complete OpenAPI](../api/router-openapi-en.jso
 | GET | `/readyz` | Model catalog readiness |
 | GET | `/api/v1/inference-queue` | Inference waiting queue |
 | DELETE | `/api/v1/inference-queue/{id}` | Cancel waiting inference |
+| GET | `/api/v1/ollama-preload` | 读取内置 Ollama 预热设置 |
+| PUT | `/api/v1/ollama-preload` | 更新指定 Ollama 实例的预热开关 |
 | GET | `/api/v1/model-residency` | Model residency and unloading policy |
 | PUT | `/api/v1/model-residency` | Set idle retention duration |
 | GET | `/api/v1/model-lifecycle` | Weights, services, routes and scheduler linkage |

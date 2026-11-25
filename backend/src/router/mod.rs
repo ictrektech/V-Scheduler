@@ -21,6 +21,7 @@ mod provider_runtime;
 mod models_dev;
 mod queue;
 mod residency;
+mod preload;
 mod weights;
 mod lifecycle;
 mod registry;
@@ -177,6 +178,7 @@ struct Gateway {
     auto_runtime: auto::Runtime,
     queue: Mutex<queue::Queue>,
     residency: residency::Residency,
+    preload: preload::Policy,
     state_path: PathBuf,
     controller: RwLock<Router>,
     client: reqwest::Client,
@@ -318,6 +320,7 @@ pub(crate) async fn start(
         auto_runtime: Default::default(),
         queue: Mutex::new(Default::default()),
         residency: residency::Residency::open(&state_path)?,
+        preload: preload::Policy::open(&state_path)?,
         usage: Mutex::new(usage::Usage::open(&PathBuf::from(env(
             "V_ROUTER_USAGE_PATH",
             "/gateway-data/usage.jsonl",
@@ -346,6 +349,7 @@ pub(crate) async fn start(
     let mut background = discovery::start(state.clone());
     background.push(models_dev::start(state.clone()));
     background.push(residency::start(state.clone()));
+    background.extend(preload::start(state.clone()));
     eprintln!("V-Scheduler Rust router listening on {listen}");
     Ok(Some(Runtime {
         server: tokio::spawn(async move {

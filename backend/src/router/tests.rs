@@ -360,6 +360,7 @@ pub(super) fn gateway(root: &Path, controller: Router) -> Arc<Gateway> {
         auto_runtime: Default::default(),
         queue: Mutex::new(Default::default()),
         residency: residency::Residency::disabled(),
+        preload: preload::Policy::open(&root.join("state.json")).unwrap(),
         state_path: root.join("state.json"),
         controller: RwLock::new(controller),
         client: reqwest::Client::builder()

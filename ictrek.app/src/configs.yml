@@ -220,8 +220,8 @@ configs:
       zh-CN: QA 预启动模型
       en: QA Preload Model
     description:
-      zh-CN: 启动 Model Hub 时下载并常驻到 QA / 对话 Ollama 实例的模型。
-      en: Model downloaded and kept resident in the QA/chat Ollama runtime when Model Hub starts.
+      zh-CN: QA / 对话 Ollama 实例自动预热时使用的模型标签。
+      en: Model tag used for automatic preload in the QA/chat Ollama runtime.
     default: qwen3.5:2b
 
   - name: OLLAMA_QA_PRELOAD_ENABLED
@@ -230,8 +230,8 @@ configs:
       zh-CN: 启用 QA 预启动
       en: Enable QA Preload
     description:
-      zh-CN: 安装后启动 Model Hub 时，是否自动下载并常驻 QA / 对话模型。关闭后仍会启动 QA Ollama 实例，但不会自动拉取模型。
-      en: Whether to automatically download and keep the QA/chat model resident when Model Hub starts. When disabled, the QA Ollama runtime still starts but does not pull a model automatically.
+      zh-CN: QA / 对话模型的自动预热初始值。启用时会下载缺失的权重并按调度预算预热。
+      en: Initial automatic preload setting for QA/chat. Enabling downloads missing weights and warms the model through scheduler admission.
     default: false
 
   - name: OLLAMA_EMBEDDING_MODEL
@@ -240,8 +240,8 @@ configs:
       zh-CN: Embedding 预启动模型
       en: Embedding Preload Model
     description:
-      zh-CN: 启动 Model Hub 时下载并常驻到 embedding Ollama 实例的模型。
-      en: Model downloaded and kept resident in the embedding Ollama runtime when Model Hub starts.
+      zh-CN: 向量 Ollama 实例自动预热时使用的模型标签。
+      en: Model tag used for automatic preload in the embedding Ollama runtime.
     default: bge-m3
 
   - name: OLLAMA_RERANK_MODEL
@@ -250,8 +250,8 @@ configs:
       zh-CN: Rerank 预启动模型
       en: Rerank Preload Model
     description:
-      zh-CN: 启动 Model Hub 时下载并常驻到 rerank Ollama 实例的模型。默认模型走 Ollama /api/embed 接口。
-      en: Rerank model downloaded and kept resident in the rerank Ollama runtime when Model Hub starts. The default model uses Ollama /api/embed.
+      zh-CN: 重排 Ollama 实例自动预热时使用的模型标签。
+      en: Model tag used for automatic preload in the rerank Ollama runtime.
     default: qllama/bge-reranker-v2-m3:q8_0
 
   - name: OLLAMA_EMBEDDING_PRELOAD_ENABLED
@@ -260,8 +260,8 @@ configs:
       zh-CN: 启用 Embedding 预启动
       en: Enable Embedding Preload
     description:
-      zh-CN: 安装后启动 Model Hub 时，是否自动下载并常驻 embedding 模型。关闭后仍会启动 embedding Ollama 实例，但不会自动拉取模型。
-      en: Whether to automatically download and keep the embedding model resident when Model Hub starts. When disabled, the embedding Ollama runtime still starts but does not pull a model automatically.
+      zh-CN: 向量模型的自动预热初始值。启用时会下载缺失的权重并按调度预算预热。
+      en: Initial automatic preload setting for embeddings. Enabling downloads missing weights and warms the model through scheduler admission.
     default: false
 
   - name: OLLAMA_RERANK_PRELOAD_ENABLED
@@ -270,8 +270,8 @@ configs:
       zh-CN: 启用 Rerank 预启动
       en: Enable Rerank Preload
     description:
-      zh-CN: 安装后启动 Model Hub 时，是否自动下载并常驻 rerank 模型。关闭后仍可在运行管理页面手动启动。
-      en: Whether to automatically download and keep the rerank model resident when Model Hub starts. When disabled, it can still be started manually from Runtime Management.
+      zh-CN: 重排模型的自动预热初始值。启用时会下载缺失的权重并按调度预算预热。
+      en: Initial automatic preload setting for reranking. Enabling downloads missing weights and warms the model through scheduler admission.
     default: false
 
   - name: OLLAMA_QA_NUM_PARALLEL

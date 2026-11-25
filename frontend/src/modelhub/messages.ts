@@ -1,5 +1,11 @@
 // Simplified Chinese is the source text; each entry supplies Traditional Chinese and English.
 export const messages: Record<string, readonly [string, string]> = {
+  "在「权重管理 → 推理服务」中，管理员可为内置对话、向量和重排实例分别设置「自动预热」。开关默认沿用安装设置，修改后会保留。开启时按调度预算预热配置的模型标签，缺少权重时先下载。关闭后不再开始新的预热，当前请求自然结束。预热完成后仍按模型空闲保留策略卸载。需要排查时看卡片的预热状态。": ["在「權重管理 → 推論服務」中，管理員可為內建對話、向量和重排執行個體分別設定「自動預熱」。開關預設沿用安裝設定，修改會保留。開啟時按排程預算預熱設定的模型標籤，缺少權重時先下載。關閉後停止新的預熱，已送出的請求自然結束。模型仍依閒置保留策略卸載。請在卡片查看預熱狀態。", "Under Model weights → Inference services, administrators can set Automatic preload independently for the built-in chat, embedding, and rerank instances. Each switch starts with its installation setting and saved changes persist. Enabling downloads the configured tag if missing and preloads it through scheduler admission. Disabling prevents new preload attempts and lets submitted requests finish. Idle eviction still follows model idle retention. Check the card for preload status."],
+  "预热失败": ["預熱失敗", "Preload failed"],
+  "预热完成": ["預熱完成", "Preload completed"],
+  "正在预热": ["正在預熱", "Preloading"],
+  "等待预热": ["等候預熱", "Waiting to preload"],
+  "自动预热": ["自動預熱", "Automatic preload"],
 "正式 host alias : 内部端口":["正式 host alias : 內部連接埠", "Primary host alias : internal port"],
 "其他正式别名 / 兼容别名":["其他正式別名 / 相容別名", "Other primary aliases / compatibility aliases"],
 "兼容":["相容", "Compatibility"],
