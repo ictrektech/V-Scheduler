@@ -637,7 +637,30 @@ async fn handle_inner(g: Arc<Gateway>, id: Identity, request: Request, classifie
     lease::classify_cloud(&mut u).await?;
     exchange.u = u.clone();
     check_owner(&g, &u, &path, &id)?;
-    let approval = lease::approval(&g, &u, &native, method.as_str(), &suffix, is_websocket)?;
+    let compute_deployment_id = if method == "POST" && suffix == "/images/generations" {
+        let mut fields = parts.iter().filter(|part| part.name == "compute_deployment_id");
+        let multipart_value = fields.next().map(|part| {
+            std::str::from_utf8(&bytes[part.start..part.end])
+                .map_err(|_| Failure::new(400, "compute_deployment_id must be UTF-8"))
+        }).transpose()?;
+        if fields.next().is_some() {
+            return Err(Failure::new(400, "duplicate compute_deployment_id field"));
+        }
+        let target = super::adapters::image_compute_target(&u, &id, &headers, &value, multipart_value)?;
+        if let Some(body) = value.as_object_mut() {
+            body.remove("compute_deployment_id");
+        }
+        target
+    } else {
+        None
+    };
+    // The built-in application dispatches explicit placements through the
+    // approved remote executor. A local gateway permit would reserve the wrong node.
+    let approval = if compute_deployment_id.is_some() {
+        None
+    } else {
+        lease::approval(&g, &u, &native, method.as_str(), &suffix, is_websocket)?
+    };
     let asynchronous = jobs::creation(&u, &suffix, &value, method.as_str());
     let conversion = if u.converts_chat_endpoint(&suffix)
         && (u.chat_only() || (pinned.is_empty() && method == "POST"))
@@ -815,7 +838,7 @@ async fn handle_inner(g: Arc<Gateway>, id: Identity, request: Request, classifie
         return websocket(g, exchange, url, headers, approval, request_parts).await;
     }
     if ["offline_asr", "image_studio", "async_task", "ml_server"].contains(&u.protocol.as_str()) {
-        return super::adapters::forward(g, exchange, method, headers, suffix, rewritten, value)
+        return super::adapters::forward(g, exchange, method, headers, suffix, rewritten, value, compute_deployment_id)
             .await;
     }
     if u.protocol == "pi" {

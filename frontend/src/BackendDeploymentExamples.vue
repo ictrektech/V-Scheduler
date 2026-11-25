@@ -9,13 +9,14 @@ const images=[
  ['amd-cuda','linux/amd64','amd-cuda'],
  ['amd-cpu','linux/amd64','amd-cpu'],
 ]
-const access={
- targets:[{kind:'ssh',id:'node-orin',profile:'jetson-orin'},{kind:'cluster',id:'member-thor',profile:'jetson-thor'}],
- repositories:[repository],
-}
+const targets=[
+ {kind:'ssh',id:'node-orin',profile:'jetson-orin'},
+ {kind:'cluster',id:'member-thor',profile:'jetson-thor'},
+]
+const imageCatalog=Object.fromEntries(images.map(([profile,,tag])=>[profile,repository+':'+tag+'-v1']))
 const common={container_port:8080,cpu_millicores:1500,memory_mib:2048,config:{workers:2,batch_size:4}}
-const ssh={request_key:'image-worker-orin',target:access.targets[0],image:repository+':jetson-orin-v1',...common}
-const cluster={request_key:'image-worker-thor',target:access.targets[1],image:repository+':jetson-thor-v1',host_port:42080,...common}
+const ssh={request_key:'image-worker-orin',target:targets[0],image:repository+':jetson-orin-v1',...common}
+const cluster={request_key:'image-worker-thor',target:targets[1],image:repository+':jetson-thor-v1',host_port:42080,...common}
 const json=(value:unknown)=>JSON.stringify(value,null,2)
 </script>
 
@@ -28,8 +29,8 @@ const json=(value:unknown)=>JSON.stringify(value,null,2)
     <tbody><tr v-for="[profile,platform,tag] in images" :key="profile"><td><code>{{profile}}</code></td><td><code>{{platform}}</code></td><td><code>{{repository}}:{{tag}}-v1</code></td></tr></tbody>
    </table>
   </div>
-  <p>{{t('管理员在「节点管理 → 应用后端 → 登记应用」选择节点、Profile 和允许的镜像仓库。也可用 PUT /backend-deployment-access/{app_id} 保存相同授权。')}}</p>
-  <details><summary>{{t('登记应用授权示例')}}</summary><pre class="code-block">{{json(access)}}</pre></details>
+  <p>{{t('已登记的计算节点对所有已认证的 VOS 应用可见。应用在已安装的 Compose 中声明各 Profile 的发布镜像，部署时直接选择匹配的节点。')}}</p>
+  <details><summary>{{t('应用发布镜像清单示例')}}</summary><pre class="code-block">x-v-scheduler-backend-images: {{JSON.stringify(imageCatalog)}}</pre></details>
   <p>{{t('应用向 POST /backend-deployments 发送所选镜像和参数，轮询 GET /backend-deployments/{id}。状态为 running 时使用 endpoint。集群路径需要已登记的受信 VOS 集群成员，SSH 路径需要已保存的 SSH 连接。')}}</p>
   <div class="example-requests">
    <details><summary>{{t('部署到 SSH 节点')}}</summary><pre class="code-block">{{json(ssh)}}</pre></details>

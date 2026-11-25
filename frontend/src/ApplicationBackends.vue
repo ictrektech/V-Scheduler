@@ -5,25 +5,23 @@ import {nodeIdentity} from './node-identity'
 
 type Target = {kind:'ssh'|'cluster',id:string,profile:string}
 type Node = {id:string,name:string,hostname?:string,address?:string,host?:string,profile?:string,compatible_profiles?:string[],ssh_node_id?:string}
-type Access = {app_id:string,targets:Target[],repositories:string[]}
+type DeploymentOptions = {app_id:string,targets:Target[],repositories:string[],automatic?:boolean,images?:Record<string,string>}
 type Deployment = {id:string,app_id:string,target_kind:Target['kind'],target_id:string,profile:string,host:string,host_port:number,container_port:number,cpu_millicores?:number,memory_mib?:number,config?:Record<string,unknown>,image:string,state:string,endpoint?:string,last_error?:string}
 type Candidate = {node:Node,kind:Target['kind'],profiles:string[]}
 const props=defineProps<{request:(path:string,body?:unknown,method?:string)=>Promise<any>,t:(text:string)=>string}>()
 const emit=defineEmits<{api:[]}>()
 const t=props.t
 const inventory=ref<Candidate[]>([])
-const access=ref<Access[]>([])
-const applications=ref<string[]>([])
+const options=ref<DeploymentOptions[]>([])
 const deployments=ref<Deployment[]>([])
 const busy=ref(false)
 const ready=ref(false)
 const error=ref('')
 let timer:number|undefined
-const accessForm=ref<{app_id:string,repositories:string,targets:Target[]}|null>(null)
 const deploymentForm=ref<{app_id:string,request_key:string,targetKey:string,image:string,container_port:number,host_port:number|'',cpu_millicores:number|'',memory_mib:number|'',configText:string}|null>(null)
 const states:Record<string,string>={pending:'等待部署',running:'运行中',failed:'部署失败',stopped:'已停止',stopping:'正在停止',deleting:'正在删除',removed:'已删除',cleanup_failed:'清理未确认'}
 const failureLabels:Record<string,string>={
- BACKEND_DEPLOYMENT_FORBIDDEN:'应用尚未获得所选节点、Profile 或镜像仓库的授权。',
+ BACKEND_DEPLOYMENT_FORBIDDEN:'当前应用身份或镜像不符合部署要求。',
  BACKEND_TARGET_UNAVAILABLE:'目标节点未登记、地址已更改或暂不可读。',
  BACKEND_PROFILE_UNSUPPORTED:'目标节点与所选 Profile 不兼容。',
  BACKEND_PORT_IN_USE:'宿主机端口已被占用，请选择其他端口。',
@@ -47,8 +45,15 @@ const targetLabel=(target:Target)=> {
  const identity=nodeIdentity(node(target.kind,target.id))
  return [kindLabel(target.kind),identity.name||target.id,identity.address,target.profile].filter(Boolean).join(' · ')
 }
-const accessWithTargets=computed(()=>access.value.filter(item=>item.targets.length&&item.repositories.length))
-const currentAccess=computed(()=>access.value.find(item=>item.app_id===deploymentForm.value?.app_id))
+const availableApps=computed(()=>options.value.filter(item=>item.targets.length&&item.repositories.length))
+const currentApp=computed(()=>options.value.find(item=>item.app_id===deploymentForm.value?.app_id))
+const currentTarget=computed(()=>currentApp.value?.targets.find(target=>key(target)===deploymentForm.value?.targetKey))
+const selectedImage=computed(()=>{
+ const target=currentTarget.value
+ return currentApp.value?.automatic
+  ? (target ? currentApp.value.images?.[target.profile] : undefined)||''
+  : deploymentForm.value?.image.trim()||''
+})
 const filteredDeployments=computed(()=>deployments.value.filter(item=>item.state!=='removed'))
 
 async function run(fn:()=>Promise<void>, userAction=false) {
@@ -62,7 +67,7 @@ async function loadDeployments() {
  deployments.value=(await props.request('backend-deployments')).items
 }
 async function load() {
- const [nodes,profiles,grants]=await Promise.all([
+ const [nodes,profiles,deployable]=await Promise.all([
   props.request('managed-nodes'),props.request('compute-profiles'),props.request('backend-deployment-access'),loadDeployments(),
  ])
  const ssh:Node[]=nodes.items
@@ -74,53 +79,28 @@ async function load() {
    profiles:ssh.find(peer=>peer.id===node.ssh_node_id)?.compatible_profiles||registeredProfiles,
   })),
  ]
- access.value=grants.items
- applications.value=grants.applications
+ options.value=deployable.items
  ready.value=true
 }
-function edit(item?:Access) {
- deploymentForm.value=null
- accessForm.value={app_id:item?.app_id||'',repositories:item?.repositories.join('\n')||'',targets:item?.targets.slice()||[]}
-}
-function choices(candidate:Candidate) {
- return candidate.profiles.map(profile=>({kind:candidate.kind,id:candidate.node.id,profile}))
-}
-function checked(target:Target) {
- return accessForm.value?.targets.some(item=>key(item)===key(target))||false
-}
-function select(target:Target,event:Event) {
- if(!accessForm.value)return
- const list=accessForm.value.targets.filter(item=>key(item)!==key(target))
- if((event.target as HTMLInputElement).checked)list.push(target)
- accessForm.value.targets=list
-}
-async function save() {
- if(!accessForm.value)return
- const form=accessForm.value
- const repositories=Array.from(new Set(form.repositories.split('\n').map(value=>value.trim()).filter(Boolean)))
- await props.request('backend-deployment-access/'+encodeURIComponent(form.app_id.trim()),{repositories,targets:form.targets},'PUT')
- accessForm.value=null
- await load()
-}
-function deploy(appId?:string) {
- accessForm.value=null
- deploymentForm.value={app_id:appId||accessWithTargets.value[0]?.app_id||'',request_key:crypto.randomUUID?.()||('backend-'+Date.now()),targetKey:'',image:'',container_port:8080,host_port:'',cpu_millicores:'',memory_mib:'',configText:'{}'}
+function deploy() {
+ deploymentForm.value={app_id:availableApps.value[0]?.app_id||'',request_key:crypto.randomUUID?.()||('backend-'+Date.now()),targetKey:'',image:'',container_port:8080,host_port:'',cpu_millicores:'',memory_mib:'',configText:'{}'}
 }
 watch(()=>deploymentForm.value?.app_id,()=>{
  const form=deploymentForm.value
- const target=currentAccess.value?.targets[0]
+ const target=currentApp.value?.targets[0]
  if(form)form.targetKey=target?key(target):''
 })
 async function submit() {
  if(!deploymentForm.value)return
  const form=deploymentForm.value
- const target=currentAccess.value?.targets.find(target=>key(target)===form.targetKey)
- if(!target)return
+ const target=currentTarget.value
+ const image=selectedImage.value
+ if(!target||!image)return
  let config:unknown
  try {config=JSON.parse(form.configText||'{}')} catch {throw new Error(t('后端配置必须是 JSON 对象。'))}
  if(!config||typeof config!=='object'||Array.isArray(config))throw new Error(t('后端配置必须是 JSON 对象。'))
  await props.request('backend-deployments',{
-  app_id:form.app_id,request_key:form.request_key,target,image:form.image.trim(),container_port:form.container_port,
+  app_id:form.app_id,request_key:form.request_key,target,image,container_port:form.container_port,
   host_port:form.host_port||undefined,cpu_millicores:form.cpu_millicores||undefined,memory_mib:form.memory_mib||undefined,config,
  })
  deploymentForm.value=null
@@ -153,7 +133,7 @@ onUnmounted(()=>window.clearInterval(timer))
      <strong>{{nodeIdentity(item.node).name || item.node.id}}</strong>
      <small>{{[nodeIdentity(item.node).address,kindLabel(item.kind)].filter(Boolean).join(' · ')}}</small>
      <div class="profile-tags"><code v-for="profile in (item.node.compatible_profiles||item.profiles)" :key="profile">{{profile}}</code>
-      <span v-if="!item.node.profile&&item.kind==='cluster'">{{t('授权时指定 Profile')}}</span>
+      <span v-if="!item.node.profile&&item.kind==='cluster'">{{t('尚未识别硬件 Profile')}}</span>
      </div>
     </article>
    </div>
@@ -161,49 +141,16 @@ onUnmounted(()=>window.clearInterval(timer))
   </section>
   <section class="section panel">
    <div class="section-head">
-    <h2>{{t('应用授权')}}</h2>
-    <button type="button" :disabled="busy" @click="edit()">{{t('登记应用')}}</button>
-   </div>
-   <form v-if="accessForm" class="backend-form" @submit.prevent="run(save,true)">
-    <label>{{t('应用 ID')}}<input v-model.trim="accessForm.app_id" required list="backend-apps" maxlength="96" placeholder="com.example.app"></label>
-    <datalist id="backend-apps"><option v-for="appId in applications" :key="appId" :value="appId"/></datalist>
-    <label>{{t('允许的镜像仓库')}}<textarea v-model="accessForm.repositories" rows="3" placeholder="registry.example.com/team/backend"/><small>{{t('每行一个完整仓库地址，省略镜像标签。')}}</small></label>
-    <fieldset>
-     <legend>{{t('允许的节点与 Profile')}}</legend>
-     <div class="backend-targets">
-      <div v-for="item in inventory" :key="item.kind+item.node.id">
-       <strong>{{nodeIdentity(item.node).name || item.node.id}}</strong>
-       <small>{{[nodeIdentity(item.node).address,kindLabel(item.kind)].filter(Boolean).join(' · ')}}</small>
-       <div class="profile-options">
-        <label v-for="target in choices(item)" :key="key(target)"><input type="checkbox" :checked="checked(target)" @change="select(target,$event)">{{target.profile}}</label>
-       </div>
-      </div>
-     </div>
-    </fieldset>
-    <div class="buttons"><button class="quiet" type="button" @click="accessForm=null">{{t('取消')}}</button><button :disabled="busy">{{t('保存授权')}}</button></div>
-   </form>
-   <div v-if="access.length" class="backend-records">
-    <article v-for="item in access" :key="item.app_id">
-     <div><strong>{{item.app_id}}</strong><small v-for="target in item.targets" :key="key(target)">{{targetLabel(target)}}</small>
-      <small v-for="repository in item.repositories" :key="repository"><code>{{repository}}</code></small>
-      <small v-if="!item.targets.length||!item.repositories.length">{{t('暂无部署授权')}}</small></div>
-     <div class="buttons"><button class="quiet" type="button" @click="edit(item)">{{t('编辑授权')}}</button>
-      <button class="quiet" type="button" :disabled="!item.targets.length||!item.repositories.length" @click="deploy(item.app_id)">{{t('部署后端')}}</button></div>
-    </article>
-   </div>
-   <p v-else-if="ready&&!accessForm" class="empty">{{t('登记应用后，勾选可使用的节点和 Profile。')}}</p>
-  </section>
-  <section class="section panel">
-   <div class="section-head">
     <h2>{{t('后端部署')}}</h2>
     <button class="quiet" type="button" :disabled="busy" @click="run(load)">{{t('刷新')}}</button>
-    <button type="button" :disabled="!accessWithTargets.length||busy" @click="deploy()">{{t('部署后端')}}</button>
+    <button type="button" :disabled="!availableApps.length||busy" @click="deploy()">{{t('部署后端')}}</button>
    </div>
    <form v-if="deploymentForm" class="backend-form" @submit.prevent="run(submit,true)">
-    <label>{{t('应用 ID')}}<select v-model="deploymentForm.app_id" required><option v-for="app in accessWithTargets" :key="app.app_id" :value="app.app_id">{{app.app_id}}</option></select></label>
-    <label>{{t('目标节点与 Profile')}}<select v-model="deploymentForm.targetKey" required><option v-for="target in currentAccess?.targets" :key="key(target)" :value="key(target)">{{targetLabel(target)}}</option></select></label>
-    <label>{{t('镜像地址')}}<input v-model.trim="deploymentForm.image" required maxlength="512" placeholder="registry.example.com/team/backend:jetson-thor">
-     <small v-if="currentAccess">{{currentAccess.repositories.join(' · ')}}</small></label>
+    <label>{{t('应用 ID')}}<select v-model="deploymentForm.app_id" required><option v-for="app in availableApps" :key="app.app_id" :value="app.app_id">{{app.app_id}}</option></select></label>
+    <label>{{t('目标节点与 Profile')}}<select v-model="deploymentForm.targetKey" required><option v-for="target in currentApp?.targets" :key="key(target)" :value="key(target)">{{targetLabel(target)}}</option></select></label>
+    <label v-if="currentApp?.automatic">{{t('镜像地址')}}<input :value="selectedImage" readonly></label>
+    <label v-else>{{t('镜像地址')}}<input v-model.trim="deploymentForm.image" required maxlength="512" placeholder="registry.example.com/team/backend:jetson-thor">
+     <small v-if="currentApp">{{currentApp.repositories.join(' · ')}}</small></label>
     <label>{{t('容器端口')}}<input v-model.number="deploymentForm.container_port" type="number" min="1" max="65535" required></label>
     <div class="backend-limits">
      <label>{{t('宿主机端口')}}<input v-model.number="deploymentForm.host_port" type="number" min="42000" max="42999" :placeholder="t('自动分配')"></label>
@@ -211,7 +158,7 @@ onUnmounted(()=>window.clearInterval(timer))
      <label>{{t('内存限制（MiB）')}}<input v-model.number="deploymentForm.memory_mib" type="number" min="16" max="1048576" :placeholder="t('不限')"></label>
     </div>
     <label>{{t('后端 JSON 配置')}}<textarea v-model="deploymentForm.configText" rows="3" spellcheck="false"/><small>{{t('应用镜像可从 V_SCHEDULER_BACKEND_CONFIG_B64 读取配置。')}}</small></label>
-    <div class="buttons"><button class="quiet" type="button" @click="deploymentForm=null">{{t('取消')}}</button><button :disabled="busy||!deploymentForm.targetKey">{{t('部署后端')}}</button></div>
+    <div class="buttons"><button class="quiet" type="button" @click="deploymentForm=null">{{t('取消')}}</button><button :disabled="busy||!currentTarget||!selectedImage">{{t('部署后端')}}</button></div>
    </form>
    <div v-if="filteredDeployments.length" class="backend-records">
     <article v-for="item in filteredDeployments" :key="item.id">
@@ -245,11 +192,10 @@ onUnmounted(()=>window.clearInterval(timer))
 <style scoped>
 .application-backends {display:grid;gap:18px}
 .backend-targets {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,215px),1fr));gap:12px}
-.backend-targets>article,.backend-targets>div {padding:12px;border:1px solid #e6edf3;border-radius:8px;min-width:0}
+.backend-targets>article {padding:12px;border:1px solid #e6edf3;border-radius:8px;min-width:0}
 .backend-targets small,.backend-records small,.backend-form small {display:block;margin-top:4px;color:#586e82;overflow-wrap:anywhere}
-.profile-tags,.profile-options,.buttons {display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:6px}
+.profile-tags,.buttons {display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:6px}
 .profile-tags code {padding:3px 7px;background:#eff5f6;border-radius:6px;color:#13616a}
-.profile-options label {display:flex;align-items:center;gap:5px;font-size:12px}
 .backend-records article {display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;padding:12px 0;border-top:1px solid #e6edf3}
 .backend-records article>div:first-child {min-width:0}
 .backend-form {display:grid;gap:12px;padding:14px;margin:10px 0;border:1px solid #e6edf3;border-radius:8px}

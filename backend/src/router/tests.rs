@@ -2257,6 +2257,79 @@ async fn rebuilt_adapters_replace_client_mime_and_preserve_binary_parts() {
     assert_eq!(seen.load(Ordering::SeqCst),2);server.abort();std::fs::remove_dir_all(root).unwrap();
 }
 #[tokio::test]
+async fn image_generation_routes_explicit_remote_deployment_to_builtin_image_studio() {
+    use std::sync::atomic::AtomicUsize;
+    let deployment = "0123456789abcdef0123456789abcdef";
+    let unregistered = "1123456789abcdef0123456789abcdef";
+    let calls = Arc::new(AtomicUsize::new(0));
+    let received = calls.clone();
+    // The loopback fixture is an HTTP proxy for the fixed Image Studio origin.
+    let studio = Router::new().route("/api/v1/generate", post(move |headers: HeaderMap, Json(body): Json<Value>| {
+        let received = received.clone();
+        async move {
+            received.fetch_add(1, Ordering::SeqCst);
+            assert_eq!(headers["authorization"], "Bearer fixture-vos-user");
+            assert_eq!(body["model_key"], "sd-turbo");
+            assert_eq!(body["prompt"], "test image");
+            if body["compute_deployment_id"] == unregistered {
+                return (StatusCode::CONFLICT, Json(json!({"detail":"COMPUTE_MODEL_NOT_REGISTERED"})));
+            }
+            assert_eq!(body["compute_deployment_id"], deployment);
+            (StatusCode::ACCEPTED, Json(json!({
+                "job_id":"remote-job",
+                "status":"pending",
+                "metadata":{"scheduler_task_id":"remote-task","compute_deployment_id":deployment},
+            })))
+        }
+    }));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move { axum::serve(listener, studio).await.unwrap() });
+    let root = temp();
+    let mut g = gateway(&root, Router::new());
+    Arc::get_mut(&mut g).unwrap().client = reqwest::Client::builder()
+        .proxy(reqwest::Proxy::all(format!("http://{address}")).unwrap())
+        .build().unwrap();
+    let mut built_in = upstream("app-image-studio");
+    built_in.protocol = "image_studio".into();
+    built_in.source = "image-studio".into();
+    built_in.kind = "local".into();
+    built_in.base_url = "http://image-studio-backend:5000".into();
+    built_in.model_prefix = "image-studio".into();
+    let image = Model {endpoints: vec!["images/generations".into()], ..model("sd-turbo")};
+    g.registry.lock().unwrap().put(built_in, vec![image.clone()]);
+    let external = upstream("external");
+    g.registry.lock().unwrap().put(external, vec![image]);
+    let request = |model, target: Value| Request::builder().method("POST")
+        .uri("/v1/images/generations")
+        .header("content-type", "application/json")
+        .header("authorization", "Bearer fixture-vos-user")
+        .body(Body::from(json!({"model":model,"prompt":"test image","compute_deployment_id":target}).to_string()))
+        .unwrap();
+    let vos = Identity { vos_user: true, ..principal("alice") };
+    let response = proxy::handle(g.clone(), vos.clone(),
+        request("image-studio/sd-turbo", json!(deployment))).await.unwrap();
+    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    let response: Value = serde_json::from_slice(&axum::body::to_bytes(response.into_body(), 65536).await.unwrap()).unwrap();
+    assert_eq!(response["image_studio_job"]["metadata"]["scheduler_task_id"], "remote-task");
+    for (chosen, target, identity, status) in [
+        ("image-studio/sd-turbo", json!(unregistered), vos.clone(), 409),
+        ("image-studio/sd-turbo", json!("ABC"), vos.clone(), 400),
+        ("image-studio/sd-turbo", json!(deployment), principal("api-key-user"), 401),
+        ("manual/sd-turbo", json!(deployment), vos.clone(), 400),
+    ] {
+        let error = proxy::handle(g.clone(), identity, request(chosen, target)).await.err().unwrap();
+        assert_eq!(error.status, status);
+        if status == 409 {
+            assert_eq!(error.code.as_deref(), Some("COMPUTE_MODEL_NOT_REGISTERED"));
+        }
+    }
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    server.abort();
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
 async fn ordinary_multipart_and_binary_response_keep_their_original_mime() {
     let native=Router::new().route("/v1/audio/transcriptions",post(|h:HeaderMap,bytes:Bytes|async move{
         assert_eq!(issue_one_mime(&h),"multipart/form-data; boundary=client-boundary-issue1");let parts=proxy::multipart(&bytes,issue_one_mime(&h)).unwrap();let file=parts.iter().find(|p|p.name=="file").unwrap();assert_eq!(&bytes[file.start..file.end],b"\0\xffimage\r\nbytes");

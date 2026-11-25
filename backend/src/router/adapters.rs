@@ -30,6 +30,40 @@ fn form(fields: &[(&str, Vec<u8>, Option<String>, Option<String>)]) -> (Vec<u8>,
     bytes.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
     (bytes, format!("multipart/form-data; boundary={boundary}"))
 }
+pub(super) fn image_compute_target(
+    upstream: &Upstream,
+    id: &Identity,
+    headers: &HeaderMap,
+    input: &Value,
+    multipart: Option<&str>,
+) -> Api<Option<String>> {
+    let target = match multipart {
+        Some(target) => target,
+        None => match input.get("compute_deployment_id") {
+            None | Some(Value::Null) => return Ok(None),
+            Some(Value::String(target)) => target,
+            Some(_) => return Err(Failure::new(400, "compute_deployment_id must be a string")),
+        },
+    };
+    if target.is_empty() {
+        return Ok(None);
+    }
+    if target.len() != 32 || !target.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) {
+        return Err(Failure::new(400, "compute_deployment_id must be 32 lowercase hexadecimal characters"));
+    }
+    if upstream.id != "app-image-studio" || upstream.source != "image-studio"
+        || upstream.protocol != "image_studio" || upstream.base_url != "http://image-studio-backend:5000"
+    {
+        return Err(Failure::new(400, "compute_deployment_id requires the built-in Image Studio upstream"));
+    }
+    if !id.vos_user || !headers.get("authorization").and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.starts_with("Bearer "))
+    {
+        return Err(Failure::new(401, "VOS user authentication required for compute_deployment_id"));
+    }
+    Ok(Some(target.to_owned()))
+}
+
 pub(super) async fn json_request(
     exchange: &Exchange,
     method: axum::http::Method,
@@ -52,6 +86,8 @@ pub(super) async fn json_request(
             builder = builder.header("authorization", auth);
         }
     }
+    let explicit_image_placement = exchange.u.id == "app-image-studio"
+        && body.as_ref().and_then(|value| value.get("compute_deployment_id")).is_some();
     if let Some(body) = body {
         builder = builder.json(&body);
     }
@@ -71,7 +107,14 @@ pub(super) async fn json_request(
         return Err(Failure::new(502, "upstream response too large"));
     }
     if !status.is_success() {
-        return Err(Failure::new(status.as_u16(), "upstream request failed"));
+        let mut failure = Failure::new(status.as_u16(), "upstream request failed");
+        if explicit_image_placement && status == StatusCode::CONFLICT
+            && serde_json::from_slice::<Value>(&bytes).is_ok_and(|body| body["detail"] == "COMPUTE_MODEL_NOT_REGISTERED")
+        {
+            failure = Failure::new(409, "Image Studio model is not registered on the selected deployment");
+            failure.code = Some("COMPUTE_MODEL_NOT_REGISTERED".into());
+        }
+        return Err(failure);
     }
     let value = serde_json::from_slice(&bytes)
         .map_err(|_| Failure::new(502, "invalid upstream JSON response"))?;
@@ -85,6 +128,7 @@ pub(super) async fn forward(
     path: String,
     bytes: Vec<u8>,
     input: Value,
+    compute_deployment_id: Option<String>,
 ) -> Api<Response> {
     match exchange.u.protocol.as_str() {
         "offline_asr" => {
@@ -159,7 +203,7 @@ pub(super) async fn forward(
             Ok(Json(out).into_response())
         }
         "ml_server" => ml(g, exchange, method, headers, path, bytes, input).await,
-        "image_studio" => image(g, exchange, headers, path, bytes, input).await,
+        "image_studio" => image(g, exchange, headers, path, bytes, input, compute_deployment_id).await,
         "async_task" => async_task(exchange, headers, path, input).await,
         _ => Err(Failure::new(400, "unsupported model adapter")),
     }
@@ -372,6 +416,7 @@ async fn image(
     path: String,
     bytes: Vec<u8>,
     input: Value,
+    compute_deployment_id: Option<String>,
 ) -> Api<Response> {
     if ![
         "/images/generations",
@@ -384,6 +429,9 @@ async fn image(
     }
     let (model, variant) = e.native.split_once('@').unwrap_or((&e.native, ""));
     let mut payload = json!({"model_key":model});
+    if let Some(target) = compute_deployment_id {
+        payload["compute_deployment_id"] = json!(target);
+    }
     // Only the fixed first-party executor receives control-plane intent.
     // Other upstreams never receive operator credentials or scheduling options.
     if e.u.source == "image-studio" && e.u.base_url == "http://image-studio-backend:5000" {

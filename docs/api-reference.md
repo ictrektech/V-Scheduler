@@ -290,6 +290,10 @@ Base: `http://v-scheduler:8080`. [Complete OpenAPI](../api/router-openapi-en.jso
 | PUT | `/api/v1/models/access-key` | Set, rotate or revoke a model access key |
 | PUT | `/api/v1/model-routing` | Set per-model direct admission |
 
+调用内置 Image Studio 时，可在 JSON 或 multipart/form-data 中传入 `compute_deployment_id`，以 32 位小写十六进制 ID 选择已登记的远端部署。指定部署需要 VOS 用户 Bearer token。省略、空字符串或 JSON null 使用原有部署路径。请求返回 202 和原生任务 `image_studio_job`。到 Image Studio 查询任务，在 V-Scheduler 的调度任务中核对 `node_id`。模型尚未登记时返回 `409 COMPUTE_MODEL_NOT_REGISTERED`。
+
+For the built-in Image Studio upstream, use `compute_deployment_id` in JSON or multipart/form-data to select a registered remote deployment. Provide its 32-character lowercase hexadecimal ID and a VOS user Bearer token. Omitting the field, sending an empty string, or using JSON null preserves the usual placement. The HTTP 202 response includes `image_studio_job`. Poll Image Studio for the job and check the Scheduler task’s `node_id` for its placement. An unregistered model returns `409 COMPUTE_MODEL_NOT_REGISTERED`.
+
 <a id="controller"></a>
 ## Controller / 调度管理
 
@@ -392,7 +396,7 @@ Check `model-hub` first. When `state` is `ready`, send `source: "shared"` and ea
 
 After a transfer reports `verified: true`, post its `model_id` and `transfer_id` to `/backend-deployments/{id}/models`. The response gives `executor_id`, `node_id`, the runtime `profile`, and the calibrated `model_limits` and `model_parameters`. Scheduler requires a matching node report and a measured calibration. Deployment owners need current grants for the target and image repository. Stop or removal returns `409 BACKEND_TASKS_ACTIVE` while the deployment has queued or active work.
 
-传输返回 `verified: true` 后，将 `model_id` 和 `transfer_id` 提交到 `/backend-deployments/{id}/models`。响应提供 `executor_id`、`node_id`、运行 `profile` 及实测校准的 `model_limits` 和 `model_parameters`。Scheduler 检查实际节点报告与实测校准是否匹配，部署所有方需要当前节点和镜像仓库授权。有排队或执行中的任务时，停止或移除返回 `409 BACKEND_TASKS_ACTIVE`。
+传输返回 `verified: true` 后，将 `model_id` 和 `transfer_id` 提交到 `/backend-deployments/{id}/models`。响应提供 `executor_id`、`node_id`、运行 `profile` 及实测校准的 `model_limits` 和 `model_parameters`。Scheduler 检查实际节点报告与实测校准是否匹配，部署所有方使用已登记节点及其应用发布镜像清单。有排队或执行中的任务时，停止或移除返回 `409 BACKEND_TASKS_ACTIVE`。
 
 The execution actions are `start`, `inspect`, and `cancel`. The app sends `task_id` and `fence`, and provides a job description when starting. Worker dispatch uses `session_id` and `fence`. File requests use the `X-Scheduler-Fence` header and the byte `offset` query field. Upload at most 1 MiB per request and 20 MiB per reference image. Download receipts contain `file_id`, `offset`, `size_bytes`, `sha256`, and `data_b64`. Check the total size and SHA-256 before storing the output.
 

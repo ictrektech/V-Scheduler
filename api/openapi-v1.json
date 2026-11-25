@@ -9493,17 +9493,17 @@
     "/backend-deployment-access/{app_id}": {
       "get": {
         "operationId": "read_backend_deployment_access",
-        "summary": "Read application backend access",
-        "description": "Read exact approved repositories and targets. Missing grants produce empty arrays.",
+        "summary": "Read application deployment options",
+        "description": "Returns compatible targets and published images. Use GET /managed-nodes to find all registered compute nodes.",
         "x-title": {
-          "en": "Read application backend access",
-          "zh-CN": "读取应用后端部署授权",
-          "zh-TW": "读取应用后端部署授权"
+          "en": "Read application deployment options",
+          "zh-CN": "读取应用后端部署选项",
+          "zh-TW": "讀取應用後端部署選項"
         },
         "x-description": {
-          "en": "Read exact approved repositories and targets. Missing grants produce empty arrays.",
-          "zh-CN": "读取应用获准仓库和目标。尚未授权时返回两个空数组。",
-          "zh-TW": "读取应用获准仓库和目标。尚未授权时返回两个空数组。"
+          "en": "Returns compatible targets and published images. Use GET /managed-nodes to find all registered compute nodes.",
+          "zh-CN": "返回匹配的目标和发布镜像。通过 GET /managed-nodes 查找所有已登记计算节点。",
+          "zh-TW": "回傳相符的目標與發行映像檔。透過 GET /managed-nodes 尋找所有已登記的運算節點。"
         },
         "x-role": "administrator or owner",
         "security": [
@@ -9542,7 +9542,7 @@
                       "type": "object",
                       "properties": {
                         "data": {
-                          "$ref": "#/components/schemas/ApplicationBackendAccess"
+                          "$ref": "#/components/schemas/ApplicationBackendDeploymentOptions"
                         }
                       },
                       "required": [
@@ -9583,16 +9583,16 @@
       "put": {
         "operationId": "set_backend_deployment_access",
         "summary": "Grant application backend access",
-        "description": "Replace the application policy. Use empty arrays to withdraw new placement and restart authorization. Running deployments retain their lifecycle record.",
+        "description": "Compatibility endpoint for existing manual policies. Installed applications with a published image catalog use automatic placement options.",
         "x-title": {
           "en": "Grant application backend access",
           "zh-CN": "设置应用后端部署授权",
           "zh-TW": "设置应用后端部署授权"
         },
         "x-description": {
-          "en": "Replace the application policy. Use empty arrays to withdraw new placement and restart authorization. Running deployments retain their lifecycle record.",
-          "zh-CN": "替换应用授权。空数组可撤销新建和重新启动权限。运行中的实例仍可查询、停止和删除。",
-          "zh-TW": "替换应用授权。空数组可撤销新建和重新启动权限。运行中的实例仍可查询、停止和删除。"
+          "en": "Compatibility endpoint for existing manual policies. Installed applications with a published image catalog use automatic placement options.",
+          "zh-CN": "兼容现有手动策略。声明发布镜像清单的已安装应用使用自动部署选项。",
+          "zh-TW": "相容既有手動策略。宣告發行映像檔清單的已安裝應用使用自動部署選項。"
         },
         "x-role": "admin",
         "security": [
@@ -9725,7 +9725,8 @@
               "zh-TW": "节点清单、地址或适配器不可用时返回 BACKEND_TARGET_UNAVAILABLE；数据库不可用时返回 TEMPORARILY_UNAVAILABLE。"
             }
           }
-        }
+        },
+        "deprecated": true
       }
     },
     "/backend-deployments": {
@@ -9809,16 +9810,16 @@
       "post": {
         "operationId": "create_backend_deployment",
         "summary": "Deploy an application backend",
-        "description": "Submit an approved image, node, Profile and TCP port through the application service credential. A background worker starts the container or VOS Project. Poll GET /backend-deployments/{id} before using its endpoint. Administrators can submit for an authorized application by specifying app_id. The SSH and cluster adapters apply the same optional host port, CPU and memory limits, and JSON settings.",
+        "description": "Deploy the published image matching the selected compute node’s fixed Profile. The application uses its service credential. Administrators may specify app_id. Poll GET /backend-deployments/{id} for the state and endpoint.",
         "x-title": {
           "en": "Deploy an application backend",
           "zh-CN": "创建应用后端部署",
           "zh-TW": "创建应用后端部署"
         },
         "x-description": {
-          "en": "Submit an approved image, node, Profile and TCP port through the application service credential. A background worker starts the container or VOS Project. Poll GET /backend-deployments/{id} before using its endpoint. Administrators can submit for an authorized application by specifying app_id. The SSH and cluster adapters apply the same optional host port, CPU and memory limits, and JSON settings.",
-          "zh-CN": "应用用服务凭据提交获准的镜像、节点、Profile 和 TCP 端口。后台通过容器或 VOS Project 启动。轮询 GET /backend-deployments/{id} 后使用 endpoint。 管理员可指定 app_id 代已授权的应用提交。SSH 与集群执行相同的可选宿主机端口、CPU、内存上限及 JSON 配置。",
-          "zh-TW": "应用用服务凭据提交获准的镜像、节点、Profile 和 TCP 端口。后台通过容器或 VOS Project 启动。轮询 GET /backend-deployments/{id} 后使用 endpoint。 管理员可指定 app_id 代已授权的应用提交。SSH 与集群执行相同的可选宿主机端口、CPU、内存上限及 JSON 配置。"
+          "en": "Deploy the published image matching the selected compute node’s fixed Profile. The application uses its service credential. Administrators may specify app_id. Poll GET /backend-deployments/{id} for the state and endpoint.",
+          "zh-CN": "将匹配发布镜像部署到所选计算节点的固定 Profile。应用使用服务凭据，管理员可指定 app_id。轮询 GET /backend-deployments/{id} 获取状态和 endpoint。",
+          "zh-TW": "將相符的發行映像檔部署到所選運算節點的固定 Profile。應用使用服務憑證，管理員可指定 app_id。輪詢 GET /backend-deployments/{id} 取得狀態和 endpoint。"
         },
         "x-role": "submitter or admin with app_id",
         "security": [
@@ -10381,17 +10382,17 @@
     "/backend-deployment-access": {
       "get": {
         "operationId": "list_backend_deployment_access",
-        "summary": "List backend deployment grants",
+        "summary": "List application deployment options",
         "x-title": {
-          "en": "List backend deployment grants",
-          "zh-CN": "列出应用后端部署授权",
-          "zh-TW": "列出应用后端部署授权"
+          "en": "List application deployment options",
+          "zh-CN": "列出应用后端部署选项",
+          "zh-TW": "列出應用後端部署選項"
         },
-        "description": "List configured policies and applications with service credentials or grants.",
+        "description": "Returns effective placement options. The installed VOS package provides the catalog for automatic deployments.",
         "x-description": {
-          "en": "List configured policies and applications with service credentials or grants.",
-          "zh-CN": "列出已登记的应用授权，以及有服务凭据或部署授权的应用 ID。",
-          "zh-TW": "列出已登记的应用授权，以及有服务凭据或部署授权的应用 ID。"
+          "en": "Returns effective placement options. The installed VOS package provides the catalog for automatic deployments.",
+          "zh-CN": "返回当前部署选项。自动部署的镜像清单来自已安装 VOS 应用包。",
+          "zh-TW": "回傳目前部署選項。自動部署的映像檔清單來自已安裝的 VOS 應用套件。"
         },
         "x-role": "admin",
         "security": [
@@ -10460,6 +10461,28 @@
                                         "zh-TW": "授权范围涵盖该仓库下各 tag 和 SHA-256 摘要。"
                                       },
                                       "maxLength": 383
+                                    }
+                                  },
+                                  "automatic": {
+                                    "type": "boolean",
+                                    "description": "True for options derived from the installed app and node inventory. False for a legacy policy.",
+                                    "x-description": {
+                                      "en": "True for options derived from the installed app and node inventory. False for a legacy policy.",
+                                      "zh-CN": "从已安装应用和节点目录自动得出的选项为 true。旧策略为 false。",
+                                      "zh-TW": "從已安裝應用與節點清單自動取得的選項為 true。舊策略為 false。"
+                                    }
+                                  },
+                                  "images": {
+                                    "type": "object",
+                                    "additionalProperties": {
+                                      "type": "string",
+                                      "maxLength": 512
+                                    },
+                                    "description": "Published OCI image references keyed by the node’s fixed Profile. Empty for a legacy policy.",
+                                    "x-description": {
+                                      "en": "Published OCI image references keyed by the node’s fixed Profile. Empty for a legacy policy.",
+                                      "zh-CN": "自动部署使用的发布 OCI 镜像，按节点的固定 Profile 索引。旧策略返回空对象。",
+                                      "zh-TW": "自動部署使用的發行 OCI 映像檔，依節點的固定 Profile 索引。舊策略回傳空物件。"
                                     }
                                   }
                                 },
@@ -13883,6 +13906,71 @@
         ],
         "additionalProperties": false
       },
+      "ApplicationBackendDeploymentOptions": {
+        "type": "object",
+        "properties": {
+          "targets": {
+            "type": "array",
+            "description": "Approved target and Profile pairs. Omit none of the fields. An empty list denies new placements.",
+            "x-description": {
+              "en": "Approved target and Profile pairs. Omit none of the fields. An empty list denies new placements.",
+              "zh-CN": "获准的目标和 Profile 组合。字段必填，空列表禁止新建部署。",
+              "zh-TW": "获准的目标和 Profile 组合。字段必填，空列表禁止新建部署。"
+            },
+            "maxItems": 64,
+            "items": {
+              "$ref": "#/components/schemas/ApplicationBackendTarget"
+            }
+          },
+          "repositories": {
+            "type": "array",
+            "description": "Exact OCI repositories including the registry, without tag or digest. An empty list denies new placements.",
+            "x-description": {
+              "en": "Exact OCI repositories including the registry, without tag or digest. An empty list denies new placements.",
+              "zh-CN": "精确的 OCI 仓库路径，含 registry，省略 tag 与摘要。空列表禁止新建部署。",
+              "zh-TW": "精确的 OCI 仓库路径，含 registry，省略 tag 与摘要。空列表禁止新建部署。"
+            },
+            "maxItems": 64,
+            "items": {
+              "type": "string",
+              "description": "Scope includes tags and SHA-256 digests within this repository.",
+              "x-description": {
+                "en": "Scope includes tags and SHA-256 digests within this repository.",
+                "zh-CN": "授权范围涵盖该仓库下各 tag 和 SHA-256 摘要。",
+                "zh-TW": "授权范围涵盖该仓库下各 tag 和 SHA-256 摘要。"
+              },
+              "maxLength": 383
+            }
+          },
+          "automatic": {
+            "type": "boolean",
+            "description": "True for options derived from the installed app and node inventory. False for a legacy policy.",
+            "x-description": {
+              "en": "True for options derived from the installed app and node inventory. False for a legacy policy.",
+              "zh-CN": "从已安装应用和节点目录自动得出的选项为 true。旧策略为 false。",
+              "zh-TW": "從已安裝應用與節點清單自動取得的選項為 true。舊策略為 false。"
+            }
+          },
+          "images": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "maxLength": 512
+            },
+            "description": "Published OCI image references keyed by the node’s fixed Profile. Empty for a legacy policy.",
+            "x-description": {
+              "en": "Published OCI image references keyed by the node’s fixed Profile. Empty for a legacy policy.",
+              "zh-CN": "自动部署使用的发布 OCI 镜像，按节点的固定 Profile 索引。旧策略返回空对象。",
+              "zh-TW": "自動部署使用的發行 OCI 映像檔，依節點的固定 Profile 索引。舊策略回傳空物件。"
+            }
+          }
+        },
+        "required": [
+          "targets",
+          "repositories"
+        ],
+        "additionalProperties": false
+      },
       "ApplicationBackendAccess": {
         "type": "object",
         "properties": {
@@ -13944,11 +14032,11 @@
           },
           "image": {
             "type": "string",
-            "description": "Complete OCI registry/repository:tag or registry/repository@sha256:digest. Must match a granted repository.",
+            "description": "Complete OCI registry/repository:tag or registry/repository@sha256:digest. For automatic deployment the image must exactly match the declared image for the selected Profile.",
             "x-description": {
-              "en": "Complete OCI registry/repository:tag or registry/repository@sha256:digest. Must match a granted repository.",
-              "zh-CN": "完整 OCI 镜像引用，含 registry、仓库和 tag 或 sha256 摘要。须匹配授权仓库。",
-              "zh-TW": "完整 OCI 镜像引用，含 registry、仓库和 tag 或 sha256 摘要。须匹配授权仓库。"
+              "en": "Complete OCI registry/repository:tag or registry/repository@sha256:digest. For automatic deployment the image must exactly match the declared image for the selected Profile.",
+              "zh-CN": "完整 OCI 镜像引用，包含仓库和 tag 或 SHA-256 摘要。自动部署须与所选 Profile 的声明镜像完全匹配。",
+              "zh-TW": "完整 OCI 映像檔參照，包含倉庫和 tag 或 SHA-256 摘要。自動部署須與所選 Profile 的宣告映像檔完全相符。"
             },
             "maxLength": 512
           },

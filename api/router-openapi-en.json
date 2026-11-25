@@ -4046,6 +4046,14 @@
           },
           "user": {
             "type": "string"
+          },
+          "compute_deployment_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^(?:[0-9a-f]{32})?$",
+            "description": "For the built-in Image Studio upstream, pass compute_deployment_id as a 32-character lowercase hexadecimal string to use a registered remote deployment. Omit it, use an empty string, or send JSON null for the usual placement. A remote placement requires a VOS user Bearer token. Use the VOS user’s Image Studio job endpoint to track the job, and inspect the Scheduler task node_id to verify the actual node."
           }
         },
         "additionalProperties": true,
@@ -13632,7 +13640,7 @@
     },
     "/v1/images/generations": {
       "post": {
-        "description": "Routes by model and restores the native model name. Supports application/json; upstream responses (including SSE, binary content and errors) are forwarded unchanged. Upload limit: 32 MiB. Capabilities and parameters depend on the upstream. X-VRouter-Upstream requires authentication and an upstream-native body; model may be omitted.",
+        "description": "Routes by model and restores the native model name. Supports application/json; upstream responses (including SSE, binary content and errors) are forwarded unchanged. Upload limit: 32 MiB. Capabilities and parameters depend on the upstream. X-VRouter-Upstream requires authentication and an upstream-native body; model may be omitted.\n\nFor the built-in Image Studio upstream, pass compute_deployment_id as a 32-character lowercase hexadecimal string to use a registered remote deployment. Omit it, use an empty string, or send JSON null for the usual placement. A remote placement requires a VOS user Bearer token. Use the VOS user’s Image Studio job endpoint to track the job, and inspect the Scheduler task node_id to verify the actual node.",
         "parameters": [
           {
             "description": "Pins an upstream ID without fallback; requires identity and native model names. Otherwise matches model, protocol and health, selecting by in-flight requests/weight. Ties use smooth weighted rotation within the current model/interface. Returns 429 if all candidates are full. A prefix limits source; short names span sources, including cloud. Required for resource APIs.",
@@ -13662,6 +13670,32 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/ImageGenerationRequest"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "model",
+                  "prompt"
+                ],
+                "properties": {
+                  "model": {
+                    "type": "string"
+                  },
+                  "prompt": {
+                    "type": "string"
+                  },
+                  "image": {
+                    "type": "string",
+                    "format": "binary"
+                  },
+                  "compute_deployment_id": {
+                    "type": "string",
+                    "pattern": "^(?:[0-9a-f]{32})?$",
+                    "description": "For the built-in Image Studio upstream, pass compute_deployment_id as a 32-character lowercase hexadecimal string to use a registered remote deployment. Omit it, use an empty string, or send JSON null for the usual placement. A remote placement requires a VOS user Bearer token. Use the VOS user’s Image Studio job endpoint to track the job, and inspect the Scheduler task node_id to verify the actual node."
+                  }
+                }
               }
             }
           }
@@ -13702,6 +13736,50 @@
           },
           "default": {
             "description": "Gateway rejection or original upstream error"
+          },
+          "202": {
+            "description": "Accepted Image Studio generation job. image_studio_job contains the native job record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "id",
+                    "object",
+                    "status",
+                    "model",
+                    "image_studio_job"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "object": {
+                      "const": "image_studio.generation.job"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "model": {
+                      "type": "string"
+                    },
+                    "image_studio_job": {
+                      "type": "object",
+                      "additionalProperties": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid deployment ID, duplicate multipart field, or a nonempty deployment ID on another upstream."
+          },
+          "401": {
+            "description": "A remote Image Studio placement requires a VOS user Bearer token."
+          },
+          "409": {
+            "description": "COMPUTE_MODEL_NOT_REGISTERED when the model has not been registered for the selected deployment."
           }
         },
         "security": [

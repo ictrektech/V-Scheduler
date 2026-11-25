@@ -2,7 +2,7 @@
 
 The Inference Deployment page resumes the VOS session automatically. Loaded data stays visible while the page shows a single recovery status. The current view refreshes once the session is restored.
 
-To run Image Studio on another node, use **Advanced Management → Node Management → Application Backends** to grant Image Studio access to the node and image repository. In Image Studio, deploy the backend and prepare a model. The backend uses a read-only Model Hub NFS share when available. Otherwise, weight transfer resumes from the recorded byte offsets. Scheduler registers the executor after the files pass SHA-256 validation and the target node matches the model's measured calibration. See the deployment, transfer and execution routes in the Scheduler API reference.
+To run a VOS application on another node, choose a compatible registered compute node in the app, deploy its backend and prepare the model. The backend uses a read-only Model Hub NFS share when available. Otherwise, weight transfer resumes from the recorded byte offsets. Scheduler registers the executor after the files pass SHA-256 validation and the target node matches the model's measured calibration. See the deployment, transfer and execution routes in the Scheduler API reference.
 
 When adding or editing a model in **Models & Providers**, use **Thinking control** to declare the Chat Completions format and effort values supported by the upstream. A compatible client can read these settings from the optional `reasoning_control` model catalog field.
 
@@ -10,7 +10,7 @@ When adding or editing a model in **Models & Providers**, use **Thinking control
 
 Sign in as a VOS administrator and open **V-Scheduler → Image Registry**. Pull an upstream image into the local registry, then synchronize the repository or a specific tag. To work offline, import a Docker or OCI archive. Omit the destination to keep the archive's image name. The task panel shows progress and failure details. Management state and image layers persist in the app's `image-hub/` and `image-registry/` directories.
 
-To deploy an image, copy the tag's deployment address from image details. Open **Advanced Management → Node Management → Application Backends**, authorize the repository, and paste the complete image address into the deployment form. The data endpoint defaults to `127.0.0.1:36113` on the VOS host. For remote nodes, set `SCHEDULER_IMAGE_HUB_BIND` to a host address on a trusted network reachable from those nodes and configure their Docker runtime to access that HTTP registry.
+To deploy an image, copy the tag's deployment address from image details. Open **Advanced Management → Node Management → Application Backends**, select the app and node, and use the matching image from the app’s published catalog. The data endpoint defaults to `127.0.0.1:36113` on the VOS host. For remote nodes, set `SCHEDULER_IMAGE_HUB_BIND` to a host address on a trusted network reachable from those nodes and configure their Docker runtime to access that HTTP registry.
 
 After deleting tags or repositories, preview garbage collection and then reclaim unreferenced layers. This acts on the V-Scheduler registry. Keep tags needed by active deployments so their images can be pulled again. For the management endpoints, open **API Documentation → Image Registry API** in the sidebar. Requests use a VOS administrator Bearer token.
 
