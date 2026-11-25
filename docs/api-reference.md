@@ -294,6 +294,8 @@ Base: `http://v-scheduler:8080`. [Complete OpenAPI](../api/router-openapi-en.jso
 
 For the built-in Image Studio upstream, use `compute_deployment_id` in JSON or multipart/form-data to select a registered remote deployment. Provide its 32-character lowercase hexadecimal ID and a VOS user Bearer token. Omitting the field, sending an empty string, or using JSON null preserves the usual placement. The HTTP 202 response includes `image_studio_job`. Poll Image Studio for the job and check the Scheduler task’s `node_id` for its placement. An unregistered model returns `409 COMPUTE_MODEL_NOT_REGISTERED`.
 
+「模型与上游」的模型行显示已就绪的远端执行节点，可在「测试」或「调用方式」选择节点。选择后请求仍使用上述协议。 In Models & Providers, use the node selector under Test or API usage for a model with a ready placement. The request uses the contract above.
+
 <a id="controller"></a>
 ## Controller / 调度管理
 

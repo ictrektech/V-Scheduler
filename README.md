@@ -472,6 +472,8 @@ English readers can use the [complete API integration handbook](docs/api-referen
 
 已登记的计算节点对所有已认证的 VOS 应用可见。应用可以按固定 Profile 使用发布清单中的镜像，通过 V-Scheduler 将后端部署到匹配的 SSH 节点或 VOS 集群成员。部署、端口分配和生命周期参见[应用后端部署 API](docs/application-backend-deployment.md)。
 
+「模型与上游」中的 Image Studio 生图模型在同一行显示可调用的执行节点。打开「测试」或「调用方式」选择节点，通过 VOS 用户身份提交，网关请求携带所选节点对应的 `compute_deployment_id`。默认位置沿用原调用方式。
+
 管理员可在「节点管理 → 应用后端」查看节点和固定 Profile、提交部署参数并管理部署。资源、SSH 节点和集群列表使用主机名显示同一设备，IP 与 Profile 各自展示。VOS 会话恢复、SSH 定期复验和读取失败提示见[节点管理与连接状态](docs/node-management.md)。
 
 推理应用登记的模型可由 VOS 管理员在「模型与上游 → 模型访问 Key」生成、设置或撤销专用 Key。该 Key 归签发管理员管理，仍只授权所选私有模型。公共模型可直接调用。

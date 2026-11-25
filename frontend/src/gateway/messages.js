@@ -1,5 +1,13 @@
 "use strict";
 export const VRouterMessages = {
+"图像生成成功":{"en": "Image generation succeeded", "zh-TW": "圖像生成成功"},
+"图像任务失败":{"en": "Image generation job failed", "zh-TW": "圖像生成任務失敗"},
+"图像任务返回无效标识":{"en": "The image job returned an invalid ID", "zh-TW": "圖像任務回傳無效 ID"},
+"指定远端部署时，ACCESS_TOKEN 填写 VOS 用户 token。":{"en": "Use a VOS user token as ACCESS_TOKEN for an explicit remote deployment.", "zh-TW": "指定遠端部署時，ACCESS_TOKEN 填寫 VOS 使用者權杖。"},
+"可调用":{"en": "Ready", "zh-TW": "可呼叫"},
+"默认位置":{"en": "Default placement", "zh-TW": "預設位置"},
+"远端部署":{"en": "Remote deployment", "zh-TW": "遠端部署"},
+"执行节点":{"en": "Execution node", "zh-TW": "執行節點"},
 "权重下载":{"en": "Weight download", "zh-TW": "權重下載"},
 "推理服务":{"en": "Inference service", "zh-TW": "推論服務"},
 "最近一次测试":{"en": "Last test request", "zh-TW": "最近一次測試"},

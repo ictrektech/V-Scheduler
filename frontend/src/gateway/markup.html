@@ -165,6 +165,10 @@
                 </div>
                 <div class="field"><label>调用上游</label><select id="pgUpstream"><option value="">自动分配</option></select><div class="hint">自动模式按进行中请求和权重分配；指定后不切换。</div>
                 </div>
+                <div class="field" id="pgPlacementField" hidden>
+                  <label for="pgPlacement">执行节点</label>
+                  <select id="pgPlacement"></select>
+                </div>
                 <div class="field">
                   <label class="check"><input type="checkbox" id="pgStream" checked /> 流式输出</label>
                   <label>任务优先级</label><select id="pgPriority"><option value="background">后台</option><option value="interactive" selected>交互</option><option value="high">高优先级</option></select>
@@ -366,7 +370,11 @@
     <h3 id="modelCallTitle">调用方式</h3>
     <p class="mono" id="modelCallName"></p>
     <p class="hint" id="modelCallHint"></p>
-    <p class="hint">ACCESS_TOKEN 可填写 VOS 账户 token、个人 Key 或模型访问 Key；public 模型也接受不带 Key 或任意 Key。</p>
+    <div class="field" id="modelCallPlacementField" hidden>
+      <label for="modelCallPlacement">执行节点</label>
+      <select id="modelCallPlacement"></select>
+    </div>
+    <p class="hint" id="modelCallAuthHint">ACCESS_TOKEN 可填写 VOS 账户 token、个人 Key 或模型访问 Key；public 模型也接受不带 Key 或任意 Key。</p>
     <p class="hint"><span>局域网调用</span> <code id="modelCallLAN"></code></p>
     <p class="hint" id="modelCallNoExample">该模型接口的请求字段请查阅 API 文档。</p>
     <p class="mono" id="modelCallDeclared"></p>

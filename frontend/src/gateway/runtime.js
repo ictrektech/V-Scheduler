@@ -20,6 +20,7 @@ i18n.apply();
 //   /app/com.ictrek.v-router/  -> this page
 //   /api/com.ictrek.v-router/  -> gateway backend
 const API = options.apiBase;
+const STUDIO_API = "/api/com.ictrek.image-studio/api/v1";
 
 const $ = (id) => root.getElementById(id);
 const esc = (s) =>
@@ -35,6 +36,7 @@ const PG_ENDPOINTS = [
   { id: "messages", path: "/messages", label: "Anthropic Messages", stream: true },
   { id: "completions", path: "/completions", label: "Text Completions", stream: true },
   { id: "embeddings", path: "/embeddings", label: "Embeddings", stream: false },
+  { id: "images", path: "/images/generations", label: "Image Generations", stream: false },
   { id: "videos", path: "/videos/generations", label: "Video Generations", stream: false },
   { id: "decisions", path: "/decisions", label: "OpenAI Decisions", stream: false },
   { id: "systemone", path: "/systemone", label: "System One (Jev)", stream: false },
@@ -43,7 +45,7 @@ const PG_ENDPOINTS = [
 
 const app = {
   element: id => root.getElementById(id),
-  state: { status: null, models: [], upstreams: [], usage: null, usagePeriod: "day", usageQuery: "", usageSort: "total_tokens", tab: "overview", timer: null },
+  state: { status: null, models: [], upstreams: [], studioPlacements: [], usage: null, usagePeriod: "day", usageQuery: "", usageSort: "total_tokens", tab: "overview", timer: null },
 
   // ---------- api ----------
   gatewayKey() {
@@ -123,6 +125,7 @@ const app = {
       btn.addEventListener("click", () => this.switchTab(btn.dataset.tab));
     });
     $("pgModel").addEventListener("change", () => this.renderPlaygroundEndpoints());
+    $("pgUpstream").addEventListener("change", () => this.renderPlaygroundPlacement());
     $("pgEndpoint").addEventListener("change", () => {
       this.renderPlaygroundUpstreams();
       this.updatePlaygroundMode();
@@ -198,6 +201,7 @@ const app = {
       this.renderAll();
       if (this.state.tab === "apidoc") this.renderApiDoc();
       if (admin) this.loadBudgets();
+      void this.loadStudioPlacements();
     } catch (err) {
       if(isSessionError(err)){recordDiagnostic("AUTH_REQUEST_REJECTED","gateway_request");this.showError("");return;}
       if (err.status === 401) {
@@ -208,6 +212,58 @@ const app = {
       }
       this.showError(() => VRouterI18n.t("加载失败：") + esc(VRouterI18n.t(err.sourceMessage || err.message)));
     }
+  },
+
+  async studioGet(path, signal) {
+    const response = await authenticatedFetch(STUDIO_API + path, {method:"GET", signal}, {
+      token: VRouterOIDC.accessToken,
+      clearToken: VRouterOIDC.clear,
+    });
+    if (!response.ok) throw apiError(await response.json().catch(()=>null),response.status);
+    return response.json();
+  },
+
+  async loadStudioPlacements() {
+    const sequence = this.studioSequence = (this.studioSequence || 0) + 1;
+    let rows = [];
+    if (API && this.state.models.some(model=>model.upstream_id==="app-image-studio")) {
+      try {
+        if (await VRouterOIDC.accessToken()) {
+          const data = await this.studioGet("/compute/placements");
+          if (Array.isArray(data)) rows = data.filter(row=>
+            typeof row.model_id==="string" && typeof row.deployment_id==="string" && /^[0-9a-f]{32}$/.test(row.deployment_id));
+        }
+      } catch {}
+    }
+    if (sequence !== this.studioSequence) return;
+    this.state.studioPlacements = rows;
+    this.renderModels();
+    this.renderPlaygroundPlacement();
+  },
+
+  studioPlacementsFor(qualified, upstreamId) {
+    if (upstreamId !== "app-image-studio") return [];
+    const model=this.state.models.find(row=>row.qualified===qualified&&row.upstream_id===upstreamId);
+    if (!model) return [];
+    return this.state.studioPlacements.filter(item=>item.model_id===model.id);
+  },
+
+  studioPlacementName(item) {
+    return item.node_name || item.node_id || `${VRouterI18n.t("远端部署")} ${item.deployment_id.slice(0,8)}`;
+  },
+
+  renderPlacementOptions(select, rows, choice) {
+    VRouterI18n.bind(select,"innerHTML",()=>`<option value="">${VRouterI18n.t("默认位置")}</option>` +
+      rows.map(item=>`<option value="${esc(item.deployment_id)}">${esc(this.studioPlacementName(item))}</option>`).join(""));
+    select.value=rows.some(row=>row.deployment_id===choice)?choice:"";
+  },
+
+  renderPlaygroundPlacement() {
+    const select=$("pgPlacement");
+    const rows=this.playgroundEndpoint()?.id==="images"
+      ? this.studioPlacementsFor($("pgModel").value,$("pgUpstream").value) : [];
+    $("pgPlacementField").hidden=!rows.length;
+    this.renderPlacementOptions(select,rows,select.value);
   },
 
   // Budgets live behind the controller and can be much slower than the gateway
@@ -492,6 +548,7 @@ const app = {
     return models.map(m=>{
             const budget = this.budgetFor(m);
             const actions = [];
+            const placements = this.studioPlacementsFor(m.qualified,m.upstream_id);
             if (!m.short && m.kind !== "service") {
               actions.push(`<button class="btn" onclick="app.tryModel(${jsArg(m.qualified)}, ${jsArg(m.upstream_id)})">${VRouterI18n.t("测试")}</button>`);
             }
@@ -523,7 +580,8 @@ const app = {
             return [
               `<span class="mono model-identifier">${esc(m.short ? m.id : (m.name || m.qualified))}</span><div class="model-capability-tags">${(m.capabilities || []).slice(0,4).map(c=>`<span class="capability-tag">${esc(VRouterI18n.t(CAPABILITIES.find(([id])=>id===c)?.[1] || c))}</span>`).join('')}</div><div class="hint">${(m.domains || ['general']).map(id => esc(VRouterI18n.t((this.state.domainCatalog || []).find(d => d.id === id)?.name || id))).join(' · ')}</div>${m.short ? ` <span class="pill kind">${VRouterI18n.t("短名")}</span>` : ""}`,
               ({embedding:"Embedding",chat:VRouterI18n.t("对话"),unknown:VRouterI18n.t("由上游决定"),service:VRouterI18n.t("服务接口")})[m.kind] || esc(m.kind),
-              `<span class="pill ${m.upstream_kind}">${kindLabel(m.upstream_kind)}</span>`,
+              `<span class="pill ${m.upstream_kind}">${kindLabel(m.upstream_kind)}</span>${placements.map(item=>
+                `<div class="hint">${esc(this.studioPlacementName(item))} · ${esc(VRouterI18n.t("可调用"))}</div>`).join("")}`,
               `${esc(VRouterI18n.t(m.upstream_name))}${!m.short && !m.virtual && m.kind !== 'service' ? `<div class="hint">${esc(VRouterI18n.t("最近一次测试"))} · ${esc(this.testResultText(m.upstream_id, m.id))}</div>` : ''}`,
               this.budgetCell(m, budget),
               `<div class="model-row-actions">${!m.short && m.kind !== 'service' ? actions.shift() : ''}<button type="button" class="btn" onclick="app.openModelCall(${jsArg(m.qualified)}, ${jsArg(m.upstream_id)})">${VRouterI18n.t("调用方式")}</button>${!m.short && m.kind !== "service" ? `<button type="button" class="btn" onclick="app.openModelSpeed(${jsArg(m.id)}, ${jsArg(m.upstream_id || 'auto')}, ${jsArg(m.name || m.qualified)})">${VRouterI18n.t("速度趋势")}</button>` : ''}${actions.length ? `<details class="catalog-actions" ${this.catalogActionOpen.has(m.qualified)?'open':''} ontoggle="app.rememberCatalogAction(${jsArg(m.qualified)},this.open)"><summary>${VRouterI18n.t('模型设置')}</summary><div>${actions.join('')}</div></details>` : ''}</div>`,
@@ -584,11 +642,17 @@ const app = {
   },
 
   openModelKey(upstreamId, model) { options.manageKey?.(upstreamId, model); },
-  openModelCall(qualified, upstreamId) {
+  openModelCall(qualified, upstreamId, placementId = "") {
     const model = this.state.models.find(m => m.qualified === qualified && m.upstream_id === upstreamId);
     if (!model) return;
     const upstream = this.state.upstreams.find(u => u.id === upstreamId);
     const pinned = Boolean(upstream && !model.virtual && model.kind !== "service");
+    const placements=this.studioPlacementsFor(qualified,upstreamId);
+    const placement=placements.find(item=>item.deployment_id===placementId);
+    const placementSelect=$("modelCallPlacement");
+    $("modelCallPlacementField").hidden=!placements.length;
+    this.renderPlacementOptions(placementSelect,placements,placementId);
+    placementSelect.onchange=()=>this.openModelCall(qualified,upstreamId,placementSelect.value);
     const bases = this.state.status?.base_urls || {};
     const base = (bases.internal || "http://v-scheduler:8080/v1").replace(/\/$/, "");
     const shell = value => "'" + String(value).replaceAll("'", "'\\''") + "'";
@@ -618,6 +682,7 @@ const app = {
     const known = [...new Set([...Object.keys(jsonBodies), ...Object.keys(multipart)])];
     const declared = (model.endpoints || []).map(value => this.normalizeEndpoint(value));
     const methods = known.filter(path => {
+      if (placement && path !== "/images/generations") return false;
       if (model.virtual) return ["/chat/completions", "/messages"].includes(path);
       if (!upstream || !PG_ENDPOINTS.some(endpoint => endpoint.path === path)) {
         return declared.includes(this.normalizeEndpoint(path));
@@ -641,7 +706,7 @@ const app = {
         ? ["model=" + native, ...multipart[path]].map(value => "-F " + shell(value))
         : ["-H 'Content-Type: application/json'", "-d " + shell(JSON.stringify({model:native,...(path === "/systemone" && upstream?.protocol === "openai_decisions"
           ? {state:"Example request",questions:{category:{type:"choice",instructions:"Classify the request",criteria:{general:"General request",technical:"Technical request"}}}}
-          : jsonBodies[path])}))];
+          : jsonBodies[path]),...(placement ? {compute_deployment_id:placement.deployment_id} : {})}))];
       const command = ["curl -fsS " + shell(base + path), ...headers, ...data].join(" \\\n  ");
       const section = document.createElement("section");
       const title = document.createElement("h4");
@@ -659,11 +724,14 @@ const app = {
     $("modelCallName").textContent = [model.name || qualified, upstream?.name || model.upstream_name].filter(Boolean).join(" · ");
     $("modelCallLAN").textContent = lanBaseURL(bases);
     $("modelCallDeclared").textContent = !methods.length ? (model.endpoints || []).join(" · ") : "";
-    VRouterI18n.bind($("modelCallHint"), "textContent", () => VRouterI18n.t(pinned
+    $("modelCallAuthHint").hidden=Boolean(placement);
+    VRouterI18n.bind($("modelCallHint"), "textContent", () => VRouterI18n.t(placement
+      ? "指定远端部署时，ACCESS_TOKEN 填写 VOS 用户 token。"
+      : pinned
       ? "示例已指定当前上游；ACCESS_TOKEN 可用 VOS token 或 V-Scheduler Key，模型使用上游原生 ID。"
       : "示例使用目录中的完整模型 ID，由网关选路。"));
     $("modelCallNoExample").hidden = methods.length > 0;
-    $("modelCallDialog").showModal();
+    if (!$("modelCallDialog").open) $("modelCallDialog").showModal();
   },
 
   budgetFor(model) {
@@ -1028,6 +1096,7 @@ const app = {
     const candidates = this.playgroundCandidates(value, endpoint);
     VRouterI18n.bind($("pgUpstream"), "innerHTML", () => candidates.map(u => `<option value="${esc(u.id)}">${esc(u.name)} · ${esc(u.id)}</option>`).join("") || `<option value="">${VRouterI18n.t("无可用上游")}</option>`);
     if (candidates.some(u => u.id === previous)) $("pgUpstream").value = previous;
+    this.renderPlaygroundPlacement();
   },
   updatePlaygroundMode() {
     const endpoint = this.playgroundEndpoint();
@@ -1797,6 +1866,7 @@ const app = {
         }
         $("pgUpstream").value = upstream;
       }
+      this.renderPlaygroundPlacement();
       $("pgInput").focus();
     }, 0);
   },
@@ -1929,6 +1999,8 @@ const app = {
     const model = $("pgModel").value;
     const endpoint = this.playgroundEndpoint();
     const pinned = $("pgUpstream").value;
+    const placement = endpoint?.id==="images"
+      ? this.studioPlacementsFor(model,pinned).find(row=>row.deployment_id===$("pgPlacement").value) : null;
     const native = this.state.models.find(m => m.qualified === model)?.id || model;
     if (!text || !model || !endpoint || !pinned || $("pgSend").disabled) return;
     input.value = "";
@@ -1990,6 +2062,7 @@ const app = {
       headers["X-VScheduler-Force-Admission"] = String($("pgForceAdmission").checked);
       headers["X-VScheduler-Request-ID"] = queueId;
       const body = this.playgroundRequestBody(endpoint.id, native, text, stream);
+      if (placement) body.compute_deployment_id=placement.deployment_id;
       const selectedUpstream = this.state.upstreams.find(u => u.id === pinned);
       if (stream && endpoint.id === "chat" && model !== "auto"
           && selectedUpstream?.source === "v-scheduler" && selectedUpstream.protocol === "ollama") {
@@ -2024,7 +2097,24 @@ const app = {
       showProgress();
       if (!stream) {
         const data = await res.json();
-        answer = this.playgroundText(endpoint.id, data);
+        if (data.object==="image_studio.generation.job" && endpoint.id==="images") {
+          const signal=AbortSignal.any([controller.signal,timeout.signal]);
+          const jobId=data.id;
+          if (typeof jobId!=="string" || !/^[0-9a-f-]{32,36}$/.test(jobId)) {
+            throw new Error(VRouterI18n.t("图像任务返回无效标识"));
+          }
+          let job=data.image_studio_job;
+          while (job && ["queued","running"].includes(job.status)) {
+            await new Promise(resolve=>setTimeout(resolve,1500));
+            signal.throwIfAborted();
+            job=await this.studioGet("/jobs/"+encodeURIComponent(jobId),signal);
+          }
+          if (job?.status!=="succeeded") throw new Error(VRouterI18n.t("图像任务失败"));
+          answer=VRouterI18n.t("图像生成成功")+" · "+jobId;
+          if (placement) answer += " · "+this.studioPlacementName(placement);
+        } else {
+          answer = this.playgroundText(endpoint.id, data);
+        }
         out.textContent = answer;
       } else {
         const reader = res.body.getReader();
@@ -2103,7 +2193,7 @@ const app = {
     if (endpoint === "messages") return { model, stream, max_tokens: 1024, messages: [{ role: "user", content: text }] };
     if (endpoint === "completions") return { model, stream, prompt: text, max_tokens: 1024 };
     if (endpoint === "embeddings") return { model, input: text };
-    if (endpoint === "videos") return { model, prompt: text };
+    if (endpoint === "images" || endpoint === "videos") return { model, prompt: text };
     return { model, stream, messages: [{ role: "user", content: text }] };
   },
   playgroundText(endpoint, data) {
