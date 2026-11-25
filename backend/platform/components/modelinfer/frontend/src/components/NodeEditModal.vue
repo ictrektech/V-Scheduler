@@ -9,7 +9,7 @@ import {
   updateNode,
   type NodeItem,
 } from '@/api/nodes';
-import { resolveApiErrorMessage } from '@/i18n/api-error';
+import { reportApiError } from '@/i18n/api-error';
 
 const { t } = useI18n();
 
@@ -106,7 +106,7 @@ async function submit() {
     emit('saved', updated);
     close();
   } catch (e) {
-    message.error(resolveApiErrorMessage(e));
+    reportApiError(e);
   } finally {
     saving.value = false;
   }

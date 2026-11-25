@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import zhCN from 'ant-design-vue/es/locale/zh_CN';
 import enUS from 'ant-design-vue/es/locale/en_US';
 import { theme as antdTheme } from 'ant-design-vue';
@@ -7,6 +7,12 @@ import { useAppStore } from '@/stores/app';
 import { getSchedulerRuntime } from '@scheduler-auth';
 
 const workspace = Boolean(getSchedulerRuntime());
+const sessionRevision = ref(0);
+function refreshView() { sessionRevision.value += 1; }
+onMounted(() => {
+  if (workspace) window.addEventListener('scheduler:session-restored', refreshView);
+});
+onBeforeUnmount(() => window.removeEventListener('scheduler:session-restored', refreshView));
 
 const appStore = useAppStore();
 
@@ -68,7 +74,7 @@ const themeConfig = computed(() => {
          作为独立入口加载（见 apps/com.ictrek.modelinfer/src/routers.yml），
          本应用不提供内置侧边栏/导航，仅渲染当前路由组件。 -->
     <div class="app-shell" :class="{'app-shell--workspace':workspace}">
-      <router-view />
+      <router-view :key="sessionRevision" />
     </div>
   </a-config-provider>
 </template>

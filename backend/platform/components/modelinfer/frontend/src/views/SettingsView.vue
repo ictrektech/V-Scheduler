@@ -10,7 +10,7 @@ import { fetchNfsInfo, type NfsResolveResult } from '@/api/nfs';
 import { fetchModelHubInfo, type ModelHubInfo } from '@/api/modelHub';
 import { getSettings, updateSettings, type SettingsData } from '@/api/observability';
 import { getVrouterStatus, type VrouterStatus } from '@/api/deployments';
-import { resolveApiErrorMessage } from '@/i18n/api-error';
+import { reportApiError, resolveApiErrorMessage } from '@/i18n/api-error';
 
 const { t } = useI18n();
 const loading = ref(false);
@@ -33,7 +33,7 @@ async function loadSettings() {
     settingsLimits.max_health = s.max_health_history_keep;
     settingsLimits.max_run = s.max_run_history_keep;
   } catch (e) {
-    message.error(`${t('settings.msg.settingsLoadFailed')}${resolveApiErrorMessage(e)}`);
+    reportApiError(e, t('settings.msg.settingsLoadFailed'));
   }
 }
 
@@ -48,7 +48,7 @@ async function saveSettings() {
     settings.run_history_keep = s.run_history_keep;
     message.success(t('settings.msg.settingsSaved'));
   } catch (e) {
-    message.error(resolveApiErrorMessage(e));
+    reportApiError(e);
   } finally {
     settingsSaving.value = false;
   }
@@ -73,7 +73,7 @@ async function load() {
     hub.value = await fetchModelHubInfo();
   } catch (e) {
     hub.value = null;
-    message.error(`${t('settings.msg.hubLoadFailed')}${resolveApiErrorMessage(e)}`);
+    reportApiError(e, t('settings.msg.hubLoadFailed'));
   }
   try {
     vrouter.value = await getVrouterStatus();

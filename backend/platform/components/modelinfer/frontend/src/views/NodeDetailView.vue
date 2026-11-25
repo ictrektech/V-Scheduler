@@ -31,7 +31,7 @@ import {
 } from '@/api/nodes';
 import { useMetrics } from '@/composables/useMetrics';
 import { monitorComponentLabelKey, nodeMetricsProfile } from '@/utils/metricProfiles';
-import { resolveApiErrorMessage } from '@/i18n/api-error';
+import { reportApiError } from '@/i18n/api-error';
 
 const { t } = useI18n();
 const route = useRoute();
@@ -73,7 +73,7 @@ async function load() {
   try {
     node.value = await getNode(nodeId.value);
   } catch (e) {
-    message.error(resolveApiErrorMessage(e));
+    reportApiError(e);
   } finally {
     loading.value = false;
   }
@@ -90,7 +90,7 @@ async function loadMonitor() {
     }
     managePolling();
   } catch (e) {
-    message.error(resolveApiErrorMessage(e));
+    reportApiError(e);
   }
 }
 
@@ -111,7 +111,7 @@ async function onTest() {
     node.value = await testNode(nodeId.value);
     message.success(t('nodeDetail.msg.connectionOk'));
   } catch (e) {
-    message.error(resolveApiErrorMessage(e));
+    reportApiError(e);
     await load();
   }
 }
@@ -121,7 +121,7 @@ async function onRescan() {
     node.value = await rescanNode(nodeId.value);
     message.success(t('nodeDetail.msg.rescanDone'));
   } catch (e) {
-    message.error(resolveApiErrorMessage(e));
+    reportApiError(e);
   }
 }
 
@@ -132,7 +132,7 @@ async function onDeployMonitor() {
     monitors.value = data.components;
     message.success(t('nodeDetail.msg.deployTriggered'));
   } catch (e) {
-    message.error(resolveApiErrorMessage(e));
+    reportApiError(e);
     await loadMonitor();
   } finally {
     deploying.value = false;

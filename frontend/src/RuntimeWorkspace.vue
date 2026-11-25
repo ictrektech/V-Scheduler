@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { getVOSBearerToken, clearCachedVOSBearerToken, type SchedulerRuntimeFrame } from './vos-auth'
+import { getVOSBearerToken, clearCachedVOSBearerToken, isRuntimeAuthError, type SchedulerRuntimeFrame } from './vos-auth'
 
 const props = defineProps<{
  kind: 'inference' | 'cluster' | 'image-hub'
  images?: boolean
+ sessionRecovering?: boolean
  locale: string
  request: (path: string) => Promise<unknown>
  t: (value: string) => string
@@ -25,7 +26,8 @@ const views = computed(() => props.kind === 'inference' ? [
 const route = ref(views.value[0].route)
 const initialRoute = ref(route.value)
 const src = computed(() => new URL(`./${props.kind}/#${initialRoute.value}`, location.href).href)
-const health = ref<'loading' | 'ready' | 'unavailable'>('loading')
+const health = ref<'loading' | 'ready' | 'session' | 'unavailable'>('loading')
+const frameStarted = ref(false)
 const checking = ref(false)
 const failureDetail = ref('')
 let frame: SchedulerRuntimeFrame | null = null
@@ -38,13 +40,21 @@ async function check() {
  try {
   const result = await props.request(props.kind + '/runtime/health') as { enabled?: boolean; ready?: boolean; registry_reachable?: boolean } | null
   const ready = props.kind === 'cluster' || (props.kind === 'image-hub' ? result?.registry_reachable : result?.ready)
+  const sessionRestored = ready && health.value === 'session'
   health.value = ready ? 'ready' : 'unavailable'
+  if (ready) frameStarted.value = true
+  if (sessionRestored) child?.dispatchEvent(new Event('scheduler:session-restored'))
   failureDetail.value = ready ? '' : result?.enabled === false
    ? props.t('VOS 应用配置中尚未启用内置推理运行时。')
    : props.t(props.kind === 'image-hub' ? '镜像仓库尚未就绪。' : '推理运行时尚未就绪。')
  } catch (error) {
-  health.value = 'unavailable'
-  failureDetail.value = error instanceof Error ? error.message : ''
+  if (isRuntimeAuthError(error)) {
+   health.value = 'session'
+   failureDetail.value = ''
+  } else {
+   health.value = 'unavailable'
+   failureDetail.value = error instanceof Error ? error.message : ''
+  }
  } finally {
   checking.value = false
  }
@@ -56,6 +66,10 @@ function setFrame(element: unknown) {
   frame.schedulerRuntime = {
    token: getVOSBearerToken,
    rejectToken: clearCachedVOSBearerToken,
+   authenticationRequired: () => {
+    health.value = 'session'
+    failureDetail.value = ''
+   },
    locale: () => props.locale,
    openWeights: () => emit('weights'),
   }
@@ -83,10 +97,16 @@ function select(next: string) {
  else initialRoute.value = next
 }
 
+watch(() => props.sessionRecovering, recovering => {
+ if (recovering) {
+  health.value = 'session'
+  failureDetail.value = ''
+ }
+}, {immediate:true})
 watch(() => props.locale, () => {
  child?.dispatchEvent(new Event('scheduler:locale'))
 })
-onMounted(() => { void check(); timer=setInterval(() => {if(health.value==='unavailable')void check()}, 5000) })
+onMounted(() => { void check(); timer=setInterval(() => {if(health.value==='unavailable'||health.value==='session')void check()}, 5000) })
 onBeforeUnmount(() => {clearInterval(timer);child?.removeEventListener('hashchange', readRoute)})
 </script>
 
@@ -118,9 +138,12 @@ onBeforeUnmount(() => {clearInterval(timer);child?.removeEventListener('hashchan
    <button v-if="kind==='inference'" type="button" :class="{current:images}" :aria-current="images?'page':undefined" @click="emit('images')">{{t('推理镜像')}}</button>
   </div>
   <slot v-if="images" name="images"/>
-  <iframe v-if="health==='ready'" v-show="!images" :ref="setFrame" :src="src" :title="t(title)" @load="onLoad"/>
- <section v-else-if="!images" class="section panel" aria-live="polite">
+ <section v-if="!images&&health!=='ready'" class="section panel" aria-live="polite">
   <p v-if="health==='loading'">{{t('正在处理')}}</p>
+  <template v-else-if="health==='session'">
+   <p>{{t('正在恢复 VOS 会话，已加载的数据仍可查看。')}}</p>
+   <button type="button" class="quiet" :disabled="checking" @click="check">{{t('重试连接')}}</button>
+  </template>
   <template v-else>
    <p>{{t('运行时暂不可用。应用正在自动重试，请检查 VOS 应用配置和服务状态。')}}</p>
    <p v-if="failureDetail">{{failureDetail}}</p>
@@ -128,6 +151,7 @@ onBeforeUnmount(() => {clearInterval(timer);child?.removeEventListener('hashchan
    <button v-if="kind==='inference'" type="button" class="quiet" @click="emit('nodes')">{{t('节点管理')}}</button>
   </template>
  </section>
+ <iframe v-if="frameStarted" v-show="!images&&(health==='ready'||health==='session')" :ref="setFrame" :src="src" :title="t(title)" @load="onLoad"/>
  </section>
 </template>
 

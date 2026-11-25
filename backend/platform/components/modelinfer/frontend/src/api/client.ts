@@ -1,6 +1,6 @@
 import axios from 'axios';
 import type { AxiosRequestConfig } from 'axios';
-import { getVOSBearerToken, withRuntimeToken } from '@scheduler-auth';
+import { withRuntimeToken } from '@scheduler-auth';
 
 const controller = import.meta.env.VITE_SCHEDULER_INFERENCE === 'true'
   ? '/api/com.ictrek.v-scheduler/scheduler/api/v1/inference/runtime/'
@@ -14,9 +14,7 @@ export function runtimeUrl(path: string): string {
 
 export async function runtimeHeaders(): Promise<Record<string, string>> {
   if (!controller) return {};
-  const token = await getVOSBearerToken();
-  if (!token) throw new Error('VOS authentication required');
-  return { Authorization: `Bearer ${token}` };
+  return withRuntimeToken(async (token) => ({ Authorization: `Bearer ${token}` }), true);
 }
 
 /**

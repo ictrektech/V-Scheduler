@@ -47,6 +47,7 @@ declare global {
 interface SchedulerRuntimeContext {
   token: () => Promise<string | null>
   rejectToken?: (token: string) => void
+  authenticationRequired?: () => void
   locale: () => string
   openWeights: () => void
 }
@@ -84,6 +85,12 @@ export async function getVOSBearerToken(): Promise<string | null> {
   return tokenPromise
 }
 
+export function isRuntimeAuthError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const failure = error as {status?: number; response?: {status?: number}}
+  return (failure.response?.status ?? failure.status) === 401
+}
+
 export async function withRuntimeToken<T>(send: (token: string) => Promise<T>, read: boolean): Promise<T> {
   let rejected = false
   let transientRetries = 0
@@ -101,7 +108,10 @@ export async function withRuntimeToken<T>(send: (token: string) => Promise<T>, r
         continue
       }
       if (!read || (status !== 401 && status !== 408 && status !== 502 && status !== 503
-          && status !== 504 && !(failure.code === 'ERR_NETWORK')) || transientRetries >= 2) throw error
+          && status !== 504 && !(failure.code === 'ERR_NETWORK')) || transientRetries >= 2) {
+        if (isRuntimeAuthError(error)) getSchedulerRuntime()?.authenticationRequired?.()
+        throw error
+      }
       const delay = transientRetries++ === 0 ? 300 : 950
       await new Promise(resolve => setTimeout(resolve, delay))
     }
@@ -217,6 +227,9 @@ async function awaitVOS<T>(operation: Promise<T>, timeoutMs:number):Promise<T> {
 }
 async function requestApplicationToken():Promise<VOSTokenSet|null> {
   if(oauthPromise)return oauthPromise
+  if (applicationToken && usableToken(applicationToken.access_token) && Date.now() < applicationToken.expires_at) {
+    return applicationToken
+  }
   const epoch=authEpoch
   oauthPromise=(async()=>{
     if(applicationToken?.refresh_token) {

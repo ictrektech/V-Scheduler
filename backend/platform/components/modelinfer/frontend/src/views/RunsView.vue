@@ -60,7 +60,7 @@ import {
   minutesToSecs,
   secsToMinutes,
 } from '@/utils/autoRestart';
-import { resolveApiErrorMessage } from '@/i18n/api-error';
+import { reportApiError, resolveApiErrorMessage } from '@/i18n/api-error';
 import {
   MISSING_NODE_STATUS,
   fallbackHead,
@@ -499,7 +499,7 @@ async function load() {
       void load();
     }
   } catch (e) {
-    if (seqGuard.isCurrent(seq)) message.error(resolveApiErrorMessage(e));
+    if (seqGuard.isCurrent(seq)) reportApiError(e);
   }
 }
 
@@ -529,7 +529,7 @@ async function loadRefs() {
     cards.value = c.data.filter((g) => g.versions.some((v) => v.state === 'available'));
     nodes.value = n.data;
   } catch (e) {
-    message.error(resolveApiErrorMessage(e));
+    reportApiError(e);
   } finally {
     loading.value = false;
   }
@@ -546,7 +546,7 @@ async function loadVariants(weightId: string) {
     variants.value = data.data;
     if (variants.value.length === 1) form.hub_source = variants.value[0].source;
   } catch (e) {
-    message.error(resolveApiErrorMessage(e));
+    reportApiError(e);
   } finally {
     variantsLoading.value = false;
   }
@@ -739,7 +739,7 @@ async function submit() {
     editingId.value = null;
     await load();
   } catch (e) {
-    message.error(resolveApiErrorMessage(e));
+    reportApiError(e);
   } finally {
     saving.value = false;
   }
@@ -784,7 +784,7 @@ async function onStop(row: DeploymentItem) {
         message.success(t('runs.stopSubmitted'));
         await load();
       } catch (e) {
-        message.error(resolveApiErrorMessage(e));
+        reportApiError(e);
       }
     },
   });
@@ -803,7 +803,7 @@ function onForceStop(row: DeploymentItem) {
         message.success(t('runs.forceStopSubmitted'));
         await load();
       } catch (e) {
-        message.error(resolveApiErrorMessage(e));
+        reportApiError(e);
       }
     },
   });
@@ -822,7 +822,7 @@ function onDelete(row: DeploymentItem) {
         message.success(t('runs.deleted'));
         await load();
       } catch (e) {
-        message.error(resolveApiErrorMessage(e));
+        reportApiError(e);
       }
     },
   });

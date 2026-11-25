@@ -28,7 +28,7 @@ import {
 } from '@/utils/modelFamily';
 import { modelIconUrl } from '@/utils/modelIconAssets';
 import { createSeqGuard, debounce } from '@/utils/async';
-import { resolveApiErrorMessage } from '@/i18n/api-error';
+import { reportApiError } from '@/i18n/api-error';
 
 const { t, locale } = useI18n();
 
@@ -194,7 +194,7 @@ async function load() {
       void load();
     }
   } catch (e) {
-    if (seqGuard.isCurrent(seq)) message.error(resolveApiErrorMessage(e));
+    if (seqGuard.isCurrent(seq)) reportApiError(e);
   } finally {
     if (seqGuard.isCurrent(seq)) loading.value = false;
   }
@@ -226,7 +226,7 @@ async function doUpload(file: File) {
     );
     await load();
   } catch (e) {
-    message.error(resolveApiErrorMessage(e));
+    reportApiError(e);
   } finally {
     uploading.value = false;
   }

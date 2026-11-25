@@ -36,7 +36,7 @@ import { modelIconUrl } from '@/utils/modelIconAssets';
 import { parseManifest, type ManifestView } from '@/utils/manifest';
 import { copyToClipboard } from '@/utils/clipboard';
 import { createSeqGuard, debounce } from '@/utils/async';
-import { resolveApiErrorMessage } from '@/i18n/api-error';
+import { reportApiError } from '@/i18n/api-error';
 
 const { t } = useI18n();
 
@@ -146,7 +146,7 @@ async function loadSources() {
       await loadCards();
     }
   } catch (e) {
-    message.error(resolveApiErrorMessage(e));
+    reportApiError(e);
   }
 }
 
@@ -180,7 +180,7 @@ async function loadCards(refresh = false) {
       void loadCards(refresh);
     }
   } catch (e) {
-    if (seqGuard.isCurrent(seq)) message.error(resolveApiErrorMessage(e));
+    if (seqGuard.isCurrent(seq)) reportApiError(e);
   } finally {
     if (seqGuard.isCurrent(seq)) cardsLoading.value = false;
   }
@@ -256,7 +256,7 @@ async function submitSource() {
     await loadSources();
     await loadCards();
   } catch (e) {
-    message.error(resolveApiErrorMessage(e));
+    reportApiError(e);
   } finally {
     saving.value = false;
   }
@@ -302,7 +302,7 @@ async function confirmDownload() {
     versionModalOpen.value = false;
     await loadCards();
   } catch (e) {
-    message.error(resolveApiErrorMessage(e));
+    reportApiError(e);
   } finally {
     registering.value = '';
   }
@@ -316,7 +316,7 @@ async function onShowManifest(card: PlazaCardGroup, version: PlazaCardVersion) {
     manifestTitle.value = `${card.id}@${version.version}`;
     manifestModalOpen.value = true;
   } catch (e) {
-    message.error(resolveApiErrorMessage(e));
+    reportApiError(e);
   }
 }
 

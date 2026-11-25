@@ -68,7 +68,7 @@ import {
   inferTargetType,
   isValidTargetType,
 } from '@/utils/comfyui';
-import { resolveApiErrorMessage } from '@/i18n/api-error';
+import { reportApiError, resolveApiErrorMessage } from '@/i18n/api-error';
 
 const { t, locale } = useI18n();
 const route = useRoute();
@@ -280,7 +280,7 @@ async function loadComfyuiWeights() {
     comfyuiWeights.value = data.weights;
     comfyuiTypes.value = data.types;
   } catch (e) {
-    message.error(resolveApiErrorMessage(e));
+    reportApiError(e);
   } finally {
     comfyuiLoading.value = false;
   }
@@ -302,7 +302,7 @@ async function openAddWeight() {
     try {
       hubVariants.value = (await fetchModelHubInfo()).models;
     } catch (e) {
-      message.error(resolveApiErrorMessage(e));
+      reportApiError(e);
     }
   }
 }
@@ -316,7 +316,7 @@ async function onAddWeightPick() {
   try {
     weightFiles.value = (await fetchVariantFiles(addForm.value.source, addForm.value.weight_id)).files;
   } catch (e) {
-    message.error(resolveApiErrorMessage(e));
+    reportApiError(e);
   } finally {
     filesLoading.value = false;
   }
@@ -377,7 +377,7 @@ async function removeComfyuiWeight(record: ComfyuiWeightItem) {
     message.success(t('runDetail.comfyui.removed'));
     await loadComfyuiWeights();
   } catch (e) {
-    message.error(resolveApiErrorMessage(e));
+    reportApiError(e);
   }
 }
 
@@ -577,7 +577,7 @@ async function loadDeployment() {
     deployment.value = await getDeployment(id.value);
     syncProxyForm();
   } catch (e) {
-    message.error(resolveApiErrorMessage(e));
+    reportApiError(e);
   }
 }
 
@@ -590,7 +590,7 @@ async function loadRuns() {
       await loadRunDetail();
     }
   } catch (e) {
-    message.error(resolveApiErrorMessage(e));
+    reportApiError(e);
   }
 }
 
@@ -598,7 +598,7 @@ async function loadContainers() {
   try {
     containers.value = (await listContainers(id.value)).data;
   } catch (e) {
-    message.error(resolveApiErrorMessage(e));
+    reportApiError(e);
   }
 }
 
@@ -606,7 +606,7 @@ async function loadAccess() {
   try {
     access.value = await getDeploymentAccess(id.value);
   } catch (e) {
-    message.error(resolveApiErrorMessage(e));
+    reportApiError(e);
   }
 }
 
@@ -626,7 +626,7 @@ async function registerVrouter() {
       );
     await loadDeployment();
   } catch (e) {
-    message.error(resolveApiErrorMessage(e));
+    reportApiError(e);
   } finally {
     registering.value = false;
   }
@@ -646,7 +646,7 @@ async function onProxyToggle(checked: boolean) {
     });
     message.success(checked ? t('runDetail.msg.proxyEnabled') : t('runDetail.msg.proxyDisabled'));
   } catch (e) {
-    message.error(resolveApiErrorMessage(e));
+    reportApiError(e);
   } finally {
     savingProxy.value = false;
     await loadDeployment();
@@ -669,7 +669,7 @@ async function saveProxyPort() {
     message.success(t('runDetail.msg.proxyPortSaved'));
     proxyModalOpen.value = false;
   } catch (e) {
-    message.error(resolveApiErrorMessage(e));
+    reportApiError(e);
   } finally {
     savingProxy.value = false;
     await loadDeployment();
@@ -695,7 +695,7 @@ async function loadRunDetail() {
     globalData.value = detail.global_data;
     logs.value = logData.data;
   } catch (e) {
-    message.error(resolveApiErrorMessage(e));
+    reportApiError(e);
   } finally {
     detailLoading.value = false;
   }
@@ -715,7 +715,7 @@ async function openTemporal() {
   try {
     temporal.value = await getRunTemporal(id.value, selectedRunId.value);
   } catch (e) {
-    message.error(resolveApiErrorMessage(e));
+    reportApiError(e);
   } finally {
     temporalLoading.value = false;
   }

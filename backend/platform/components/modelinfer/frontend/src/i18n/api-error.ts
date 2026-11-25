@@ -1,3 +1,5 @@
+import { message } from 'ant-design-vue';
+import { isRuntimeAuthError } from '@scheduler-auth';
 /**
  * API 错误 -> 本地化提示 解析。
  *
@@ -41,4 +43,9 @@ export function resolveApiErrorMessage(error: unknown, fallback?: string): strin
   }
 
   return fb;
+}
+
+/** Embedded session recovery is shown once by the V-Scheduler workspace. */
+export function reportApiError(error: unknown, prefix = ''): void {
+  if (!isRuntimeAuthError(error)) message.error(prefix + resolveApiErrorMessage(error));
 }

@@ -26,7 +26,7 @@ import {
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from '@/api/paging';
 import { createSeqGuard, debounce } from '@/utils/async';
 import { useI18n } from 'vue-i18n';
-import { resolveApiErrorMessage } from '@/i18n/api-error';
+import { reportApiError } from '@/i18n/api-error';
 import { localizedTitle } from '@/platform/localized-title';
 import { openDetailInNewTab } from '@/platform/open-tab';
 
@@ -188,7 +188,7 @@ async function load() {
       void load();
     }
   } catch (e) {
-    if (seqGuard.isCurrent(seq)) message.error(resolveApiErrorMessage(e));
+    if (seqGuard.isCurrent(seq)) reportApiError(e);
   } finally {
     if (seqGuard.isCurrent(seq)) loading.value = false;
   }
@@ -287,7 +287,7 @@ async function doScan() {
     );
     return true;
   } catch (e) {
-    message.error(resolveApiErrorMessage(e));
+    reportApiError(e);
     return false;
   } finally {
     scanning.value = false;
@@ -315,7 +315,7 @@ async function submitCreate() {
     wizardOpen.value = false;
     await load();
   } catch (e) {
-    message.error(resolveApiErrorMessage(e));
+    reportApiError(e);
   } finally {
     saving.value = false;
   }
@@ -326,7 +326,7 @@ async function onTest(row: NodeItem) {
     await testNode(row.id);
     message.success(t('nodes.msg.connectOk', { host: row.host }));
   } catch (e) {
-    message.error(resolveApiErrorMessage(e));
+    reportApiError(e);
   } finally {
     await load();
   }
@@ -337,7 +337,7 @@ async function onRescan(row: NodeItem) {
     await rescanNode(row.id);
     message.success(t('nodes.msg.rescanDone', { host: row.host }));
   } catch (e) {
-    message.error(resolveApiErrorMessage(e));
+    reportApiError(e);
   } finally {
     await load();
   }
