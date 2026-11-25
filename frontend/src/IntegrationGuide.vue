@@ -99,6 +99,7 @@ curl -i "$GATEWAY/v1/chat/completions" -H "Authorization: Bearer $VOS_TOKEN" -H 
   <pre>{{keyExamples}}</pre>
   <h4 id="integration-key-responses" tabindex="-1">{{t('模型 Key 的请求与响应')}}</h4>
   <p>{{t('access_key=true 自动生成时，仅本次响应的 model_access_keys[].api_key 返回完整 Key；请立即保存。字符串表示设置调用方已有的自定义 Key，成功响应只返回模型与 Key 元数据，不回显 api_key。null 表示撤销，返回 key:null。省略 access_key 的注册请求保留已有 Key，不返回原 Key。')}}</p>
+  <p>{{t('推理应用登记的模型可由 VOS 管理员在「模型与上游 → 模型访问 Key」生成、设置或撤销专用 Key。该 Key 归签发管理员管理，仍只授权所选私有模型。公共模型可直接调用。')}}</p>
   <p>{{t('GET /api/v1/api-keys 只能查看本人 Key 的 id、name、prefix、models、active 和时间等元数据，不返回明文或 hash。遗失自动生成的 Key 后无法找回，请重新生成或设置替换；该模型旧 Key 随即失效，不影响其他模型及个人 Key。操作需要所有者或管理员的 VOS token，不能使用推理 Key。响应 model 使用内部 upstream_id/native_model_id，与请求可使用的公开完整模型 id 含义不同。')}}</p>
   <p>{{t('普通心跳和重启后的完整快照恢复不会覆盖已保存的放行设置，也不会重新生成或撤销模型 Key。需要修改设置或轮换 Key 时，明确调用配置 API；恢复响应不返回原 Key。')}}</p>
   <pre>{{modelKeyResponses}}</pre>

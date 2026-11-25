@@ -79,3 +79,5 @@ Administrators can register applications and select target profiles in Node Mana
 Under Model weights → Inference services, administrators can set Automatic preload independently for the built-in chat, embedding, and rerank instances. Each switch starts with its installation setting and saved changes persist. Enabling downloads the configured tag if missing and preloads it through scheduler admission. Disabling prevents new preload attempts and lets submitted requests finish. Idle eviction still follows model idle retention. Check the card for preload status.
 
 GET /api/v1/ollama-preload · PUT /api/v1/ollama-preload
+
+A VOS administrator can generate, set, or revoke a model access key for a model registered by the inference app from Models and upstreams → Model access key. The issuing administrator manages that key, which grants access only to the selected private model. Public models are callable without a key.

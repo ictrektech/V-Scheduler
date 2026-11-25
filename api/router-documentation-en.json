@@ -510,7 +510,7 @@
           "method": "DELETE",
           "path": "/api/v1/api-keys/{id}",
           "summary": "Revoke an API key",
-          "desc": "A VOS account token revokes its own key. Subsequent private-model access is denied; public models remain anonymously accessible.",
+          "desc": "A VOS account token revokes its own key. Subsequent private-model access is denied; public models remain anonymously accessible. A VOS administrator can manage keys for models registered by the V-Scheduler or ModelInfer application identity. The issuing VOS administrator owns the key.",
           "example": "curl -X DELETE \"$GATEWAY/api/v1/api-keys/{id}\" -H \"Authorization: Bearer $VOS_TOKEN\""
         },
         {

@@ -21202,7 +21202,7 @@
     "/api/v1/models/access-key": {
       "put": {
         "summary": "Set, rotate or revoke a model access key",
-        "description": "Requires the model owner’s or administrator’s VOS token. access_key=true generates a key, a string sets a 16..512 printable ASCII secret, null revokes it. Authorizes only this model; replaces its previous key. Does not change public/private visibility or the upstream provider api_key. Only access_key=true returns the generated secret once in model_access_keys[].api_key. A custom string returns metadata WITHOUT an api_key field; null returns key:null. GET /api/v1/api-keys never retrieves complete keys. Response model is internal upstream_id/native_model_id.",
+        "description": "Requires the model owner’s or administrator’s VOS token. access_key=true generates a key, a string sets a 16..512 printable ASCII secret, null revokes it. Authorizes only this model; replaces its previous key. Does not change public/private visibility or the upstream provider api_key. Only access_key=true returns the generated secret once in model_access_keys[].api_key. A custom string returns metadata WITHOUT an api_key field; null returns key:null. GET /api/v1/api-keys never retrieves complete keys. Response model is internal upstream_id/native_model_id. A VOS administrator can manage keys for models registered by the V-Scheduler or ModelInfer application identity. The issuing VOS administrator owns the key.",
         "tags": [
           "manage"
         ],

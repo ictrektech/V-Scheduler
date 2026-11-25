@@ -510,7 +510,7 @@
           "method": "DELETE",
           "path": "/api/v1/api-keys/{id}",
           "summary": "撤销 API Key",
-          "desc": "仅 VOS 账户 token 可撤销自己的 Key；下一次私有模型请求失效。public 模型仍可匿名调用。",
+          "desc": "仅 VOS 账户 token 可撤销自己的 Key；下一次私有模型请求失效。public 模型仍可匿名调用。 由 V-Scheduler 或 ModelInfer 应用身份登记的模型可由 VOS 管理员设置，模型 Key 由签发管理员的 VOS 账户持有。",
           "example": "curl -X DELETE \"$GATEWAY/api/v1/api-keys/{id}\" -H \"Authorization: Bearer $VOS_TOKEN\""
         },
         {
