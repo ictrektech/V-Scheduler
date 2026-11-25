@@ -44,7 +44,7 @@
           "method": "GET",
           "path": "/v1/models",
           "summary": "模型列表",
-          "desc": "合并所有健康上游的模型。只返回带来源前缀的模型名，例如 model-hub/xxx、image-studio/xxx、registered/xxx、manual/xxx、ai.ictrek.com/xxx。 Auto 仅向有调用权限的身份显示。配置 Auto Key 后调用 Auto 需要认证。 V-Scheduler 兼容扩展 include 可省略，也可填 null、空数组或只包含 reasoning.encrypted_content 的字符串数组。网关在转发前移除此字段，响应不包含 Responses 推理项。其他选择项或格式无效时返回 400 INVALID_REQUEST。",
+          "desc": "合并所有健康上游的模型。只返回带来源前缀的模型名，例如 model-hub/xxx、image-studio/xxx、registered/xxx、manual/xxx、ai.ictrek.com/xxx。 Auto 仅向有调用权限的身份显示。配置 Auto Key 后调用 Auto 需要认证。",
           "auth": "inference",
           "example": "curl http://<vos-host>:22888/v1/models"
         },
@@ -52,7 +52,7 @@
           "method": "POST",
           "path": "/v1/chat/completions",
           "summary": "对话补全（支持 SSE 流式）",
-          "desc": "OpenAI 兼容。model 必须使用 /v1/models 返回的带来源前缀名称；请求原样透传到上游，stream=true 时逐 token 转发。 配置 Auto Key 后，匿名请求 model=auto 返回 401，其他模型专用 Key 返回 403。Auto 专用 Key 只在公开候选中选型。VOS 账号和个人 Key 沿用原有权限。",
+          "desc": "OpenAI 兼容。model 必须使用 /v1/models 返回的带来源前缀名称；请求原样透传到上游，stream=true 时逐 token 转发。 配置 Auto Key 后，匿名请求 model=auto 返回 401，其他模型专用 Key 返回 403。Auto 专用 Key 只在公开候选中选型。VOS 账号和个人 Key 沿用原有权限。 V-Scheduler 兼容扩展 include 可省略，也可填 null、空数组或只包含 reasoning.encrypted_content 的字符串数组。网关在转发前移除此字段，响应不包含 Responses 推理项。其他选择项或格式无效时返回 400 INVALID_REQUEST。",
           "auth": "inference",
           "example": "curl -N http://<vos-host>:22888/v1/chat/completions \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"model\":\"v-scheduler/ollama-qa/qwen3.5:2b\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"你好\"}]}'"
         },
@@ -235,7 +235,7 @@
           "method": "GET",
           "path": "/v1/audio/speakers",
           "summary": "声纹库列表",
-          "desc": "按 model 查询参数（v-voice/<声纹模型 key>）路由到声纹模型，返回已注册声纹：speakers[]/data[]（同值）每项含 id、name、dimension、created_at，另含 default_threshold；不返回声纹向量。声纹注册/删除在 V-Voice 管理面完成，不属于本接口。 V-Scheduler 兼容扩展 include 可省略，也可填 null、空数组或只包含 reasoning.encrypted_content 的字符串数组。网关在转发前移除此字段，响应不包含 Responses 推理项。其他选择项或格式无效时返回 400 INVALID_REQUEST。",
+          "desc": "按 model 查询参数（v-voice/<声纹模型 key>）路由到声纹模型，返回已注册声纹：speakers[]/data[]（同值）每项含 id、name、dimension、created_at，另含 default_threshold；不返回声纹向量。声纹注册/删除在 V-Voice 管理面完成，不属于本接口。",
           "auth": "inference",
           "example": "curl 'http://<vos-host>:22888/v1/audio/speakers?model=v-voice/speaker-campplus-zh-en'"
         }
@@ -249,7 +249,7 @@
           "method": "POST",
           "path": "/v1/messages",
           "summary": "Anthropic Messages",
-          "desc": "支持指定模型或 model=auto。原生 Anthropic 上游直接转发。支持 Chat Completions 的 openai、chat_completions 等上游可转换文本、图片输入和函数工具，支持 SSE。Auto Messages 使用可转换字段，转换模式不支持 thinking、提示缓存或服务端工具。图片与工具能力取决于实际模型。支持 x-api-key 网关身份。 请求可用 Authorization: Bearer <V-Scheduler Key 或 VOS token> 或 x-api-key: <同一凭据>。同时发送两个头时，有效身份要求两个值一致。两种头只验证网关身份，不转发给上游。 配置 Auto Key 后，匿名请求 model=auto 返回 401，其他模型专用 Key 返回 403。Auto 专用 Key 只在公开候选中选型。VOS 账号和个人 Key 沿用原有权限。",
+          "desc": "支持指定模型或 model=auto。原生 Anthropic 上游直接转发。支持 Chat Completions 的 openai、chat_completions 等上游可转换文本、图片输入和函数工具，支持 SSE。Auto Messages 使用可转换字段，转换模式不支持 thinking、提示缓存或服务端工具。图片与工具能力取决于实际模型。支持 x-api-key 网关身份。 请求可用 Authorization: Bearer <V-Scheduler Key 或 VOS token> 或 x-api-key: <同一凭据>。同时发送两个头时，有效身份要求两个值一致。两种头只验证网关身份，不转发给上游。 配置 Auto Key 后，匿名请求 model=auto 返回 401，其他模型专用 Key 返回 403。Auto 专用 Key 只在公开候选中选型。VOS 账号和个人 Key 沿用原有权限。 V-Scheduler 兼容扩展 include 可省略，也可填 null、空数组或只包含 reasoning.encrypted_content 的字符串数组。网关在转发前移除此字段，响应不包含 Responses 推理项。其他选择项或格式无效时返回 400 INVALID_REQUEST。",
           "auth": "inference"
         }
       ],
