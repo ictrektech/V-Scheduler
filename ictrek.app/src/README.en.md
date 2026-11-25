@@ -26,6 +26,9 @@ The unified package includes the model gateway and scheduling controller. Model 
 
 Ready V-Voice models inherit the application resource budget automatically and appear in the model catalog. Configured upstream budgets also apply to newly listed models. Use Application integration and the API docs to inspect the integration and available endpoints. Request and response formats are unchanged.
 
+Image Studio automatically binds its calibrated SD Turbo executor on the ARM CPU main node once the weights are ready. In Image Studio, choose Generate → Compute node → Main node for one F16 image up to 512×512 and four steps. Check the execution node in V-Scheduler task details. Generation API requests keep their existing format.
+
+
 Version __APP_VERSION__
 
 Version 0.0.109 removes the controller container memory limit that caused restart loops when the controller exceeded the previous limit. Upgrade from the VOS App Store to apply the fix. Inference admission, model budgets, and API contracts are unchanged.
