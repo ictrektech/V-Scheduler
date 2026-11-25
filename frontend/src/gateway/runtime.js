@@ -2100,7 +2100,7 @@ const app = {
         if (data.object==="image_studio.generation.job" && endpoint.id==="images") {
           const signal=AbortSignal.any([controller.signal,timeout.signal]);
           const jobId=data.id;
-          if (typeof jobId!=="string" || !/^[0-9a-f-]{32,36}$/.test(jobId)) {
+          if (typeof jobId!=="string" || !/^(?:job_\d{8}_\d{6}_[0-9a-f]{8}|[0-9a-f-]{32,36})$/.test(jobId)) {
             throw new Error(VRouterI18n.t("图像任务返回无效标识"));
           }
           let job=data.image_studio_job;
