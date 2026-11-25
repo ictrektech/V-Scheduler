@@ -112,24 +112,6 @@ onBeforeUnmount(() => {clearInterval(timer);child?.removeEventListener('hashchan
 
 <template>
  <section class="runtime-workspace">
-  <details v-if="kind==='image-hub'" class="image-hub-reference">
-   <summary>{{t('镜像仓库 API 参考')}}</summary>
-   <p><code>/app/com.ictrek.v-scheduler/api/v1/image-hub/runtime</code></p>
-   <p>{{t('使用 VOS 管理员 Bearer Token。镜像管理返回 code、category、data、msg 和 version，code 为 0 表示成功。')}}</p>
-   <p>{{t('拉取、同步、归档导入和回收返回 task_id，可查询任务进度。归档导入使用 multipart/form-data，其他写入请求使用 JSON。')}}</p>
-   <ul>
-    <li><code>GET /health, /registry/info, /registry/mirrors, /network/addresses</code></li>
-    <li><code>GET /registry/images, /registry/images/detail?repository=…</code></li>
-    <li><code>DELETE /registry/images</code> (<code>repository, tag?</code>)</li>
-    <li><code>POST /registry/pull</code> (<code>image, arch?, insecure?, mirror?, timeout_minutes?, retry_times?</code>)</li>
-    <li><code>POST /registry/sync</code> (<code>repository, tag?, arch?, insecure?, mirror?, timeout_minutes?, retry_times?</code>)</li>
-    <li><code>POST /registry/import</code> (<code>file, repository?, tag?, timeout_minutes?, retry_times?</code>)</li>
-    <li><code>POST /registry/clone, /registry/rename</code> (<code>repository, tag?, target_repository?, target_tag?, timeout_minutes?, retry_times?</code>)</li>
-    <li><code>GET, PUT /registry/gc</code> · <code>POST /registry/gc/run</code></li>
-    <li><code>GET /tasks</code> · <code>GET, DELETE /tasks/{id}</code> · <code>POST /tasks/{id}/cancel</code></li>
-    <li><code>GET /settings</code> · <code>PUT, DELETE /settings/registries</code> · <code>PUT /settings/proxy</code></li>
-   </ul>
-  </details>
   <div v-if="kind!=='image-hub'" class="documentation-tabs" :aria-label="t(title)">
    <button v-for="view in views" :key="view.route" type="button"
     :class="{current:!images&&(route===view.route||route.startsWith(view.route+'/'))}"
@@ -157,7 +139,6 @@ onBeforeUnmount(() => {clearInterval(timer);child?.removeEventListener('hashchan
 
 <style scoped>
 .runtime-workspace {min-width:0}
-.image-hub-reference {margin-bottom:1rem;overflow-wrap:anywhere}
 .runtime-workspace .documentation-tabs {margin-bottom:16px;flex-wrap:wrap}
 iframe {display:block;width:100%;height:max(430px,calc(100dvh - 184px));border:0;background:transparent}
 </style>

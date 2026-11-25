@@ -18,6 +18,7 @@ import NodeTelemetry from './NodeTelemetry.vue'
 import NodeManagement from './NodeManagement.vue'
 import RuntimeWorkspace from './RuntimeWorkspace.vue'
 import ImageCatalog from './ImageCatalog.vue'
+import ImageRegistryApiDocs from './ImageRegistryApiDocs.vue'
 import ManagedComputeNodes from './ManagedComputeNodes.vue'
 import ApplicationBackends from './ApplicationBackends.vue'
 import BackendDeploymentExamples from './BackendDeploymentExamples.vue'
@@ -224,11 +225,12 @@ onUnmounted(()=>{clearInterval(timer);language.dispose();window.removeEventListe
    <div v-if="setupError" class="error" role="alert">{{locale==='zh-CN'?(setupMessages[setupError]||setupError):t(setupError)}} <button :disabled="busy" @click="connect(true)">{{t('重试连接')}}</button></div>
    <section v-if="page==='overview'" class="overview-entry" :aria-label="t('模型接入与调用')"><div class="overview-entry-tabs"><span aria-current="page">{{t('调用概览')}}</span><button class="configure-models" @click="page='models'"><Icon name="server"/>{{t('去配置上游模型')}}<Icon name="arrow"/></button></div><p>{{t('先连接模型来源，再试聊或接入应用。模型、上游和调度设置集中管理。')}}</p></section>
    <section v-if="page==='overview'&&connected" class="unified-summary panel"><button class="quiet" @click="page='resources'">{{t('就绪节点')}} {{nodes.filter(n=>nodeHealth(n)==='ready').length}} / {{nodes.length}}</button><button class="quiet" @click="page='resources'">{{t('正在执行')}} {{active}}</button><button class="quiet" @click="page='resources'">{{t('等待队列')}} {{queued}}</button><span>{{t('外部云模型不占本地资源预约')}}</span></section>
-   <div v-if="page==='api'" class="documentation-tabs"><button :class="{current:docMode==='gateway'}" @click="docMode='gateway'">{{t('模型与网关 API')}}</button><button :class="{current:docMode==='scheduler'}" @click="docMode='scheduler'">{{t('调度管理 API')}}</button><button :class="{current:docMode==='model-hub'}" @click="docMode='model-hub'">{{t('模型管理 API')}}</button><button :class="{current:docMode==='guide'}" @click="docMode='guide'">{{t('应用接入')}}</button></div>
+   <div v-if="page==='api'" class="documentation-tabs api-tabs"><button :class="{current:docMode==='gateway'}" @click="docMode='gateway'">{{t('模型与网关 API')}}</button><button :class="{current:docMode==='scheduler'}" @click="docMode='scheduler'">{{t('调度管理 API')}}</button><button :class="{current:docMode==='model-hub'}" @click="docMode='model-hub'">{{t('模型管理 API')}}</button><button :class="{current:docMode==='image-hub'}" @click="docMode='image-hub'">{{t('镜像仓库 API')}}</button><button :class="{current:docMode==='guide'}" @click="docMode='guide'">{{t('应用接入')}}</button></div>
    <AutoRouting v-if="page==='auto'" :t="t"/>
    <DiagnosticLogs v-if="page==='logs'" :t="t" :locale="locale"/>
    <ModelHub v-if="page==='model-hub'" :locale="locale" :t="t" :target-service="targetService" @service-focused="targetService=''"/>
    <ModelHub v-if="page==='api'&&docMode==='model-hub'" :locale="locale" :t="t" docs-only/>
+   <ImageRegistryApiDocs v-if="page==='api'&&docMode==='image-hub'" :t="t"/>
    <nav v-if="page==='nodes'&&connected&&!nodeViewerOnly&&!demo" class="documentation-tabs" :aria-label="t('节点管理')">
     <button :class="{current:nodeTab==='nodes'}" @click="nodeTab='nodes'">{{t('节点与权限')}}</button>
     <button :class="{current:nodeTab==='backends'}" @click="nodeTab='backends'">{{t('应用后端')}}</button>
