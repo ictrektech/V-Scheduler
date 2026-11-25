@@ -7,6 +7,9 @@ mod wire;
 use wire::{Instance, Operation, PORT_MAX, PORT_MIN, RuntimeState};
 use super::backend_transfers::wire as channel;
 
+const IMAGE_STUDIO: &str = "com.ictrek.image-studio";
+type PublishedImages = std::collections::BTreeMap<String, String>;
+
 #[derive(Debug, Clone, PartialEq, serde::Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Target {
@@ -53,6 +56,8 @@ struct Deployment {
     config: Value,
     #[serde(skip_serializing)]
     channel_token: Option<String>,
+    #[serde(skip_serializing)]
+    automatic_access: bool,
     container_port: i32,
     image: String,
     nvidia: bool,
@@ -243,31 +248,199 @@ fn permits(access: &Access, target: &Target, repository: &str) -> bool {
         })
 }
 
+fn published_images(app_id: &str, compose: &str) -> anyhow::Result<PublishedImages> {
+    const DECLARATION: &str = "x-v-scheduler-backend-images:";
+    let mut declarations = compose.lines().filter_map(|line| line.strip_prefix(DECLARATION));
+    let mut images: PublishedImages = if let Some(declaration) = declarations.next() {
+        anyhow::ensure!(declarations.next().is_none(), "duplicate backend image declaration");
+        serde_json::from_str(declaration.trim())?
+    } else if app_id == IMAGE_STUDIO {
+        #[derive(Deserialize)]
+        struct LegacyImage { image: String }
+        let legacy = compose.lines().find_map(|line| line.trim_start()
+            .strip_prefix("IMAGE_STUDIO_BACKEND_IMAGES:"));
+        match legacy {
+            Some(value) => serde_json::from_str::<std::collections::BTreeMap<String, LegacyImage>>(
+                value.trim().trim_matches('\''),
+            )?.into_iter().map(|(profile, entry)| (profile, entry.image)).collect(),
+            None => PublishedImages::new(),
+        }
+    } else {
+        PublishedImages::new()
+    };
+    anyhow::ensure!(images.len() <= 64 && images.iter().all(|(profile, image)|
+        identifier(profile) && wire::image_repository(image).is_some()), "invalid published backend image");
+    if app_id == IMAGE_STUDIO {
+        if let Some(thor) = images.get("jetson-thor").cloned() {
+            images.entry("dgx-spark".into()).or_insert(thor);
+        }
+    }
+    Ok(images)
+}
+
+async fn installed_images(app_id: &str) -> Api<PublishedImages> {
+    let Some(vos) = crate::identity::base() else { return Ok(PublishedImages::new()); };
+    let token = match tokio::fs::read_to_string("/var/lib/vos-context/access-token").await {
+        Ok(token) => token,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(PublishedImages::new()),
+        Err(_) => return Err(dependency()),
+    };
+    let response = client().get(format!("{vos}/v1000/app/detail"))
+        .query(&[("app_id", app_id)])
+        .bearer_auth(token.trim())
+        .timeout(Duration::from_secs(5))
+        .send().await.map_err(|_| dependency())?;
+    if response.status() == StatusCode::NOT_FOUND { return Ok(PublishedImages::new()); }
+    let envelope = app_bindings::bounded_vos_installation(response).await.map_err(|_| dependency())?;
+    if envelope["code"] == 10067 { return Ok(PublishedImages::new()); }
+    if envelope["code"] != 0 { return Err(dependency()); }
+    let installed = &envelope["data"];
+    if installed["state"] != "installed" || installed["app_id"] != app_id {
+        return Ok(PublishedImages::new());
+    }
+    let compose = installed["compose_yaml"].as_str().unwrap_or_default();
+    published_images(app_id, compose).map_err(|_| conflict("BACKEND_IMAGE_CATALOG_INVALID"))
+}
+
+fn fixed_targets(nodes: &[Value], members: &[Value]) -> Vec<(Target, Ipv4Addr)> {
+    let fixed = nodes.iter().filter_map(|node| {
+        let id = node["id"].as_str()?;
+        let profile = node["profile"].as_str()?;
+        let host = node["host"].as_str()?.parse::<Ipv4Addr>().ok()?;
+        let target = Target { kind: "ssh".into(), id: id.into(), profile: profile.into() };
+        valid_target(&target).then_some((target, host))
+    }).collect::<Vec<_>>();
+    let cluster = members.iter().filter_map(|member| {
+        let id = member["member_id"].as_str()?;
+        let host = member["node_ip"].as_str()?.parse::<Ipv4Addr>().ok()?;
+        let mut matches = fixed.iter().filter(|(_, address)| *address == host);
+        let (ssh, _) = matches.next()?;
+        if matches.next().is_some() { return None; }
+        let target = Target { kind: "cluster".into(), id: id.into(), profile: ssh.profile.clone() };
+        valid_target(&target).then_some((target, host))
+    }).collect::<Vec<_>>();
+    fixed.into_iter().chain(cluster).collect()
+}
+
+async fn automatic_targets() -> Api<Vec<(Target, Ipv4Addr)>> {
+    if !crate::managed_nodes::enabled() {
+        return Ok(Vec::new());
+    }
+    let nodes = managed_inventory().await?;
+    let members = if crate::cluster_runtime::enabled() {
+        crate::cluster_runtime::members(client()).await.unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    Ok(fixed_targets(&nodes, &members))
+}
+
+#[cfg(test)]
+mod authorization_tests {
+    use super::*;
+
+    #[test]
+    fn published_app_gets_matching_nodes_without_operator_grants() {
+        let images = published_images("com.example.worker", concat!(
+            "services: {}\n",
+            "x-v-scheduler-backend-images: {\"dgx-spark\":\"registry.example.com/demo/backend:1\"}\n",
+        )).unwrap();
+        let nodes = [
+            json!({"id":"spark-a","host":"192.0.2.1","profile":"dgx-spark"}),
+            json!({"id":"spark-b","host":"192.0.2.2","profile":"dgx-spark","status":"offline"}),
+            json!({"id":"orin","host":"192.0.2.3","profile":"jetson-orin"}),
+        ];
+        let members = [json!({"member_id":"spark-member","node_ip":"192.0.2.2"})];
+        let policy = effective_access(Access { targets: vec![], repositories: vec![] },
+            images, &fixed_targets(&nodes, &members));
+        assert_eq!(policy["automatic"], true);
+        assert_eq!(policy["targets"].as_array().unwrap().len(), 3);
+        assert_eq!(policy["targets"][1]["id"], "spark-b");
+        assert_eq!(policy["targets"][2]["kind"], "cluster");
+    }
+
+    #[test]
+    fn installed_catalog_validates_images_and_preserves_legacy_studio_fallback() {
+        let legacy = "  IMAGE_STUDIO_BACKEND_IMAGES: '{\"jetson-thor\":{\"profile\":\"thor\",\"image\":\"registry.example.com/demo/backend:thor\"}}'";
+        assert!(published_images("com.example.worker", legacy).unwrap().is_empty());
+        assert_eq!(published_images(IMAGE_STUDIO, legacy).unwrap()["dgx-spark"],
+            "registry.example.com/demo/backend:thor");
+        let invalid = "x-v-scheduler-backend-images: {\"dgx-spark\":\"http://untrusted/script\"}";
+        assert!(published_images("com.example.worker", invalid).is_err());
+    }
+}
+
+async fn automatic_host(target: &Target) -> Api<Ipv4Addr> {
+    let (candidate, host) = automatic_targets().await?.into_iter()
+        .find(|(candidate, _)| candidate.kind == target.kind && candidate.id == target.id)
+        .ok_or_else(dependency)?;
+    if candidate.profile != target.profile {
+        return Err(conflict("BACKEND_PROFILE_UNSUPPORTED"));
+    }
+    Ok(host)
+}
+
+fn effective_access(mut policy: Access, images: PublishedImages, targets: &[(Target, Ipv4Addr)]) -> Value {
+    if !images.is_empty() {
+        policy.targets.clear();
+        policy.repositories.clear();
+    }
+    for (target, _) in targets {
+        if images.contains_key(&target.profile) && !policy.targets.contains(target) {
+            policy.targets.push(target.clone());
+        }
+    }
+    for repository in images.values().filter_map(|image| wire::image_repository(image)) {
+        if !policy.repositories.iter().any(|existing| existing == repository) {
+            policy.repositories.push(repository.into());
+        }
+    }
+    json!({"targets":policy.targets,"repositories":policy.repositories,
+           "automatic":!images.is_empty(),"images":images})
+}
+
 pub(super) async fn get_access(
     State(app): State<App>,
     h: HeaderMap,
     Path(app_id): Path<String>,
 ) -> Api<Json<Value>> {
     let p = auth(&app, &h).await?;
-    if p.role != "admin" && (p.role != "submitter" || p.app_id != app_id) {
+    if !identifier(&app_id) || p.role != "admin" && (p.role != "submitter" || p.app_id != app_id) {
         return Err(denied());
     }
-    Ok(ok(json!(access(&app.db, &app_id).await?)))
+    let policy = access(&app.db, &app_id).await?;
+    let images = installed_images(&app_id).await?;
+    let targets = if images.is_empty() { Vec::new() } else { automatic_targets().await? };
+    Ok(ok(effective_access(policy, images, &targets)))
 }
 
 pub(super) async fn list_access(State(app): State<App>, h: HeaderMap) -> Api<Json<Value>> {
+    use futures_util::{StreamExt, stream};
     require(&auth(&app, &h).await?, "admin")?;
-    let items: Vec<Value> = sqlx::query_scalar(
-        "SELECT jsonb_build_object('app_id',a.app_id,'targets',a.targets,'repositories',a.repositories)
-         FROM vrs_backend_deployment_access a ORDER BY a.app_id",
-    ).fetch_all(&app.db).await.map_err(unavailable)?;
     let applications: Vec<String> = sqlx::query_scalar(
         "SELECT app_id FROM vrs_service_identities WHERE revoked_at IS NULL
          UNION SELECT app_id FROM vrs_backend_deployment_access ORDER BY app_id",
-    )
-    .fetch_all(&app.db)
-    .await
-    .map_err(unavailable)?;
+    ).fetch_all(&app.db).await.map_err(unavailable)?;
+    let policies: Vec<_> = stream::iter(applications.clone().into_iter().map(|app_id| {
+        let db = app.db.clone();
+        async move {
+            let policy = access(&db, &app_id).await?;
+            let images = installed_images(&app_id).await?;
+            Ok::<_, Error>((app_id, policy, images))
+        }
+    })).buffered(8).collect().await;
+    let policies = policies.into_iter().collect::<Api<Vec<_>>>()?;
+    let targets = if policies.iter().any(|(_, _, images)| !images.is_empty()) {
+        automatic_targets().await?
+    } else { Vec::new() };
+    let items: Vec<_> = policies.into_iter().filter_map(|(app_id, policy, images)| {
+        if policy.targets.is_empty() && policy.repositories.is_empty() && images.is_empty() {
+            return None;
+        }
+        let mut row = effective_access(policy, images, &targets);
+        row["app_id"] = json!(app_id);
+        Some(row)
+    }).collect();
     Ok(ok(json!({"items":items,"applications":applications})))
 }
 
@@ -311,6 +484,20 @@ pub(super) async fn set_access(
     Ok(ok(json!(input)))
 }
 
+async fn managed_inventory() -> Api<Vec<Value>> {
+    client()
+        .get(format!("{}/nodes", crate::managed_nodes::origin()))
+        .timeout(Duration::from_secs(5))
+        .send()
+        .await
+        .map_err(|_| dependency())?
+        .error_for_status()
+        .map_err(|_| dependency())?
+        .json::<Vec<Value>>()
+        .await
+        .map_err(|_| dependency())
+}
+
 async fn locate(target: &Target) -> Api<Ipv4Addr> {
     if target.kind == "cluster" {
         if !crate::cluster_runtime::enabled() {
@@ -328,17 +515,7 @@ async fn locate(target: &Target) -> Api<Ipv4Addr> {
     if !crate::managed_nodes::enabled() {
         return Err(dependency());
     }
-    let nodes = client()
-        .get(format!("{}/nodes", crate::managed_nodes::origin()))
-        .timeout(Duration::from_secs(5))
-        .send()
-        .await
-        .map_err(|_| dependency())?
-        .error_for_status()
-        .map_err(|_| dependency())?
-        .json::<Vec<Value>>()
-        .await
-        .map_err(|_| dependency())?;
+    let nodes = managed_inventory().await?;
     let node = nodes
         .iter()
         .find(|row| row["id"] == target.id)
@@ -396,15 +573,24 @@ pub(super) async fn create(
             Err(conflict("BACKEND_REQUEST_CONFLICT"))
         };
     }
-    if !permits(&access(&app.db, app_id).await?, &input.target, repository) {
-        return Err(denied());
-    }
-    let host = locate(&input.target).await?.to_string();
+    let images = installed_images(app_id).await?;
+    let (host, automatic_access) = if images.is_empty() {
+        if !permits(&access(&app.db, app_id).await?, &input.target, repository) {
+            return Err(denied());
+        }
+        (locate(&input.target).await?, false)
+    } else {
+        if images.get(&input.target.profile) != Some(&input.image) {
+            return Err(conflict("BACKEND_IMAGE_NOT_PUBLISHED"));
+        }
+        (automatic_host(&input.target).await?, true)
+    };
+    let host = host.to_string();
     let nvidia = matches!(
         input.target.profile.as_str(),
         "arm-cuda" | "amd-cuda" | "jetson-orin" | "jetson-thor" | "dgx-spark"
     );
-    let channel_token = (app_id == "com.ictrek.image-studio"
+    let channel_token = (app_id == IMAGE_STUDIO
         && input.config.get("mode").and_then(Value::as_str) == Some("image-studio-worker-v1"))
         .then(|| format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple()));
     let uuid = Uuid::new_v4();
@@ -437,12 +623,12 @@ pub(super) async fn create(
     ).bind(i32::from(PORT_MIN)).bind(i32::from(PORT_MAX)).bind(&host).bind(offset).bind(input.host_port.map(i32::from))
         .fetch_optional(&mut *tx).await.map_err(unavailable)?.ok_or_else(|| conflict(if input.host_port.is_some() { "BACKEND_PORT_IN_USE" } else { "BACKEND_NO_PORTS" }))?;
     sqlx::query(
-        "INSERT INTO vrs_backend_deployments(id,app_id,request_key,target_id,target_kind,profile,host,host_port,container_port,image,nvidia,state,requested_host_port,cpu_millicores,memory_mib,config,channel_token)
-         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'pending',$12,$13,$14,$15,$16) ON CONFLICT(app_id,request_key) DO NOTHING",
+        "INSERT INTO vrs_backend_deployments(id,app_id,request_key,target_id,target_kind,profile,host,host_port,container_port,image,nvidia,state,requested_host_port,cpu_millicores,memory_mib,config,channel_token,automatic_access)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'pending',$12,$13,$14,$15,$16,$17) ON CONFLICT(app_id,request_key) DO NOTHING",
     ).bind(uuid.simple().to_string()).bind(app_id).bind(&input.request_key)
         .bind(&input.target.id).bind(&input.target.kind).bind(&input.target.profile).bind(&host)
         .bind(port).bind(i32::from(input.container_port)).bind(&input.image).bind(nvidia).bind(input.host_port.map(i32::from))
-        .bind(input.cpu_millicores.map(|value| value as i32)).bind(input.memory_mib.map(|value| value as i32)).bind(json!(&input.config)).bind(channel_token)
+        .bind(input.cpu_millicores.map(|value| value as i32)).bind(input.memory_mib.map(|value| value as i32)).bind(json!(&input.config)).bind(channel_token).bind(automatic_access)
         .execute(&mut *tx).await.map_err(unavailable)?;
     let row = sqlx::query_as::<_, Deployment>(
         "SELECT * FROM vrs_backend_deployments WHERE app_id=$1 AND request_key=$2",
@@ -549,7 +735,8 @@ pub(super) async fn exchange(
     }
     let target = Target { kind: row.target_kind, id: row.target_id, profile: row.profile };
     let repo = wire::image_repository(&row.image).ok_or_else(denied)?;
-    if !permits(&access(&app.db, &row.app_id).await?, &target, repo) {
+    if !row.automatic_access
+        && !permits(&access(&app.db, &row.app_id).await?, &target, repo) {
         return Err(denied());
     }
     let failed = || Error(StatusCode::BAD_GATEWAY, "BACKEND_CHANNEL_UNAVAILABLE");
@@ -689,10 +876,15 @@ async fn tick(db: &PgPool) -> anyhow::Result<bool> {
             id: job.target_id.clone(),
             profile: job.profile.clone(),
         };
-        policy
+        let manual = policy
             .as_ref()
             .zip(wire::image_repository(&job.image))
-            .is_some_and(|(policy, repo)| permits(policy, &target, repo))
+            .is_some_and(|(policy, repo)| permits(policy, &target, repo));
+        let automatic = || async { matches!(
+            (automatic_host(&target).await, job.host.parse::<Ipv4Addr>()),
+            (Ok(actual), Ok(expected)) if actual == expected
+        ) };
+        if job.automatic_access { automatic().await } else { manual }
     } else {
         true
     };
