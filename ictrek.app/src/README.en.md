@@ -1,5 +1,7 @@
 # V-Scheduler Resource Scheduling
 
+The Image Studio catalog shows **Upstream location** and **Execution node** in separate columns. Each ready remote node has its own entry. Under **Model settings**, a VOS administrator can enable or cancel direct admission using `PUT /api/v1/model-routing`.
+
 The Inference Deployment page resumes the VOS session automatically. Loaded data stays visible while the page shows a single recovery status. The current view refreshes once the session is restored.
 
 To run a VOS application on another node, choose a compatible registered compute node in the app, deploy its backend and prepare the model. The backend uses a read-only Model Hub NFS share when available. Otherwise, weight transfer resumes from the recorded byte offsets. Scheduler registers the executor after the files pass SHA-256 validation and the target node matches the model's measured calibration. See the deployment, transfer and execution routes in the Scheduler API reference.

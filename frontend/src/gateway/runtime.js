@@ -519,7 +519,7 @@ const app = {
     VRouterI18n.bind($('modelsTable'),'innerHTML',()=>groups.length ? groups.map(group=>`
       <details class="catalog-group" data-group="${esc(group.key)}" ${this.catalogOpen.has(group.key)||this.catalogQuery.trim() ? 'open' : ''} ontoggle="if(this.isConnected) app.rememberCatalogGroup(${jsArg(group.key)},this.open)">
         <summary><span class="source-mark">${esc(VRouterI18n.t(group.name).slice(0,1).toUpperCase())}</span><span class="source-heading"><strong>${esc(VRouterI18n.t(group.name))}</strong><small>${group.upstreams.length===1 ? esc(group.upstreams[0].base_url || VRouterI18n.t(sourceLabel(group.upstreams[0].source))) : `${group.upstreams.length} ${VRouterI18n.t('个上游')}`}</small></span><span class="source-count">${group.count} ${VRouterI18n.t('个模型')}</span>${group.upstreams.length===1 ? this.upstreamStatusPill(group.upstreams[0]) : ''}</summary>
-        <div class="catalog-group-body">${group.upstreams.map(u=>`<section class="catalog-upstream"><div class="source-toolbar"><div><strong>${esc(VRouterI18n.t(u.name||u.id))}</strong><span class="pill">${esc(VRouterI18n.t(sourceLabel(u.source)))}</span>${u.virtual ? `<p class="hint">${VRouterI18n.t('Auto 根据候选模型与策略选型，无需独立服务地址。候选留空时自动选择；指定后仅使用已选模型。')}</p>` : `<code>${esc(u.base_url||VRouterI18n.t('来源未提供地址'))}</code><small>${esc(u.protocol||'')} · ${u.routing?.direct ? VRouterI18n.t('直接放行') : `${VRouterI18n.t('路由权重')} ${u.routing?.weight||1} · ${VRouterI18n.t('并发上限')} ${u.routing?.max_inflight||VRouterI18n.t('不限')}`}</small>`}</div><div class="source-actions">${this.upstreamCatalogActions(u)}</div></div>${u.catalogModels.length ? table([VRouterI18n.t('模型与能力'),VRouterI18n.t('类型'),VRouterI18n.t('位置'),VRouterI18n.t('上游'),VRouterI18n.t('资源预算'),VRouterI18n.t('操作')],this.modelCatalogRows(u.catalogModels)) : `<p class="empty">${VRouterI18n.t('尚未发现模型，可编辑上游或刷新模型列表。')}</p>`}</section>`).join('')}</div>
+        <div class="catalog-group-body">${group.upstreams.map(u=>`<section class="catalog-upstream"><div class="source-toolbar"><div><strong>${esc(VRouterI18n.t(u.name||u.id))}</strong><span class="pill">${esc(VRouterI18n.t(sourceLabel(u.source)))}</span>${u.virtual ? `<p class="hint">${VRouterI18n.t('Auto 根据候选模型与策略选型，无需独立服务地址。候选留空时自动选择；指定后仅使用已选模型。')}</p>` : `<code>${esc(u.base_url||VRouterI18n.t('来源未提供地址'))}</code><small>${esc(u.protocol||'')} · ${u.routing?.direct ? VRouterI18n.t('直接放行') : `${VRouterI18n.t('路由权重')} ${u.routing?.weight||1} · ${VRouterI18n.t('并发上限')} ${u.routing?.max_inflight||VRouterI18n.t('不限')}`}</small>`}</div><div class="source-actions">${this.upstreamCatalogActions(u)}</div></div>${u.catalogModels.length ? this.modelCatalogTable(u) : `<p class="empty">${VRouterI18n.t('尚未发现模型，可编辑上游或刷新模型列表。')}</p>`}</section>`).join('')}</div>
       </details>`).join('') : `<div class="catalog-empty"><h3>${VRouterI18n.t(this.catalogQuery?'没有匹配的来源或模型':'先连接一个模型来源')}</h3><p>${VRouterI18n.t('一处配置，VOS 内应用按权限共享使用。')}</p><button class="btn primary" onclick="app.openUpstreamDialog()">${VRouterI18n.t('添加上游')}</button></div>`);
   },
   modelLabel(id, upstreamId) {
@@ -543,12 +543,22 @@ const app = {
     ].join("\n"));
   },
 
-  modelCatalogRows(models) {
+  modelCatalogTable(upstream) {
+    const showExecutionNodes = upstream.id === "app-image-studio";
+    const headers = [
+      "模型与能力", "类型", showExecutionNodes ? "上游位置" : "位置",
+      ...(showExecutionNodes ? ["执行节点"] : []),
+      "上游", "资源预算", "操作",
+    ];
+    return table(headers.map(label => VRouterI18n.t(label)), this.modelCatalogRows(upstream.catalogModels, showExecutionNodes));
+  },
+
+  modelCatalogRows(models, showExecutionNodes) {
     const admin = this.state.status?.is_admin === true;
     return models.map(m=>{
             const budget = this.budgetFor(m);
             const actions = [];
-            const placements = this.studioPlacementsFor(m.qualified,m.upstream_id);
+            const placements = showExecutionNodes ? this.studioPlacementsFor(m.qualified,m.upstream_id) : [];
             if (!m.short && m.kind !== "service") {
               actions.push(`<button class="btn" onclick="app.tryModel(${jsArg(m.qualified)}, ${jsArg(m.upstream_id)})">${VRouterI18n.t("测试")}</button>`);
             }
@@ -580,8 +590,10 @@ const app = {
             return [
               `<span class="mono model-identifier">${esc(m.short ? m.id : (m.name || m.qualified))}</span><div class="model-capability-tags">${(m.capabilities || []).slice(0,4).map(c=>`<span class="capability-tag">${esc(VRouterI18n.t(CAPABILITIES.find(([id])=>id===c)?.[1] || c))}</span>`).join('')}</div><div class="hint">${(m.domains || ['general']).map(id => esc(VRouterI18n.t((this.state.domainCatalog || []).find(d => d.id === id)?.name || id))).join(' · ')}</div>${m.short ? ` <span class="pill kind">${VRouterI18n.t("短名")}</span>` : ""}`,
               ({embedding:"Embedding",chat:VRouterI18n.t("对话"),unknown:VRouterI18n.t("由上游决定"),service:VRouterI18n.t("服务接口")})[m.kind] || esc(m.kind),
-              `<span class="pill ${m.upstream_kind}">${kindLabel(m.upstream_kind)}</span>${placements.map(item=>
-                `<div class="hint">${esc(this.studioPlacementName(item))} · ${esc(VRouterI18n.t("可调用"))}</div>`).join("")}`,
+              `<span class="pill ${m.upstream_kind}">${kindLabel(m.upstream_kind)}</span>`,
+              ...(showExecutionNodes ? [`<ul class="model-execution-nodes">${placements.length ? placements.map(item =>
+                `<li><span>${esc(this.studioPlacementName(item))}</span><small class="pill local">${esc(VRouterI18n.t("可调用"))}</small></li>`).join("") :
+                `<li class="hint">${esc(VRouterI18n.t("暂无可调用的远端节点"))}</li>`}</ul>`] : []),
               `${esc(VRouterI18n.t(m.upstream_name))}${!m.short && !m.virtual && m.kind !== 'service' ? `<div class="hint">${esc(VRouterI18n.t("最近一次测试"))} · ${esc(this.testResultText(m.upstream_id, m.id))}</div>` : ''}`,
               this.budgetCell(m, budget),
               `<div class="model-row-actions">${!m.short && m.kind !== 'service' ? actions.shift() : ''}<button type="button" class="btn" onclick="app.openModelCall(${jsArg(m.qualified)}, ${jsArg(m.upstream_id)})">${VRouterI18n.t("调用方式")}</button>${!m.short && m.kind !== "service" ? `<button type="button" class="btn" onclick="app.openModelSpeed(${jsArg(m.id)}, ${jsArg(m.upstream_id || 'auto')}, ${jsArg(m.name || m.qualified)})">${VRouterI18n.t("速度趋势")}</button>` : ''}${actions.length ? `<details class="catalog-actions" ${this.catalogActionOpen.has(m.qualified)?'open':''} ontoggle="app.rememberCatalogAction(${jsArg(m.qualified)},this.open)"><summary>${VRouterI18n.t('模型设置')}</summary><div>${actions.join('')}</div></details>` : ''}</div>`,
@@ -873,7 +885,9 @@ const app = {
 
   async setModelDirect(upstreamId, native, direct) {
     try {
-      await this.api("PUT", "/api/v1/model-routing", { model_id: `${upstreamId}/${native}`, direct });
+      const saved = await this.api("PUT", "/api/v1/model-routing", { model_id: `${upstreamId}/${native}`, direct });
+      for (const model of this.state.models.filter(item=>item.upstream_id===upstreamId&&item.id===native)) model.direct=saved.direct;
+      this.renderModels();
       this.toast(direct ? VRouterI18n.t("该模型已直接放行，不再参与调度准入") : VRouterI18n.t("该模型已恢复调度准入"));
       await this.refresh();
     } catch (err) {

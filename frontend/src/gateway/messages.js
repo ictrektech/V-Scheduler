@@ -8,6 +8,8 @@ export const VRouterMessages = {
 "默认位置":{"en": "Default placement", "zh-TW": "預設位置"},
 "远端部署":{"en": "Remote deployment", "zh-TW": "遠端部署"},
 "执行节点":{"en": "Execution node", "zh-TW": "執行節點"},
+"上游位置":{"en": "Upstream location", "zh-TW": "上游位置"},
+"暂无可调用的远端节点":{"en": "No remote nodes ready", "zh-TW": "暫無可呼叫的遠端節點"},
 "权重下载":{"en": "Weight download", "zh-TW": "權重下載"},
 "推理服务":{"en": "Inference service", "zh-TW": "推論服務"},
 "最近一次测试":{"en": "Last test request", "zh-TW": "最近一次測試"},
