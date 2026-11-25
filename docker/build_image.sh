@@ -354,7 +354,13 @@ log "Rust builder: ${SCHEDULER_RUST_BUILD_IMAGE:-rust:1.97-bookworm} (offline=${
 docker buildx build "${build_args[@]}" --platform "linux/${arch}" --load --provenance=false --sbom=false -f "$BUILD_DIR/context/docker/Dockerfile" -t "$IMAGE" "$BUILD_DIR/context"
 # Verify runtime linkage and bundled UI before any registry publication.
 docker run --rm --network none "$IMAGE" --help > "$BUILD_DIR/runtime-help.txt"
-docker run --rm --network none --entrypoint /bin/sh "$IMAGE" -c 'test -s /opt/v-scheduler/ui/index.html'
+docker run --rm --network none --entrypoint /bin/sh "$IMAGE" -ec '
+  test -s /opt/v-scheduler/ui/index.html
+  test -s /opt/v-scheduler/image-hub-ui/index.html
+  image-hub --version
+  registry --version
+  skopeo --version
+'
 docker push "$IMAGE"
 # Check the actual registry publication before recording a tag.
 docker buildx imagetools inspect --raw "$IMAGE" > "$BUILD_DIR/manifest.json"

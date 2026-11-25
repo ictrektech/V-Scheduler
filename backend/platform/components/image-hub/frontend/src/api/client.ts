@@ -1,5 +1,10 @@
 import axios from 'axios';
 import type { AxiosRequestConfig } from 'axios';
+import { withRuntimeToken } from '@scheduler-auth';
+
+const runtime = import.meta.env.VITE_SCHEDULER_IMAGE_HUB === 'true'
+  ? '/app/com.ictrek.v-scheduler/api/v1/image-hub/runtime/'
+  : null;
 
 /**
  * VOS HTTP 统一响应结构（对齐 specs/docs/design/vos-http-response-spec/）
@@ -14,7 +19,7 @@ export interface ResultBody<T> {
 }
 
 const client = axios.create({
-  baseURL: './',
+  baseURL: runtime || './',
   timeout: 30_000,
 });
 
@@ -40,7 +45,13 @@ export class ImageHubApiError extends Error {
 
 /** 请求包装：解析 ResultBody，按 code 判成败；业务错误保留 code 供 i18n 映射 */
 export async function request<T>(config: AxiosRequestConfig): Promise<T> {
-  const resp = await client.request<ResultBody<T>>(config);
+  const send = (token?: string) => client.request<ResultBody<T>>(token ? {
+    ...config,
+    url: config.url?.replace(/^\/?api\//, ''),
+    headers: { ...config.headers, Authorization: `Bearer ${token}` },
+  } : config);
+  const read = (config.method || 'GET').toUpperCase() === 'GET';
+  const resp = runtime ? await withRuntimeToken(send, read) : await send();
   const body = resp.data;
   if (body.code !== 0) {
     throw new ImageHubApiError(body.code, body.category, body.msg);

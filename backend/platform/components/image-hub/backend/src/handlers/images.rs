@@ -15,6 +15,8 @@ use crate::state::AppState;
 #[derive(Serialize)]
 pub struct RegistryInfo {
     pub registry_port: u16,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub published_address: Option<String>,
 }
 
 /// 镜像列表响应
@@ -43,6 +45,9 @@ pub async fn registry_info(State(state): State<AppState>) -> Json<ResultBody<Reg
     Json(ResultBody::ok(
         RegistryInfo {
             registry_port: state.registry_port,
+            published_address: std::env::var("SCHEDULER_IMAGE_HUB_BIND")
+                .ok()
+                .filter(|address| !address.trim().is_empty()),
         },
         state.version,
     ))

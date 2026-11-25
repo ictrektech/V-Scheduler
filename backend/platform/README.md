@@ -27,11 +27,17 @@ The V-Scheduler image builds and starts ModelInfer's `scheduler-node-manager`
 binary. The scheduler controller exposes its SSH inventory, hardware scan, and
 container checks under `/api/v1/managed-nodes`.
 
-The VOS package also bundles the ModelInfer deployment worker and VOS Cluster
-Manager. The original services remain separately buildable with the Dockerfiles
-in `backend/platform/apps`, using `backend/platform` as the build context.
-Image Hub is a separate service. Inference can use images already present on
-the target node or fetch missing images through Image Hub.
+The VOS package also bundles the ModelInfer deployment worker, VOS Cluster
+Manager, and Image Hub. The original services remain separately buildable with
+the Dockerfiles in `backend/platform/apps`, using `backend/platform` as the
+build context.
+
+The Scheduler serves the Image Hub UI at `/image-hub/`. The administrator-only
+`/api/v1/image-hub/runtime/` proxy streams requests to the loopback management
+listener, including large multipart imports. Registry state and blobs use
+separate application storage mounts. Deploy images from this registry through
+the existing Application Backends workflow by registering and using its
+published address.
 
 The scheduler image builds the ModelInfer binary and stores its UI at
 `/opt/v-scheduler/inference-ui`. The ModelInfer binary accepts

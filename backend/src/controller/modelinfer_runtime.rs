@@ -88,6 +88,24 @@ pub(super) async fn cluster(
     ).await
 }
 
+pub(super) async fn image_hub(
+    State(app): State<App>,
+    Path(path): Path<String>,
+    request: Request,
+) -> Api<Response> {
+    require(&auth(&app, request.headers()).await?, "admin")?;
+    if !crate::image_hub_runtime::enabled() {
+        return Err(Error(StatusCode::NOT_FOUND, "IMAGE_HUB_DISABLED"));
+    }
+    forward_to(
+        crate::image_hub_runtime::ORIGIN,
+        &path,
+        request,
+        Error(StatusCode::SERVICE_UNAVAILABLE, "IMAGE_HUB_UNAVAILABLE"),
+    )
+    .await
+}
+
 async fn forward_to(origin: &str, path: &str, request: Request, error: Error) -> Api<Response> {
     let mut url = reqwest::Url::parse(origin).expect("fixed local runtime origin");
     {

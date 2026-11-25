@@ -490,6 +490,13 @@ pub async fn serve(
                 .put(modelinfer_runtime::cluster)
                 .delete(modelinfer_runtime::cluster),
         )
+        .route(
+            "/image-hub/runtime/{*path}",
+            get(modelinfer_runtime::image_hub)
+                .post(modelinfer_runtime::image_hub)
+                .put(modelinfer_runtime::image_hub)
+                .delete(modelinfer_runtime::image_hub),
+        )
         .route("/model-budgets", get(model_budget::list))
         .route("/model-budgets/calibrate", post(model_budget::calibrate))
         .route("/model-budgets/restore", post(model_budget::restore))
@@ -551,6 +558,14 @@ pub async fn serve(
             router = router.nest_service(
                 "/cluster/",
                 ServeDir::new(parent.join("cluster-ui")).append_index_html_on_directories(true),
+            );
+        }
+        if crate::image_hub_runtime::enabled()
+            && let Some(parent) = path.parent()
+        {
+            router = router.nest_service(
+                "/image-hub/",
+                ServeDir::new(parent.join("image-hub-ui")).append_index_html_on_directories(true),
             );
         }
         router = router.fallback_service(ServeDir::new(path));

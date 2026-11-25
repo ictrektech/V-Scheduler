@@ -85,6 +85,7 @@ export default {
       action: '操作',
     },
     row: {
+      copyDeploymentAddress: '复制部署镜像地址',
       download: '下载命令',
       sync: '同步',
       clone: '克隆',

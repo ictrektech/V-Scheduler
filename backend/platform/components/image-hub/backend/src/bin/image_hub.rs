@@ -37,7 +37,10 @@ async fn main() -> anyhow::Result<()> {
 
     let app = build_router(state);
 
-    let addr: SocketAddr = ([0, 0, 0, 0], config.port).into();
+    let bind_address = std::env::var("VOS_IMAGE_HUB_BIND_ADDRESS")
+        .unwrap_or_else(|_| "0.0.0.0".to_owned())
+        .parse::<std::net::IpAddr>()?;
+    let addr = SocketAddr::new(bind_address, config.port);
     tracing::info!(
         %addr,
         url_base = %if url_base.is_empty() { "/" } else { &url_base },

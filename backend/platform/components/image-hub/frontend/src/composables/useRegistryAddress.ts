@@ -32,18 +32,25 @@ function saveIp(ip: string): void {
 }
 
 export function useRegistryAddress() {
-  const port = ref(19913);
+  const port = ref(import.meta.env.VITE_SCHEDULER_IMAGE_HUB === 'true' ? 36113 : 19913);
   const addresses = ref<string[]>([]);
   const selectedIp = ref('');
 
   const currentHost = typeof window !== 'undefined' ? window.location.hostname : '';
 
   async function reload(): Promise<void> {
+    let publishedAddress: string | undefined;
     try {
       const info = await fetchRegistryInfo();
       if (info?.registry_port) port.value = info.registry_port;
+      publishedAddress = info?.published_address;
     } catch {
       // 后端不可用时保留默认端口
+    }
+    if (publishedAddress && publishedAddress !== '0.0.0.0' && publishedAddress !== '::') {
+      addresses.value = [publishedAddress];
+      selectedIp.value = publishedAddress;
+      return;
     }
     let list: string[] = [];
     try {

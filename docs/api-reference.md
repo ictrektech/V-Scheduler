@@ -375,6 +375,10 @@ Base: `http://v-scheduler:38120/api/v1`. [Complete OpenAPI](../api/openapi-v1.js
 | POST | `/cluster/runtime/{*path}` | Forward administrator Cluster Manager requests / 转发管理员集群管理请求 |
 | PUT | `/cluster/runtime/{*path}` | Forward administrator Cluster Manager requests / 转发管理员集群管理请求 |
 | DELETE | `/cluster/runtime/{*path}` | Forward administrator Cluster Manager requests / 转发管理员集群管理请求 |
+| GET | `/image-hub/runtime/{*path}` | Stream administrator Image Hub requests / 流式转发管理员镜像仓库请求 |
+| POST | `/image-hub/runtime/{*path}` | Stream administrator Image Hub requests / 流式转发管理员镜像仓库请求 |
+| PUT | `/image-hub/runtime/{*path}` | Stream administrator Image Hub requests / 流式转发管理员镜像仓库请求 |
+| DELETE | `/image-hub/runtime/{*path}` | Stream administrator Image Hub requests / 流式转发管理员镜像仓库请求 |
 | POST | `/inference-waiters` | Internal bounded admission priority hints |
 | POST | `/permits/{id}/reuse-resident` | Rotate a reserved built-in resident execution proof |
 | POST | `/permits/inspect` | Inspect current binding and execution-node eligibility without reserving resources |

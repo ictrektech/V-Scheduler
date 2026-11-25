@@ -44,7 +44,7 @@ const setupMessages:Record<string,string>={
  VOS_ADMIN_REQUIRED:'需要使用 VOS 管理员账号完成初始化。',
 }
 const vosEmbedded=window.parent!==window||location.pathname.startsWith('/app/com.ictrek.v-scheduler')
-const pages=['overview','models','upstreams','playground','auto','api','resources','nodes','model-hub','logs','inference','cluster','images']
+const pages=['overview','models','upstreams','playground','auto','api','resources','nodes','model-hub','logs','inference','cluster','images','image-hub']
 const initialPage=location.hash.slice(1)
 const nodeTab=ref<'nodes'|'backends'>('nodes')
 const targetService=ref('')
@@ -62,7 +62,7 @@ const managementApiUrl=new URL(apiBase,location.origin).href
 const gatewayPages=['overview','models','upstreams','playground']
 const gatewayTab=computed(()=>page.value==='api'?'apidoc':page.value==='upstreams'?'models':page.value)
 const gatewayVisible=computed(()=>gatewayPages.includes(page.value)||(page.value==='api'&&docMode.value==='gateway'))
-const pageTitle=computed(()=>(({overview:'模型与调用',models:'模型与上游',upstreams:'模型与上游',playground:'试聊',auto:'Auto 自动选型',api:'API 文档',resources:'资源与任务',nodes:'节点管理',inference:'推理部署',images:'推理镜像',cluster:'VOS 集群管理','model-hub':'权重管理',logs:'诊断日志'} as Record<string,string>)[page.value]||page.value))
+const pageTitle=computed(()=>(({overview:'模型与调用',models:'模型与上游',upstreams:'模型与上游',playground:'试聊',auto:'Auto 自动选型',api:'API 文档',resources:'资源与任务',nodes:'节点管理',inference:'推理部署',images:'推理镜像',cluster:'VOS 集群管理','image-hub':'镜像仓库','model-hub':'权重管理',logs:'诊断日志'} as Record<string,string>)[page.value]||page.value))
 const specError=ref(false),specLoading=ref(false),sessionStale=ref(false)
 const spec=ref<any>(null),operationKey=ref('GET /discovery'),exampleTab=ref('curl'),discoveryResult=ref<unknown>(null)
 const operations=computed(()=>Object.entries(spec.value?.paths||{}).flatMap(([path,methods])=>Object.entries(methods as any).filter(([method])=>['get','post','put','patch','delete'].includes(method)).map(([method,op])=>({path,method,key:method.toUpperCase()+' '+path,...op as any}))))
@@ -189,7 +189,7 @@ async function copy(value:string){try{await navigator.clipboard.writeText(value)
 async function tryDiscovery(){try{discoveryResult.value=await (await fetch(apiBase+'discovery')).json()}catch(e){showError(e)}}
 function syncPage(){
  const next=location.hash.slice(1)||'overview'
- if(pages.includes(next)&&(!nodeViewerOnly.value||!['inference','cluster'].includes(next)))page.value=next
+ if(pages.includes(next)&&(!nodeViewerOnly.value||!['inference','cluster','image-hub'].includes(next)))page.value=next
 }
 window.addEventListener('hashchange',syncPage)
 watch(page,value=>{if(value!=='model-hub')targetService.value='';if((location.hash.slice(1)||'overview')!==value)location.hash=value;selected.value=null;void nextTick(()=>window.scrollTo(0,0))})
@@ -213,9 +213,9 @@ onUnmounted(()=>{clearInterval(timer);language.dispose();window.removeEventListe
 </script>
 <template>
  <div class="shell">
-  <aside><div class="brand"><img :src="logoUrl" alt=""><div>V-Scheduler<small>{{t('模型路由与资源调度')}}</small></div></div><nav :aria-label="t('主导航')"><button v-for="item in [{id:'overview',label:'模型与调用'},{id:'models',label:'模型与上游'},...(connected&&!demo?[nodeViewerOnly?{id:'images',label:'推理镜像'}:{id:'inference',label:'推理部署'}]:[]),{id:'playground',label:'试聊'},{id:'model-hub',label:'权重管理'},{id:'resources',label:'资源与任务'}]" :key="item.id" :class="{current:page===item.id||(item.id==='models'&&page==='upstreams')||(item.id==='inference'&&page==='images')}" @click="page=item.id"><Icon :name="item.id==='resources'?'queue':'server'"/>{{t(item.label)}}</button><details class="advanced-nav" :open="['auto','nodes','cluster','logs'].includes(page)"><summary>{{t('高级管理')}}</summary><button :class="{current:page==='auto'}" @click="page='auto'"><Icon name="server"/>{{t('Auto 自动选型')}}</button><button :class="{current:page==='nodes'}" @click="page='nodes'"><Icon name="server"/>{{t('节点管理')}}</button><button v-if="connected&&!nodeViewerOnly&&!demo" :class="{current:page==='cluster'}" @click="page='cluster'"><Icon name="server"/>{{t('VOS 集群管理')}}</button><button :class="{current:page==='logs'}" @click="page='logs'"><Icon name="book"/>{{t('诊断日志')}}</button></details><button :class="{current:page==='api'}" @click="page='api'"><Icon name="book"/>{{t('API 文档')}}</button></nav><div class="aside-note"><span class="connection-dot" :class="{on:connected}"></span>{{t(error==='FORBIDDEN'?'调度管理需管理员身份':demo?'演示模式':connected?'已连接':'调度未连接')}}<small>{{t('按能力分配')}}<br>{{t('确认停止后释放')}}</small><small v-if="appVersion">v{{appVersion}}</small></div></aside>
+  <aside><div class="brand"><img :src="logoUrl" alt=""><div>V-Scheduler<small>{{t('模型路由与资源调度')}}</small></div></div><nav :aria-label="t('主导航')"><button v-for="item in [{id:'overview',label:'模型与调用'},{id:'models',label:'模型与上游'},...(connected&&!demo?[nodeViewerOnly?{id:'images',label:'推理镜像'}:{id:'inference',label:'推理部署'}]:[]),{id:'playground',label:'试聊'},{id:'model-hub',label:'权重管理'},...(connected&&!nodeViewerOnly&&!demo?[{id:'image-hub',label:'镜像仓库'}]:[]),{id:'resources',label:'资源与任务'}]" :key="item.id" :class="{current:page===item.id||(item.id==='models'&&page==='upstreams')||(item.id==='inference'&&page==='images')}" @click="page=item.id"><Icon :name="item.id==='resources'?'queue':'server'"/>{{t(item.label)}}</button><details class="advanced-nav" :open="['auto','nodes','cluster','logs'].includes(page)"><summary>{{t('高级管理')}}</summary><button :class="{current:page==='auto'}" @click="page='auto'"><Icon name="server"/>{{t('Auto 自动选型')}}</button><button :class="{current:page==='nodes'}" @click="page='nodes'"><Icon name="server"/>{{t('节点管理')}}</button><button v-if="connected&&!nodeViewerOnly&&!demo" :class="{current:page==='cluster'}" @click="page='cluster'"><Icon name="server"/>{{t('VOS 集群管理')}}</button><button :class="{current:page==='logs'}" @click="page='logs'"><Icon name="book"/>{{t('诊断日志')}}</button></details><button :class="{current:page==='api'}" @click="page='api'"><Icon name="book"/>{{t('API 文档')}}</button></nav><div class="aside-note"><span class="connection-dot" :class="{on:connected}"></span>{{t(error==='FORBIDDEN'?'调度管理需管理员身份':demo?'演示模式':connected?'已连接':'调度未连接')}}<small>{{t('按能力分配')}}<br>{{t('确认停止后释放')}}</small><small v-if="appVersion">v{{appVersion}}</small></div></aside>
   <main>
-   <header><div><h1>{{t(pageTitle)}}</h1><p v-if="page!=='inference'&&page!=='cluster'&&page!=='images'">{{t(page==='api'?'接口标准、认证方式与可复制的请求示例。':page==='nodes'?'登记、审批与管理执行节点和服务权限。':page==='resources'?'查看执行资源、预约与排队任务。':'统一管理模型、上游和调用；本地计算经过资源准入。')}}</p></div><div class="header-actions"><label class="locale-control"><Icon name="globe"/><select v-model="preference" :aria-label="t('界面语言')" @change="language.setPreference(preference)"><option value="auto">{{t('跟随 VOS')}}</option><option value="zh-CN">简体中文</option><option value="en">English</option><option value="zh-TW">繁體中文</option></select></label><ApiKeysDialog :t="t"/><AboutDialog :t="t"/></div></header>
+   <header><div><h1>{{t(pageTitle)}}</h1><p v-if="page!=='inference'&&page!=='cluster'&&page!=='images'&&page!=='image-hub'">{{t(page==='api'?'接口标准、认证方式与可复制的请求示例。':page==='nodes'?'登记、审批与管理执行节点和服务权限。':page==='resources'?'查看执行资源、预约与排队任务。':'统一管理模型、上游和调用；本地计算经过资源准入。')}}</p></div><div class="header-actions"><label class="locale-control"><Icon name="globe"/><select v-model="preference" :aria-label="t('界面语言')" @change="language.setPreference(preference)"><option value="auto">{{t('跟随 VOS')}}</option><option value="zh-CN">简体中文</option><option value="en">English</option><option value="zh-TW">繁體中文</option></select></label><ApiKeysDialog :t="t"/><AboutDialog :t="t"/></div></header>
    <div v-if="sessionStale" class="panel session-notice" role="status">
     <span>{{t('正在恢复 VOS 会话，已加载的数据仍可查看。')}}</span>
     <button class="quiet" type="button" @click="resumeWorkspace">{{t('重试连接')}}</button>
@@ -237,13 +237,15 @@ onUnmounted(()=>{clearInterval(timer);language.dispose();window.removeEventListe
      @api="page='api';docMode='scheduler';operationKey='POST /backend-deployments'"/>
    <ManagedComputeNodes v-if="page==='nodes'&&connected&&(nodeViewerOnly||demo||nodeTab==='nodes')" :request="api" :locale="locale"/>
    <NodeManagement v-if="page==='nodes'&&connected&&!nodeViewerOnly&&(demo||nodeTab==='nodes')" :request="api" :nodes="nodes" :api-url="managementApiUrl" :t="t" :locale="locale" @refresh="refresh" @select="page=$event"/>
+   <RuntimeWorkspace v-if="connected&&!nodeViewerOnly&&page==='image-hub'" key="image-hub"
+     kind="image-hub" :request="api" :locale="locale" :t="t"/>
    <RuntimeWorkspace v-if="connected&&!nodeViewerOnly&&(page==='inference'||page==='images'||page==='cluster')"
      :key="page==='cluster'?'cluster':'inference'" :kind="page==='cluster'?'cluster':'inference'" :images="page==='images'"
      :request="api" :locale="locale" :t="t" @weights="page='model-hub'" @nodes="page='nodes'" @images="page='images'" @runtime="page='inference'">
     <template #images><ImageCatalog :locale="locale" :request="api" :t="t"/></template>
    </RuntimeWorkspace>
    <ImageCatalog v-if="connected&&nodeViewerOnly&&page==='images'" :locale="locale" :request="api" :t="t"/>
-   <section v-if="(page==='nodes'||page==='inference'||page==='cluster'||page==='images')&&!connected&&!setupError" class="login"><h2>{{t('连接 VOS')}}</h2><button :disabled="busy" @click="connect(true)">{{t('重试连接')}}</button></section>
+   <section v-if="(page==='nodes'||page==='inference'||page==='cluster'||page==='images'||page==='image-hub')&&!connected&&!setupError" class="login"><h2>{{t('连接 VOS')}}</h2><button :disabled="busy" @click="connect(true)">{{t('重试连接')}}</button></section>
    <IntegrationGuide v-if="page==='api'&&docMode==='guide'" :t="t"/>
    <GatewayWorkspace v-show="gatewayVisible" :tab="gatewayTab" :locale="locale" :visible="gatewayVisible" :administrator="connected&&!demo&&nodes.length>0" @select="selectGatewayPage" @service="openInferenceService"/>
    <template v-if="page==='resources'">

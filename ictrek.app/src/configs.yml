@@ -1,4 +1,22 @@
 configs:
+  - name: SCHEDULER_IMAGE_HUB_BIND
+    type: string
+    title: {zh-CN: 镜像仓库监听地址, en: Image Registry Listen Address}
+    description:
+      zh-CN: 默认仅本机可访问。要供其他节点拉取，请填写受信部署网络上的宿主机 IP。
+      en: Defaults to host-only access. To allow other nodes to pull, set the host IP on a trusted deployment network.
+    default: "127.0.0.1"
+
+  - name: SCHEDULER_IMAGE_HUB_PORT
+    type: integer
+    title: {zh-CN: 镜像仓库端口, en: Image Registry Port}
+    description:
+      zh-CN: Docker Registry 数据端口。管理页面通过 VOS 登录访问。
+      en: Docker Registry data port. The management UI uses the VOS login.
+    default: 36113
+    minimum: 1024
+    maximum: 65535
+
   - name: SCHEDULER_EMBEDDED_INFERENCE
     type: boolean
     title: {zh-CN: 内置推理运行时, en: Embedded Inference Runtime}

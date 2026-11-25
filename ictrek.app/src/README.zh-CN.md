@@ -1,5 +1,13 @@
 # V-Scheduler 资源调度
 
+## 镜像仓库
+
+VOS 管理员打开 **V-Scheduler → 镜像仓库**。用「拉取镜像」把上游镜像存入本地仓库，已有镜像可按仓库或标签同步。离线环境可用「导入镜像」上传 Docker 或 OCI 归档，省略目标名称时保留归档中的镜像名。任务面板显示进度和失败原因。仓库的管理数据与镜像层分别保存在应用的 `image-hub/` 和 `image-registry/` 持久化目录。
+
+部署时，在镜像详情复制标签的部署地址。到 **高级管理 → 节点管理 → 应用后端**，授权该仓库后将完整地址粘贴到部署表单。默认数据端口为本机 `127.0.0.1:36113`。跨节点部署时，在 VOS 应用配置里将 `SCHEDULER_IMAGE_HUB_BIND` 改为该节点可达的宿主机内网地址，并按目标 Docker 的要求配置对此 HTTP 仓库的访问。数据端口供受信网络使用。
+
+删除标签或仓库后，可在「垃圾回收」中先预演，再释放无引用的镜像层。操作范围为 V-Scheduler 的仓库数据。使用中的部署应保留相应标签，方便之后重新拉取。「镜像仓库 → API 参考」列出管理 API，使用 VOS 管理员 Bearer token。
+
 VOS 管理员在「权重管理 → 模型接入状态」可查看权重进度、服务状态和执行位置。内置 Ollama 显示本机 VOS，外部服务显示网关连接的上游主机。若上游使用代理，其后的物理节点无法确认。远程权重标为由上游管理。在「模型与上游」选择模型并点「测试」，发送试聊请求后返回状态页查看实际选中的上游、结果和时间。失败可在试聊中查看可达性、网络、鉴权、模型未加载或超时等原因。同一登录身份在当前浏览器刷新后仍能看到每个模型与上游的最近结果。浏览器清除站点数据或禁用本地存储时，刷新后可能无法恢复。
 
 GET /api/v1/model-lifecycle 需要 VOS 管理员。download 为 null 或包含 phase 和 0–1 的 progress；model_running 为布尔值或 null；upstream_models 中 weight_source 为 upstream 或 unlinked。POST /api/v1/upstreams/probe 返回可选的 diagnosis 和 test_diagnosis，包含 code 和 reachability（reachable、unreachable、unknown）。试聊通过正常 /v1 接口调用。 界面使用既有 GET /api/v1/upstreams 的 id、source 和 base_url，仅从地址显示主机与端口；使用 GET /api/v1/auth/me 的 auth_method 和 identity.sub 隔离当前浏览器中的试聊结果。最多保留 200 个模型与上游的最近状态、时间和主机，试聊内容不写入存储。API 契约无变化。

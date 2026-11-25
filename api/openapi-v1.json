@@ -1125,6 +1125,261 @@
         }
       }
     },
+    "/image-hub/runtime/{*path}": {
+      "get": {
+        "operationId": "image_hub_forward_get",
+        "summary": "GET Image Hub resource",
+        "x-title": {
+          "en": "GET Image Hub resource",
+          "zh-CN": "GET 镜像仓库接口"
+        },
+        "description": "Administrator-only streaming proxy to the embedded Image Hub. Upstream business failures use the native numeric code. / 管理员访问内置镜像仓库，业务错误保留原生数字业务码。",
+        "x-role": "admin",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "*path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Relative Image Hub API path, for example registry/images, registry/import, registry/gc/run or tasks/{id}. / 镜像仓库 API 相对路径。"
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Native Image Hub status and JSON body containing code, category, data, msg and version. Code 0 means success. / 保留镜像仓库原生状态和 JSON 响应，code 为 0 表示成功。"
+          },
+          "401": {
+            "description": "UNAUTHENTICATED. Supply a valid Bearer token. / 需要有效 Bearer 令牌。"
+          },
+          "403": {
+            "description": "FORBIDDEN. Administrator role required. / 需要管理员权限。"
+          },
+          "404": {
+            "description": "IMAGE_HUB_DISABLED or unknown Image Hub route. / 镜像仓库未启用或路由不存在。"
+          },
+          "422": {
+            "description": "INVALID_REQUEST. The resource path contains an invalid segment. / 资源路径不合法。"
+          },
+          "503": {
+            "description": "IMAGE_HUB_UNAVAILABLE. The Image Hub is starting or offline. / 镜像仓库正在启动或离线。"
+          }
+        }
+      },
+      "post": {
+        "operationId": "image_hub_forward_post",
+        "summary": "POST Image Hub resource",
+        "x-title": {
+          "en": "POST Image Hub resource",
+          "zh-CN": "POST 镜像仓库接口"
+        },
+        "description": "Administrator-only streaming proxy to the embedded Image Hub. Upstream business failures use the native numeric code. / 管理员访问内置镜像仓库，业务错误保留原生数字业务码。",
+        "x-role": "admin",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "*path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Relative Image Hub API path, for example registry/images, registry/import, registry/gc/run or tasks/{id}. / 镜像仓库 API 相对路径。"
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Native Image Hub status and JSON body containing code, category, data, msg and version. Code 0 means success. / 保留镜像仓库原生状态和 JSON 响应，code 为 0 表示成功。"
+          },
+          "401": {
+            "description": "UNAUTHENTICATED. Supply a valid Bearer token. / 需要有效 Bearer 令牌。"
+          },
+          "403": {
+            "description": "FORBIDDEN. Administrator role required. / 需要管理员权限。"
+          },
+          "404": {
+            "description": "IMAGE_HUB_DISABLED or unknown Image Hub route. / 镜像仓库未启用或路由不存在。"
+          },
+          "422": {
+            "description": "INVALID_REQUEST. The resource path contains an invalid segment. / 资源路径不合法。"
+          },
+          "503": {
+            "description": "IMAGE_HUB_UNAVAILABLE. The Image Hub is starting or offline. / 镜像仓库正在启动或离线。"
+          }
+        },
+        "requestBody": {
+          "description": "JSON fields depend on the resource. Only registry/import uses a multipart archive. / JSON 字段随资源而异，归档导入使用 multipart。",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "Docker or OCI image archive / Docker 或 OCI 镜像归档。"
+                  },
+                  "repository": {
+                    "type": "string",
+                    "description": "Destination repository, optional / 可选目标仓库。"
+                  },
+                  "tag": {
+                    "type": "string",
+                    "description": "Destination tag, optional / 可选目标标签。"
+                  },
+                  "timeout_minutes": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "default": 60,
+                    "description": "Transfer timeout, 0 is unlimited / 传输超时，0 为不限。"
+                  },
+                  "retry_times": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 5,
+                    "default": 2,
+                    "description": "Transfer retry count / 传输重试次数。"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "image_hub_forward_put",
+        "summary": "PUT Image Hub resource",
+        "x-title": {
+          "en": "PUT Image Hub resource",
+          "zh-CN": "PUT 镜像仓库接口"
+        },
+        "description": "Administrator-only streaming proxy to the embedded Image Hub. Upstream business failures use the native numeric code. / 管理员访问内置镜像仓库，业务错误保留原生数字业务码。",
+        "x-role": "admin",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "*path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Relative Image Hub API path, for example registry/images, registry/import, registry/gc/run or tasks/{id}. / 镜像仓库 API 相对路径。"
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Native Image Hub status and JSON body containing code, category, data, msg and version. Code 0 means success. / 保留镜像仓库原生状态和 JSON 响应，code 为 0 表示成功。"
+          },
+          "401": {
+            "description": "UNAUTHENTICATED. Supply a valid Bearer token. / 需要有效 Bearer 令牌。"
+          },
+          "403": {
+            "description": "FORBIDDEN. Administrator role required. / 需要管理员权限。"
+          },
+          "404": {
+            "description": "IMAGE_HUB_DISABLED or unknown Image Hub route. / 镜像仓库未启用或路由不存在。"
+          },
+          "422": {
+            "description": "INVALID_REQUEST. The resource path contains an invalid segment. / 资源路径不合法。"
+          },
+          "503": {
+            "description": "IMAGE_HUB_UNAVAILABLE. The Image Hub is starting or offline. / 镜像仓库正在启动或离线。"
+          }
+        },
+        "requestBody": {
+          "description": "JSON fields depend on the resource. Only registry/import uses a multipart archive. / JSON 字段随资源而异，归档导入使用 multipart。",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "image_hub_forward_delete",
+        "summary": "DELETE Image Hub resource",
+        "x-title": {
+          "en": "DELETE Image Hub resource",
+          "zh-CN": "DELETE 镜像仓库接口"
+        },
+        "description": "Administrator-only streaming proxy to the embedded Image Hub. Upstream business failures use the native numeric code. / 管理员访问内置镜像仓库，业务错误保留原生数字业务码。",
+        "x-role": "admin",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "*path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Relative Image Hub API path, for example registry/images, registry/import, registry/gc/run or tasks/{id}. / 镜像仓库 API 相对路径。"
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Native Image Hub status and JSON body containing code, category, data, msg and version. Code 0 means success. / 保留镜像仓库原生状态和 JSON 响应，code 为 0 表示成功。"
+          },
+          "401": {
+            "description": "UNAUTHENTICATED. Supply a valid Bearer token. / 需要有效 Bearer 令牌。"
+          },
+          "403": {
+            "description": "FORBIDDEN. Administrator role required. / 需要管理员权限。"
+          },
+          "404": {
+            "description": "IMAGE_HUB_DISABLED or unknown Image Hub route. / 镜像仓库未启用或路由不存在。"
+          },
+          "422": {
+            "description": "INVALID_REQUEST. The resource path contains an invalid segment. / 资源路径不合法。"
+          },
+          "503": {
+            "description": "IMAGE_HUB_UNAVAILABLE. The Image Hub is starting or offline. / 镜像仓库正在启动或离线。"
+          }
+        },
+        "requestBody": {
+          "description": "JSON fields depend on the resource. Only registry/import uses a multipart archive. / JSON 字段随资源而异，归档导入使用 multipart。",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
     "/cluster/runtime/{*path}": {
       "get": {
         "operationId": "cluster_manager_forward_get",

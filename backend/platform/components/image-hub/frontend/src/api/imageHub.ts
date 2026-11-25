@@ -43,6 +43,7 @@ export interface RepositoryDetail {
 
 export interface RegistryInfo {
   registry_port: number;
+  published_address?: string;
 }
 
 export interface NetworkAddresses {

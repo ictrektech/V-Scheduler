@@ -92,6 +92,10 @@ x-controller: &controller
     SCHEDULER_EMBEDDED_AGENT: "true"
     SCHEDULER_NATIVE_NODES: "true"
     SCHEDULER_EMBEDDED_INFERENCE: "${SCHEDULER_EMBEDDED_INFERENCE:-false}"
+    SCHEDULER_EMBEDDED_IMAGE_HUB: "true"
+    SCHEDULER_IMAGE_HUB_BIND: "${SCHEDULER_IMAGE_HUB_BIND:-127.0.0.1}"
+    VOS_IMAGE_HUB_REGISTRY_PORT: "${SCHEDULER_IMAGE_HUB_PORT:-36113}"
+    VOS_IMAGE_HUB_REGISTRY_URL: "http://127.0.0.1:${SCHEDULER_IMAGE_HUB_PORT:-36113}"
     SCHEDULER_EMBEDDED_CLUSTER_MANAGER: "${SCHEDULER_EMBEDDED_CLUSTER_MANAGER:-false}"
     MODELINFER_MODEL_HUB_PATH: "${MODEL_HUB_SHARED_MODELS_PATH:-/data/vos_workspace/model_hub}"
     MODELINFER_IMAGE_HUB_PROBE_HOST: "${VOS_HOST_GW_IP:-}"
@@ -112,6 +116,8 @@ x-controller: &controller
     - ${VOS_APP_STORAGE_PATH}/gateway:/gateway-data
     - ${VOS_APP_STORAGE_PATH}/inference:/var/lib/modelinfer
     - ${VOS_APP_STORAGE_PATH}/cluster:/var/lib/vos-cluster-manager
+    - ${VOS_APP_STORAGE_PATH}/image-hub:/var/lib/image-hub
+    - ${VOS_APP_STORAGE_PATH}/image-registry:/var/lib/registry
     - ${VOS_APP_CONTEXT_PATH}:/var/lib/vos-context:ro
   networks:
     vos_default:
@@ -119,6 +125,7 @@ x-controller: &controller
   ports:
     - "${MODEL_HUB_BACKEND_HOST_PORT:-36005}:6005"
     - "${SCHEDULER_HOST_PORT:-38120}:38120"
+    - "${SCHEDULER_IMAGE_HUB_BIND:-127.0.0.1}:${SCHEDULER_IMAGE_HUB_PORT:-36113}:${SCHEDULER_IMAGE_HUB_PORT:-36113}"
     - "${V_ROUTER_HOST_PORT:-22888}:8080"
   labels:
     - "traefik.enable=true"
@@ -135,6 +142,10 @@ x-controller: &controller
     - "traefik.http.routers.v-scheduler-inference-ui.priority=1400"
     - "traefik.http.routers.v-scheduler-inference-ui.service=v-scheduler-web"
     - "traefik.http.routers.v-scheduler-inference-ui.middlewares=v-scheduler-strip"
+    - "traefik.http.routers.v-scheduler-image-hub-ui.rule=PathPrefix(`/app/com.ictrek.v-scheduler/image-hub/`)"
+    - "traefik.http.routers.v-scheduler-image-hub-ui.priority=1400"
+    - "traefik.http.routers.v-scheduler-image-hub-ui.service=v-scheduler-web"
+    - "traefik.http.routers.v-scheduler-image-hub-ui.middlewares=v-scheduler-strip"
     - "traefik.http.routers.v-scheduler-cluster-ui.rule=PathPrefix(`/app/com.ictrek.v-scheduler/cluster/`)"
     - "traefik.http.routers.v-scheduler-cluster-ui.priority=1400"
     - "traefik.http.routers.v-scheduler-cluster-ui.service=v-scheduler-web"

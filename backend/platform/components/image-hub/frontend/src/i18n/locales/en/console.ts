@@ -87,6 +87,7 @@ export default {
       action: 'Actions',
     },
     row: {
+      copyDeploymentAddress: 'Copy deployment image address',
       download: 'Download Command',
       sync: 'Sync',
       clone: 'Clone',

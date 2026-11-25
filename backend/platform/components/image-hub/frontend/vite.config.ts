@@ -15,6 +15,9 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url)),
+        '@scheduler-auth': env.VITE_SCHEDULER_IMAGE_HUB === 'true'
+          ? '/build/scheduler/vos-auth.ts'
+          : fileURLToPath(new URL('./src/api/standalone-auth.ts', import.meta.url)),
       },
     },
     server: {

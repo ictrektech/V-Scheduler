@@ -194,6 +194,17 @@ const downloadLine = computed(() =>
     : '',
 );
 
+const schedulerImageHub = import.meta.env.VITE_SCHEDULER_IMAGE_HUB === 'true';
+
+async function copyDeploymentAddress(tag: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(`${downloadIhAddr.value}/${repository.value}:${tag}`);
+    message.success(t('detail.upstream.copySuccess'));
+  } catch {
+    message.error(t('common.copyFailed'));
+  }
+}
+
 function openDownload(tag: string): void {
   downloadTag.value = tag;
   downloadOpen.value = true;
@@ -302,6 +313,10 @@ onMounted(() => {
           {{ formatTime(record.created) }}
         </template>
         <template v-else-if="column.key === 'action'">
+          <a-button v-if="schedulerImageHub && downloadIhAddr" type="link" size="small"
+            @click="copyDeploymentAddress(record.tag)">
+            {{ t('detail.row.copyDeploymentAddress') }}
+          </a-button>
           <a-button type="link" size="small" @click="openDownload(record.tag)">
             {{ t('detail.row.download') }}
           </a-button>

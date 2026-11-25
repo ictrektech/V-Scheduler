@@ -6,6 +6,7 @@ mod controller;
 mod gpu;
 mod identity;
 mod inference_runtime;
+mod image_hub_runtime;
 mod local;
 mod managed_nodes;
 mod model;
@@ -94,6 +95,7 @@ async fn main() -> anyhow::Result<()> {
             let node_manager = managed_nodes::start(&url);
             let inference = inference_runtime::start(&url);
             let cluster = cluster_runtime::start(&url);
+            let image_hub = image_hub_runtime::start();
             let mut previous_failure = None;
             let result = loop {
                 let result = tokio::select! {
@@ -146,6 +148,9 @@ async fn main() -> anyhow::Result<()> {
             }
             if let Some(inference) = inference {
                 inference.abort();
+            }
+            if let Some(image_hub) = image_hub {
+                image_hub.abort();
             }
             if let Some(cluster) = cluster {
                 cluster.abort();
