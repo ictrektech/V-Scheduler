@@ -2446,6 +2446,14 @@
       "ChatCompletionRequest": {
         "type": "object",
         "properties": {
+          "include": {
+            "type": ["array", "null"],
+            "description": "V-Scheduler 兼容扩展 include 可省略，也可填 null、空数组或只包含 reasoning.encrypted_content 的字符串数组。网关在转发前移除此字段，响应不包含 Responses 推理项。其他选择项或格式无效时返回 400 INVALID_REQUEST。",
+            "items": {
+              "type": "string",
+              "enum": ["reasoning.encrypted_content"]
+            }
+          },
           "model": {
             "type": "string",
             "description": "Exact canonical id from GET /v1/models, or auto. Do not rebuild/reverse its upstream prefix."
@@ -2930,6 +2938,14 @@
       "AnthropicMessageRequest": {
         "type": "object",
         "properties": {
+          "include": {
+            "type": ["array", "null"],
+            "description": "V-Scheduler 兼容扩展 include 可省略，也可填 null、空数组或只包含 reasoning.encrypted_content 的字符串数组。网关在转发前移除此字段，响应不包含 Responses 推理项。其他选择项或格式无效时返回 400 INVALID_REQUEST。",
+            "items": {
+              "type": "string",
+              "enum": ["reasoning.encrypted_content"]
+            }
+          },
           "model": {
             "type": "string",
             "description": "Exact canonical id from GET /v1/models, or auto. Do not rebuild/reverse its upstream prefix."

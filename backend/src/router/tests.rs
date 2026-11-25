@@ -915,6 +915,7 @@ async fn rust_gateway_handles_native_chat_conversion_and_sse_against_a_real_http
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
     let app=Router::new().route("/v1/chat/completions",post(|Json(v):Json<Value>|async move{
+        assert!(v.get("include").is_none());
         if v["stream"]==true{(StatusCode::OK,[("content-type","text/event-stream")],"data: {\"choices\":[{\"delta\":{\"content\":\"rust echo\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n").into_response()}
         else{Json(json!({"id":"fixture","created":0,"model":v["model"],"choices":[{"message":{"role":"assistant","content":"rust echo"},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}})).into_response()}
     }));
@@ -935,12 +936,15 @@ async fn rust_gateway_handles_native_chat_conversion_and_sse_against_a_real_http
         ("/v1/messages", "auto", "openai"),
     ] {
         g.registry.lock().unwrap().upstreams.get_mut("fixture").unwrap().protocol = protocol.into();
-        for stream in [false, true] {
-            let body = if path.ends_with("responses") {
+        for (stream, with_include) in [(false, false), (true, false), (false, true), (true, true)] {
+            let mut body = if path.ends_with("responses") {
                 json!({"model":"manual/echo","input":"hello","stream":stream})
             } else {
                 json!({"model":requested_model,"messages":[{"role":"user","content":"hello"}],"max_tokens":8,"stream":stream})
             };
+            if with_include {
+                body["include"] = json!(["reasoning.encrypted_content"]);
+            }
             let request = axum::http::Request::builder()
                 .method("POST")
                 .uri(path)
@@ -972,8 +976,21 @@ async fn rust_gateway_handles_native_chat_conversion_and_sse_against_a_real_http
             }
         }
     }
+    for (path, body) in [
+        ("/v1/chat/completions", json!({"model":"manual/echo","messages":[{"role":"user","content":"hello"}],"include":["message.output_text.logprobs"]})),
+        ("/v1/messages", json!({"model":"manual/echo","messages":[{"role":"user","content":"hello"}],"max_tokens":8,"include":[1]})),
+    ] {
+        let request = Request::builder()
+            .method("POST")
+            .uri(path)
+            .header("content-type", "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap();
+        let response = proxy::handle(g.clone(), principal("alice"), request).await;
+        assert_eq!(response.err().unwrap().status, 400);
+    }
     assert_eq!(g.registry.lock().unwrap().inflight["fixture"], 0);
-    assert_eq!(g.usage.lock().unwrap().len(), 12);
+    assert_eq!(g.usage.lock().unwrap().len(), 24);
     server.abort();
     std::fs::remove_dir_all(root).unwrap();
 }

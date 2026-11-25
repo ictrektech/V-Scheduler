@@ -490,3 +490,7 @@ Single-model changes use domains in PATCH `/api/v1/models`. Registration accepts
 ### POST /v1/responses
 
 Chat conversion accepts omitted include, null, an empty array, or an array containing only reasoning.encrypted_content. Converted responses have no encrypted reasoning items. Other selectors and invalid shapes return 400 INVALID_REQUEST. Use a native Responses upstream for encrypted reasoning context.
+
+### POST /v1/chat/completions and POST /v1/messages
+
+As a V-Scheduler extension, include is optional. It accepts null, an empty array, or an array containing only reasoning.encrypted_content. The gateway removes it before dispatch and returns no Responses reasoning items. Other selectors and invalid shapes return 400 INVALID_REQUEST.

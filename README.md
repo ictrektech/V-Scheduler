@@ -455,3 +455,5 @@ English readers can use the [complete API integration handbook](docs/api-referen
 推理应用登记的模型可由 VOS 管理员在「模型与上游 → 模型访问 Key」生成、设置或撤销专用 Key。该 Key 归签发管理员管理，仍只授权所选私有模型。公共模型可直接调用。
 
 `POST /v1/responses` 兼容说明。Chat 转换接受省略 include、null、空数组或只含 reasoning.encrypted_content 的字符串数组。转换响应无加密推理项，其他选择项或格式无效时返回 400 INVALID_REQUEST。需要加密推理上下文时使用原生 Responses 上游。
+
+在 `POST /v1/chat/completions` 和 `POST /v1/messages` 中，V-Scheduler 兼容扩展 include 可省略，也可填 null、空数组或只包含 reasoning.encrypted_content 的字符串数组。网关在转发前移除此字段，响应不包含 Responses 推理项。其他选择项或格式无效时返回 400 INVALID_REQUEST。

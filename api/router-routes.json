@@ -37,7 +37,7 @@
   },
   {
     "auth": "inference",
-    "desc": "OpenAI 兼容。model 必须使用 /v1/models 返回的带来源前缀名称；请求原样透传到上游，stream=true 时逐 token 转发。 配置 Auto Key 后，匿名请求 model=auto 返回 401，其他模型专用 Key 返回 403。Auto 专用 Key 只在公开候选中选型。VOS 账号和个人 Key 沿用原有权限。",
+    "desc": "OpenAI 兼容。model 必须使用 /v1/models 返回的带来源前缀名称；请求原样透传到上游，stream=true 时逐 token 转发。 配置 Auto Key 后，匿名请求 model=auto 返回 401，其他模型专用 Key 返回 403。Auto 专用 Key 只在公开候选中选型。VOS 账号和个人 Key 沿用原有权限。 V-Scheduler 兼容扩展 include 可省略，也可填 null、空数组或只包含 reasoning.encrypted_content 的字符串数组。网关在转发前移除此字段，响应不包含 Responses 推理项。其他选择项或格式无效时返回 400 INVALID_REQUEST。",
     "example": "curl -N http://\u003cvos-host\u003e:22888/v1/chat/completions \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"model\":\"v-scheduler/ollama-qa/qwen3.5:2b\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"你好\"}]}'",
     "group": "openai",
     "method": "POST",
@@ -190,7 +190,7 @@
   },
   {
     "auth": "inference",
-    "desc": "支持指定模型或 model=auto。原生 Anthropic 上游直接转发。支持 Chat Completions 的 openai、chat_completions 等上游可转换文本、图片输入和函数工具，支持 SSE。Auto Messages 使用可转换字段，转换模式不支持 thinking、提示缓存或服务端工具。图片与工具能力取决于实际模型。支持 x-api-key 网关身份。 配置 Auto Key 后，匿名请求 model=auto 返回 401，其他模型专用 Key 返回 403。Auto 专用 Key 只在公开候选中选型。VOS 账号和个人 Key 沿用原有权限。",
+    "desc": "支持指定模型或 model=auto。原生 Anthropic 上游直接转发。支持 Chat Completions 的 openai、chat_completions 等上游可转换文本、图片输入和函数工具，支持 SSE。Auto Messages 使用可转换字段，转换模式不支持 thinking、提示缓存或服务端工具。图片与工具能力取决于实际模型。支持 x-api-key 网关身份。 配置 Auto Key 后，匿名请求 model=auto 返回 401，其他模型专用 Key 返回 403。Auto 专用 Key 只在公开候选中选型。VOS 账号和个人 Key 沿用原有权限。 V-Scheduler 兼容扩展 include 可省略，也可填 null、空数组或只包含 reasoning.encrypted_content 的字符串数组。网关在转发前移除此字段，响应不包含 Responses 推理项。其他选择项或格式无效时返回 400 INVALID_REQUEST。",
     "example": "",
     "group": "anthropic",
     "method": "POST",

@@ -44,7 +44,7 @@
           "method": "GET",
           "path": "/v1/models",
           "summary": "模型列表",
-          "desc": "合并所有健康上游的模型。只返回带来源前缀的模型名，例如 model-hub/xxx、image-studio/xxx、registered/xxx、manual/xxx、ai.ictrek.com/xxx。 Auto 仅向有调用权限的身份显示。配置 Auto Key 后调用 Auto 需要认证。",
+          "desc": "合并所有健康上游的模型。只返回带来源前缀的模型名，例如 model-hub/xxx、image-studio/xxx、registered/xxx、manual/xxx、ai.ictrek.com/xxx。 Auto 仅向有调用权限的身份显示。配置 Auto Key 后调用 Auto 需要认证。 V-Scheduler 兼容扩展 include 可省略，也可填 null、空数组或只包含 reasoning.encrypted_content 的字符串数组。网关在转发前移除此字段，响应不包含 Responses 推理项。其他选择项或格式无效时返回 400 INVALID_REQUEST。",
           "auth": "inference",
           "example": "curl http://<vos-host>:22888/v1/models"
         },
@@ -235,7 +235,7 @@
           "method": "GET",
           "path": "/v1/audio/speakers",
           "summary": "声纹库列表",
-          "desc": "按 model 查询参数（v-voice/<声纹模型 key>）路由到声纹模型，返回已注册声纹：speakers[]/data[]（同值）每项含 id、name、dimension、created_at，另含 default_threshold；不返回声纹向量。声纹注册/删除在 V-Voice 管理面完成，不属于本接口。",
+          "desc": "按 model 查询参数（v-voice/<声纹模型 key>）路由到声纹模型，返回已注册声纹：speakers[]/data[]（同值）每项含 id、name、dimension、created_at，另含 default_threshold；不返回声纹向量。声纹注册/删除在 V-Voice 管理面完成，不属于本接口。 V-Scheduler 兼容扩展 include 可省略，也可填 null、空数组或只包含 reasoning.encrypted_content 的字符串数组。网关在转发前移除此字段，响应不包含 Responses 推理项。其他选择项或格式无效时返回 400 INVALID_REQUEST。",
           "auth": "inference",
           "example": "curl 'http://<vos-host>:22888/v1/audio/speakers?model=v-voice/speaker-campplus-zh-en'"
         }

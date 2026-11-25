@@ -485,6 +485,11 @@ async fn handle_inner(g: Arc<Gateway>, id: Identity, request: Request, classifie
             (Some(buffer), bytes, vec![], value, model)
         }
     };
+    if method == "POST" && matches!(path.as_str(), "/v1/chat/completions" | "/v1/messages") {
+        if let Some(include) = value.as_object_mut().and_then(|body| body.remove("include")) {
+            bridge::validate_compat_include(&include)?;
+        }
+    }
     if ["/v1/systemone", "/v1/decisions"].contains(&path.as_str()) && value["stream"] == true {
         return Err(Failure::new(400, "Decision endpoints do not support streaming"));
     }

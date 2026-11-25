@@ -2446,6 +2446,14 @@
       "ChatCompletionRequest": {
         "type": "object",
         "properties": {
+          "include": {
+            "type": ["array", "null"],
+            "description": "As a V-Scheduler extension, include is optional. It accepts null, an empty array, or an array containing only reasoning.encrypted_content. The gateway removes it before dispatch and returns no Responses reasoning items. Other selectors and invalid shapes return 400 INVALID_REQUEST.",
+            "items": {
+              "type": "string",
+              "enum": ["reasoning.encrypted_content"]
+            }
+          },
           "model": {
             "type": "string",
             "description": "Exact canonical id from GET /v1/models, or auto. Do not rebuild/reverse its upstream prefix."
@@ -2930,6 +2938,14 @@
       "AnthropicMessageRequest": {
         "type": "object",
         "properties": {
+          "include": {
+            "type": ["array", "null"],
+            "description": "As a V-Scheduler extension, include is optional. It accepts null, an empty array, or an array containing only reasoning.encrypted_content. The gateway removes it before dispatch and returns no Responses reasoning items. Other selectors and invalid shapes return 400 INVALID_REQUEST.",
+            "items": {
+              "type": "string",
+              "enum": ["reasoning.encrypted_content"]
+            }
+          },
           "model": {
             "type": "string",
             "description": "Exact canonical id from GET /v1/models, or auto. Do not rebuild/reverse its upstream prefix."

@@ -55,6 +55,23 @@ fn content(v: &Value, protocol: &str) -> Api<Value> {
     }
     Ok(json!(out))
 }
+pub(super) fn validate_compat_include(include: &Value) -> Api<()> {
+    if include.is_null() {
+        return Ok(());
+    }
+    let invalid_type = || Failure::new(400, "include must be an array of strings or null");
+    for selector in include.as_array().ok_or_else(invalid_type)? {
+        let selector = selector.as_str().ok_or_else(invalid_type)?;
+        if selector != "reasoning.encrypted_content" {
+            return Err(Failure::new(
+                400,
+                format!("unsupported include selector {selector:?}; use a native Responses upstream"),
+            ));
+        }
+    }
+    Ok(())
+}
+
 pub(super) fn request(input: &Value, protocol: &str) -> Api<Value> {
     fields(
         input,
@@ -72,22 +89,8 @@ pub(super) fn request(input: &Value, protocol: &str) -> Api<Value> {
         }
     }
     if protocol == "responses" {
-        if let Some(include) = input.get("include").filter(|v| !v.is_null()) {
-            let selectors = include
-                .as_array()
-                .ok_or_else(|| Failure::new(400, "include must be an array of strings or null"))?;
-            for selector in selectors {
-                match selector.as_str() {
-                    // Chat conversion emits no reasoning items to decorate.
-                    Some("reasoning.encrypted_content") => {}
-                    Some(selector) => return Err(Failure::new(
-                        400,
-                        format!("unsupported include selector {selector:?} for chat conversion; use a native upstream"),
-                    )),
-                    None => return Err(Failure::new(400, "include must be an array of strings or null")),
-                }
-            }
-        }
+        // Chat conversion emits no Responses reasoning items to decorate.
+        validate_compat_include(&input["include"])?;
         if input.get("store").is_some_and(|v| v != false) {
             return Err(Failure::new(
                 400,
