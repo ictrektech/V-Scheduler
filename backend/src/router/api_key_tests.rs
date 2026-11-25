@@ -148,6 +148,33 @@ async fn registration_sets_preserves_and_rotates_model_credentials() {
 }
 
 #[tokio::test]
+async fn embedded_registered_model_uses_verified_administrator_as_key_owner() {
+    let (g, mut admin, user, task) = fixture().await;
+    let mut upstream = tests::upstream("registered-modelinfer");
+    upstream.owner = "com.ictrek.v-scheduler".into();
+    upstream.source = "registered".into();
+    upstream.visibility = "private".into();
+    upstream.model_prefix = "registered".into();
+    g.registry.lock().unwrap().put(upstream, vec![tests::model("target"), tests::model("other")]);
+
+    let request_key = || request("PUT", "/api/v1/models/access-key",
+        json!({"upstream_id":"registered-modelinfer","model":"registered/target","access_key":true}));
+    assert_eq!(api_keys::model_access(&g, &admin, request_key()).await.unwrap_err().status, 403);
+    admin.admin = true;
+    assert_eq!(api_keys::model_access(&g, &admin, request_key()).await.unwrap_err().status, 403);
+    user.lock().unwrap()["role_code"] = json!("system_admin");
+
+    let response = api_keys::model_access(&g, &admin, request_key()).await.unwrap();
+    assert_eq!(response.headers()["cache-control"], "no-store");
+    let result = value(response).await;
+    let key = result["model_access_keys"][0]["api_key"].as_str().unwrap();
+    let identity = api_keys::authenticate(&g, key).await.unwrap();
+    assert_eq!(identity.owner, admin.owner);
+    assert_eq!(g.registry.lock().unwrap().list_models(&identity).len(), 1);
+    task.abort();
+}
+
+#[tokio::test]
 async fn expired_keys_and_insecure_stores_do_not_authorize_private_access() {
     let (g,alice,_,task)=fixture().await;let result=create(&g,&alice).await;let key=result["api_key"].as_str().unwrap();
     let mut snapshot=serde_json::to_value(&*g.api_keys.lock().unwrap()).unwrap();

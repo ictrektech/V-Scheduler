@@ -120,6 +120,8 @@ VOS 账户鉴权继续支持。应用已安装后，点击语言选择器旁的 
 
 个人与模型 Key 都只用于模型发现和推理，不能修改上游、资源预算、public/private 或创建其他 Key。Key 所属账户被禁用或删除后，私有访问停止；VOS 身份服务不可用时也不会放行私有访问。管理 Key 的 API 必须使用 VOS 账户 token，API Key 不能代替它。public/private 的修改不自动轮换 Key。上游配置的 `api_key` 是厂商凭据，**客户端使用的是 V-Scheduler 的访问 Key**。
 
+由 V-Scheduler 或 ModelInfer 应用身份登记的模型可由 VOS 管理员设置，模型 Key 由签发管理员的 VOS 账户持有。
+
 ```bash
 GATEWAY=http://<vos-host>:22888
 # VOS_TOKEN: 当前 VOS 账户 token，不要写入共享配置或日志。

@@ -150,14 +150,19 @@ pub(super) async fn model_access(g: &Gateway, identity: &Identity, request: Requ
         let u=r.upstreams.get(text(&payload,"upstream_id")).ok_or_else(||Failure::new(404,"upstream not found"))?;
         if !(identity.admin || !u.owner.is_empty() && u.owner==identity.owner) {return Err(Failure::new(403,"only the owner or an administrator can set model access keys"));}
         let m=r.model_by_id(u,text(&payload,"model"),identity).ok_or_else(||Failure::new(404,"model not found"))?;
-        (if u.owner.is_empty(){identity.owner.clone()}else{u.owner.clone()},format!("{}/{}",u.id,m.id),u.owner.clone())
+        // Embedded and legacy ModelInfer register with a VOS application
+        // subject. The VOS user directory can validate the issuing admin.
+        let administrator_owned = u.owner.is_empty() || (u.source == "registered"
+            && matches!(u.owner.as_str(), "com.ictrek.v-scheduler" | "com.ictrek.modelinfer"));
+        let key_owner = if administrator_owned { &identity.owner } else { &u.owner };
+        (key_owner.clone(), format!("{}/{}",u.id,m.id), u.owner.clone(), u.source.clone(), administrator_owned)
     };
     let value=payload.get("access_key").ok_or_else(||Failure::new(422,"access_key is required"))?.clone();
     let current_owner=owner(g,&target.0).await?;
-    if target.2.is_empty() && !current_owner.admin {return Err(Failure::new(403,"unowned model keys require a current VOS administrator"));}
+    if target.4 && !(identity.admin && current_owner.admin) {return Err(Failure::new(403,"system model keys require a current VOS administrator"));}
     let result={
         let r=g.registry.lock().unwrap();
-        let u=r.upstreams.get(text(&payload,"upstream_id")).filter(|u|u.owner==target.2)
+        let u=r.upstreams.get(text(&payload,"upstream_id")).filter(|u|u.owner==target.2 && u.source==target.3)
             .ok_or_else(||Failure::new(409,"model ownership changed; refresh and retry"))?;
         if r.model_by_id(u,text(&payload,"model"),identity).is_none(){return Err(Failure::new(404,"model not found"));}
         configure_models(g,&target.0,vec![(target.1,value)])?

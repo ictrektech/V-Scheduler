@@ -20911,7 +20911,7 @@
     "/api/v1/models/access-key": {
       "put": {
         "summary": "设置、轮换或撤销模型 Key",
-        "description": "仅模型所属 VOS 用户或管理员凭 VOS token 可修改。access_key=true 生成，字符串设置（16..512 位可打印 ASCII），null 撤销。只授权该模型，旧 Key 立即失效；不改变 public/private，不修改上游厂商 api_key。 Only access_key=true returns the generated secret once in model_access_keys[].api_key. A custom string returns metadata WITHOUT an api_key field; null returns key:null. GET /api/v1/api-keys never retrieves complete keys. Response model is internal upstream_id/native_model_id.",
+        "description": "仅模型所属 VOS 用户或管理员凭 VOS token 可修改。access_key=true 生成，字符串设置（16..512 位可打印 ASCII），null 撤销。只授权该模型，旧 Key 立即失效；不改变 public/private，不修改上游厂商 api_key。 Only access_key=true returns the generated secret once in model_access_keys[].api_key. A custom string returns metadata WITHOUT an api_key field; null returns key:null. GET /api/v1/api-keys never retrieves complete keys. Response model is internal upstream_id/native_model_id. 由 V-Scheduler 或 ModelInfer 应用身份登记的模型可由 VOS 管理员设置，模型 Key 由签发管理员的 VOS 账户持有。",
         "tags": [
           "manage"
         ],

@@ -6,13 +6,25 @@ const props=defineProps<{t:(text:string)=>string}>()
 const dialog=ref<HTMLDialogElement>(),keys=ref<any[]>([]),models=ref<any[]>([]),busy=ref(false),error=ref(''),secret=ref(''),copied=ref(false)
 const mode=ref('personal'),name=ref(''),days=ref(0),model=ref(''),supplied=ref(''),confirm=ref('')
 const safeError=(e:unknown)=>{
- recordDiagnostic('API_KEY_OPERATION_FAILED','api_key_management')
- return props.t('操作失败，请确认已使用 VOS 账户登录后重试。')
+ const failure=e as {status?:number,message?:string}
+ const status=failure.status
+ recordDiagnostic(status?`API_KEY_HTTP_${status}`:'API_KEY_OPERATION_FAILED','api_key_management')
+ if(status===401&&failure.message?.startsWith('API key owner is'))
+  return props.t('模型 Key 所属的 VOS 账户不可用。')
+ const messages:Record<number,string>={
+  401:'VOS 登录已失效，请重新登录后重试。',
+  403:'当前账户没有管理此 Key 的权限。',
+  404:'所选模型或 Key 已不存在，请重新打开面板。',
+  409:'当前配置已变更，或所填 Key 已被使用或撤销。',
+  422:'Key 设置无效，请检查输入后重试。',
+  503:'暂时无法验证 VOS 账户或保存 Key，请稍后重试。',
+ }
+ return props.t(messages[status||0]||'Key 操作失败，请稍后重试。')
 }
 async function load(){keys.value=(await gatewayRequest('/api/v1/api-keys')).keys||[];models.value=((await gatewayRequest('/api/v1/models')).models||[]).filter((m:any)=>m.visibility_manageable)}
 async function open(target?:string){dialog.value?.showModal();secret.value='';supplied.value='';keys.value=[];models.value=[];model.value='';confirm.value='';error.value='';busy.value=true;try{await load();if(target){mode.value='model';model.value=target}}catch(e){error.value=safeError(e)}finally{busy.value=false}}
 function close(){secret.value='';supplied.value='';confirm.value='';copied.value=false;dialog.value?.close()}
-async function run(action:()=>Promise<void>){busy.value=true;error.value='';secret.value='';copied.value=false;try{await action();await load()}catch(e){error.value=safeError(e)}finally{busy.value=false}}
+async function run(action:()=>Promise<void>){busy.value=true;error.value='';secret.value='';copied.value=false;try{await action();try{await load()}catch{error.value=props.t('Key 操作已成功，暂时无法刷新列表。')}}catch(e){error.value=safeError(e)}finally{busy.value=false}}
 async function create(){await run(async()=>{const result=await gatewayRequest('/api/v1/api-keys',{name:name.value,expires_in_days:Number(days.value)});secret.value=result.api_key;name.value=''})}
 async function modelKey(value:string|boolean|null){await run(async()=>{const target=models.value.find(m=>`${m.upstream_id}/${m.id}`===model.value);if(!target)return;const result=await gatewayRequest('/api/v1/models/access-key',{upstream_id:target.upstream_id,model:target.qualified,access_key:value},'PUT');secret.value=result.model_access_keys?.[0]?.api_key||'';supplied.value=''})}
 async function revoke(id:string){await run(async()=>{await gatewayRequest('/api/v1/api-keys/'+encodeURIComponent(id),undefined,'DELETE');confirm.value=''})}

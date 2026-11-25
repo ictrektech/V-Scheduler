@@ -89,3 +89,5 @@ V-Voice 就绪模型自动继承应用资源预算并进入模型目录，已配
 在「API 文档 → 调度管理 API → 应用后端部署」查看完整权限、字段和状态。管理员先登记节点和 Profile，再为应用创建服务凭据，并通过 PUT /backend-deployment-access/{app_id} 授权目标及仓库。应用提交镜像、节点和容器端口到 POST /backend-deployments；轮询状态为 running 后读取 endpoint。SSH 节点使用 Docker，受信 VOS 集群成员使用 VOS Projects。停止保留宿主机端口，删除并确认清理后释放。
 
 管理员也可在「节点管理 → 应用后端」直接登记应用、选择目标和 Profile。部署表单保存镜像、容器端口、可选宿主机端口、CPU 和内存上限及后端 JSON 配置。选择「API 文档 → 调度管理 API → 应用后端部署」可查看 SSH 和集群两种完整示例。
+
+推理应用登记的模型可由 VOS 管理员在「模型与上游 → 模型访问 Key」生成、设置或撤销专用 Key。该 Key 归签发管理员管理，仍只授权所选私有模型。公共模型可直接调用。
