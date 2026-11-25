@@ -1,6 +1,6 @@
 # V-Scheduler Resource Scheduling
 
-The Image Studio catalog shows **Upstream location** and **Execution node** in separate columns. Each ready remote node has its own entry. Under **Model settings**, a VOS administrator can enable or cancel direct admission using `PUT /api/v1/model-routing`.
+Image Studio shows the main node and each ready compute node in separate rows for the same model. **Test** and **API usage** use that row’s node. Main-node requests use local execution. Remote requests include the node’s `compute_deployment_id`. Under **Model settings**, a VOS administrator can enable or cancel direct admission using `PUT /api/v1/model-routing`.
 
 The Inference Deployment page resumes the VOS session automatically. Loaded data stays visible while the page shows a single recovery status. The current view refreshes once the session is restored.
 

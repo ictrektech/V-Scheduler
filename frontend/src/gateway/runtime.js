@@ -245,11 +245,16 @@ const app = {
     if (upstreamId !== "app-image-studio") return [];
     const model=this.state.models.find(row=>row.qualified===qualified&&row.upstream_id===upstreamId);
     if (!model) return [];
-    return this.state.studioPlacements.filter(item=>item.model_id===model.id);
+    const byNode=new Map();
+    for (const item of this.state.studioPlacements) {
+      const node=item.node_id || item.deployment_id;
+      if (item.model_id===model.id && !byNode.has(node)) byNode.set(node,item);
+    }
+    return [...byNode.values()];
   },
 
   studioPlacementName(item) {
-    return item.node_name || item.node_id || `${VRouterI18n.t("远端部署")} ${item.deployment_id.slice(0,8)}`;
+    return item.node_name || `${VRouterI18n.t("计算节点")} ${Math.max(1,this.state.studioPlacements.indexOf(item)+1)}`;
   },
 
   renderPlacementOptions(select, rows, choice) {
@@ -260,10 +265,15 @@ const app = {
 
   renderPlaygroundPlacement() {
     const select=$("pgPlacement");
+    const target=this.pgPlacementTarget;
+    for (const id of ["pgModel","pgUpstream"]) $(id).disabled=Boolean(target);
+    $("pgEndpoint").disabled=Boolean(target?.id);
+    $("pgFixedPlacementField").hidden=!target;
+    VRouterI18n.bind($("pgFixedPlacementName"),"textContent",()=>target?.name || VRouterI18n.t("主节点"));
     const rows=this.playgroundEndpoint()?.id==="images"
       ? this.studioPlacementsFor($("pgModel").value,$("pgUpstream").value) : [];
-    $("pgPlacementField").hidden=!rows.length;
-    this.renderPlacementOptions(select,rows,select.value);
+    $("pgPlacementField").hidden=Boolean(target)||!rows.length;
+    this.renderPlacementOptions(select,rows,target ? target.id : select.value);
   },
 
   // Budgets live behind the controller and can be much slower than the gateway
@@ -282,6 +292,10 @@ const app = {
 
   switchTab(tab) {
     tab = tab === 'upstreams' ? 'models' : tab;
+    if (tab !== 'playground' && this.pgPlacementTarget) {
+      this.pgPlacementTarget=null;
+      $("pgPlacement").value="";
+    }
     this.state.tab = tab;
     if (tab === 'playground') options.select(tab);
     VRouterI18n.bind($("pageTitle"), "textContent", () => VRouterI18n.t(TAB_TITLES[tab] || tab));
@@ -555,13 +569,10 @@ const app = {
 
   modelCatalogRows(models, showExecutionNodes) {
     const admin = this.state.status?.is_admin === true;
-    return models.map(m=>{
+    return models.flatMap(m=>{
             const budget = this.budgetFor(m);
             const actions = [];
             const placements = showExecutionNodes ? this.studioPlacementsFor(m.qualified,m.upstream_id) : [];
-            if (!m.short && m.kind !== "service") {
-              actions.push(`<button class="btn" onclick="app.tryModel(${jsArg(m.qualified)}, ${jsArg(m.upstream_id)})">${VRouterI18n.t("测试")}</button>`);
-            }
             if (!m.short && m.kind !== "service" && ["api", "registered"].includes(m.upstream_source) && m.upstream_manageable !== false) {
               actions.push(`<button class="btn" onclick="app.openModelDialog(${jsArg(m.qualified)}, ${jsArg(m.upstream_id)})">${VRouterI18n.t("编辑元数据")}</button>`);
             }
@@ -587,17 +598,16 @@ const app = {
                 }
               }
             }
-            return [
+            const row = placement => [
               `<span class="mono model-identifier">${esc(m.short ? m.id : (m.name || m.qualified))}</span><div class="model-capability-tags">${(m.capabilities || []).slice(0,4).map(c=>`<span class="capability-tag">${esc(VRouterI18n.t(CAPABILITIES.find(([id])=>id===c)?.[1] || c))}</span>`).join('')}</div><div class="hint">${(m.domains || ['general']).map(id => esc(VRouterI18n.t((this.state.domainCatalog || []).find(d => d.id === id)?.name || id))).join(' · ')}</div>${m.short ? ` <span class="pill kind">${VRouterI18n.t("短名")}</span>` : ""}`,
               ({embedding:"Embedding",chat:VRouterI18n.t("对话"),unknown:VRouterI18n.t("由上游决定"),service:VRouterI18n.t("服务接口")})[m.kind] || esc(m.kind),
               `<span class="pill ${m.upstream_kind}">${kindLabel(m.upstream_kind)}</span>`,
-              ...(showExecutionNodes ? [`<ul class="model-execution-nodes">${placements.length ? placements.map(item =>
-                `<li><span>${esc(this.studioPlacementName(item))}</span><small class="pill local">${esc(VRouterI18n.t("可调用"))}</small></li>`).join("") :
-                `<li class="hint">${esc(VRouterI18n.t("暂无可调用的远端节点"))}</li>`}</ul>`] : []),
-              `${esc(VRouterI18n.t(m.upstream_name))}${!m.short && !m.virtual && m.kind !== 'service' ? `<div class="hint">${esc(VRouterI18n.t("最近一次测试"))} · ${esc(this.testResultText(m.upstream_id, m.id))}</div>` : ''}`,
-              this.budgetCell(m, budget),
-              `<div class="model-row-actions">${!m.short && m.kind !== 'service' ? actions.shift() : ''}<button type="button" class="btn" onclick="app.openModelCall(${jsArg(m.qualified)}, ${jsArg(m.upstream_id)})">${VRouterI18n.t("调用方式")}</button>${!m.short && m.kind !== "service" ? `<button type="button" class="btn" onclick="app.openModelSpeed(${jsArg(m.id)}, ${jsArg(m.upstream_id || 'auto')}, ${jsArg(m.name || m.qualified)})">${VRouterI18n.t("速度趋势")}</button>` : ''}${actions.length ? `<details class="catalog-actions" ${this.catalogActionOpen.has(m.qualified)?'open':''} ontoggle="app.rememberCatalogAction(${jsArg(m.qualified)},this.open)"><summary>${VRouterI18n.t('模型设置')}</summary><div>${actions.join('')}</div></details>` : ''}</div>`,
+              ...(showExecutionNodes ? [`<div class="model-execution-node">${esc(placement ? this.studioPlacementName(placement) : VRouterI18n.t("主节点"))}${placement ? ` <small class="pill local">${VRouterI18n.t("可调用")}</small>` : ""}</div>`] : []),
+              `${esc(VRouterI18n.t(m.upstream_name))}${!placement && !m.short && !m.virtual && m.kind !== 'service' ? `<div class="hint">${esc(VRouterI18n.t("最近一次测试"))} · ${esc(this.testResultText(m.upstream_id, m.id))}</div>` : ''}`,
+              placement ? VRouterI18n.t("由部署决定") : this.budgetCell(m, budget),
+              `<div class="model-row-actions">${!m.short && m.kind !== 'service' ? `<button type="button" class="btn" onclick="app.tryModel(${jsArg(m.qualified)}, ${jsArg(m.upstream_id)}, ${jsArg(placement?.deployment_id || "")})">${VRouterI18n.t("测试")}</button>` : ''}<button type="button" class="btn" onclick="app.openModelCall(${jsArg(m.qualified)}, ${jsArg(m.upstream_id)}, ${jsArg(placement?.deployment_id || "")})">${VRouterI18n.t("调用方式")}</button>${!placement && !m.short && m.kind !== "service" ? `<button type="button" class="btn" onclick="app.openModelSpeed(${jsArg(m.id)}, ${jsArg(m.upstream_id || 'auto')}, ${jsArg(m.name || m.qualified)})">${VRouterI18n.t("速度趋势")}</button>` : ''}${!placement && actions.length ? `<details class="catalog-actions" ${this.catalogActionOpen.has(m.qualified)?'open':''} ontoggle="app.rememberCatalogAction(${jsArg(m.qualified)},this.open)"><summary>${VRouterI18n.t('模型设置')}</summary><div>${actions.join('')}</div></details>` : ''}</div>`,
             ];
+            return [row(null), ...placements.map(row)];
     });
   },
 
@@ -661,10 +671,12 @@ const app = {
     const pinned = Boolean(upstream && !model.virtual && model.kind !== "service");
     const placements=this.studioPlacementsFor(qualified,upstreamId);
     const placement=placements.find(item=>item.deployment_id===placementId);
-    const placementSelect=$("modelCallPlacement");
-    $("modelCallPlacementField").hidden=!placements.length;
-    this.renderPlacementOptions(placementSelect,placements,placementId);
-    placementSelect.onchange=()=>this.openModelCall(qualified,upstreamId,placementSelect.value);
+    if (placementId && !placement) {
+      this.toast(VRouterI18n.t("所选执行节点暂不可用。"));
+      return;
+    }
+    $("modelCallPlacementField").hidden=upstreamId!=="app-image-studio";
+    VRouterI18n.bind($("modelCallPlacementName"),"textContent",()=>placement ? this.studioPlacementName(placement) : VRouterI18n.t("主节点"));
     const bases = this.state.status?.base_urls || {};
     const base = (bases.internal || "http://v-scheduler:8080/v1").replace(/\/$/, "");
     const shell = value => "'" + String(value).replaceAll("'", "'\\''") + "'";
@@ -1106,7 +1118,7 @@ const app = {
   },
   renderPlaygroundUpstreams() {
     const value = $("pgModel").value, endpoint = this.playgroundEndpoint();
-    const previous = $("pgUpstream").value;
+    const previous = this.pgPlacementTarget?.upstream || $("pgUpstream").value;
     const candidates = this.playgroundCandidates(value, endpoint);
     VRouterI18n.bind($("pgUpstream"), "innerHTML", () => candidates.map(u => `<option value="${esc(u.id)}">${esc(u.name)} · ${esc(u.id)}</option>`).join("") || `<option value="">${VRouterI18n.t("无可用上游")}</option>`);
     if (candidates.some(u => u.id === previous)) $("pgUpstream").value = previous;
@@ -1129,7 +1141,10 @@ const app = {
     return PG_ENDPOINTS.find(e => e.id === $("pgEndpoint").value) || null;
   },
   playgroundEndpointsForValue(value) {
-    return PG_ENDPOINTS.filter(e => this.playgroundCandidates(value, e).length);
+    const target=this.pgPlacementTarget;
+    if (!target || value!==target.qualified) return PG_ENDPOINTS.filter(e => this.playgroundCandidates(value, e).length);
+    return PG_ENDPOINTS.filter(e => (!target.id || e.id==="images")
+      && this.playgroundCandidates(value, e).some(upstream=>upstream.id===target.upstream));
   },
   playgroundEndpointsForModel(model) {
     return PG_ENDPOINTS.filter(e => this.playgroundCandidates(model.qualified, e).length);
@@ -1859,15 +1874,23 @@ const app = {
     }
   },
 
-  tryModel(qualified, upstream) {
+  tryModel(qualified, upstream, placementId = "") {
+    const placement=this.studioPlacementsFor(qualified,upstream).find(row=>row.deployment_id===placementId);
+    if (placementId && !placement) {
+      this.toast(VRouterI18n.t("所选执行节点暂不可用。"));
+      return;
+    }
+    this.pgPlacementTarget=upstream==="app-image-studio"
+      ? {qualified, upstream, id:placementId, name:placement ? this.studioPlacementName(placement) : ""}
+      : null;
     this.switchTab("playground");
     setTimeout(() => {
       $("pgModel").value = qualified;
       this.renderPlaygroundEndpoints();
       if (upstream) {
-        const match = this.playgroundEndpoint() && this.playgroundCandidates(qualified, this.playgroundEndpoint()).some(item => item.id === upstream);
+        const match = !placement && this.playgroundEndpoint() && this.playgroundCandidates(qualified, this.playgroundEndpoint()).some(item => item.id === upstream);
         if (!match) {
-          const endpoint = PG_ENDPOINTS.find(endpoint => this.playgroundCandidates(qualified, endpoint).some(item => item.id === upstream));
+          const endpoint = PG_ENDPOINTS.find(endpoint => (!placement || endpoint.id==="images") && this.playgroundCandidates(qualified, endpoint).some(item => item.id === upstream));
           if (endpoint) {
             $("pgEndpoint").value = endpoint.id;
             this.renderPlaygroundUpstreams();
@@ -2013,10 +2036,16 @@ const app = {
     const model = $("pgModel").value;
     const endpoint = this.playgroundEndpoint();
     const pinned = $("pgUpstream").value;
+    const target = this.pgPlacementTarget;
+    const deploymentId = target ? target.id : $("pgPlacement").value;
     const placement = endpoint?.id==="images"
-      ? this.studioPlacementsFor(model,pinned).find(row=>row.deployment_id===$("pgPlacement").value) : null;
+      ? this.studioPlacementsFor(model,pinned).find(row=>row.deployment_id===deploymentId) : null;
     const native = this.state.models.find(m => m.qualified === model)?.id || model;
     if (!text || !model || !endpoint || !pinned || $("pgSend").disabled) return;
+    if (target && (model!==target.qualified || pinned!==target.upstream || (target.id && !placement))) {
+      this.toast(VRouterI18n.t("所选执行节点暂不可用。"));
+      return;
+    }
     input.value = "";
     this.pgAppend("user", text);
     const out = this.pgAppend("assistant", "…");
@@ -2125,7 +2154,7 @@ const app = {
           }
           if (job?.status!=="succeeded") throw new Error(VRouterI18n.t("图像任务失败"));
           answer=VRouterI18n.t("图像生成成功")+" · "+jobId;
-          if (placement) answer += " · "+this.studioPlacementName(placement);
+          if (target || placement) answer += " · "+(target?.name || (placement ? this.studioPlacementName(placement) : VRouterI18n.t("主节点")));
         } else {
           answer = this.playgroundText(endpoint.id, data);
         }

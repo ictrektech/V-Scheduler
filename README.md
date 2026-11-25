@@ -475,7 +475,7 @@ English readers can use the [complete API integration handbook](docs/api-referen
 
 已登记的计算节点对所有已认证的 VOS 应用可见。应用可以按固定 Profile 使用发布清单中的镜像，通过 V-Scheduler 将后端部署到匹配的 SSH 节点或 VOS 集群成员。部署、端口分配和生命周期参见[应用后端部署 API](docs/application-backend-deployment.md)。
 
-「模型与上游」中的 Image Studio 生图模型在「执行节点」列逐个显示可调用的远端节点，「上游位置」单独显示 API 上游所在位置。打开「测试」或「调用方式」选择节点，通过 VOS 用户身份提交，网关请求携带所选节点对应的 `compute_deployment_id`。默认位置沿用原调用方式。「测试」会用 Image Studio 返回的任务编号查询结果，成功时显示任务编号和所选节点。
+「模型与上游」为 Image Studio 模型分别显示主节点和每个可调用的计算节点。点所在行的「测试」或「调用方式」，请求固定走该节点。主节点沿用本机调用，远端使用 VOS 用户 token 并传入该行部署的 `compute_deployment_id`。「测试」会查询任务结果，成功后显示任务编号和执行节点。
 
 节点管理遇到调度服务重启或 VOS 会话暂时失效时，会保留已读取的节点和部署记录，并自动恢复读取。写入操作仍需由用户提交，API 地址和请求格式保持原样。
 
