@@ -494,7 +494,7 @@
           "method": "DELETE",
           "path": "/api/v1/api-keys/{id}",
           "summary": "撤销 API Key",
-          "desc": "仅 VOS 账户 token 可撤销自己的 Key；下一次私有模型请求失效。public 模型仍可匿名调用。 由 V-Scheduler 或 ModelInfer 应用身份登记的模型可由 VOS 管理员设置，模型 Key 由签发管理员的 VOS 账户持有。",
+          "desc": "仅 VOS 账户 token 可撤销自己的 Key；下一次私有模型请求失效。public 模型仍可匿名调用。",
           "example": "curl -X DELETE \"$GATEWAY/api/v1/api-keys/{id}\" -H \"Authorization: Bearer $VOS_TOKEN\""
         },
         {
@@ -503,7 +503,7 @@
           "method": "PUT",
           "path": "/api/v1/models/access-key",
           "summary": "设置、轮换或撤销模型 Key",
-          "desc": "仅模型所属 VOS 用户或管理员凭 VOS token 可修改。access_key=true 生成，字符串设置（16..512 位可打印 ASCII），null 撤销。只授权该模型，旧 Key 立即失效；不改变 public/private，不修改上游厂商 api_key。 仅自动生成时，本次响应返回 model_access_keys[].api_key；自定义 Key 不回显，撤销返回 key:null，后续列表查询没有明文。",
+          "desc": "仅模型所属 VOS 用户或管理员凭 VOS token 可修改。access_key=true 生成，字符串设置（16..512 位可打印 ASCII），null 撤销。只授权该模型，旧 Key 立即失效；不改变 public/private，不修改上游厂商 api_key。 仅自动生成时，本次响应返回 model_access_keys[].api_key；自定义 Key 不回显，撤销返回 key:null，后续列表查询没有明文。 由 V-Scheduler 或 ModelInfer 应用身份登记的模型可由 VOS 管理员设置，模型 Key 由签发管理员的 VOS 账户持有。",
           "example": "curl -X PUT \"$GATEWAY/api/v1/models/access-key\" -H \"Authorization: Bearer $VOS_TOKEN\" -H \"Content-Type: application/json\" -d '{\"upstream_id\":\"deepseek\",\"model\":\"api.deepseek.com/deepseek-flash\",\"access_key\":true}'"
         },
         {
