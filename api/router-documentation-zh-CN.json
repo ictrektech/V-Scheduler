@@ -435,7 +435,7 @@
           "method": "PATCH",
           "path": "/api/v1/models",
           "summary": "修改模型元数据",
-          "desc": "修改 API 创建上游的模型，model 使用 qualified 名称，可同时传 upstream_id。capabilities 和 endpoints 为字符串数组。手动修改设置 metadata_override=true，刷新保留；传 false 后 POST /api/v1/upstreams/{id}/refresh 恢复 Ollama 自动识别。仅 owner 和管理员可修改；内置、注册、发现模型仍只读。 适用领域：共享分类、注册默认值、单个/批量编辑、Auto 每步匹配及权限详见“模型适用领域”分组。",
+          "desc": "修改手动添加或已注册模型的元数据。model 填模型目录 ID，可传 upstream_id 避免同名歧义。kind 可填 chat、embedding 或 unknown，capabilities 和 endpoints 为字符串数组。手动修改默认 metadata_override=true。手动添加的模型传 false 后可刷新恢复自动识别，注册模型传 false 后立即恢复最近注册声明，覆盖在注册刷新后仍保留。仅上游所有者和管理员可修改。尝试修改注册模型可见范围或内置、发现模型的能力返回 409。 适用领域：共享分类、注册默认值、单个/批量编辑、Auto 每步匹配及权限详见“模型适用领域”分组。",
           "example": "PATCH /api/v1/models {\"model\":\"manual/model\",\"upstream_id\":\"ollama\",\"metadata_override\":false}"
         },
         {

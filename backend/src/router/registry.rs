@@ -150,6 +150,31 @@ impl Model {
     }
 }
 #[derive(Clone, Deserialize, Serialize)]
+pub(super) struct ModelMetadata {
+    kind: String,
+    capabilities: Vec<String>,
+    endpoints: Vec<String>,
+    owned_by: String,
+}
+impl ModelMetadata {
+    pub fn from_model(model: &Model) -> Self {
+        Self {
+            kind: model.kind.clone(),
+            capabilities: model.capabilities.clone(),
+            endpoints: model.endpoints.clone(),
+            owned_by: model.owned_by.clone(),
+        }
+    }
+
+    pub fn apply(&self, model: &mut Model, overridden: bool) {
+        model.kind.clone_from(&self.kind);
+        model.capabilities.clone_from(&self.capabilities);
+        model.endpoints.clone_from(&self.endpoints);
+        model.owned_by.clone_from(&self.owned_by);
+        model.metadata_override = overridden;
+    }
+}
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(default)]
 pub(super) struct Routing {
     pub weight: i64,
@@ -188,6 +213,7 @@ pub(super) struct Disk {
     pub model_routing: BTreeMap<String, ModelRouting>,
     pub domain_catalog: BTreeMap<String, String>,
     pub model_domains: BTreeMap<String, Vec<String>>,
+    pub registered_metadata: BTreeMap<String, BTreeMap<String, ModelMetadata>>,
     #[serde(deserialize_with = "null_default")]
     pub resources: Vec<Value>,
 }
@@ -200,6 +226,8 @@ pub(super) struct Registry {
     pub model_routing: BTreeMap<String, ModelRouting>,
     pub domain_catalog: BTreeMap<String, String>,
     pub model_domains: BTreeMap<String, Vec<String>>,
+    pub registered_metadata: BTreeMap<String, BTreeMap<String, ModelMetadata>>,
+    pub registered_metadata_defaults: BTreeMap<String, BTreeMap<String, ModelMetadata>>,
     pub inflight: BTreeMap<String, usize>,
     pub fair: BTreeMap<String, BTreeMap<String, i64>>,
     pub breaker: BTreeMap<String, (u32, DateTime<Utc>)>,
@@ -223,6 +251,7 @@ impl Registry {
             model_routing: disk.model_routing,
             domain_catalog: disk.domain_catalog,
             model_domains: disk.model_domains,
+            registered_metadata: disk.registered_metadata,
             resources: disk.resources,
             ..Self::default()
         };
@@ -271,6 +300,7 @@ impl Registry {
             model_routing: self.model_routing.clone(),
             domain_catalog: self.domain_catalog.clone(),
             model_domains: self.model_domains.clone(),
+            registered_metadata: self.registered_metadata.clone(),
             resources: self.resources.clone(),
         };
         let parent = path.parent().unwrap_or(std::path::Path::new("."));
@@ -297,6 +327,7 @@ impl Registry {
         for (id,source) in gone {
             if source=="v-scheduler" {self.builtin_unavailable.insert(id.clone());}
             self.upstreams.remove(&id);self.models.remove(&id);
+            self.registered_metadata_defaults.remove(&id);
         }
     }
     // Registration's legacy scheduler.mode=direct is an input alias, never a
@@ -321,14 +352,25 @@ impl Registry {
             .and_then(|old| old.created_at)
             .or(Some(Utc::now()));
         let previous = self.models.get(&u.id);
+        let mut defaults = BTreeMap::new();
         for m in &mut models {
             if u.source == "api" && m.visibility.is_none() {
                 m.visibility = previous.and_then(|rows| rows.iter().find(|old| old.id == m.id))
                     .and_then(|old| old.visibility.clone());
             }
             normalize_upstream_model(m, &u);
+            if u.source == "registered" {
+                defaults.insert(m.id.clone(), ModelMetadata::from_model(m));
+                if let Some(metadata) = self.registered_metadata.get(&u.id).and_then(|rows| rows.get(&m.id)) {
+                    metadata.apply(m, true);
+                    normalize_upstream_model(m, &u);
+                }
+            }
             m.upstream_id = u.id.clone();
             m.qualified = format!("{}/{}", u.prefix(), m.id);
+        }
+        if u.source == "registered" {
+            self.registered_metadata_defaults.insert(u.id.clone(), defaults);
         }
         self.models.insert(u.id.clone(), models);
         self.upstreams.insert(u.id.clone(), u);

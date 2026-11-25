@@ -435,7 +435,7 @@
           "method": "PATCH",
           "path": "/api/v1/models",
           "summary": "Update model metadata",
-          "desc": "Update an API-created upstream model using its qualified model ID and optional upstream_id. Capabilities and endpoints are string arrays. Manual edits set metadata_override=true and survive refresh. Set metadata_override=false, then POST /api/v1/upstreams/{id}/refresh to rediscover Ollama capabilities. Only the owner and administrators may edit; built-in/registered/discovered models remain read-only. Model domains: see the Model domains group for shared categories, registration defaults, single/batch editing, Auto per-step matching and permissions.",
+          "desc": "Update metadata for API-created or registered models. Use the catalog model ID and include upstream_id to disambiguate duplicates. kind accepts chat, embedding or unknown. capabilities and endpoints are string arrays. Editing defaults metadata_override to true. For a manual upstream set it to false and refresh to rediscover. For a registered upstream overrides survive re-registration, and false immediately restores the last registered metadata. Only the upstream owner or administrators may edit. Changing registered model visibility or built-in/discovered capabilities returns 409. Model domains: see the Model domains group for shared categories, registration defaults, single/batch editing, Auto per-step matching and permissions.",
           "example": "PATCH /api/v1/models {\"model\":\"manual/model\",\"upstream_id\":\"ollama\",\"metadata_override\":false}"
         },
         {

@@ -457,3 +457,7 @@ English readers can use the [complete API integration handbook](docs/api-referen
 `POST /v1/responses` 兼容说明。Chat 转换接受省略 include、null、空数组或只含 reasoning.encrypted_content 的字符串数组。转换响应无加密推理项，其他选择项或格式无效时返回 400 INVALID_REQUEST。需要加密推理上下文时使用原生 Responses 上游。
 
 在 `POST /v1/chat/completions` 和 `POST /v1/messages` 中，V-Scheduler 兼容扩展 include 可省略，也可填 null、空数组或只包含 reasoning.encrypted_content 的字符串数组。网关在转发前移除此字段，响应不包含 Responses 推理项。其他选择项或格式无效时返回 400 INVALID_REQUEST。
+
+### 模型能力和放行设置
+
+在「模型与上游 → 添加单个模型」填写模型 ID，可直接设置模型类型、模型能力和支持接口。添加上游后可在探测列表逐个设置。API 使用 POST /api/v1/upstreams 的 models 数组，每项填写 id，可选 kind、capabilities、endpoints 和 metadata_override。手动添加或已注册的模型在「模型设置 → 编辑元数据」修改，API 使用 PATCH /api/v1/models，填写模型目录中的 model 和 upstream_id。只有上游所有者或管理员可以改。kind 为 chat、embedding 或 unknown，capabilities 和 endpoints 是字符串数组，未声明时沿用探测或按协议推断。注册模型的能力覆盖在重新注册后保留，metadata_override=false 立即恢复最近注册声明。注册模型的可见范围随上游。管理员可从上游已放行的模型行进入「放行与路由」，取消勾选并保存。API 使用 PUT /api/v1/upstreams/{id}/routing 的 direct=false，影响该上游下所有模型，单模型放行使用 PUT /api/v1/model-routing。

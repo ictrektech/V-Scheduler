@@ -447,6 +447,10 @@ const app = {
   openSingleModelDialog() {
     this.openUpstreamDialog();
     this.singleModelAddition=true;
+    $('ufSingleKind').innerHTML = modelKindOptions("");
+    setChoices($('ufSingleCapabilities'), CAPABILITIES, []);
+    setChoices($('ufSingleEndpoints'), ENDPOINTS, []);
+    this.updateUpstreamProtocol();
     VRouterI18n.bind($('upstreamDialogTitle'),'textContent',()=>VRouterI18n.t('添加单个模型'));
     VRouterI18n.bind(root.querySelector('label[for="ufTestModel"]'),'textContent',()=>VRouterI18n.t('模型 ID'));
     $('ufAllowProbeFailure').checked=true;
@@ -490,14 +494,17 @@ const app = {
             if (!m.short && m.kind !== "service") {
               actions.push(`<button class="btn" onclick="app.tryModel(${jsArg(m.qualified)}, ${jsArg(m.upstream_id)})">${VRouterI18n.t("测试")}</button>`);
             }
-            if (m.upstream_source === "api" && m.upstream_manageable !== false) {
+            if (!m.short && m.kind !== "service" && ["api", "registered"].includes(m.upstream_source) && m.upstream_manageable !== false) {
               actions.push(`<button class="btn" onclick="app.openModelDialog(${jsArg(m.qualified)}, ${jsArg(m.upstream_id)})">${VRouterI18n.t("编辑元数据")}</button>`);
             }
-            if (!m.virtual && m.kind !== "service" && m.upstream_source !== "api" && m.upstream_manageable) {
+            if (!m.virtual && m.kind !== "service" && !["api", "registered"].includes(m.upstream_source) && m.upstream_manageable) {
               actions.push(`<button class="btn" onclick="app.openModelDomains(${jsArg(m.qualified)}, ${jsArg(m.upstream_id)})">${VRouterI18n.t("适用领域")}</button>`);
             }
             if (m.visibility_manageable && m.kind !== "service") {
               actions.push(`<button class="btn" onclick="app.openModelKey(${jsArg(m.upstream_id)}, ${jsArg(m.id)})">${VRouterI18n.t("模型访问 Key")}</button>`);
+            }
+            if (m.upstream_direct && !m.short && m.kind !== "service" && m.upstream_manageable && (admin || m.upstream_source === "api")) {
+              actions.push(`<button class="btn" onclick="app.openRouting(${jsArg(m.upstream_id)})">${VRouterI18n.t("放行与路由")}</button>`);
             }
             if (admin && !m.virtual && !m.upstream_direct && m.kind !== "service") {
               if (m.direct) {
@@ -876,7 +883,7 @@ const app = {
     const visibility = $("modelEditVisibility");
     visibility.value = model.visibility || "";
     visibility.dataset.original = visibility.value;
-    visibility.disabled = model.visibility_manageable === false;
+    visibility.disabled = model.upstream_source === "registered" || model.visibility_manageable === false;
     $("modelEditKind").value = ["chat", "embedding", "unknown"].includes(model.kind) ? model.kind : "";
     const protocol = this.state.upstreams.find(u => u.id === model.upstream_id)?.protocol || 'openai';
     const metadata = effectiveMetadata(model, protocol);
@@ -921,7 +928,9 @@ const app = {
     try {
       const upstream = $("modelEditUpstream").value;
       await this.api('PATCH', '/api/v1/models', {model: $("modelEditQualified").value, upstream_id: upstream, metadata_override: false});
-      await this.api('POST', '/api/v1/upstreams/' + encodeURIComponent(upstream) + '/refresh');
+      if (this.state.upstreams.find(item => item.id === upstream)?.source === "api") {
+        await this.api('POST', '/api/v1/upstreams/' + encodeURIComponent(upstream) + '/refresh');
+      }
       $("modelDialog").close();
       await this.refresh();
       this.toast(VRouterI18n.t('已重新识别上游能力'));
@@ -1368,7 +1377,7 @@ const app = {
         <details><summary>${esc(VRouterI18n.t("支持接口"))}</summary><div class="uf-model-endpoints metadata-choices">${choiceMarkup(ENDPOINTS, model.endpoints)}</div></details>
       </div>
     </div>`).join("");
-    $("ufModelsField").hidden = $("ufProtocol").value === "async_task" || !this.modelChoices.length;
+    $("ufModelsField").hidden = this.singleModelAddition || $("ufProtocol").value === "async_task" || !this.modelChoices.length;
     this.updateUpstreamModelsHint();
   },
   readModelRows() {
@@ -1595,7 +1604,8 @@ const app = {
     $("ufAsyncFields").hidden = !asyncTask;
     $("ufTestModel").closest(".field").hidden = asyncTask;
     $("ufAllowProbeFailure").closest(".field").hidden = asyncTask;
-    $("ufModelsField").hidden = asyncTask || !this.modelChoices.length;
+    $("ufSingleMetadata").hidden = asyncTask || !this.singleModelAddition;
+    $("ufModelsField").hidden = asyncTask || this.singleModelAddition || !this.modelChoices.length;
     VRouterI18n.bind($("ufProbe"), "textContent", () => asyncTask ? VRouterI18n.t("检查配置") : VRouterI18n.t("测试"));
   },
 
@@ -1624,7 +1634,19 @@ const app = {
     if(this.singleModelAddition && payload.protocol!=="async_task") {
       if(!payload.test_model)throw new Error(VRouterI18n.t('请填写模型 ID'));
       const found=this.modelChoices.find(m=>m.id===payload.test_model);
-      payload.models=[found?{...found,id:payload.test_model}:{id:payload.test_model}];
+      const kind = $("ufSingleKind").value;
+      const capabilities = readChoices($("ufSingleCapabilities"));
+      const endpoints = readChoices($("ufSingleEndpoints"));
+      const model = { id: payload.test_model };
+      if (kind || capabilities.length || endpoints.length) {
+        if (kind) model.kind = kind;
+        if (capabilities.length) model.capabilities = capabilities;
+        if (endpoints.length) model.endpoints = endpoints;
+        model.metadata_override = true;
+      } else if (found) {
+        Object.assign(model, found);
+      }
+      payload.models = [model];
     }
     if (!this.singleModelAddition && this.modelChoicesLoaded && payload.protocol !== "async_task") {
       payload.models = this.upstreamModelPayload();

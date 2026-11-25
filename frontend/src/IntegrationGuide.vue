@@ -146,6 +146,7 @@ curl -i "$GATEWAY/v1/chat/completions" -H "Authorization: Bearer $VOS_TOKEN" -H 
   <p>{{t('protocol=pi 复用 pi-ai 1.1.0 处理厂商协议与鉴权；provider 选择原生供应商，provider_credentials 为仅写入的私有凭据，可填写区域、项目及已授权 OAuth 凭据。原生模式对外仍提供 Chat Completions、Responses 和 Messages，不增加容器或端口。旧透明代理、Ollama、Jev 和业务适配保留；目录外模型与供应商扩展仍可使用原有协议。')}}</p>
   <pre>{"name":"DeepSeek Native","kind":"cloud","base_url":"https://api.deepseek.com","protocol":"pi","provider":"deepseek","api_key":"&lt;provider-key&gt;","visibility":"private"}</pre>
   <h3>{{t('Provider 与模型能力')}}</h3>
+  <p>{{t('在「模型与上游 → 添加单个模型」可直接填写模型类型、能力与接口。手动添加和注册模型均可通过「模型设置 → 编辑元数据」修改，API 分别使用 POST /api/v1/upstreams 和 PATCH /api/v1/models。注册模型的覆盖在重新注册后保留，可点击「重新识别上游能力」恢复最近声明。上游直接放行时，可从模型行的「放行与路由」取消勾选并保存。')}}</p>
   <p>{{t('上游页面可选厂商预设或自定义中转地址，测试后勾选要导入的模型。模型能力和接口使用复选框；普通聊天上游缺失声明时默认 chat / completion 与 chat_completions，Anthropic 默认 messages。显式接口优先，图片、语音、向量和决策模型不会自动声明为聊天；tools 和 vision 必须按真实能力勾选。')}}</p>
   <p>{{t('Ollama 模型通过 /api/show 自动读取 completion、vision、tools、thinking、embedding、decision 等实际能力，内置实例与手动添加的实例使用同一逻辑。旧版 OpenAI 兼容配置通过 /api/version 识别；读取失败保留已有信息。手动修改后刷新不会覆盖，点击「重新识别上游能力」可恢复自动识别。')}}</p>
   <h3>{{t('Jev 原生决策与中转')}}</h3>

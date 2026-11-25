@@ -404,10 +404,11 @@ fn update_model(g: &Arc<Gateway>, id: &Identity, payload: Value) -> Api<Response
     if !u.visible(id) {
         return Err(Failure::new(404, "model not found"));
     }
-    if u.source != "api" {
+    let registered = u.source == "registered";
+    if u.source != "api" && !registered {
         return Err(Failure::new(
             409,
-            "only API-created upstream models can be changed here",
+            "only API-created and registered upstream models can be changed here",
         ));
     }
     if !u.manageable(id) {
@@ -415,6 +416,9 @@ fn update_model(g: &Arc<Gateway>, id: &Identity, payload: Value) -> Api<Response
             403,
             "upstream is managed by its owner or an administrator",
         ));
+    }
+    if registered && visibility.is_some() {
+        return Err(Failure::new(409, "registered model visibility is set by its upstream"));
     }
     if visibility.is_some() && !id.admin && (u.owner.is_empty() || u.owner != id.owner) {
         return Err(Failure::new(403, "only the owner or an administrator can change model visibility"));
@@ -445,6 +449,24 @@ fn update_model(g: &Arc<Gateway>, id: &Identity, payload: Value) -> Api<Response
     if !explicit.is_empty() {
         model.kind = explicit;
     }
+    if registered && !model.metadata_override {
+        let defaults = r.registered_metadata_defaults.get(&upstream_id)
+            .and_then(|rows| rows.get(&model.id))
+            .ok_or_else(|| Failure::new(409, "registered model metadata is not available"))?;
+        defaults.apply(&mut model, false);
+    }
+    let previous_metadata = registered.then(|| r.registered_metadata.get(&upstream_id).cloned());
+    if registered {
+        if model.metadata_override {
+            r.registered_metadata.entry(upstream_id.clone()).or_default()
+                .insert(model.id.clone(), registry::ModelMetadata::from_model(&model));
+        } else if let Some(rows) = r.registered_metadata.get_mut(&upstream_id) {
+            rows.remove(&model.id);
+            if rows.is_empty() {
+                r.registered_metadata.remove(&upstream_id);
+            }
+        }
+    }
     let rows = r.models.get_mut(&upstream_id).expect("model source exists");
     let index = rows.iter().position(|m| m.id == model.id).expect("model exists");
     let previous = std::mem::replace(&mut rows[index], model.clone());
@@ -453,6 +475,13 @@ fn update_model(g: &Arc<Gateway>, id: &Identity, payload: Value) -> Api<Response
     if r.persist(&g.state_path).is_err() {
         r.models.get_mut(&upstream_id).expect("model source exists")[index] = previous;
         r.model_domains=previous_domains;
+        if let Some(previous_metadata) = previous_metadata {
+            if let Some(rows) = previous_metadata {
+                r.registered_metadata.insert(upstream_id, rows);
+            } else {
+                r.registered_metadata.remove(&upstream_id);
+            }
+        }
         return Err(Failure::new(500, "cannot persist model metadata"));
     }
     Ok(Json(json!({"model": model_view(&r, &model, id)})).into_response())
@@ -1147,6 +1176,7 @@ pub(super) async fn handle(g: &Arc<Gateway>, id: &Identity, request: Request) ->
         if action.is_empty() && method == "DELETE" {
             r.upstreams.remove(key);
             r.models.remove(key);
+            r.registered_metadata_defaults.remove(key);
             r.persist(&g.state_path)
                 .map_err(|_| Failure::new(500, "cannot persist registration"))?;
             return Ok(StatusCode::NO_CONTENT.into_response());
@@ -1161,6 +1191,7 @@ fn heartbeat(g:&Gateway,id:&Identity,key:&str,payload:&Value)->Api<Option<Respon
     if u.source!="registered" {return Err(Failure::new(409,"upstream is not a registration"));}
     if payload["healthy"]==false {
         r.upstreams.remove(key);r.models.remove(key);
+        r.registered_metadata_defaults.remove(key);
         return Ok(Some(Json(json!({"upstream_id":key,"status":"removed","registration_required":true})).into_response()));
     }
     let timeout=ttl(payload)?;

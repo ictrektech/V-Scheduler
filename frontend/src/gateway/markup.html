@@ -287,6 +287,15 @@
         <input type="text" id="ufTestModel" placeholder="例如 gpt-4o / claude-sonnet-4-5" />
         <div class="hint">点击“测试”会先取模型列表；填写模型名时再发一次轻量调用。</div>
       </div>
+      <div class="field" id="ufSingleMetadata" hidden>
+        <label for="ufSingleKind">模型类型</label>
+        <select id="ufSingleKind" class="uf-model-kind"></select>
+        <label>模型能力</label>
+        <div id="ufSingleCapabilities" class="metadata-choices" role="group" aria-label="模型能力"></div>
+        <label>支持接口</label>
+        <div id="ufSingleEndpoints" class="metadata-choices" role="group" aria-label="支持接口"></div>
+        <div class="hint">类型、能力和接口留空时按探测或默认值处理</div>
+      </div>
       <div class="field">
         <label class="check"><input type="checkbox" id="ufAllowProbeFailure" /> 模型列表探测失败也允许保存</label>
         <div class="hint">适合暂时没有 key、协议模型列表不标准，或想先保存后运行时看上游错误的云端 API。</div>

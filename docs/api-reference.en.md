@@ -494,3 +494,7 @@ Chat conversion accepts omitted include, null, an empty array, or an array conta
 ### POST /v1/chat/completions and POST /v1/messages
 
 As a V-Scheduler extension, include is optional. It accepts null, an empty array, or an array containing only reasoning.encrypted_content. The gateway removes it before dispatch and returns no Responses reasoning items. Other selectors and invalid shapes return 400 INVALID_REQUEST.
+
+### Model capabilities and direct routing
+
+In Models and upstreams → Add a single model, enter its model ID and set the model type, capabilities and endpoints. For an upstream import, set these on each detected model. To add via API, POST /api/v1/upstreams with a models array. Each item has id and optional kind, capabilities, endpoints and metadata_override. For manual or registered models, use Model settings → Edit metadata or PATCH /api/v1/models with model and upstream_id from the catalog. Only the upstream owner or an administrator can edit. kind is chat, embedding or unknown. capabilities and endpoints are arrays of strings. Omitted declarations use detection or protocol defaults. Registered overrides survive re-registration. Set metadata_override=false to restore the latest registration metadata immediately. A registered model inherits upstream visibility. Administrators can open Routing from any model with upstream direct routing, clear Direct routing and save. PUT /api/v1/upstreams/{id}/routing with direct=false affects all models in that upstream. Use PUT /api/v1/model-routing for per-model direct routing.

@@ -53,6 +53,46 @@ pub(super) fn model(id: &str) -> Model {
 }
 
 #[tokio::test]
+async fn registered_model_metadata_survives_rediscovery_and_can_be_reset() {
+    let root = temp();
+    let g = gateway(&root, Router::new());
+    let alice = principal("alice");
+    let bob = principal("bob");
+    let mut u = upstream("registered-fixture");
+    u.source = "registered".into();
+    u.owner = alice.owner.clone();
+    let original = model("echo");
+    g.registry.lock().unwrap().put(u.clone(), vec![original.clone()]);
+    let patch = |metadata: Value| {
+        let mut body = json!({"model":"manual/echo","upstream_id":"registered-fixture"});
+        body.as_object_mut().unwrap().extend(metadata.as_object().unwrap().clone());
+        Request::builder()
+            .method("PATCH")
+            .uri("/api/v1/models")
+            .header("content-type", "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap()
+    };
+    let capabilities = json!({"capabilities":["vision","tools"],"endpoints":["chat_completions"]});
+    let denied = manage::handle(&g, &bob, patch(capabilities.clone())).await.err().unwrap();
+    assert_eq!(denied.status, 403);
+    manage::handle(&g, &alice, patch(capabilities)).await.unwrap();
+    let mut refreshed = original;
+    refreshed.capabilities = vec!["thinking".into()];
+    g.registry.lock().unwrap().put(u.clone(), vec![refreshed.clone()]);
+    assert_eq!(g.registry.lock().unwrap().models[&u.id][0].capabilities, ["chat", "completion", "tools", "vision"]);
+    let mut restarted = Registry::open(&g.state_path).unwrap();
+    restarted.put(u.clone(), vec![refreshed]);
+    assert!(restarted.models[&u.id][0].metadata_override);
+    assert_eq!(restarted.models[&u.id][0].capabilities, ["chat", "completion", "tools", "vision"]);
+    *g.registry.lock().unwrap() = restarted;
+    manage::handle(&g, &alice, patch(json!({"metadata_override":false}))).await.unwrap();
+    assert_eq!(g.registry.lock().unwrap().models[&u.id][0].capabilities, ["chat", "completion", "thinking"]);
+    assert!(Registry::open(&g.state_path).unwrap().registered_metadata.is_empty());
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
 async fn model_visibility_changes_are_independent_and_survive_refresh() {
     let root = temp();
     let g = gateway(&root, Router::new());

@@ -4380,7 +4380,7 @@
       },
       "patch": {
         "summary": "修改模型元数据",
-        "description": "修改 API 创建上游的模型，model 使用 qualified 名称，可同时传 upstream_id。capabilities 和 endpoints 为字符串数组。手动修改设置 metadata_override=true，刷新保留；传 false 后 POST /api/v1/upstreams/{id}/refresh 恢复 Ollama 自动识别。仅 owner 和管理员可修改；内置、注册、发现模型仍只读。 修改领域时另需 upstream_id。仅包含 model/upstream_id/domains 时可修改所有可管理来源；混合其他元数据时仍要求 API 创建来源。省略保留，[] 重置通用；成功仍返回原有 {model:...} 结构。 也可用 model=auto、upstream_id=auto 设置 Auto 领域；需管理员身份，实际变更增加 Auto revision。混合批量设置仍为原子操作。",
+        "description": "修改手动添加或已注册模型的元数据。model 填模型目录 ID，可传 upstream_id 避免同名歧义。kind 可填 chat、embedding 或 unknown，capabilities 和 endpoints 为字符串数组。手动修改默认 metadata_override=true。手动添加的模型传 false 后可刷新恢复自动识别，注册模型传 false 后立即恢复最近注册声明，覆盖在注册刷新后仍保留。仅上游所有者和管理员可修改。尝试修改注册模型可见范围或内置、发现模型的能力返回 409。 修改领域时另需 upstream_id。仅包含 model/upstream_id/domains 时可修改所有可管理来源；混合其他元数据时仍要求 API 创建来源。省略保留，[] 重置通用；成功仍返回原有 {model:...} 结构。 也可用 model=auto、upstream_id=auto 设置 Auto 领域；需管理员身份，实际变更增加 Auto revision。混合批量设置仍为原子操作。",
         "tags": [
           "manage"
         ],
