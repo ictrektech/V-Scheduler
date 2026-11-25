@@ -1052,7 +1052,7 @@
       "task_type": "image.generate",
       "resources": {
         "cpu_millicores": 5500,
-        "memory_mib": 6144,
+        "memory_mib": 4864,
         "gpu_slots": 0,
         "gpu_memory_mib": 0
       },
@@ -1093,12 +1093,12 @@
       },
       "evidence": {
         "id": "image-arm-cpu-sd-turbo-20261126",
-        "peak_memory_mib": 4266,
-        "memory_method": "Linux child ru_maxrss; 512x512, four steps, one CPU sd-cli process",
+        "peak_memory_mib": 4530,
+        "memory_method": "cgroup memory.current increment sampled at 250 ms; 512x512, four steps, one CPU sd-cli process",
         "observed_peak_cpu_millicores": 5092,
         "confirmed_stopped": true,
         "output_sha256": "ab3568902042bf415d9938d08fc43e1f9a3e258f3fa008160fbe064be8162b31",
-        "duration_seconds": 67.11
+        "duration_seconds": 67.12
       }
     }
   ]
