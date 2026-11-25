@@ -59,7 +59,7 @@ pub(super) fn request(input: &Value, protocol: &str) -> Api<Value> {
     fields(
         input,
         if protocol == "responses" {
-            "model input instructions stream max_output_tokens temperature top_p tools tool_choice parallel_tool_calls store text"
+            "model input instructions stream max_output_tokens temperature top_p tools tool_choice parallel_tool_calls store text include"
         } else {
             "model messages system max_tokens stream temperature top_p stop_sequences tools tool_choice"
         },
@@ -72,6 +72,22 @@ pub(super) fn request(input: &Value, protocol: &str) -> Api<Value> {
         }
     }
     if protocol == "responses" {
+        if let Some(include) = input.get("include").filter(|v| !v.is_null()) {
+            let selectors = include
+                .as_array()
+                .ok_or_else(|| Failure::new(400, "include must be an array of strings or null"))?;
+            for selector in selectors {
+                match selector.as_str() {
+                    // Chat conversion emits no reasoning items to decorate.
+                    Some("reasoning.encrypted_content") => {}
+                    Some(selector) => return Err(Failure::new(
+                        400,
+                        format!("unsupported include selector {selector:?} for chat conversion; use a native upstream"),
+                    )),
+                    None => return Err(Failure::new(400, "include must be an array of strings or null")),
+                }
+            }
+        }
         if input.get("store").is_some_and(|v| v != false) {
             return Err(Failure::new(
                 400,

@@ -486,3 +486,7 @@ Single-model changes use domains in PATCH `/api/v1/models`. Registration accepts
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/api/v1/model-speed` | [Model speed trends: generation speed, first-token wait and per-call data](model-speed.md) |
+
+### POST /v1/responses
+
+Chat conversion accepts omitted include, null, an empty array, or an array containing only reasoning.encrypted_content. Converted responses have no encrypted reasoning items. Other selectors and invalid shapes return 400 INVALID_REQUEST. Use a native Responses upstream for encrypted reasoning context.

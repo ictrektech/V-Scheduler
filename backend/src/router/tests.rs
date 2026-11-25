@@ -818,7 +818,16 @@ fn responses_and_messages_convert_tools_and_images_without_silently_discarding_f
     );
     assert_eq!(converted["messages"][3]["tool_call_id"], "call-1");
     assert_eq!(converted["max_tokens"], 8);
+    for include in [json!(null), json!([]), json!(["reasoning.encrypted_content"])] {
+        let mut request = response.clone();
+        request["include"] = include;
+        assert_eq!(bridge::request(&request, "responses").unwrap(), converted);
+    }
     for (key, value) in [
+        ("include", json!("reasoning.encrypted_content")),
+        ("include", json!([1])),
+        ("include", json!(["reasoning.encrypted_content", "message.output_text.logprobs"])),
+        ("input", json!([{"type":"reasoning","encrypted_content":"opaque"}])),
         ("store", json!(true)),
         ("previous_response_id", json!("previous")),
         ("background", json!(true)),

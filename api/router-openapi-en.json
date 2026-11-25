@@ -3321,7 +3321,8 @@
             "type": "boolean"
           },
           "include": {
-            "type": "array",
+            "type": ["array", "null"],
+            "description": "Chat conversion accepts omitted include, null, an empty array, or an array containing only reasoning.encrypted_content. Converted responses have no encrypted reasoning items. Other selectors and invalid shapes return 400 INVALID_REQUEST. Use a native Responses upstream for encrypted reasoning context.",
             "items": {
               "type": "string"
             }

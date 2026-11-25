@@ -584,3 +584,7 @@ Additional `/v1/*` resource routes are transparent native forwarding. Their avai
 | GET | `/api/v1/model-speed` | [模型速度趋势：生成速度、首 Token 等待及逐次调用数据](model-speed.md) |
 
 [应用后端部署与授权示例 / Application backend placement and access examples](application-backend-deployment.md)
+
+### POST /v1/responses
+
+Chat 转换接受省略 include、null、空数组或只含 reasoning.encrypted_content 的字符串数组。转换响应无加密推理项，其他选择项或格式无效时返回 400 INVALID_REQUEST。需要加密推理上下文时使用原生 Responses 上游。

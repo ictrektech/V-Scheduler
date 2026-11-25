@@ -106,7 +106,7 @@
         },
         {
           "auth": "inference",
-          "desc": "Native upstreams are forwarded directly. For Model Hub/chat_completions-only upstreams, Rust converts text, image input, function tools, structured output and SSE. store must be false or omitted. previous_response_id, background, hosted tools and server-side state are unsupported; unsupported fields return 400. Pinned upstreams still use their configured conversion and native model names.",
+          "desc": "Native upstreams are forwarded directly. For Model Hub/chat_completions-only upstreams, Rust converts text, image input, function tools, structured output and SSE. store must be false or omitted. previous_response_id, background, hosted tools and server-side state are unsupported; unsupported fields return 400. Pinned upstreams still use their configured conversion and native model names. Chat conversion accepts omitted include, null, an empty array, or an array containing only reasoning.encrypted_content. Converted responses have no encrypted reasoning items. Other selectors and invalid shapes return 400 INVALID_REQUEST. Use a native Responses upstream for encrypted reasoning context.",
           "example": "curl http://<vos-host>:22888/v1/responses -H 'Content-Type: application/json' -d '{\"model\":\"<model>\",\"input\":\"Hello\"}'",
           "method": "POST",
           "path": "/v1/responses",

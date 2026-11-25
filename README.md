@@ -453,3 +453,5 @@ English readers can use the [complete API integration handbook](docs/api-referen
 管理员可在「节点管理 → 应用后端」登记应用与目标 Profile、提交部署参数并管理部署。资源、SSH 节点和集群列表使用主机名显示同一设备，IP 与 Profile 各自展示。VOS 会话恢复、SSH 定期复验和读取失败提示见[节点管理与连接状态](docs/node-management.md)。
 
 推理应用登记的模型可由 VOS 管理员在「模型与上游 → 模型访问 Key」生成、设置或撤销专用 Key。该 Key 归签发管理员管理，仍只授权所选私有模型。公共模型可直接调用。
+
+`POST /v1/responses` 兼容说明。Chat 转换接受省略 include、null、空数组或只含 reasoning.encrypted_content 的字符串数组。转换响应无加密推理项，其他选择项或格式无效时返回 400 INVALID_REQUEST。需要加密推理上下文时使用原生 Responses 上游。

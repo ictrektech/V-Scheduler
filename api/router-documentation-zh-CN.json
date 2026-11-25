@@ -108,7 +108,7 @@
           "method": "POST",
           "path": "/v1/responses",
           "summary": "Responses 多模态响应",
-          "desc": "原生上游直接转发；Model Hub/仅 chat_completions 上游由 Rust 转换文本、图片输入、function tools、结构化输出和 SSE，须 store=false 或省略。转换不支持 previous_response_id、background、托管工具或服务端状态，不支持的字段返回 400。显式上游仍按配置转换，使用原生模型名。",
+          "desc": "原生上游直接转发；Model Hub/仅 chat_completions 上游由 Rust 转换文本、图片输入、function tools、结构化输出和 SSE，须 store=false 或省略。转换不支持 previous_response_id、background、托管工具或服务端状态，不支持的字段返回 400。显式上游仍按配置转换，使用原生模型名。 Chat 转换接受省略 include、null、空数组或只含 reasoning.encrypted_content 的字符串数组。转换响应无加密推理项，其他选择项或格式无效时返回 400 INVALID_REQUEST。需要加密推理上下文时使用原生 Responses 上游。",
           "auth": "inference",
           "example": "curl http://<vos-host>:22888/v1/responses -H 'Content-Type: application/json' -d '{\"model\":\"<model>\",\"input\":\"你好\"}'"
         },
