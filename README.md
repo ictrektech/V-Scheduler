@@ -8,6 +8,8 @@ Image Studio 优先在目标节点只读使用 ModelInfer 已解析的 Model Hub
 
 校验通过后，Image Studio 将该模型登记到部署所在节点。目标 Agent 须在线，实际硬件、模型及运行设置须匹配实测校准，调度器再按目标节点预算安排运行。参考图及生成结果通过同一部署通道传递。部署仍有在途任务时，先等任务结束或取消，再停止或移除部署。
 
+只负责协调远端执行的 Image Studio 主节点可以在本机模型清单为空时接收服务绑定。模型仍按目标节点的校准和资源预算获准运行。
+
 ## 模型思考参数
 
 「添加单个模型」与「编辑元数据」允许填写可选的 Chat Completions 思考控制。模型目录返回 `reasoning_control`，包含 `format`、`efforts` 和可选 `default`。例如 `{"format":"openai","efforts":{"off":"none","high":"high"},"default":"high"}`。各模型填写后端实际支持的档位和发送值；留空时可使用上游目录声明。管理 API 在添加上游的 `models[]` 或 `PATCH /api/v1/models` 接收同一结构。显式传 `null` 可清除当前配置。

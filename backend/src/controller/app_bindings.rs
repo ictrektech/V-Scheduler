@@ -705,10 +705,7 @@ async fn reconcile(
         &state["gateway"],
     )?;
     }
-    if state["binding"]["models"]
-        .as_object()
-        .is_some_and(|models| !models.is_empty())
-    {
+    if should_send_binding(application, &state["binding"]) {
         let response = client
             .post(format!("{}/api/v1/scheduler/binding", application.origin))
             .bearer_auth(context_token.trim())
@@ -718,6 +715,14 @@ async fn reconcile(
         crate::contract::confirm_application_binding(response, &state["binding"]["binding_revision"]).await?;
     }
     Ok(())
+}
+
+fn should_send_binding(application: Application, binding: &Value) -> bool {
+    // Image Studio can coordinate approved remote executors from a CPU-only
+    // main deployment, even when its local model mapping is empty.
+    binding["models"]
+        .as_object()
+        .is_some_and(|models| !models.is_empty() || application.slug == "image-studio")
 }
 
 fn safe_failure(error: &anyhow::Error) -> &'static str {
@@ -791,6 +796,17 @@ pub(super) fn start(shared: SharedApp, configuration: PathBuf) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn image_studio_receives_remote_control_binding_without_local_models() {
+        let empty = json!({"models": {}});
+        let populated = json!({"models": {"example": "approved-executor"}});
+        for application in APPLICATIONS {
+            assert_eq!(should_send_binding(application, &empty), application.slug == "image-studio");
+            assert!(should_send_binding(application, &populated));
+            assert!(!should_send_binding(application, &json!({})));
+        }
+    }
 
     #[test]
     fn application_version_changes_preserve_the_measured_contract() {
