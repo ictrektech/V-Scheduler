@@ -1,5 +1,5 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
-import {apiBases,apiError,jsonResponse,authenticatedFetch} from '../src/http-client.js';
+import {apiBases,lanBaseURL,apiError,jsonResponse,authenticatedFetch} from '../src/http-client.js';
 test('all service bases use the same VOS namespace',()=>{
  for(const path of ['/app/com.ictrek.v-scheduler/','/api/com.ictrek.v-scheduler/'])assert.deepEqual(apiBases(path),{gateway:'/api/com.ictrek.v-scheduler',scheduler:'/api/com.ictrek.v-scheduler/scheduler/api/v1/',models:'/api/com.ictrek.v-scheduler/model-hub'});
  assert.equal(apiBases('/').scheduler,'/scheduler/api/v1/');
@@ -15,10 +15,10 @@ test('success shapes and empty DELETE responses stay compatible',async()=>{
  await assert.rejects(jsonResponse(new Response('bad')),{code:'INVALID_RESPONSE'});
  await assert.rejects(jsonResponse(new Response('{"code":"FORBIDDEN","category":"v-scheduler"}')),{code:'FORBIDDEN'});
 });
-test('all requests follow token rotation and retry a 401 exactly once',async()=>{
+test('requests retry a 401 only with a different credential',async()=>{
  let token='old';const calls=[];const auth={token:async()=>token,clearToken:old=>{assert.equal(old,'old');token='new'},fetch:async(url,init)=>{calls.push(init.headers.get('Authorization'));return new Response('{}',{status:calls.length===1?401:200})}};
  const response=await authenticatedFetch('/api',{},auth);assert.equal(response.status,200);assert.deepEqual(calls,['Bearer old','Bearer new']);
- let count=0;await authenticatedFetch('/api',{}, {...auth,clearToken:()=>{},fetch:async()=>{count++;return new Response('{}',{status:401})}});assert.equal(count,2);
+ let count=0;await authenticatedFetch('/api',{}, {...auth,clearToken:()=>{},fetch:async()=>{count++;return new Response('{}',{status:401})}});assert.equal(count,1);
 });
 test('permission errors do not renew credentials or replay mutations',async()=>{
  let calls=0;const response=await authenticatedFetch('/api',{method:'POST',body:'{}'},{token:async()=>'',clearToken:()=>assert.fail('403 renewal'),fetch:async()=>{calls++;return new Response('{}',{status:403})}});assert.equal(response.status,403);assert.equal(calls,1);
@@ -50,3 +50,27 @@ test('a temporary gateway response does not replay mutations', async () => {
  assert.equal(response.status,503)
  assert.equal(attempts,1)
 })
+
+test('LAN addresses use the configured gateway port and client-facing host',()=>{
+ assert.equal(lanBaseURL({lan:'http://<vos-host>:28080/v1'},'vos.example'),'http://vos.example:28080/v1');
+ assert.equal(lanBaseURL(undefined,'[fd12::1]'),'http://[fd12::1]:22888/v1');
+});
+test('read requests wait for a delayed VOS token rotation',async()=>{
+ let attempt=0;const sent=[];
+ const result=await authenticatedFetch('/api/v1/api-keys',{},{
+  token:async()=>['old',null,'fresh'][attempt++]||null,
+  clearToken:()=>{},
+  fetch:async(url,init)=>{const token=init.headers.get('Authorization');sent.push(token);return new Response('{}',{status:token==='Bearer fresh'?200:401});}
+ });
+ assert.equal(result.status,200);
+ assert.deepEqual(sent,['Bearer old','Bearer fresh']);
+});
+test('a model key owner failure does not trigger token renewal or mutation replay',async()=>{
+ let calls=0;
+ const response=await authenticatedFetch('/api/v1/models/access-key',{method:'PUT'},{token:async()=>'current',clearToken:()=>assert.fail('unexpected token invalidation'),fetch:async()=>{
+  calls++;
+  return new Response(JSON.stringify({code:'UNAUTHENTICATED',category:'v-scheduler',msg:'API key owner is disabled or deleted'}),{status:401});
+ }});
+ assert.equal(response.status,401);
+ assert.equal(calls,1);
+});

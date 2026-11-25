@@ -94,6 +94,8 @@ curl -i "$GATEWAY/v1/chat/completions" -H "Authorization: Bearer $VOS_TOKEN" -H 
   <p>{{t('本地和纳管远端模型先取得资源许可；云端供应商模型不占本地资源预约。资源忙时遵守重试提示，不能绕过网关直接启动同一次计算。')}}</p>
   <h3 id="integration-keys" tabindex="-1">{{t('API Key 设置与修改')}}</h3>
   <p>{{t('安装后点击语言旁的 API Key，生成个人 Key；也可在模型设置中打开「模型访问 Key」，生成、设置或撤销单个模型的 Key。无需重新安装应用。完整 Key 只显示一次，请立即保存。')}}</p>
+  <p>{{t('生成或设置模型 Key 成功后，在「局域网客户端配置」复制 Base URL、API Key 和模型 ID。模型设置只管理当前模型的专用 Key。')}}</p>
+  <p>{{t('从远程入口打开时，将 Base URL 的主机名改成客户端可访问的 VOS 局域网地址。')}}</p>
   <p>{{t('个人 Key 继承所属 VOS 用户的模型权限；模型专用 Key 仅授权指定模型。两者只允许推理和模型发现。创建、设置与撤销 Key 使用 VOS 账户 token，不能使用另一把 Key 代替。VOS 用户鉴权继续支持，不需要同时发送 token 和 Key。')}}</p>
   <p>{{t('public 模型接受无 Key、有效 Key 或任意填写的 Key；无效凭据仅获得匿名公开权限，不能访问 private 模型。private 模型需要有权限的 VOS 账户、个人 Key 或该模型的专用 Key。切换 public/private 不会修改已有 Key。')}}</p>
   <pre>{{keyExamples}}</pre>

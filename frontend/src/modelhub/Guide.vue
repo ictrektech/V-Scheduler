@@ -100,6 +100,7 @@ onUnmounted(()=>clearInterval(timer))
   <p>{{t('试聊统一使用 V-Scheduler 已有试聊页面。Router 直接接入三个内置 Ollama，上游命名 v-scheduler/ollama-qa、v-scheduler/ollama-embedding、v-scheduler/ollama-rerank，无需通过模型管理发现。')}}</p>
   <p>{{t('三个内置 Ollama 后端自动纳入调度，可直接试聊，无需逐个批准模型。资源忙时统一调用等待计算资源。')}}</p>
   <h3 id="hub-runtime">{{t('推理服务')}}</h3><p>{{t('三个内置 Ollama 实例分别处理聊天、向量和重排，共享模型文件，各自配置并行数和上下文。安装默认关闭三个预热开关。通过卡片查看已下载/运行模型、内存、槽位、prefill/decode 和速度，启动或停止模型。')}}</p><p>{{t('Ollama 原生管理 API 使用 11434；带指标的推理网关使用 11535。外部客户端使用表中映射后的端口。统一模型调用优先走 V-Router，保留调度准入。')}}</p><pre>POST http://v-scheduler-ollama-qa:11535/v1/chat/completions
+  <p>{{t('从「模型与上游」点不可用后端旁的「查看后端」，可直达对应推理服务。核对状态后自行决定是否启动。Ollama 模型未预热也可在调用时按需加载。')}}</p>
   <p>{{t("在「权重管理 → 推理服务」中，管理员可为内置对话、向量和重排实例分别设置「自动预热」。开关默认沿用安装设置，修改后会保留。开启时按调度预算预热配置的模型标签，缺少权重时先下载。关闭后不再开始新的预热，当前请求自然结束。预热完成后仍按模型空闲保留策略卸载。需要排查时看卡片的预热状态。")}}</p><p><code>GET /api/v1/ollama-preload · PUT /api/v1/ollama-preload</code></p>
 POST http://v-scheduler-ollama-embedding:11535/v1/embeddings
 POST http://v-scheduler-ollama-rerank:11535/v1/rerank</pre><p>{{t('外部 Ollama、OpenAI 兼容或自定义推理服务通过注册接口接入。非 Ollama 服务必须提供实际实现的管理路径；操作返回 accepted 与 confirmed，只有状态确认后才显示完成。')}}</p><pre>{{registration}}</pre>

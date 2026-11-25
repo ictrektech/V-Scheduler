@@ -125,7 +125,8 @@ export const VRouterMessages = {
 "上游按可见范围共享，修改与路由配置仅限所有者和管理员":{"en": "Providers follow visibility settings; only owners and administrators can edit or configure routing", "zh-TW": "上游依可見範圍共用，修改與路由設定僅限擁有者和管理員"},
 "服务凭据使用独立":{"en": "Service credentials use a separate", "zh-TW": "服務憑據使用獨立"},
 "身份与权限":{"en": "identity and permissions", "zh-TW": "身分與權限"},
-"部分内置推理后端不可用，请在权重管理检查推理服务；其他就绪模型仍可调用。":{"en": "Some built-in inference backends are unavailable. Check inference services in Model weights; other ready models remain available.", "zh-TW": "部分內建推理後端無法使用，請在權重管理檢查推理服務；其他就緒模型仍可呼叫。"},
+ "以下推理后端暂不可用，可查看状态并决定是否启动。":{"en":"These inference backends are unavailable. Check their status before deciding whether to start them.","zh-TW":"下列推論後端暫時無法使用，可檢查狀態並決定是否啟動。"},
+ "查看后端":{"en":"View backend","zh-TW":"檢視後端"},
 "在模型与上游配置一次，VOS 内应用按权限共享使用。透明代理保留原有接口；原生 Provider 使用 pi-ai 处理厂商协议与鉴权，对外仍通过 v-scheduler 的对话、Responses 和 Messages 接口。原生凭据仅保存于应用私有目录，OAuth 需要已有授权凭据并可自动续期。应用注册也可提交 protocol=pi、provider 和 provider_credentials；心跳续租及调度流程保持不变。":{"en": "Configure once in Models & providers for shared, permission-controlled VOS app access. Transparent proxy routes remain intact. Native providers use pi-ai for vendor protocols and auth, exposed through the same v-scheduler chat, Responses and Messages endpoints. Credentials stay in app-private storage. OAuth requires previously authorized credentials and supports refresh. Registrations also accept protocol=pi, provider and provider_credentials; heartbeats and scheduling remain unchanged.", "zh-TW": "在模型與上游設定一次，VOS 內應用依權限共用。透明代理保留原有介面；原生 Provider 使用 pi-ai 處理廠商協定與驗證，對外沿用 v-scheduler 的對話、Responses 與 Messages。原生憑據僅儲存於應用私有目錄，OAuth 需已有授權憑據並可自動續期。應用註冊也可提交 protocol=pi、provider 與 provider_credentials；心跳續租及調度流程保持不變。"},
 
 "Ollama（自动识别能力）":{"en":"Ollama (automatic capabilities)","zh-TW":"Ollama（自動識別能力）"},

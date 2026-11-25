@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import {isSessionError,recordDiagnostic} from './diagnostics.js'
 import {computed,onMounted,onUnmounted,ref} from 'vue'
 import {nodeIdentity} from './node-identity'
 
@@ -32,6 +33,7 @@ const canManage = ref(false)
 const busy = ref(false)
 const error = ref('')
 const listFailed = ref(false)
+const recovering = ref(false)
 const lastFailure = ref('')
 const refreshing = ref(false)
 let failures = 0
@@ -43,6 +45,7 @@ const base = 'managed-nodes'
 const profiles = ref<string[]>(['jetson-thor', 'dgx-spark', 'jetson-orin', 'arm-cpu', 'amd-cpu', 'amd-cuda', 'arm-cuda', 'sophon-bm1688'])
 let timer: ReturnType<typeof setInterval>
 let refreshRevision = 0
+let lastRefresh=0
 
 function fields(node?: Node) {
   return {
@@ -72,6 +75,7 @@ function describe(reason: unknown) {
 }
 async function refresh() {
   const revision = ++refreshRevision
+  lastRefresh=Date.now()
   refreshing.value=true
   try {
     const response = await props.request(base)
@@ -82,10 +86,13 @@ async function refresh() {
     canManage.value = response.can_manage
     loaded.value = true
     listFailed.value = false
+    recovering.value = false
     failures = 0
     if (!canManage.value) form.value = null
   } catch (reason) {
     if (revision !== refreshRevision) return
+    recovering.value=isSessionError(reason)
+    if(recovering.value){recordDiagnostic('AUTH_REQUEST_REJECTED','managed_nodes');return}
     failures+=1
     lastFailure.value=describe(reason)
     listFailed.value=failures>=2
@@ -137,7 +144,7 @@ function remove(node: Node) {
   if (!window.confirm(label(`移除节点「${node.name}」的连接配置？`, `Remove the saved connection for ${node.name}?`))) return
   void perform(async () => { await props.request(`${base}/${encodeURIComponent(node.id)}`, undefined, 'DELETE') })
 }
-onMounted(() => { void refresh(); timer = setInterval(() => { if (!busy.value&&!refreshing.value) void refresh() }, 10000) })
+onMounted(() => { void refresh(); timer = setInterval(() => { if (!busy.value&&!refreshing.value&&(recovering.value||Date.now()-lastRefresh>=10000)) void refresh() }, 2500) })
 onUnmounted(() => clearInterval(timer))
 </script>
 
@@ -149,8 +156,9 @@ onUnmounted(() => clearInterval(timer))
       <button v-if="listFailed" class="quiet" :disabled="busy||refreshing" @click="refresh">{{label('重试读取', 'Retry loading')}}</button>
     </div>
     <p v-if="error" class="error" role="alert">{{error}}</p>
-    <p v-if="!loaded&&!listFailed" role="status">{{label('正在读取节点列表…','Loading nodes…')}}</p>
-    <p v-if="listFailed" role="status">
+    <p v-if="recovering&&!loaded" role="status">{{label('正在恢复连接，节点列表将自动刷新。','Recovering the connection. The node list will refresh automatically.')}}</p>
+  <p v-if="!loaded&&!listFailed&&!recovering" role="status">{{label('正在读取节点列表…','Loading nodes…')}}</p>
+    <p v-if="listFailed&&!recovering" role="status">
       {{loaded
         ? label('节点列表暂时无法刷新，以下为上次读取的记录。', 'Could not refresh nodes. Showing the last loaded list.')
         : label('暂时无法读取节点列表。', 'Could not load the node list.')}} {{lastFailure}}

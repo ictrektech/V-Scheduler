@@ -47,7 +47,8 @@ const vosEmbedded=window.parent!==window||location.pathname.startsWith('/app/com
 const pages=['overview','models','upstreams','playground','auto','api','resources','nodes','model-hub','logs','inference','cluster','images']
 const initialPage=location.hash.slice(1)
 const nodeTab=ref<'nodes'|'backends'>('nodes')
-const page=ref(pages.includes(initialPage)?initialPage:'overview'),docMode=ref('gateway'),credential=ref(''),connected=ref(false),busy=ref(false),error=ref(''),tasks=ref<Task[]>([]),nodes=ref<Node[]>([]),reservations=ref<Reservation[]>([]),filter=ref('all'),search=ref(''),selected=ref<Task|null>(null),deleting=ref<Task|null>(null),confirmPermit=ref<Reservation|null>(null),stopEvidence=ref(''),copied=ref(false)
+const targetService=ref('')
+const page=ref(pages.includes(initialPage)?initialPage:'overview'),docMode=ref('gateway'),connected=ref(false),busy=ref(false),error=ref(''),tasks=ref<Task[]>([]),nodes=ref<Node[]>([]),reservations=ref<Reservation[]>([]),filter=ref('all'),search=ref(''),selected=ref<Task|null>(null),deleting=ref<Task|null>(null),confirmPermit=ref<Reservation|null>(null),stopEvidence=ref(''),copied=ref(false)
 const pendingTasks=ref(new Set<string>())
 const appFilter=ref(''),nodeFilter=ref(''),taskPages=ref(1),taskCursor=ref<string|null>(null)
 const appOptions=computed(()=>[...new Set(tasks.value.map(task=>task.app_id))].sort())
@@ -76,11 +77,13 @@ const operationContract=computed(()=>renderOperationContract(spec.value||{},oper
 const docTitle=computed(()=>operation.value?.['x-title']?.[locale.value]||operation.value?.summary||'')
 const docDescription=computed(()=>operation.value?.['x-description']?.[locale.value]||operation.value?.description||'')
 const code=computed(()=>exampleTab.value==='json'?JSON.stringify(sample.value,null,2):`curl -X ${operation.value?.method.toUpperCase()||'GET'} '${location.origin}${apiBase}${(operation.value?.path||'/discovery').slice(1)}'${operation.value?.security?.length?" \\\n  -H 'Authorization: Bearer <service-access-token>'":''}${operation.value?.parameters?.some((p:any)=>p.name==='Idempotency-Key')?" \\\n  -H 'Idempotency-Key: stable-business-key'":''}${operation.value?.requestBody?" \\\n  -H 'Content-Type: application/json' \\\n  -d '"+JSON.stringify(sample.value)+"'":''}`)
+function openInferenceService(id:string){targetService.value=id;page.value='model-hub'}
+function selectGatewayPage(value:string){targetService.value='';page.value=value}
 function prettyTime(value:string){return new Intl.DateTimeFormat(locale.value,{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}).format(new Date(value))}
 const errors:Record<string,string>={UNAUTHENTICATED:'未授权或令牌无效',FORBIDDEN:'权限不足',STATE_CONFLICT:'任务或资源状态不允许此操作',RETRY_NOT_ALLOWED:'任务或资源状态不允许此操作',TASK_NOT_STOPPED:'任务或资源状态不允许此操作',TEMPORARILY_UNAVAILABLE:'调度器暂不可用',WAIT_RESOURCE:'资源忙，请稍后重试',WAIT_MEMORY_HEADROOM:'可用内存不足，请卸载空闲模型或选择更小的模型配置',WAIT_RESOURCE_OR_NODE:'资源忙，请稍后重试',WAIT_STOP_CONFIRMATION:'等待停止确认'}
 async function api(path:string,body?:unknown,method?:string,extra:Record<string,string>={}){
  try {
-  const response=await authenticatedFetch(apiBase+path,{method:method||(body===undefined?'GET':'POST'),headers:{'Content-Type':'application/json',...extra},body:body===undefined?undefined:JSON.stringify(body)},{token:async()=>{if(vosEmbedded)credential.value=await getVOSBearerToken()||'';return credential.value},clearToken:vosEmbedded?clearCachedVOSBearerToken:undefined})
+  const response=await authenticatedFetch(apiBase+path,{method:method||(body===undefined?'GET':'POST'),headers:{'Content-Type':'application/json',...extra},body:body===undefined?undefined:JSON.stringify(body)},{token:async()=>await getVOSBearerToken(),clearToken:clearCachedVOSBearerToken})
   const payload=await jsonResponse(response)
   sessionStale.value=false
   return payload?.data
@@ -126,8 +129,7 @@ async function connect(manual=false){
  nodeViewerOnly.value=false
  demo.value=false;error.value='';busy.value=true
  try{
-  credential.value=await getVOSBearerToken()||''
-  if(!credential.value){error.value='';return}
+  if(!await getVOSBearerToken()){error.value='';return}
   const state=(await jsonResponse(await fetch(apiBase+'setup',{cache:'no-store'})))?.data
   appVersion.value=state?.version||''
   if(state?.ready===false){
@@ -156,7 +158,7 @@ async function connect(manual=false){
  }
  if(error.value)connected.value=false
 }
-function logout(){demo.value=false;connected.value=false;credential.value='';tasks.value=[];nodes.value=[];reservations.value=[];selected.value=null}
+function logout(){demo.value=false;connected.value=false;tasks.value=[];nodes.value=[];reservations.value=[];selected.value=null}
 function updateTask(task:Task){tasks.value=tasks.value.map(current=>current.task_id===task.task_id?task:current);if(selected.value?.task_id===task.task_id)selected.value=task}
 async function cancel(task:Task){
  if(pendingTasks.value.has(task.task_id))return
@@ -190,7 +192,7 @@ function syncPage(){
  if(pages.includes(next)&&(!nodeViewerOnly.value||!['inference','cluster'].includes(next)))page.value=next
 }
 window.addEventListener('hashchange',syncPage)
-watch(page,value=>{if((location.hash.slice(1)||'overview')!==value)location.hash=value;selected.value=null;void nextTick(()=>window.scrollTo(0,0))})
+watch(page,value=>{if(value!=='model-hub')targetService.value='';if((location.hash.slice(1)||'overview')!==value)location.hash=value;selected.value=null;void nextTick(()=>window.scrollTo(0,0))})
 watch(locale,()=>{document.title=`V-Scheduler · ${t('模型路由与资源调度')}`},{immediate:true})
 let timer:ReturnType<typeof setInterval>
 onMounted(()=>{
@@ -225,7 +227,7 @@ onUnmounted(()=>{clearInterval(timer);language.dispose();window.removeEventListe
    <div v-if="page==='api'" class="documentation-tabs"><button :class="{current:docMode==='gateway'}" @click="docMode='gateway'">{{t('模型与网关 API')}}</button><button :class="{current:docMode==='scheduler'}" @click="docMode='scheduler'">{{t('调度管理 API')}}</button><button :class="{current:docMode==='model-hub'}" @click="docMode='model-hub'">{{t('模型管理 API')}}</button><button :class="{current:docMode==='guide'}" @click="docMode='guide'">{{t('应用接入')}}</button></div>
    <AutoRouting v-if="page==='auto'" :t="t"/>
    <DiagnosticLogs v-if="page==='logs'" :t="t" :locale="locale"/>
-   <ModelHub v-if="page==='model-hub'" :locale="locale" :t="t"/>
+   <ModelHub v-if="page==='model-hub'" :locale="locale" :t="t" :target-service="targetService" @service-focused="targetService=''"/>
    <ModelHub v-if="page==='api'&&docMode==='model-hub'" :locale="locale" :t="t" docs-only/>
    <nav v-if="page==='nodes'&&connected&&!nodeViewerOnly&&!demo" class="documentation-tabs" :aria-label="t('节点管理')">
     <button :class="{current:nodeTab==='nodes'}" @click="nodeTab='nodes'">{{t('节点与权限')}}</button>
@@ -243,7 +245,7 @@ onUnmounted(()=>{clearInterval(timer);language.dispose();window.removeEventListe
    <ImageCatalog v-if="connected&&nodeViewerOnly&&page==='images'" :locale="locale" :request="api" :t="t"/>
    <section v-if="(page==='nodes'||page==='inference'||page==='cluster'||page==='images')&&!connected&&!setupError" class="login"><h2>{{t('连接 VOS')}}</h2><button :disabled="busy" @click="connect(true)">{{t('重试连接')}}</button></section>
    <IntegrationGuide v-if="page==='api'&&docMode==='guide'" :t="t"/>
-   <GatewayWorkspace v-show="gatewayVisible" :tab="gatewayTab" :locale="locale" :visible="gatewayVisible" :administrator="connected&&!demo&&nodes.length>0" @select="page=$event"/>
+   <GatewayWorkspace v-show="gatewayVisible" :tab="gatewayTab" :locale="locale" :visible="gatewayVisible" :administrator="connected&&!demo&&nodes.length>0" @select="selectGatewayPage" @service="openInferenceService"/>
    <template v-if="page==='resources'">
     <section v-if="!connected&&!demo&&!setupError" class="login"><div class="login-mark"><Icon name="shield"/></div><h2>{{t('连接 VOS')}}</h2><p>{{t('使用当前 VOS 管理员身份连接，首次使用自动准备 PGV 数据库。')}}</p><button :disabled="busy" @click="connect(true)">{{t('重试连接')}}</button></section>
 

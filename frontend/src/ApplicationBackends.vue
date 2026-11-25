@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import {isSessionError,recordDiagnostic} from './diagnostics.js'
 import {computed,onMounted,onUnmounted,ref,watch} from 'vue'
 import {nodeIdentity} from './node-identity'
 
@@ -50,11 +51,11 @@ const accessWithTargets=computed(()=>access.value.filter(item=>item.targets.leng
 const currentAccess=computed(()=>access.value.find(item=>item.app_id===deploymentForm.value?.app_id))
 const filteredDeployments=computed(()=>deployments.value.filter(item=>item.state!=='removed'))
 
-async function run(fn:()=>Promise<void>) {
+async function run(fn:()=>Promise<void>, userAction=false) {
  if(busy.value)return
  busy.value=true
  error.value=''
- try {await fn()} catch(err) {error.value=failure((err as {code?:string})?.code)||(err instanceof Error?err.message:t('无法读取应用后端'))}
+ try {await fn()} catch(err) {if(isSessionError(err)){recordDiagnostic('AUTH_REQUEST_REJECTED','application_backends');if(userAction)error.value=t('连接恢复后可重试，输入已保留。')}else error.value=failure((err as {code?:string})?.code)||(err instanceof Error?err.message:t('无法读取应用后端'))}
  finally {busy.value=false}
 }
 async function loadDeployments() {
@@ -163,7 +164,7 @@ onUnmounted(()=>window.clearInterval(timer))
     <h2>{{t('应用授权')}}</h2>
     <button type="button" :disabled="busy" @click="edit()">{{t('登记应用')}}</button>
    </div>
-   <form v-if="accessForm" class="backend-form" @submit.prevent="run(save)">
+   <form v-if="accessForm" class="backend-form" @submit.prevent="run(save,true)">
     <label>{{t('应用 ID')}}<input v-model.trim="accessForm.app_id" required list="backend-apps" maxlength="96" placeholder="com.example.app"></label>
     <datalist id="backend-apps"><option v-for="appId in applications" :key="appId" :value="appId"/></datalist>
     <label>{{t('允许的镜像仓库')}}<textarea v-model="accessForm.repositories" rows="3" placeholder="registry.example.com/team/backend"/><small>{{t('每行一个完整仓库地址，省略镜像标签。')}}</small></label>
@@ -198,7 +199,7 @@ onUnmounted(()=>window.clearInterval(timer))
     <button class="quiet" type="button" :disabled="busy" @click="run(load)">{{t('刷新')}}</button>
     <button type="button" :disabled="!accessWithTargets.length||busy" @click="deploy()">{{t('部署后端')}}</button>
    </div>
-   <form v-if="deploymentForm" class="backend-form" @submit.prevent="run(submit)">
+   <form v-if="deploymentForm" class="backend-form" @submit.prevent="run(submit,true)">
     <label>{{t('应用 ID')}}<select v-model="deploymentForm.app_id" required><option v-for="app in accessWithTargets" :key="app.app_id" :value="app.app_id">{{app.app_id}}</option></select></label>
     <label>{{t('目标节点与 Profile')}}<select v-model="deploymentForm.targetKey" required><option v-for="target in currentAccess?.targets" :key="key(target)" :value="key(target)">{{targetLabel(target)}}</option></select></label>
     <label>{{t('镜像地址')}}<input v-model.trim="deploymentForm.image" required maxlength="512" placeholder="registry.example.com/team/backend:jetson-thor">
@@ -230,9 +231,9 @@ onUnmounted(()=>window.clearInterval(timer))
       </details>
      </div>
      <div class="buttons">
-      <button v-if="item.state==='failed'||item.state==='stopped'" class="quiet" :disabled="busy" @click="run(()=>action(item,'start'))">{{t('启动后端')}}</button>
-      <button v-if="item.state==='running'||item.state==='pending'" class="quiet" :disabled="busy" @click="run(()=>action(item,'stop'))">{{t('停止')}}</button>
-      <button v-if="item.state!=='deleting'" class="quiet" :disabled="busy" @click="run(()=>action(item,'remove'))">{{t('删除')}}</button>
+      <button v-if="item.state==='failed'||item.state==='stopped'" class="quiet" :disabled="busy" @click="run(()=>action(item,'start'),true)">{{t('启动后端')}}</button>
+      <button v-if="item.state==='running'||item.state==='pending'" class="quiet" :disabled="busy" @click="run(()=>action(item,'stop'),true)">{{t('停止')}}</button>
+      <button v-if="item.state!=='deleting'" class="quiet" :disabled="busy" @click="run(()=>action(item,'remove'),true)">{{t('删除')}}</button>
      </div>
     </article>
    </div>

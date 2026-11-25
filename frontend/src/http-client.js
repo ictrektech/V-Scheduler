@@ -4,6 +4,10 @@ export function apiBases(pathname) {
  const gateway=pathname.startsWith('/app/')||pathname.startsWith('/api/com.ictrek.v-scheduler')?'/api/com.ictrek.v-scheduler':'';
  return {gateway,scheduler:gateway+'/scheduler/api/v1/',models:gateway+'/model-hub'};
 }
+export function lanBaseURL(bases = {}, hostname = window.location.hostname) {
+ return (bases?.lan || 'http://<vos-host>:22888/v1')
+  .replace('<vos-host>', hostname).replace('<host-port>', '22888');
+}
 export function apiError(payload,status) {
  const candidate=typeof payload?.code==='string'?payload.code:payload?.error?.code;
  const code=typeof candidate==='string'?candidate:'';
@@ -47,21 +51,32 @@ export async function retryReadFetch(url,init={},fetcher=fetch) {
  }
 }
 export async function authenticatedFetch(url,init={},auth={}) {
- const send=async()=>{
-  const token=await auth.token?.()||'';const headers=new Headers(init.headers);
+ const send=token=>{
+  const headers=new Headers(init.headers);
   if(token)headers.set('Authorization',`Bearer ${token}`);
-  return {token,response:await retryReadFetch(url,{...init,headers},auth.fetch||fetch)};
+  return retryReadFetch(url,{...init,headers},auth.fetch||fetch);
  };
- let result=await send();
- if(result.response.status===401&&auth.clearToken&&!init.signal?.aborted&&await browserIdentityFailure(result.response)){
-  recordDiagnostic('AUTH_REQUEST_RETRY','http_401_retry','info');
-  auth.clearToken(result.token);
-  await result.response.body?.cancel();
-  result=await send();
+ const isRead=['GET','HEAD'].includes((init.method||'GET').toUpperCase());
+ let token=await auth.token?.()||'';
+ let response=await send(token);
+ const rejected=async()=>response.status===401&&auth.clearToken&&!init.signal?.aborted&&await browserIdentityFailure(response);
+ if(!await rejected())return response;
+ recordDiagnostic('AUTH_REQUEST_RETRY','http_401_retry','info');
+ if(token)auth.clearToken(token);
+ for(const delay of isRead?[0,300,900,1800]:[0]){
+  if(delay)await wait(delay);
+  if(init.signal?.aborted)break;
+  const renewed=await auth.token?.()||'';
+  if(!renewed||renewed===token)continue;
+  await response.body?.cancel();
+  token=renewed;
+  response=await send(token);
+  if(!await rejected())return response;
+  auth.clearToken(token);
  }
- return result.response;
+ return response;
 }
 
 export async function browserIdentityFailure(response){
- try{const payload=await response.clone().json();const code=payload?.error?.code||payload?.code;if(String(code||'').startsWith('PROVIDER_'))return false;if(payload?.category==='v-scheduler'||['UNAUTHENTICATED','UNAUTHORIZED'].includes(code))return true;return !String(code||'').startsWith('PROVIDER_')&&!['invalid_api_key','authentication_error'].includes(payload?.error?.type);}catch{return true;}
+ try{const payload=await response.clone().json();const code=payload?.error?.code||payload?.code;if(String(code||'').startsWith('PROVIDER_')||String(payload?.error?.message||payload?.msg||'').startsWith('API key owner is'))return false;if(payload?.category==='v-scheduler'||['UNAUTHENTICATED','UNAUTHORIZED'].includes(code))return true;return !String(code||'').startsWith('PROVIDER_')&&!['invalid_api_key','authentication_error'].includes(payload?.error?.type);}catch{return true;}
 }

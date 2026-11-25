@@ -438,3 +438,7 @@ summary:focus-visible, #nav button:focus-visible { outline: 2px solid var(--prim
 .speed-tooltip span { font-size: .75rem; }
 .speed-details summary { cursor: pointer; }
 .speed-rows { max-height: 16rem; overflow: auto; }
+
+.catalog-notice { margin: 0 0 16px; color: var(--muted, #62748a); }
+.catalog-notice p { margin: 0 0 6px; }
+.catalog-notice button { margin-inline-end: 8px; }

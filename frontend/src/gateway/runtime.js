@@ -2,7 +2,7 @@ import { bindSpeedTooltips, speedSeries } from './model-speed.js';
 import {renderOperationContract} from '../api-contract.js';
 import {NATIVE_PROVIDERS} from './native-providers.js';
 import { groupCatalog, sourceLabel } from './model-catalog.js';
-import {apiError,browserIdentityFailure,retryReadFetch,isTemporaryReadFailure} from '../http-client.js';
+import {apiError,authenticatedFetch,isTemporaryReadFailure,lanBaseURL} from '../http-client.js';
 import {recordDiagnostic,isSessionError,userErrorMessage} from '../diagnostics.js';
 import { createGatewayI18n } from './locale.js';
 import { classifyModelTest, lastModelTest, modelTestScope, rememberModelTest, resultLabels, reachabilityLabels, upstreamHost } from './model-test.js';
@@ -24,10 +24,6 @@ const API = options.apiBase;
 const $ = (id) => root.getElementById(id);
 const esc = (s) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-
-// The backend supplies the configured host port; the browser knows the VOS host.
-const lanBaseURL = (bases) => (bases.lan || "http://<vos-host>:22888/v1")
-  .replace("<vos-host>", window.location.hostname).replace("<host-port>", "22888");
 
 const COPY_SVG =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
@@ -63,16 +59,14 @@ const app = {
     }
     return headers;
   },
-  async api(method, path, body, raw = false, retried = false) {
-    const headers = await this.authHeaders();
-    if (body !== undefined) headers["Content-Type"] = "application/json";
-    const res = await retryReadFetch(API + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
-    if (res.status === 401 && !retried && headers.Authorization && headers.Authorization !== "Bearer " + this.gatewayKey() && await browserIdentityFailure(res)) {
-      recordDiagnostic("AUTH_REQUEST_RETRY","gateway_401_retry","info");
-      VRouterOIDC.clear(headers.Authorization.slice(7));
-      await res.body?.cancel();
-      return this.api(method, path, body, raw, true);
-    }
+  async api(method, path, body, raw = false) {
+    const res = await authenticatedFetch(API + path, {
+      method, headers: body === undefined ? undefined : {"Content-Type":"application/json"},
+      body: body === undefined ? undefined : JSON.stringify(body),
+    }, {
+      token: async () => await VRouterOIDC.accessToken() || this.gatewayKey(),
+      clearToken: token => { if (token !== this.gatewayKey()) VRouterOIDC.clear(token); },
+    });
     if (raw) return res;
     const text = await res.text();
     let data = null;
@@ -200,16 +194,7 @@ const app = {
         budgets: admin ? this.state.budgets : [],
       };
       this.showError("");
-      const catalog = status.catalog_readiness;
-      const notice = $("catalogNotice");
-      VRouterI18n.bind(notice, "textContent", () => {
-        if (!catalog || catalog.ready) return "";
-        const pending = Object.values(catalog.backends || {}).includes("initializing");
-        return VRouterI18n.t(pending
-          ? "正在发现内置模型，列表将自动更新；已就绪模型仍可调用。"
-          : "部分内置推理后端不可用，请在权重管理检查推理服务；其他就绪模型仍可调用。");
-      });
-      notice.hidden = !notice.textContent;
+      if(this.state.tab==='models')void this.checkUnavailableServices();
       this.renderAll();
       if (this.state.tab === "apidoc") this.renderApiDoc();
       if (admin) this.loadBudgets();
@@ -428,6 +413,20 @@ const app = {
   },
   updateCatalogQuery(value) { this.catalogQuery = value; this.renderModels(); },
   updateCatalogGrouping(value) { this.catalogGrouping = value; this.renderModels(); },
+  async checkUnavailableServices() {
+    if (!options.unavailableServices || Date.now() - (this.lastServiceCheck || 0) < 30000) return;
+    this.lastServiceCheck = Date.now();
+    try {
+      const services = await options.unavailableServices();
+      if (this.disposed) return;
+      const notice = $("catalogNotice");
+      VRouterI18n.bind(notice, "innerHTML", () => services.length ? `<p>${VRouterI18n.t("以下推理后端暂不可用，可查看状态并决定是否启动。")}</p>${
+        services.map(({id,name}) => `<button class="btn" type="button" onclick="app.openUnavailableService(${jsArg(id)})">${esc(name)} · ${VRouterI18n.t("查看后端")}</button>`).join("")
+      }` : "");
+      notice.hidden = services.length === 0;
+    } catch { /* Inventory refresh will retry without clearing the previous result. */ }
+  },
+  openUnavailableService(id) { options.openService?.(id); },
   upstreamCatalogActions(u) {
     if (u.virtual) return `<button class="btn primary" onclick="app.openAutoRouting()">${VRouterI18n.t('配置候选与策略')}</button>`;
     if (u.manageable === false) return `<span class="hint">${VRouterI18n.t('由所属应用管理')} · ${VRouterI18n.t('只读')}</span>`;

@@ -453,6 +453,10 @@ All business codes and envelopes: [error contract](../api/error-contract.json). 
 
 ## Model key response behavior / 模型 Key 返回值
 
+在模型设置中打开「模型访问 Key」，生成或设置后，从「局域网客户端配置」复制 OpenAI 兼容客户端需要的 Base URL、API Key 和完整模型 ID。远程访问 VOS 时，将 Base URL 的主机改为该客户端可达的 VOS 局域网地址。个人 Key 从顶栏「API Key」进入。
+
+Open **Model access key** in the model settings. After generating or setting the key, copy the Base URL, API key, and qualified model ID from **LAN client setup** into an OpenAI-compatible client. If you opened VOS remotely, use a VOS LAN address reachable from the client. Manage personal keys from **API Key** in the header.
+
 access_key=true 自动生成时，仅本次响应的 model_access_keys[].api_key 返回完整 Key；请立即保存。字符串表示设置调用方已有的自定义 Key，成功响应只返回模型与 Key 元数据，不回显 api_key。null 表示撤销，返回 key:null。省略 access_key 的注册请求保留已有 Key，不返回原 Key。
 
 Only access_key=true returns the generated secret in model_access_keys[].api_key, once in that response; save it immediately. A string sets a caller-supplied key and returns model/key metadata without an api_key echo. null revokes and returns key:null. Registration with access_key omitted preserves the existing key and never returns its secret.
