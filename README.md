@@ -42,6 +42,9 @@ V-Voice 已就绪并声明相应接口的模型自动继承应用资源预算，
 
 [Music / Desensitize / Image Studio 可信绑定](docs/application-auto-binding.md) 按实测运行设置、模型参数和输入限额接入调度；清单包含 Thor MusicGen-small / SD-Turbo、AMD MusicGen-small，以及 AMD / Thor / L4T Desensitize NER/OCR 的独立实测预算。各模型仅在完整运行设置与输入范围匹配时接入，具体真实业务验收见文档。
 
+Image Studio 的 ARM CPU 主节点会在 SD Turbo 权重就绪后自动注册已校准执行器。当前支持 F16、512×512、最多 4 步、单张输出。查看 Image Studio 的「生成 → 计算节点 → 主节点」，并在 V-Scheduler 的任务详情核对执行节点。现有生成 API 沿用相同请求和响应格式。
+
+
 校准的 Ollama 请求在未显式提供 `options.num_predict` 时，沿用本次 `max_tokens`，不会扩成模型批准上限。
 
 模型预算列表读取应用的网关快照，显示各模型执行器的默认预算；模型 ID 中的组织路径和量化后缀保持完整。Image Studio 的 L4T SD-Turbo 使用实测的 Q4 / 1.5 GiB VRAM / 128×128 VAE 分块 / CPU 文本编码器配置，按 2304 MiB 统一内存预算准入，保留节点的安全预留；其他平台使用各自的校准参数，实际内存不足时继续排队。

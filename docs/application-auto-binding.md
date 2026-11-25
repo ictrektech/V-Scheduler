@@ -21,6 +21,9 @@
 
 测试容器的资源上限必须与正式运行配置对应；不能把限制了 CPU/内存的测试峰值用于未限额、线程数不同的正式进程。模型权重、运行后端、线程、库版本、offload 或输入参数的变化须重新匹配校准。
 
+
+ARM CPU 上的 Image Studio SD Turbo 完成本机实测后纳入自动绑定。此组合使用 F16、四线程、128×128 VAE 分块，支持最大 512×512、4 步、单张输出、正向提示词最多 700 字符、空负向提示词。预算为 5.5 CPU / 6 GiB RAM，实测进程峰值 4266 MiB、CPU 峰值 5092 millicores，正常生成并确认原生进程退出。主节点模式继续使用 Image Studio 生图 API 的 `compute_deployment_id` 缺省值。管理员可以在「节点管理 → 应用统一接入」查看自动绑定。
+
 ## 交接字段与执行责任
 
 绑定包含 `protocol_version=1`、单调递增 `binding_revision`、`app_id`、固定调度 `url=http://v-router:8080/scheduler/api/v1`、本应用的 `token` 与 `executor_token`、固定 `upstream_url`、`execution_settings`、`models`、`gateway_executors`、`model_limits` 及 Image Studio 的 `model_parameters`。客户端先核验 VOS 身份、固定地址和控制器执行器，再以 0600 原子落盘；服务凭据不得交给业务用户。
