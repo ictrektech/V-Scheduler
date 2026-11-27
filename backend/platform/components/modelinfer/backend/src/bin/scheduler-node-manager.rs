@@ -384,7 +384,7 @@ async fn application_backend(
             let channel_env = instance.channel_token.as_deref()
                 .map(|token| format!("--mount 'type=volume,source={name}-data,target=/data' --env 'V_SCHEDULER_BACKEND_CHANNEL_TOKEN={token}' "))
                 .unwrap_or_default();
-            let model_hub = if instance.channel_token.is_some() {
+            let model_hub = if instance.channel_token.is_some() && node.app_model_hub_nfs {
                 mount_model_hub(&target, &instance.id).await
             } else {
                 None
@@ -465,6 +465,9 @@ async fn application_backend_channel(
     }
     let bytes = STANDARD.decode(&packet.body_b64).map_err(|_| unavailable())?;
     let (method, path, content_type) = packet.operation.request(bytes.len()).ok_or_else(unavailable)?;
+    if !node.app_model_hub_nfs && matches!(&packet.operation, backend_channel::Operation::ModelHub) {
+        return Ok(Json(backend_channel::Reply { status: 200, data: json!({"state": "unavailable"}) }));
+    }
     let mut input = packet.token.into_bytes();
     input.push(b'\n');
     input.extend_from_slice(&bytes);

@@ -116,3 +116,5 @@ ARM CPU 主节点的 Image Studio SD Turbo 会在权重就绪后自动注册已�
 GET /api/v1/ollama-preload · PUT /api/v1/ollama-preload
 
 推理应用登记的模型可由 VOS 管理员在「模型与上游 → 模型访问 Key」生成、设置或撤销专用 Key。该 Key 归签发管理员管理，仍只授权所选私有模型。公共模型可直接调用。
+
+在「节点管理 → SSH 算力节点」添加或编辑节点时，可关闭应用后端的 Model Hub NFS，让该节点直接复制权重。已有后端停止后重新启动以更新挂载。原来使用共享权重的模型需重新准备。

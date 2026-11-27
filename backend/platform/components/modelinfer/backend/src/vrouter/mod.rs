@@ -1200,6 +1200,7 @@ mod tests {
                 socket_ifname: Some("eth0".into()),
                 ib_hca: Some(String::new()),
                 fscache: false,
+                app_model_hub_nfs: true,
                 node_exporter_port: crate::nodes::DEFAULT_NODE_EXPORTER_PORT,
                 nvidia_gpu_exporter_port: crate::nodes::DEFAULT_NVIDIA_GPU_EXPORTER_PORT,
             },

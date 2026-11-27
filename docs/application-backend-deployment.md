@@ -12,6 +12,8 @@
 
 SSH 路径按 Profile 选择 Docker 运行时。集群路径使用 V-Scheduler 安装包的 `scheduler-app-backend` 项目。同一台机器按 IPv4 共享本控制器的宿主机端口分配。Jetson Orin、Jetson Thor、DGX Spark 及 ARM/AMD CUDA 使用 NVIDIA 容器运行时，其他 Profile 使用默认 Docker 运行时。接口不接收任意命令、环境变量、挂载、主机设备或特权参数。需自定义设备或卷的后端须通过各自的应用部署方案配置。
 
+在「节点管理 → SSH 算力节点」添加或编辑节点时，用「应用后端的 Model Hub 权重」选择优先使用只读 NFS 或直接复制。管理员可在 `POST /managed-nodes` 或 `PUT /managed-nodes/{id}` 发送布尔字段 `app_model_hub_nfs`。创建时默认 `true`。编辑时省略或传 `null` 保留设置。管理员从节点列表与写入回执读取该字段。关闭后，新的模型准备立即走复制。已有后端停止并重新启动后更新挂载，部署持久卷保留。原先走共享的模型需要重新准备。
+
 ### 请求示例
 
 VOS 基址为 `/api/com.ictrek.v-scheduler/scheduler/api/v1`。容器网络直连为 `http://v-scheduler:38120/api/v1`。传入 `Authorization: Bearer <token>`。JSON 请求使用 `Content-Type: application/json`。
@@ -54,6 +56,8 @@ Open **API Documentation → Scheduling API → Application backend deployments*
 5. Use `POST /backend-deployments/{id}/stop` to remove the runtime and keep the reservation. Use `POST /backend-deployments/{id}/start` to retry a stopped or failed deployment with its original configuration. Use `DELETE /backend-deployments/{id}` to release the port after cleanup is confirmed. Remove the deployments before deleting their SSH registration or changing its address.
 
 The SSH adapter selects the Docker runtime from the Profile. The cluster adapter uses the V-Scheduler package’s `scheduler-app-backend` project. The same IPv4 address shares one port pool within the controller. Jetson Orin, Jetson Thor, DGX Spark, ARM CUDA and AMD CUDA select the NVIDIA runtime. Other profiles use the default Docker runtime. The API accepts an image and one port. Backends that need custom commands, environment variables, host mounts, devices or privileges require their own deployment configuration.
+
+Under **Node Management → SSH compute nodes**, choose read-only NFS or direct copying in **Model Hub weights for application backends** when adding or editing a node. Administrators send the boolean `app_model_hub_nfs` in `POST /managed-nodes` or `PUT /managed-nodes/{id}`. It defaults to `true` on creation. An omitted or null field preserves the setting on update. Administrators can read it in the inventory and write response. Disabling NFS applies to new model preparations immediately. Stop and start an existing backend to update its mount. Its persistent volume is retained. Prepare models that used the old share again.
 
 ### API usage
 

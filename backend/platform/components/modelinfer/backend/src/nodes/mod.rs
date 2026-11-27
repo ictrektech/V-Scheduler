@@ -52,6 +52,8 @@ pub struct NodeCreate {
     /// 挂载 model-hub NFS 时是否启用 fscache（默认 false）
     #[serde(default)]
     pub fscache: bool,
+    #[serde(default = "default_app_model_hub_nfs")]
+    pub app_model_hub_nfs: bool,
     /// node-exporter 监听端口（高级配置；默认 19100）
     #[serde(default = "default_node_exporter_port")]
     pub node_exporter_port: i32,
@@ -79,6 +81,7 @@ pub struct NodeUpdate {
     pub ib_hca: Option<String>,
     /// 挂载 model-hub NFS 时是否启用 fscache（未提供表示不改）
     pub fscache: Option<bool>,
+    pub app_model_hub_nfs: Option<bool>,
     /// node-exporter 端口（未提供表示不改）
     pub node_exporter_port: Option<i32>,
     /// nvidia-gpu-exporter 端口（未提供表示不改）
@@ -121,6 +124,8 @@ pub struct NodeView {
     pub interfaces: Vec<InterfaceInfo>,
     pub ib_devices: Vec<String>,
     pub fscache: bool,
+    #[serde(default = "default_app_model_hub_nfs")]
+    pub app_model_hub_nfs: bool,
     /// node-exporter 监听端口
     pub node_exporter_port: i32,
     /// nvidia-gpu-exporter 监听端口
@@ -193,6 +198,7 @@ impl From<node::Model> for NodeView {
             interfaces: serde_json::from_str(&m.interfaces_json).unwrap_or_default(),
             ib_devices: serde_json::from_str(&m.ib_devices_json).unwrap_or_default(),
             fscache: m.fscache,
+            app_model_hub_nfs: m.app_model_hub_nfs,
             node_exporter_port: m.node_exporter_port,
             nvidia_gpu_exporter_port: m.nvidia_gpu_exporter_port,
             status: m.status,
@@ -248,6 +254,10 @@ pub fn apply_occupancy(views: &mut [NodeView], occupied: &[crate::deployments::O
         v.busy_deployment_ids = ids;
         v.busy_deployment_names = names;
     }
+}
+
+fn default_app_model_hub_nfs() -> bool {
+    true
 }
 
 fn default_port() -> i32 {
@@ -581,6 +591,7 @@ pub async fn create_node(
         interfaces_json: Set(serde_json::to_string(&scan.interfaces).unwrap_or_else(|_| "[]".into())),
         ib_devices_json: Set(serde_json::to_string(&scan.ib_devices).unwrap_or_else(|_| "[]".into())),
         fscache: Set(req.fscache),
+        app_model_hub_nfs: Set(req.app_model_hub_nfs),
         status: Set("online".to_string()),
         last_checked_at: Set(Some(now.clone())),
         created_at: Set(now.clone()),
@@ -676,6 +687,9 @@ pub async fn update_node(
     }
     if let Some(ib) = req.ib_hca {
         am.ib_hca = Set(ib.trim().to_string());
+    }
+    if let Some(enabled) = req.app_model_hub_nfs {
+        am.app_model_hub_nfs = Set(enabled);
     }
     if let Some(fscache) = req.fscache {
         am.fscache = Set(fscache);
@@ -839,6 +853,7 @@ mod tests {
             socket_ifname: Some("enp1s0".into()),
             ib_hca: Some(String::new()),
             fscache: false,
+            app_model_hub_nfs: true,
             node_exporter_port: DEFAULT_NODE_EXPORTER_PORT,
             nvidia_gpu_exporter_port: DEFAULT_NVIDIA_GPU_EXPORTER_PORT,
         }
@@ -906,6 +921,7 @@ mod tests {
             interfaces: Vec::new(),
             ib_devices: Vec::new(),
             fscache: false,
+            app_model_hub_nfs: true,
             node_exporter_port: DEFAULT_NODE_EXPORTER_PORT,
             nvidia_gpu_exporter_port: DEFAULT_NVIDIA_GPU_EXPORTER_PORT,
             status: "online".into(),
@@ -1079,13 +1095,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn update_toggles_fscache_and_monitor_port() {
+    async fn update_preserves_then_changes_node_storage_and_monitor_settings() {
         let db = db::connect("sqlite::memory:").await.unwrap();
         let ssh = MockSshExec::new();
         let mut req = sample("10.0.0.13");
         req.fscache = true;
+        req.app_model_hub_nfs = false;
         let created = create_node(&db, &ssh, req).await.unwrap();
         assert!(created.fscache);
+        assert!(!created.app_model_hub_nfs);
 
         // 未提供 → 不变
         let untouched = update_node(
@@ -1104,6 +1122,7 @@ mod tests {
                 hostname: None,
                 socket_ifname: None,
                 ib_hca: None,
+                app_model_hub_nfs: None,
                 fscache: None,
                 node_exporter_port: None,
                 nvidia_gpu_exporter_port: None,
@@ -1112,6 +1131,7 @@ mod tests {
         .await
         .unwrap();
         assert!(untouched.fscache);
+        assert!(!untouched.app_model_hub_nfs);
         assert_eq!(untouched.node_exporter_port, DEFAULT_NODE_EXPORTER_PORT);
 
         // 关闭 fscache + 改端口
@@ -1131,6 +1151,7 @@ mod tests {
                 hostname: None,
                 socket_ifname: None,
                 ib_hca: None,
+                app_model_hub_nfs: Some(true),
                 fscache: Some(false),
                 node_exporter_port: Some(9110),
                 nvidia_gpu_exporter_port: None,
@@ -1140,6 +1161,7 @@ mod tests {
         .unwrap();
         assert!(!off.fscache);
         assert_eq!(off.node_exporter_port, 9110);
+        assert!(get_node(&db, &created.id).await.unwrap().app_model_hub_nfs);
     }
 
     #[tokio::test]
@@ -1157,6 +1179,7 @@ mod tests {
                 name: None, host: None, ssh_port: None, ssh_user: None,
                 auth_method: Some("key".into()), ssh_password: None, ssh_key: None, sudo_password: None,
                 hostname: None, socket_ifname: None, ib_hca: None,
+                app_model_hub_nfs: None,
                 fscache: None, node_exporter_port: None, nvidia_gpu_exporter_port: None,
             },
         )
@@ -1174,6 +1197,7 @@ mod tests {
                 auth_method: Some("key".into()), ssh_password: None,
                 ssh_key: Some("KEYDATA".into()), sudo_password: None,
                 hostname: None, socket_ifname: None, ib_hca: None,
+                app_model_hub_nfs: None,
                 fscache: None, node_exporter_port: None, nvidia_gpu_exporter_port: None,
             },
         )

@@ -2889,6 +2889,10 @@
                                   "arch": {
                                     "type": "string"
                                   },
+                                  "app_model_hub_nfs": {
+                                    "type": "boolean",
+                                    "description": "Whether application backends may use the read-only Model Hub NFS share on this SSH node. False copies weights. / 应用后端是否可使用此节点的只读 Model Hub NFS。false 直接复制权重。 Visible to administrators. / 管理员可见。"
+                                  },
                                   "gpu_model": {
                                     "type": "string"
                                   },
@@ -3017,6 +3021,11 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "app_model_hub_nfs": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Whether application backends may use the read-only Model Hub NFS share on this SSH node. False copies weights. / 应用后端是否可使用此节点的只读 Model Hub NFS。false 直接复制权重。"
+                  },
                   "name": {
                     "type": "string",
                     "description": "Node display name / 节点显示名称"
@@ -3105,6 +3114,10 @@
                             },
                             "arch": {
                               "type": "string"
+                            },
+                            "app_model_hub_nfs": {
+                              "type": "boolean",
+                              "description": "Whether application backends may use the read-only Model Hub NFS share on this SSH node. False copies weights. / 应用后端是否可使用此节点的只读 Model Hub NFS。false 直接复制权重。"
                             },
                             "gpu_model": {
                               "type": "string"
@@ -3206,6 +3219,13 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "app_model_hub_nfs": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ],
+                    "description": "Whether application backends may use the read-only Model Hub NFS share on this SSH node. False copies weights. / 应用后端是否可使用此节点的只读 Model Hub NFS。false 直接复制权重。 Omit or pass null to preserve the setting. / 省略或传 null 时保留已有设置。"
+                  },
                   "name": {
                     "type": "string",
                     "description": "Node display name / 节点显示名称"
@@ -3290,6 +3310,10 @@
                             },
                             "arch": {
                               "type": "string"
+                            },
+                            "app_model_hub_nfs": {
+                              "type": "boolean",
+                              "description": "Whether application backends may use the read-only Model Hub NFS share on this SSH node. False copies weights. / 应用后端是否可使用此节点的只读 Model Hub NFS。false 直接复制权重。"
                             },
                             "gpu_model": {
                               "type": "string"
@@ -3494,6 +3518,10 @@
                             },
                             "arch": {
                               "type": "string"
+                            },
+                            "app_model_hub_nfs": {
+                              "type": "boolean",
+                              "description": "Whether application backends may use the read-only Model Hub NFS share on this SSH node. False copies weights. / 应用后端是否可使用此节点的只读 Model Hub NFS。false 直接复制权重。"
                             },
                             "gpu_model": {
                               "type": "string"

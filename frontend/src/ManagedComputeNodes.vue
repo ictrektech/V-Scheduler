@@ -15,6 +15,7 @@ type Node = {
   auth_method?: 'password' | 'key'
   profile?: string
   profile_override?: string
+  app_model_hub_nfs?: boolean
   status: string
   arch: string
   gpu_model: string
@@ -53,6 +54,7 @@ function fields(node?: Node) {
     name: node?.name || '', host: node?.host || '', ssh_port: node?.ssh_port || 22,
     ssh_user: node?.ssh_user || '', auth_method: node?.auth_method || 'key',
     profile: node?.profile_override || 'auto',
+    app_model_hub_nfs: node?.app_model_hub_nfs ?? true,
     ssh_password: '', ssh_key: '', sudo_password: '',
   }
 }
@@ -175,6 +177,13 @@ onUnmounted(() => clearInterval(timer))
       <label>{{label('SSH 用户', 'SSH user')}}<input v-model.trim="form.ssh_user" required maxlength="64"></label>
       <label>{{label('认证方式', 'Authentication')}}<select v-model="form.auth_method"><option value="key">{{label('私钥', 'Private key')}}</option><option value="password">{{label('密码', 'Password')}}</option></select></label>
       <label>Profile<select v-model="form.profile"><option value="auto">{{label('自动识别', 'Auto-detect')}}</option><option v-if="form.profile!=='auto'&&!profiles.includes(form.profile)" :value="form.profile">{{form.profile}}</option><option v-for="profile in profiles" :key="profile" :value="profile">{{profile}}</option></select></label>
+      <label>{{label('应用后端的 Model Hub 权重', 'Model Hub weights for application backends')}}
+        <select v-model="form.app_model_hub_nfs">
+          <option :value="true">{{label('优先使用只读 NFS 共享', 'Prefer read-only NFS sharing')}}</option>
+          <option :value="false">{{label('关闭 NFS，直接复制权重', 'Disable NFS and copy weights')}}</option>
+        </select>
+        <small>{{label('关闭后，新准备的模型直接复制。已有后端停止并重新启动后更新挂载；使用原共享权重的模型需要重新准备。', 'When disabled, new preparations copy weights. Stop and restart an existing backend to update its mount, then prepare models that used the old share again.')}}</small>
+      </label>
       <label v-if="form.auth_method==='password'">{{label('SSH 密码', 'SSH password')}}<input v-model="form.ssh_password" type="password" autocomplete="new-password" :required="edit?.auth_method!=='password'"></label>
       <label v-else>{{label('SSH 私钥', 'SSH private key')}}<textarea v-model="form.ssh_key" rows="4" spellcheck="false" :required="edit?.auth_method!=='key'"></textarea></label>
       <label>{{label('sudo 密码（可选）', 'sudo password (optional)')}}<input v-model="form.sudo_password" type="password" autocomplete="new-password"></label>
@@ -187,6 +196,7 @@ onUnmounted(() => clearInterval(timer))
         <strong>{{nodeIdentity(node).name}}</strong>
         <div>{{[nodeIdentity(node).address, nodeIdentity(node).profile].filter(Boolean).join(' · ')}}</div>
         <small>{{node.status==='online' ? label('在线','Online') : label('离线','Offline')}}<template v-if="node.connection_error"> · {{describe({code:node.connection_error})}}</template></small>
+        <small>{{node.app_model_hub_nfs === false ? label('模型权重：直接复制', 'Model weights: copy') : label('模型权重：优先 NFS', 'Model weights: prefer NFS')}}</small>
         <small v-if="clusterNodes.some(member => member.ssh_node_id === node.id)">{{label('VOS 集群成员','VOS cluster member')}}</small>
       </div>
       <div v-if="canManage" class="node-actions">

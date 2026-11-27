@@ -102,3 +102,5 @@ Under Model weights → Inference services, administrators can set Automatic pre
 GET /api/v1/ollama-preload · PUT /api/v1/ollama-preload
 
 A VOS administrator can generate, set, or revoke a model access key for a model registered by the inference app from Models and upstreams → Model access key. The issuing administrator manages that key, which grants access only to the selected private model. Public models are callable without a key.
+
+When adding or editing an SSH compute node in Node Management, disable Model Hub NFS for application backends to copy weights directly. Stop and start an existing backend to update its mount. Prepare models that used the share again.

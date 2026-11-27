@@ -76,6 +76,9 @@ pub struct Model {
     /// 挂载 model-hub NFS 时是否启用 fscache（节点侧 cachefilesd 由用户负责）
     #[sea_orm(default_value = false)]
     pub fscache: bool,
+    /// Whether app backends may mount the Model Hub share on this node.
+    #[sea_orm(default_value = true)]
+    pub app_model_hub_nfs: bool,
     /// 连接状态：unknown / online / offline
     #[sea_orm(default_value = "unknown")]
     pub status: String,
