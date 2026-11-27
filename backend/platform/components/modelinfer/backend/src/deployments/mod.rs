@@ -2,6 +2,7 @@
 
 pub mod validate;
 pub mod preflight;
+pub mod file_overrides;
 
 use std::path::Path;
 
@@ -56,10 +57,16 @@ pub struct DeploymentCreate {
     /// 本地反代：期望端口（缺省 / 0 = 自动分配）
     #[serde(default)]
     pub local_proxy_port: Option<i64>,
-    /// 探活失败自动重启开关（缺省 false）
+    /// 自动重启策略：`never`（缺省）/ `unless-stop`
     #[serde(default)]
-    pub auto_restart_enabled: bool,
-    /// 探活连续失败阈值（秒；缺省 300）
+    pub auto_restart_policy: Option<String>,
+    /// 连续探活失败次数阈值（缺省 10，范围 1~100）
+    #[serde(default)]
+    pub auto_restart_fail_count: Option<i64>,
+    /// 历史兼容：旧的布尔开关（缺省 false；仅当未提供 `auto_restart_policy` 时生效）
+    #[serde(default)]
+    pub auto_restart_enabled: Option<bool>,
+    /// 历史兼容：旧的秒阈值（仅当未提供 `auto_restart_fail_count` 时按 30s 周期折算）
     #[serde(default)]
     pub auto_restart_fail_secs: Option<i64>,
 }
@@ -116,10 +123,16 @@ pub struct DeploymentUpdate {
     /// 本地反代：期望端口（None = 沿用现值）
     #[serde(default)]
     pub local_proxy_port: Option<i64>,
-    /// 自动重启开关（None = 沿用现值）
+    /// 自动重启策略（None = 沿用现值）
+    #[serde(default)]
+    pub auto_restart_policy: Option<String>,
+    /// 连续探活失败次数阈值（None = 沿用现值）
+    #[serde(default)]
+    pub auto_restart_fail_count: Option<i64>,
+    /// 历史兼容：旧布尔开关（仅当未提供 `auto_restart_policy` 时生效）
     #[serde(default)]
     pub auto_restart_enabled: Option<bool>,
-    /// 自动重启连续失败阈值（秒；None = 沿用现值）
+    /// 历史兼容：旧秒阈值（仅当未提供 `auto_restart_fail_count` 时按 30s 周期折算）
     #[serde(default)]
     pub auto_restart_fail_secs: Option<i64>,
 }
@@ -231,18 +244,24 @@ pub struct DeploymentView {
     pub metrics_service_id: String,
     pub metrics_registered_at: Option<String>,
     pub metrics_last_error: String,
-    /// 探活失败自动重启：开关 / 连续失败阈值（秒）
+    /// 自动重启策略：`never` / `unless-stop`（历史布尔开关映射为派生值）
+    pub auto_restart_policy: String,
+    /// 连续探活失败次数阈值（1~100）
+    pub auto_restart_fail_count: i32,
+    /// 历史兼容派生字段：策略是否非 `never`
     pub auto_restart_enabled: bool,
-    pub auto_restart_fail_secs: i32,
-    /// 自动重启运行态：相位（""/stopping/starting）/ 失败起点 / backoff 截止 / 尝试次数 /
-    /// 最近动作时间 / 最近错误（见 `specs/docs/design/modelinfer/auto-restart.md`）
+    /// 自动重启运行态：相位（""/stopping/starting）/ 连续失败起点与次数 / backoff 截止 /
+    /// 尝试次数 / 最近动作时间 / 最近错误（见 `specs/docs/design/modelinfer/auto-restart.md`）
     pub auto_restart_phase: String,
     pub auto_restart_failed_since: String,
+    pub auto_restart_consecutive_failures: i32,
     pub auto_restart_next_at: String,
     pub auto_restart_attempts: i32,
     pub auto_restart_last_at: String,
     pub auto_restart_last_error: String,
-    /// 卡片是否声明 `lifecycle.health-probe`（未声明时自动重启不会生效）
+    /// 用户手动启停 / 配置变更后的抑制起点（内部字段，用于排查）
+    pub auto_restart_ignore_before: String,
+    /// 卡片是否声明 `lifecycle.health-probe`（未声明时探活失败不会触发自动重启）
     pub health_probe_declared: bool,
     pub state: String,
     pub desired_state: String,
@@ -366,6 +385,9 @@ async fn to_view(db: &DatabaseConnection, m: deployment::Model) -> Result<Deploy
     let effective_images = crate::images::effective_images(&card_images, &images_override);
     let images_source = crate::images::images_source(&images_override).to_string();
 
+    let auto_restart_policy = crate::deploy::autorestart::effective_policy(&m);
+    let auto_restart_fail_count = crate::deploy::autorestart::effective_fail_count(&m);
+    let auto_restart_enabled = auto_restart_policy != validate::AUTO_RESTART_POLICY_NEVER;
     Ok(DeploymentView {
         id: m.id,
         name: m.name,
@@ -410,14 +432,17 @@ async fn to_view(db: &DatabaseConnection, m: deployment::Model) -> Result<Deploy
         metrics_service_id: m.metrics_service_id,
         metrics_registered_at: m.metrics_registered_at,
         metrics_last_error: m.metrics_last_error,
-        auto_restart_enabled: m.auto_restart_enabled,
-        auto_restart_fail_secs: m.auto_restart_fail_secs,
+        auto_restart_policy,
+        auto_restart_fail_count,
+        auto_restart_enabled,
         auto_restart_phase: m.auto_restart_phase,
         auto_restart_failed_since: m.auto_restart_failed_since,
+        auto_restart_consecutive_failures: m.auto_restart_consecutive_failures,
         auto_restart_next_at: m.auto_restart_next_at,
         auto_restart_attempts: m.auto_restart_attempts,
         auto_restart_last_at: m.auto_restart_last_at,
         auto_restart_last_error: m.auto_restart_last_error,
+        auto_restart_ignore_before: m.auto_restart_ignore_before,
         health_probe_declared,
         state: m.state,
         desired_state: m.desired_state,
@@ -852,11 +877,23 @@ pub async fn create_deployment(
     let local_proxy_port = crate::localproxy::normalize_proxy_port(
         req.local_proxy_port.unwrap_or(0).clamp(i32::MIN as i64, i32::MAX as i64) as i32,
     );
-    // 自动重启配置（阈值合法性在落库前校验，非法返回 20748）
-    let auto_restart_fail_secs = validate::normalize_auto_restart_fail_secs(
-        req.auto_restart_fail_secs
-            .unwrap_or(validate::DEFAULT_AUTO_RESTART_FAIL_SECS as i64),
-    )?;
+    // 自动重启配置：以 `auto_restart_policy` 为 SSOT；旧布尔字段只在未提供策略时兼容。
+    let auto_restart_policy = match req.auto_restart_policy.as_deref() {
+        Some(raw) => validate::normalize_auto_restart_policy(raw)?,
+        None if req.auto_restart_enabled.unwrap_or(false) => {
+            validate::AUTO_RESTART_POLICY_UNLESS_STOP.to_string()
+        }
+        None => validate::AUTO_RESTART_POLICY_NEVER.to_string(),
+    };
+    let auto_restart_fail_count = match req.auto_restart_fail_count {
+        Some(raw) => validate::normalize_auto_restart_fail_count(raw)?,
+        None => match req.auto_restart_fail_secs {
+            Some(legacy) => validate::legacy_auto_restart_fail_count(legacy),
+            None => validate::DEFAULT_AUTO_RESTART_FAIL_COUNT,
+        },
+    };
+    let auto_restart_enabled =
+        auto_restart_policy != validate::AUTO_RESTART_POLICY_NEVER;
     let am = deployment::ActiveModel {
         id: Set(ulid::Ulid::new().to_string()),
         name: Set(req.name.trim().to_string()),
@@ -893,8 +930,12 @@ pub async fn create_deployment(
         metrics_service_id: Set(String::new()),
         metrics_registered_at: Set(None),
         metrics_last_error: Set(String::new()),
-        auto_restart_enabled: Set(req.auto_restart_enabled),
-        auto_restart_fail_secs: Set(auto_restart_fail_secs),
+        auto_restart_policy: Set(auto_restart_policy),
+        auto_restart_fail_count: Set(auto_restart_fail_count),
+        auto_restart_enabled: Set(auto_restart_enabled),
+        auto_restart_fail_secs: Set(validate::DEFAULT_AUTO_RESTART_FAIL_COUNT * 30),
+        auto_restart_consecutive_failures: Set(0),
+        auto_restart_ignore_before: Set(String::new()),
         auto_restart_phase: Set(String::new()),
         auto_restart_failed_since: Set(String::new()),
         auto_restart_next_at: Set(String::new()),
@@ -920,6 +961,7 @@ pub async fn update_deployment(
     req: DeploymentUpdate,
 ) -> Result<DeploymentView, ModelinferError> {
     let current = get_deployment(db, id).await?;
+    let original_plaza_model_id = current.plaza_model_id.clone();
     if !validate::is_editable(&current.state, &current.desired_state) {
         return Err(ModelinferError::new(
             codes::DEPLOYMENT_STATE_INVALID,
@@ -985,15 +1027,29 @@ pub async fn update_deployment(
     )
     .await?;
 
-    // 自动重启：None = 沿用现值；阈值非法返回 20748
-    let auto_restart_enabled = req.auto_restart_enabled.unwrap_or(current.auto_restart_enabled);
-    let auto_restart_fail_secs = match req.auto_restart_fail_secs {
-        Some(v) => validate::normalize_auto_restart_fail_secs(v)?,
-        None => current.auto_restart_fail_secs,
+    // 自动重启：None = 沿用现值（历史行按有效策略 / 有效阈值兼容）；非法返回 20748
+    let current_policy = crate::deploy::autorestart::effective_policy(&current);
+    let current_fail_count = crate::deploy::autorestart::effective_fail_count(&current);
+    let auto_restart_policy = match req.auto_restart_policy.as_deref() {
+        Some(raw) => validate::normalize_auto_restart_policy(raw)?,
+        None => match req.auto_restart_enabled {
+            Some(true) => validate::AUTO_RESTART_POLICY_UNLESS_STOP.to_string(),
+            Some(false) => validate::AUTO_RESTART_POLICY_NEVER.to_string(),
+            None => current_policy.clone(),
+        },
     };
-    // 关闭开关或阈值变更 → 清零运行态（避免沿用旧计时 / 旧 backoff 造成误触发）
-    let auto_restart_reset = !auto_restart_enabled
-        || auto_restart_fail_secs != current.auto_restart_fail_secs
+    let auto_restart_fail_count = match req.auto_restart_fail_count {
+        Some(raw) => validate::normalize_auto_restart_fail_count(raw)?,
+        None => match req.auto_restart_fail_secs {
+            Some(legacy) => validate::legacy_auto_restart_fail_count(legacy),
+            None => current_fail_count,
+        },
+    };
+    let auto_restart_enabled =
+        auto_restart_policy != validate::AUTO_RESTART_POLICY_NEVER;
+    // 策略 / 阈值变更 → 清零运行态；并记录抑制起点，忽略变更前遗留的启动失败 run
+    let auto_restart_reset = auto_restart_policy != current_policy
+        || auto_restart_fail_count != current_fail_count
         || !current.auto_restart_enabled;
 
     let mut am: deployment::ActiveModel = current.into();
@@ -1024,18 +1080,26 @@ pub async fn update_deployment(
             port.clamp(i32::MIN as i64, i32::MAX as i64) as i32,
         ));
     }
+    am.auto_restart_policy = Set(auto_restart_policy);
+    am.auto_restart_fail_count = Set(auto_restart_fail_count);
     am.auto_restart_enabled = Set(auto_restart_enabled);
-    am.auto_restart_fail_secs = Set(auto_restart_fail_secs);
+    am.auto_restart_fail_secs = Set(auto_restart_fail_count * 30);
     if auto_restart_reset {
         am.auto_restart_phase = Set(String::new());
         am.auto_restart_failed_since = Set(String::new());
+        am.auto_restart_consecutive_failures = Set(0);
         am.auto_restart_next_at = Set(String::new());
         am.auto_restart_attempts = Set(0);
         am.auto_restart_last_at = Set(String::new());
         am.auto_restart_last_error = Set(String::new());
+        am.auto_restart_ignore_before = Set(time::now_iso());
     }
     am.updated_at = Set(time::now_iso());
     let updated = am.update(db).await.map_err(db_err)?;
+    if updated.plaza_model_id != original_plaza_model_id {
+        // 卡片版本切换后，旧版本的脚本路径可能已不存在；清空 override 防止交叉污染。
+        file_overrides::delete_for_deployment(db, id).await?;
+    }
     to_view(db, updated).await
 }
 
@@ -1047,6 +1111,7 @@ pub async fn delete_deployment(db: &DatabaseConnection, id: &str) -> Result<(), 
             format!("部署配置当前状态为 {}，仅停止状态可删除", current.state),
         ));
     }
+    file_overrides::delete_for_deployment(db, id).await?;
     deployment::Entity::delete_by_id(id.to_string())
         .exec(db)
         .await
@@ -1185,6 +1250,7 @@ mod tests {
                 profile: None,
                 name: host.to_string(),
                 host: host.to_string(),
+                access_mode: "ssh".into(),
                 ssh_port: 22,
                 ssh_user: "root".into(),
                 auth_method: "password".into(),

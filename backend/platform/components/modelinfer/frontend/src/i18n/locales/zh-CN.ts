@@ -9,6 +9,7 @@ import zhCNNodeDetail from './zh-CN/nodeDetail';
 import zhCNRuns from './zh-CN/runs';
 import zhCNRunDetail from './zh-CN/runDetail';
 import zhCNSettings from './zh-CN/settings';
+import zhCNFileOverride from './zh-CN/fileOverride';
 import zhCNMetrics from './zh-CN/metrics';
 
 /** 中文语言包（按命名空间聚合；与 `en.ts` key 完全对等） */
@@ -24,5 +25,6 @@ export default {
   runs: zhCNRuns,
   runDetail: zhCNRunDetail,
   settings: zhCNSettings,
+  ...zhCNFileOverride,
   metrics: zhCNMetrics,
 };

@@ -81,6 +81,8 @@ x-controller: &controller
   restart: unless-stopped
   pull_policy: always
   cpus: '3'
+  pid: "${SCHEDULER_MODELINFER_PID_MODE:-}"
+  privileged: "${SCHEDULER_MODELINFER_HOST_ACCESS:-false}"
   command: [controller, --config, /config/controller.json, --listen, '0.0.0.0:38120', --ui-dir, /opt/v-scheduler/ui]
   extra_hosts:
     - "host.docker.internal:host-gateway"
@@ -91,6 +93,8 @@ x-controller: &controller
     V_ROUTER_USAGE_PATH: /gateway-data/usage.jsonl
     SCHEDULER_EMBEDDED_AGENT: "true"
     SCHEDULER_NATIVE_NODES: "true"
+    SCHEDULER_MODELINFER_PID_MODE: "${SCHEDULER_MODELINFER_PID_MODE:-}"
+    SCHEDULER_MODELINFER_HOST_ACCESS: "${SCHEDULER_MODELINFER_HOST_ACCESS:-false}"
     SCHEDULER_EMBEDDED_INFERENCE: "${SCHEDULER_EMBEDDED_INFERENCE:-false}"
     SCHEDULER_EMBEDDED_IMAGE_HUB: "true"
     SCHEDULER_IMAGE_HUB_BIND: "${SCHEDULER_IMAGE_HUB_BIND:-127.0.0.1}"

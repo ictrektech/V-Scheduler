@@ -80,6 +80,12 @@ pub struct CardView {
     pub category: Vec<String>,
     pub tags: Vec<String>,
     pub icon: String,
+    /// 权重 id（manifest `model`；索引未提供时为空）
+    #[serde(default)]
+    pub model: String,
+    /// 镜像声明（manifest `images`；索引未提供时为空）
+    #[serde(default)]
+    pub images: Vec<serde_json::Value>,
     pub manifest: String,
     pub package: String,
     pub size_bytes: Option<i64>,
@@ -160,6 +166,12 @@ pub struct PlazaCardGroupView {
     pub category: Vec<String>,
     pub tags: Vec<String>,
     pub icon: String,
+    /// 最新版本声明的权重 id
+    #[serde(default)]
+    pub model: String,
+    /// 最新版本声明的镜像
+    #[serde(default)]
+    pub images: Vec<serde_json::Value>,
     /// 最新版本号（版本号最大者）
     pub latest_version: String,
     /// 已登记版本数
@@ -190,6 +202,9 @@ pub struct LocalModelGroupView {
     pub model: String,
     /// 来源集合（`plaza` / `local`，去重且顺序稳定）
     pub sources: Vec<String>,
+    /// 最新版本声明的镜像（manifest `images`）
+    #[serde(default)]
+    pub images: Vec<serde_json::Value>,
     /// 最新版本号
     pub latest_version: String,
     /// 各版本 `model.tar.gz` 大小之和（字节）
@@ -250,14 +265,25 @@ pub fn group_cards(cards: Vec<CardView>) -> Vec<PlazaCardGroupView> {
             versions.sort_by(|a, b| compare_versions_desc(&a.version, &b.version));
             let latest = versions.first().cloned();
             let registered_count = versions.iter().filter(|v| v.registered).count();
-            let (name, description, category, tags, icon, latest_version) = match latest {
-                Some(l) => (l.name, l.description, l.category, l.tags, l.icon, l.version),
+            let (name, description, category, tags, icon, model, images, latest_version) = match latest {
+                Some(l) => (
+                    l.name,
+                    l.description,
+                    l.category,
+                    l.tags,
+                    l.icon,
+                    l.model,
+                    l.images,
+                    l.version,
+                ),
                 None => (
                     None,
                     None,
                     Vec::new(),
                     Vec::new(),
                     String::new(),
+                    String::new(),
+                    Vec::new(),
                     String::new(),
                 ),
             };
@@ -275,6 +301,8 @@ pub fn group_cards(cards: Vec<CardView>) -> Vec<PlazaCardGroupView> {
                 category,
                 tags,
                 icon,
+                model,
+                images,
                 latest_version,
                 registered_count,
                 family,
@@ -317,9 +345,11 @@ pub fn group_models(models: Vec<PlazaModelView>) -> Vec<LocalModelGroupView> {
             sources.dedup();
             let total_size_bytes = versions.iter().map(|v| v.size_bytes).sum();
             // 家族推断取最新版本 manifest 的 tags（解析失败按空处理，不阻断列表）
-            let latest_tags = versions
+            let latest_manifest = versions
                 .first()
-                .and_then(|m| serde_json::from_str::<serde_json::Value>(&m.manifest_json).ok())
+                .and_then(|m| serde_json::from_str::<serde_json::Value>(&m.manifest_json).ok());
+            let latest_tags = latest_manifest
+                .as_ref()
                 .and_then(|m| m.get("tags").cloned())
                 .and_then(|t| t.as_array().cloned())
                 .map(|arr| {
@@ -327,6 +357,11 @@ pub fn group_models(models: Vec<PlazaModelView>) -> Vec<LocalModelGroupView> {
                         .filter_map(|v| v.as_str().map(str::to_string))
                         .collect::<Vec<String>>()
                 })
+                .unwrap_or_default();
+            let images = latest_manifest
+                .as_ref()
+                .and_then(|m| m.get("images"))
+                .and_then(|v| v.as_array().cloned())
                 .unwrap_or_default();
             let family =
                 crate::model_family::infer(&latest_tags, Some(&model), Some(&model_id), Some(&name))
@@ -336,6 +371,7 @@ pub fn group_models(models: Vec<PlazaModelView>) -> Vec<LocalModelGroupView> {
                 name,
                 model,
                 sources,
+                images,
                 latest_version,
                 total_size_bytes,
                 family,
@@ -378,6 +414,13 @@ pub fn card_search_text(card: &PlazaCardGroupView) -> String {
             .unwrap_or_default(),
     ];
     parts.extend(card.tags.iter().cloned());
+    parts.push(card.model.clone());
+    parts.push(
+        serde_json::to_string(&card.images)
+            .unwrap_or_default()
+            .trim_matches(['[', ']', '"'])
+            .replace('"', " "),
+    );
     parts.join(" ").to_lowercase()
 }
 
@@ -448,9 +491,9 @@ impl Default for ModelFilter {
 
 /// 本地卡片的可搜索文本（与前端治理前字段集合一致）
 pub fn model_search_text(m: &LocalModelGroupView) -> String {
-    [m.name.as_str(), m.model_id.as_str(), m.model.as_str()]
-        .join(" ")
-        .to_lowercase()
+    let mut parts = vec![m.name.clone(), m.model_id.clone(), m.model.clone()];
+    parts.push(serde_json::to_string(&m.images).unwrap_or_default());
+    parts.join(" ").to_lowercase()
 }
 
 /// 按关键词 / 家族 / 来源筛选并排序本地卡片
@@ -754,6 +797,8 @@ pub async fn sync_cards(
                 } else {
                     resolve_url(&base, &e.icon)
                 },
+                model: e.model,
+                images: e.images,
                 manifest: resolve_url(&base, &e.manifest),
                 package: resolve_url(&base, &e.package),
                 size_bytes: e.size_bytes,
@@ -1385,6 +1430,8 @@ models:
             category: vec!["test".into()],
             tags: vec!["mock".into()],
             icon: String::new(),
+            model: "org/weight".into(),
+            images: vec![serde_json::json!("registry.example/img:1")],
             manifest: format!("http://h/meta/{id}/{version}/manifest.yaml"),
             package: format!("http://h/models/{id}/{version}/model.tar.gz"),
             size_bytes: Some(size),
@@ -1457,6 +1504,8 @@ models:
             a.name.as_ref().and_then(|v| v.get("zh-CN")).and_then(|v| v.as_str()),
             Some("乙")
         );
+        assert_eq!(a.model, "org/weight");
+        assert_eq!(a.images.len(), 1);
         // 不同卡片不合并
         assert!(groups.iter().any(|g| g.id == "com.ictrek.b"));
     }
@@ -1521,6 +1570,8 @@ models:
             category: Vec::new(),
             tags: tags.iter().map(|t| t.to_string()).collect(),
             icon: String::new(),
+            model: String::new(),
+            images: Vec::new(),
             latest_version: "1.0.0".into(),
             registered_count: registered,
             family: crate::model_family::infer_from_json_name(
@@ -1572,6 +1623,7 @@ models:
             name: name.into(),
             model: weight.into(),
             sources: vec!["local".into(), "plaza".into()],
+            images: Vec::new(),
             latest_version: "1.0.0".into(),
             total_size_bytes: size_bytes * version_count as i64,
             family,
@@ -1590,6 +1642,8 @@ models:
                 category: Vec::new(),
                 tags: vec!["qwen".into()],
                 icon: String::new(),
+                model: String::new(),
+                images: Vec::new(),
                 manifest: String::new(),
                 package: String::new(),
                 size_bytes: None,

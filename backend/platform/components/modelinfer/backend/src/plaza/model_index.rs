@@ -37,6 +37,12 @@ pub struct ModelIndexEntry {
     pub tags: Vec<String>,
     #[serde(default)]
     pub icon: String,
+    /// 权重 id（manifest `model`；旧索引可缺省）
+    #[serde(default)]
+    pub model: String,
+    /// 镜像声明（manifest `images`；旧索引可缺省）
+    #[serde(default)]
+    pub images: Vec<Value>,
     #[serde(default)]
     pub manifest: String,
     #[serde(default)]
@@ -148,6 +154,9 @@ models:
     category: [test]
     tags: [mock]
     icon: meta/com.ictrek.modelinfer.test-mock/1.0.0/icon.png
+    model: Qwen/Qwen3-0.6B
+    images:
+      - registry.ictrek.internal/library/ubuntu:22.04
     manifest: meta/com.ictrek.modelinfer.test-mock/1.0.0/manifest.yaml
     package: models/com.ictrek.modelinfer.test-mock/1.0.0/model.tar.gz
     size-bytes: 1024
@@ -182,6 +191,8 @@ lifecycle:
         assert_eq!(e.size_bytes, Some(1024));
         assert_eq!(e.category, vec!["test".to_string()]);
         assert_eq!(e.tags, vec!["mock".to_string()]);
+        assert_eq!(e.model, "Qwen/Qwen3-0.6B");
+        assert_eq!(e.images.len(), 1);
         // name 为 manifest 的多语言对象
         assert_eq!(
             e.name.as_ref().and_then(|v| v.get("zh-CN")).and_then(Value::as_str),

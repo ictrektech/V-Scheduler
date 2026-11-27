@@ -34,6 +34,8 @@ import { formatBytes, formatSeconds } from '@/utils/format';
 import { hexToRgba, modelFamilyIcon, modelFamilyTheme } from '@/utils/modelFamily';
 import { modelIconUrl } from '@/utils/modelIconAssets';
 import { parseManifest, type ManifestView } from '@/utils/manifest';
+import { imageEntryLabel } from '@/utils/runtimeOverrides';
+import type { ImageEntry } from '@/api/deployments';
 import { copyToClipboard } from '@/utils/clipboard';
 import { createSeqGuard, debounce } from '@/utils/async';
 import { reportApiError } from '@/i18n/api-error';
@@ -278,6 +280,12 @@ function onDeleteSource(s: PlazaSourceItem) {
   });
 }
 
+function cardImageLabels(c: PlazaCardGroup): string[] {
+  return (Array.isArray(c.images) ? c.images : [])
+    .map((v) => imageEntryLabel(v as ImageEntry))
+    .filter(Boolean);
+}
+
 /** 打开版本选择弹窗：默认选中最新的未下载版本（都下载了则选最新） */
 function openVersions(card: PlazaCardGroup) {
   versionCard.value = card;
@@ -403,6 +411,21 @@ onMounted(load);
               </div>
 
               <div class="mi-plaza-card__desc">{{ displayText(c.description) || t('plaza.cards.noDescription') }}</div>
+
+              <div class="mi-plaza-card__resources">
+                <div class="mi-plaza-card__resource">
+                  <span class="mi-plaza-card__label">{{ t('plaza.cards.weight') }}</span>
+                  <CopyText v-if="c.model" :text="c.model" />
+                  <span v-else class="mi-hint">-</span>
+                </div>
+                <div class="mi-plaza-card__resource">
+                  <span class="mi-plaza-card__label">{{ t('plaza.cards.images') }}</span>
+                  <template v-if="cardImageLabels(c).length">
+                    <a-tag v-for="img in cardImageLabels(c)" :key="img" class="mi-tag-soft mi-mono">{{ img }}</a-tag>
+                  </template>
+                  <span v-else class="mi-hint">-</span>
+                </div>
+              </div>
 
               <div class="mi-plaza-card__meta">
                 <a-tag v-for="tag in c.tags" :key="tag" class="mi-tag-soft">{{ tag }}</a-tag>
@@ -787,6 +810,23 @@ onMounted(load);
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+.mi-plaza-card__resources {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0;
+  padding: 8px 10px;
+  border-radius: var(--mi-radius-sm);
+  background: var(--mi-surface-2);
+  border: 1px solid var(--mi-border);
+}
+.mi-plaza-card__resource {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  min-width: 0;
 }
 .mi-plaza-card__meta {
   display: flex;

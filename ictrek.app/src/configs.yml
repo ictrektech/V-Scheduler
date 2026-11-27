@@ -25,6 +25,22 @@ configs:
       en: The embedded runtime starts automatically when legacy ModelInfer is absent. To retain previous deployments from a stopped app, keep this off and import them from Node Management first.
     default: false
 
+  - name: SCHEDULER_MODELINFER_HOST_ACCESS
+    type: boolean
+    title: {zh-CN: ModelInfer 本机免密访问, en: ModelInfer local host access}
+    description:
+      zh-CN: 启用容器的特权模式。仅在需要添加当前宿主机时开启，并将 PID 模式设为 host。
+      en: Enable privileged container execution. Enable this and set PID mode to host to add the current host.
+    default: false
+
+  - name: SCHEDULER_MODELINFER_PID_MODE
+    type: string
+    title: {zh-CN: ModelInfer 宿主机 PID 模式, en: ModelInfer host PID mode}
+    description:
+      zh-CN: 留空使用隔离的 PID 命名空间。本机免密访问需要 host。
+      en: Leave blank for an isolated PID namespace. Use host for local host access.
+    default: ""
+
   - name: SCHEDULER_EMBEDDED_CLUSTER_MANAGER
     type: boolean
     title: {zh-CN: VOS Projects 跨节点部署, en: Cross-node deployment through VOS Projects}

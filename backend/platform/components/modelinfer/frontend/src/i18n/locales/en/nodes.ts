@@ -2,8 +2,9 @@
 export default {
   title: 'Node Management',
   subtitle:
-    'Maintain the compute node ledger (SSH password/key and sudo + environment and GPU scan); the node detail page shows the full configuration',
+    'Maintain the compute node ledger (SSH password/key or local nsenter, environment/GPU scan, NCCL NIC settings); the node detail page shows the full configuration',
   addNode: 'Add Node',
+  addLocalNode: 'Add Current Node',
   searchPlaceholder: 'Search name / host / hostname / GPU',
   rescan: 'Rescan',
   editConfig: 'Edit Config',
@@ -15,6 +16,35 @@ export default {
   gpuModelCount: '{model} ({count} GPUs)',
   deleteTitle: 'Delete Node',
   deleteConfirm: 'Delete node {name} ({host})?',
+  power: {
+    menu: 'Shutdown / Reboot',
+    shutdown: 'Shutdown',
+    reboot: 'Reboot',
+    title: {
+      shutdown: 'Confirm Shutdown',
+      reboot: 'Confirm Reboot',
+    },
+    confirm: {
+      shutdown: 'Shut down node {name} ({host})?',
+      reboot: 'Reboot node {name} ({host})?',
+    },
+    shutdownWarning: 'After shutdown, the machine must be powered on manually in the equipment room.',
+    localWarning:
+      'This node is hosting the modelinfer management service. This page will become unavailable immediately after the operation.',
+    busyWarning: 'This node is running: {names}. Continuing will interrupt these services.',
+    ok: {
+      shutdown: 'Shut Down',
+      reboot: 'Reboot',
+    },
+    force: {
+      shutdown: 'Force Shutdown',
+      reboot: 'Force Reboot',
+    },
+    sent: {
+      shutdown: 'Shutdown command sent. The node will disconnect within a few seconds.',
+      reboot: 'Reboot command sent. The node will start rebooting in a few seconds.',
+    },
+  },
   stats: {
     total: 'Total Nodes',
     online: 'Online',
@@ -58,6 +88,14 @@ export default {
   authMethod: {
     password: 'Password',
     key: 'Key',
+    local: 'Local nsenter',
+  },
+  localNode: {
+    title: 'Add this VOS host',
+    hint: 'No SSH username or password is required: modelinfer runs commands in the host root namespace via nsenter. Enable pid: host and privileged in the app configuration.',
+    tag: 'Current node',
+    ncclHint: 'This node can run a single-node model or join remote nodes for multi-node deployment. Verify the NCCL interface and IB device selections below for multi-node use.',
+    editHint: 'Local nodes do not use SSH credentials. You can change the name and NCCL network settings.',
   },
   form: {
     nodeName: 'Node Name',

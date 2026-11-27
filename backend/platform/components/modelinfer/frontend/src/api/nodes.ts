@@ -23,6 +23,8 @@ export interface NodeItem {
   id: string;
   name: string;
   host: string;
+  /** 访问模式：ssh / local（本机 nsenter） */
+  access_mode: string;
   ssh_port: number;
   ssh_user: string;
   /** 认证方式：password / key */
@@ -185,6 +187,8 @@ export interface NodeCredentials {
 export interface NodeCreateReq extends NodeCredentials {
   name: string;
   host: string;
+  /** 访问模式：ssh（缺省）/ local */
+  access_mode?: string;
   ssh_port: number;
   ssh_user?: string;
   hostname?: string;
@@ -225,6 +229,17 @@ export interface NodeScanResult {
   };
 }
 
+/** 当前宿主机探测结果（添加「当前节点」用，不落库） */
+export interface LocalNodeInfo {
+  host: string;
+  scan: NodeScanResult;
+}
+
+/** 经 nsenter 扫描当前宿主机 */
+export function fetchLocalNodeInfo(): Promise<LocalNodeInfo> {
+  return get<LocalNodeInfo>('/api/nodes/local-info');
+}
+
 export function listNodes(params: NodesQuery = {}): Promise<NodeListData> {
   return get<NodeListData>(`/api/nodes${buildQuery({ ...params })}`);
 }
@@ -258,6 +273,36 @@ export function probeNode(req: NodeCreateReq): Promise<NodeScanResult> {
 export function rescanNode(id: string): Promise<NodeItem> {
   return post<NodeItem>(`/api/nodes/${id}/rescan`);
 }
+/** 节点电源动作 */
+export type NodePowerAction = 'shutdown' | 'reboot';
+
+export interface NodePowerReq {
+  action: NodePowerAction;
+  /** 节点被活跃运行配置占用时需显式强制 */
+  force?: boolean;
+}
+
+/** 电源操作结果：仅表示指令已下发，不表示已完成断电 / 重启 */
+export interface NodePowerResult {
+  node_id: string;
+  action: NodePowerAction;
+  force: boolean;
+  accepted_at: string;
+}
+
+/** 下发节点关机 / 重启指令 */
+export function powerNode(id: string, req: NodePowerReq): Promise<NodePowerResult> {
+  return post<NodePowerResult>(`/api/nodes/${id}/power`, req);
+}
+
+export function shutdownNode(id: string, force = false): Promise<NodePowerResult> {
+  return powerNode(id, { action: 'shutdown', force });
+}
+
+export function rebootNode(id: string, force = false): Promise<NodePowerResult> {
+  return powerNode(id, { action: 'reboot', force });
+}
+
 /** 节点监控状态（各组件） */
 export function getNodeMonitor(id: string): Promise<NodeMonitors> {
   return get<NodeMonitors>(`/api/nodes/${id}/monitor`);

@@ -16,7 +16,10 @@ pub struct Model {
     /// 主机地址（IP / hostname），全局唯一
     #[sea_orm(unique)]
     pub host: String,
-    /// SSH 端口，默认 22
+    /// 访问模式：`ssh`（默认）/ `local`（本机 nsenter 免密执行）
+    #[sea_orm(default_value = "ssh")]
+    pub access_mode: String,
+    /// SSH 端口，默认 22（local 模式不使用）
     #[sea_orm(default_value = 22)]
     pub ssh_port: i32,
     /// SSH 用户（root 或具有 sudo 权限的普通用户）

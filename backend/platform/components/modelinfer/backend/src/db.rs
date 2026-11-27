@@ -12,9 +12,9 @@ use std::time::Duration;
 use sea_orm::{ConnectOptions, ConnectionTrait, Database, DatabaseBackend, DatabaseConnection, SchemaBuilder};
 
 use crate::entities::{
-    ComfyuiWeightEntity, DeploymentContainerEntity, DeploymentEntity, NodeEntity, NodeMonitorEntity,
-    PlazaModelEntity, PlazaSourceEntity, RunEntity, RunGlobalDataEntity, RunLogEntity,
-    RunNodeDataEntity, RunStepEntity, SettingEntity,
+    ComfyuiWeightEntity, DeploymentContainerEntity, DeploymentEntity, DeploymentFileOverrideEntity,
+    NodeEntity, NodeMonitorEntity, PlazaModelEntity, PlazaSourceEntity, RunEntity,
+    RunGlobalDataEntity, RunLogEntity, RunNodeDataEntity, RunStepEntity, SettingEntity,
 };
 use crate::error::{ModelinferError, codes};
 
@@ -83,10 +83,11 @@ fn register_all_entities(builder: SchemaBuilder) -> SchemaBuilder {
         .register(DeploymentContainerEntity)
         .register(SettingEntity)
         .register(ComfyuiWeightEntity)
+        .register(DeploymentFileOverrideEntity)
 }
 
 const fn register_count() -> usize {
-    13
+    14
 }
 
 async fn sync_schema(db: &DatabaseConnection) -> Result<(), ModelinferError> {
@@ -144,6 +145,7 @@ mod tests {
         assert!(SettingEntity::find().limit(1).one(&db).await.is_ok());
         assert!(NodeMonitorEntity::find().limit(1).one(&db).await.is_ok());
         assert!(ComfyuiWeightEntity::find().limit(1).one(&db).await.is_ok());
+        assert!(DeploymentFileOverrideEntity::find().limit(1).one(&db).await.is_ok());
     }
 
     #[tokio::test]
@@ -171,7 +173,7 @@ mod tests {
 
     #[test]
     fn register_count_matches() {
-        assert_eq!(register_count(), 13);
+        assert_eq!(register_count(), 14);
     }
 
     #[test]

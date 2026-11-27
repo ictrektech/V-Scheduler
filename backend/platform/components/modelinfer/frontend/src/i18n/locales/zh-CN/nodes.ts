@@ -1,8 +1,9 @@
 /** nodes 页面文案。 */
 export default {
   title: '节点管理',
-  subtitle: '维护算力节点台账（SSH 密码/密钥与 sudo + 环境与 GPU 扫描）；节点详情页展示完整配置',
+  subtitle: '维护算力节点台账（SSH 密码/密钥或本机 nsenter + 环境与 GPU 扫描 + NCCL 网卡配置）；节点详情页展示完整配置',
   addNode: '添加节点',
+  addLocalNode: '添加当前节点',
   searchPlaceholder: '搜索名称 / 主机 / 主机名 / GPU',
   rescan: '重扫',
   editConfig: '编辑配置',
@@ -14,6 +15,34 @@ export default {
   gpuModelCount: '{model}（{count} 张）',
   deleteTitle: '删除节点',
   deleteConfirm: '确定删除节点 {name}（{host}）？',
+  power: {
+    menu: '关机 / 重启',
+    shutdown: '关机',
+    reboot: '重启',
+    title: {
+      shutdown: '确认关机',
+      reboot: '确认重启',
+    },
+    confirm: {
+      shutdown: '确定要关机节点 {name}（{host}）吗？',
+      reboot: '确定要重启节点 {name}（{host}）吗？',
+    },
+    shutdownWarning: '关机后需要到机房手动上电才能恢复。',
+    localWarning: '该节点正在运行 modelinfer 管理服务，操作后本页面将立即不可用。',
+    busyWarning: '该节点正在运行：{names}。继续操作会中断这些服务。',
+    ok: {
+      shutdown: '确认关机',
+      reboot: '确认重启',
+    },
+    force: {
+      shutdown: '强制关机',
+      reboot: '强制重启',
+    },
+    sent: {
+      shutdown: '关机指令已下发，节点将在数秒内断开。',
+      reboot: '重启指令已下发，节点将在数秒后开始重启。',
+    },
+  },
   stats: {
     total: '节点总数',
     online: '在线',
@@ -57,6 +86,14 @@ export default {
   authMethod: {
     password: '密码',
     key: '密钥',
+    local: '本机 nsenter',
+  },
+  localNode: {
+    title: '添加当前 VOS 宿主机',
+    hint: '无需 SSH 用户名或密码：modelinfer 通过 nsenter 在宿主机 root 命名空间执行命令。请先在应用配置中启用 pid: host 与 privileged。',
+    tag: '当前节点',
+    ncclHint: '本机可单独部署，也可与远程节点共同部署多节点模型。若用于多节点，请确认下方 NCCL 网卡与 IB 设备选择正确。',
+    editHint: '本机节点无需 SSH 凭据；可修改名称与 NCCL 网卡配置。',
   },
   form: {
     nodeName: '节点名称',

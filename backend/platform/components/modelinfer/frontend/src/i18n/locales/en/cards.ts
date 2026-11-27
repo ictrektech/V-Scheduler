@@ -17,6 +17,7 @@ export default {
   sortByVersions: 'By Version Count',
   sortByLatest: 'By Latest Registered',
   weight: 'Weights',
+  images: 'Images',
   versionsSuffix: 'versions',
   cardSizeTooltip: 'Size of the card definition package (model.tar.gz); model weights are distributed via model-hub and are not counted here',
   cardPackage: 'Package',

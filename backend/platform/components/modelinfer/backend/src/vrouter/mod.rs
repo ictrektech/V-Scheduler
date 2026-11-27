@@ -1190,6 +1190,7 @@ mod tests {
                 profile: None,
                 name: "n1".into(),
                 host: "10.10.11.154".into(),
+                access_mode: "ssh".into(),
                 ssh_port: 22,
                 ssh_user: "root".into(),
                 auth_method: "password".into(),

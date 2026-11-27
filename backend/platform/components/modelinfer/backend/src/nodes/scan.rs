@@ -140,6 +140,42 @@ pub fn parse_ib_netdev_map(output: &str) -> Vec<(String, String)> {
         .collect()
 }
 
+/// 为本机节点选择建议注册地址：
+/// 优先平台设备地址中实际出现在本机网卡上的 IP，其次首个非 loopback / docker / link-local IPv4。
+pub fn pick_local_host(interfaces: &[InterfaceInfo], preferred: &[String]) -> Option<String> {
+    let all: Vec<&str> = interfaces
+        .iter()
+        .flat_map(|i| i.ips.iter().map(String::as_str))
+        .collect();
+    for ip in preferred {
+        let ip = ip.trim();
+        if is_usable_local_ip(ip) && all.contains(&ip) {
+            return Some(ip.to_string());
+        }
+    }
+    all.into_iter()
+        .find(|ip| is_usable_local_ip(ip))
+        .map(str::to_string)
+        .or_else(|| {
+            interfaces
+                .iter()
+                .flat_map(|i| i.ips.iter())
+                .find(|ip| is_usable_local_ip(ip))
+                .cloned()
+        })
+}
+
+fn is_usable_local_ip(ip: &str) -> bool {
+    if ip.starts_with("127.") || ip.starts_with("169.254.") {
+        return false;
+    }
+    // docker 默认网桥（本应用使用 host 网络，不应把它作为节点地址）
+    if ip == "172.17.0.1" {
+        return false;
+    }
+    ip.parse::<std::net::Ipv4Addr>().is_ok()
+}
+
 /// 选择包含目标 IP 的网卡（无匹配返回 None）
 pub fn pick_socket_ifname(ip: &str, interfaces: &[InterfaceInfo]) -> Option<String> {
     let ip = ip.trim();
@@ -353,7 +389,14 @@ pub async fn scan_node(ssh: &dyn SshExec, target: &SshTarget) -> Result<NodeScan
     let platform_signal = format!("{board}\n{}", gpu.model_summary());
     let detected_profile = super::profile::detect(&arch, &platform_signal, &gpu.vendor).map(str::to_owned);
 
-    let default_socket_ifname = pick_socket_ifname(&target.host, &interfaces);
+    let mut default_socket_ifname = pick_socket_ifname(&target.host, &interfaces);
+    if default_socket_ifname.is_none() && target.is_local() {
+        // 本机探测目标常用 127.0.0.1（仅作占位，不参与 nsenter 连接）；按首个可用 IPv4 网卡建议。
+        default_socket_ifname = interfaces
+            .iter()
+            .find(|i| i.name != "docker0" && i.ips.iter().any(|ip| is_usable_local_ip(ip)))
+            .map(|i| i.name.clone());
+    }
     let suggested_ib_hca = pick_ib_hca(default_socket_ifname.as_deref(), &netdev_map, &ib_devices);
     Ok(NodeScanResult {
         hostname,
@@ -491,6 +534,22 @@ mod tests {
         assert!(parse_ib_netdev_map("").is_empty());
         // 非法行（字段数不足）忽略
         assert!(parse_ib_netdev_map("bogus\n").is_empty());
+    }
+
+    #[test]
+    fn pick_local_host_prefers_platform_ip_and_skips_docker() {
+        let ifaces = vec![
+            InterfaceInfo { name: "docker0".into(), ips: vec!["172.17.0.1".into()] },
+            InterfaceInfo { name: "enp1s0".into(), ips: vec!["10.100.10.24".into()] },
+            InterfaceInfo { name: "lo".into(), ips: vec!["127.0.0.1".into()] },
+        ];
+        assert_eq!(
+            pick_local_host(&ifaces, &["10.100.10.24".into()]).as_deref(),
+            Some("10.100.10.24")
+        );
+        assert_eq!(pick_local_host(&ifaces, &[]).as_deref(), Some("10.100.10.24"));
+        let only_docker = vec![InterfaceInfo { name: "docker0".into(), ips: vec!["172.17.0.1".into()] }];
+        assert_eq!(pick_local_host(&only_docker, &[]), None);
     }
 
     #[test]

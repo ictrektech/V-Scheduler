@@ -1,8 +1,8 @@
 # Inference management sources
 
 This directory contains the ModelInfer, Image Hub and VOS Cluster Manager Rust services and their Vue
-management pages. The import is from ictrek-monorepo commit
-`c87e7605a3034384c58213f40b9041551f8b791d`. It also includes the shared error
+management pages. ModelInfer was synchronized from ictrek-monorepo commit `8b9429b93`.
+The original platform import is from `c87e7605a3034384c58213f40b9041551f8b791d`. It also includes the shared error
 crate, the patched SeaSchema dependency used by ModelInfer, and the original
 container build definitions. The SeaSchema copy excludes its upstream CI, docs,
 test fixtures, and unused synchronous crate.

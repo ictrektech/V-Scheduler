@@ -68,6 +68,40 @@ pub(super) async fn forward(
     if !crate::inference_runtime::enabled() {
         return Err(Error(StatusCode::NOT_FOUND, "INFERENCE_RUNTIME_DISABLED"));
     }
+    let request = if let (axum::http::Method::POST, ["nodes", id, "power"]) =
+        (request.method().clone(), path.split('/').collect::<Vec<_>>().as_slice())
+    {
+        let (parts, body) = request.into_parts();
+        let bytes = axum::body::to_bytes(body, 4096).await.map_err(|_| invalid())?;
+        let parameters: Value = serde_json::from_slice(&bytes).map_err(|_| invalid())?;
+        if parameters["force"] != true {
+            let mut nodes = app.config.nodes.iter()
+                .filter(|node| node.discovery_source == "modelinfer" && node.discovery_id == *id)
+                .map(|node| node.id.clone()).collect::<Vec<_>>();
+            if let Some(local) = app.config.local_agent.as_ref().and_then(|entry| entry["node_id"].as_str()) {
+                let is_local: bool = sqlx::query_scalar(
+                    "SELECT EXISTS(SELECT 1 FROM modelinfer_nodes WHERE id=$1 AND access_mode='local')",
+                ).bind(id).fetch_one(&app.db).await.map_err(unavailable)?;
+                if is_local {
+                    nodes.push(local.to_owned());
+                }
+            }
+            let busy: bool = sqlx::query_scalar(
+                "SELECT EXISTS(
+                    SELECT 1 FROM vrs_tasks WHERE node=ANY($1) AND status IN ('queued','assigned','running','recovering','cancelling','retry_wait')
+                    UNION ALL SELECT 1 FROM vrs_permits WHERE node=ANY($1) AND state<>'released'
+                    UNION ALL SELECT 1 FROM vrs_reservations WHERE node=ANY($1) AND state<>'released'
+                    UNION ALL SELECT 1 FROM vrs_permit_placements x JOIN vrs_permits p ON p.id=x.permit_id
+                    WHERE x.node_id=ANY($1) AND p.state<>'released')",
+            ).bind(&nodes).fetch_one(&app.db).await.map_err(unavailable)?;
+            if busy {
+                return Err(Error(StatusCode::CONFLICT, "NODE_HAS_SCHEDULER_WORK"));
+            }
+        }
+        Request::from_parts(parts, Body::from(bytes))
+    } else {
+        request
+    };
     forward_to(&crate::inference_runtime::origin(), &path, request, UNAVAILABLE).await
 }
 

@@ -112,16 +112,30 @@ pub struct Model {
     /// 推理指标最近一次注册失败原因
     #[sea_orm(default_value = "")]
     pub metrics_last_error: String,
-    /// 探活失败自动重启开关（默认关闭）
+    /// 自动重启策略（SSOT）：`never`（默认）/ `unless-stop`（docker 语义）
     ///
-    /// 开启后：连续健康巡检失败达到 `auto_restart_fail_secs` → 自动「先停止、再启动」，
-    /// 启动失败按指数 backoff 重试，直到用户手动停止。见
+    /// 空串表示历史数据：按 `auto_restart_enabled` 兼容映射（见
+    /// `deploy::autorestart::effective_policy`）。见
     /// `specs/docs/design/modelinfer/auto-restart.md`。
+    #[sea_orm(default_value = "")]
+    pub auto_restart_policy: String,
+    /// 连续探活失败次数阈值（`1..=100`，默认 10）
+    ///
+    /// 仅在 `auto_restart_policy=unless-stop` 时生效。
+    #[sea_orm(default_value = 10)]
+    pub auto_restart_fail_count: i32,
+    /// 历史兼容列：只在新策略写入时同步为 `auto_restart_policy != never`。
     #[sea_orm(default_value = false)]
     pub auto_restart_enabled: bool,
-    /// 探活连续失败阈值（秒，`30..=86400`，默认 300）
+    /// 历史列：连续失败阈值（秒）；新逻辑不再使用，仅保留避免破坏旧库结构。
     #[sea_orm(default_value = 300)]
     pub auto_restart_fail_secs: i32,
+    /// 当前连续探活失败次数（运行态；`health_status=healthy` 时清零）
+    #[sea_orm(default_value = 0)]
+    pub auto_restart_consecutive_failures: i32,
+    /// 用户手动启停 / 配置变更后的抑制起点：早于该时间的启动失败不再触发自动重启
+    #[sea_orm(default_value = "")]
+    pub auto_restart_ignore_before: String,
     /// 自动重启相位：`""`（idle）/ `stopping`（已下发停止，待启动）/ `starting`（已下发启动）
     #[sea_orm(default_value = "")]
     pub auto_restart_phase: String,

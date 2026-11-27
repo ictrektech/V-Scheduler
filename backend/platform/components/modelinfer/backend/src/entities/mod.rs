@@ -2,6 +2,7 @@
 
 pub mod deployment;
 pub mod deployment_container;
+pub mod deployment_file_override;
 pub mod comfyui_weight;
 pub mod node;
 pub mod node_monitor;
@@ -16,6 +17,7 @@ pub mod setting;
 
 pub use deployment::Entity as DeploymentEntity;
 pub use deployment_container::Entity as DeploymentContainerEntity;
+pub use deployment_file_override::Entity as DeploymentFileOverrideEntity;
 pub use comfyui_weight::Entity as ComfyuiWeightEntity;
 pub use node::Entity as NodeEntity;
 pub use node_monitor::Entity as NodeMonitorEntity;

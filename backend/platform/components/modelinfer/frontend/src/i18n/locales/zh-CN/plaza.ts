@@ -25,6 +25,8 @@ export default {
     registeredOnly: '仅看已下载',
     noDescription: '（无描述）',
     latestVersion: '最新版本',
+    weight: '权重',
+    images: '镜像',
     registered: '已下载',
     unregistered: '未下载',
     versionsCount: '共 {count} 个版本',

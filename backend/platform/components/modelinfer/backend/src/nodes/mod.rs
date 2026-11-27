@@ -1,4 +1,4 @@
-//! 节点管理领域逻辑：CRUD + SSH 探活（密码 / 私钥）+ 硬件与 GPU 扫描 + 凭据脱敏
+//! 节点管理领域逻辑：CRUD + SSH / 本机 nsenter 探活 + 硬件与 GPU 扫描 + 凭据脱敏
 //!
 //! SSH 用户可为 root 或 sudo 用户；认证方式 password / key；凭据只入不出。
 
@@ -25,12 +25,15 @@ pub struct NodeCreate {
     pub profile: Option<profile::RequestedProfile>,
     pub name: String,
     pub host: String,
+    /// 访问模式：`ssh`（缺省）/ `local`（本机 nsenter，无需凭据）
+    #[serde(default = "default_access_mode")]
+    pub access_mode: String,
     #[serde(default = "default_port")]
     pub ssh_port: i32,
     /// SSH 用户（默认 root；普通用户需要 sudo root 权限）
     #[serde(default = "default_user")]
     pub ssh_user: String,
-    /// 认证方式：`password`（缺省）/ `key`
+    /// 认证方式：`password`（缺省）/ `key`（local 模式忽略）
     #[serde(default)]
     pub auth_method: String,
     #[serde(default)]
@@ -88,6 +91,33 @@ pub struct NodeUpdate {
     pub nvidia_gpu_exporter_port: Option<i32>,
 }
 
+/// 节点电源动作：关机
+pub const POWER_ACTION_SHUTDOWN: &str = "shutdown";
+/// 节点电源动作：重启
+pub const POWER_ACTION_REBOOT: &str = "reboot";
+/// 电源命令延迟执行秒数（给 SSH / HTTP 响应留出返回时间）
+pub const POWER_COMMAND_DELAY_SECS: u64 = 3;
+
+/// 节点电源操作请求
+#[derive(Debug, Clone, Deserialize)]
+pub struct NodePowerReq {
+    /// `shutdown` / `reboot`
+    pub action: String,
+    /// 是否强制执行（节点被活跃运行配置占用时默认拒绝）
+    #[serde(default)]
+    pub force: bool,
+}
+
+/// 节点电源操作结果（仅表示指令已下发，不表示已完成断电 / 重启）
+#[derive(Debug, Clone, Serialize)]
+pub struct NodePowerResult {
+    pub node_id: String,
+    pub action: String,
+    pub force: bool,
+    /// 指令下发时间（CST ISO-8601）
+    pub accepted_at: String,
+}
+
 /// 节点视图（凭据脱敏）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeView {
@@ -98,9 +128,11 @@ pub struct NodeView {
     pub id: String,
     pub name: String,
     pub host: String,
+    /// 访问模式：`ssh` / `local`
+    pub access_mode: String,
     pub ssh_port: i32,
     pub ssh_user: String,
-    /// 认证方式：`password` / `key`
+    /// 认证方式：`password` / `key`；本机节点为 `local`
     pub auth_method: String,
     pub has_password: bool,
     pub has_key: bool,
@@ -180,6 +212,7 @@ impl From<node::Model> for NodeView {
             detected_profile,
             name: m.name,
             host: m.host,
+            access_mode: m.access_mode,
             ssh_port: m.ssh_port,
             ssh_user: m.ssh_user,
             auth_method: m.auth_method,
@@ -260,6 +293,10 @@ fn default_app_model_hub_nfs() -> bool {
     true
 }
 
+fn default_access_mode() -> String {
+    "ssh".to_string()
+}
+
 fn default_port() -> i32 {
     22
 }
@@ -273,13 +310,20 @@ fn default_nvidia_gpu_exporter_port() -> i32 {
     DEFAULT_NVIDIA_GPU_EXPORTER_PORT
 }
 
-/// 节点记录的 SSH 认证方式（密码 / 私钥）
+/// 节点执行方式（密码 / 私钥 / 本机 nsenter）
 pub fn ssh_auth_of(m: &node::Model) -> SshAuth {
-    SshAuth::from_parts(&m.auth_method, &m.ssh_password, &m.ssh_key)
+    if m.access_mode == "local" {
+        SshAuth::Local
+    } else {
+        SshAuth::from_parts(&m.auth_method, &m.ssh_password, &m.ssh_key)
+    }
 }
 
-/// 由节点记录构造 SSH 目标
+/// 由节点记录构造执行目标
 pub fn ssh_target_of(m: &node::Model) -> SshTarget {
+    if m.access_mode == "local" {
+        return SshTarget::local(m.host.clone());
+    }
     SshTarget::with_auth(
         m.host.clone(),
         m.ssh_port as u16,
@@ -287,6 +331,128 @@ pub fn ssh_target_of(m: &node::Model) -> SshTarget {
         ssh_auth_of(m),
     )
     .with_sudo_password(&m.sudo_password)
+}
+
+/// 归一化电源动作（仅 `shutdown` / `reboot`）
+pub fn normalize_power_action(raw: &str) -> Result<&'static str, ModelinferError> {
+    match raw.trim() {
+        POWER_ACTION_SHUTDOWN => Ok(POWER_ACTION_SHUTDOWN),
+        POWER_ACTION_REBOOT => Ok(POWER_ACTION_REBOOT),
+        other => Err(ModelinferError::new(
+            codes::PARAM_INVALID,
+            format!("电源动作只能是 shutdown 或 reboot: {other}"),
+        )),
+    }
+}
+
+/// 电源动作中文名（仅用于错误信息，不面向最终用户）
+fn power_action_label(action: &str) -> &'static str {
+    if action == POWER_ACTION_SHUTDOWN {
+        "关机"
+    } else {
+        "重启"
+    }
+}
+
+/// 构造延迟后台执行的电源命令。
+///
+/// 命令只由固定枚举拼接，不接收外部 shell 片段；`nohup` + 重定向 + `</dev/null`
+/// 使后台进程脱离 SSH 会话，接口可在连接断开前返回。
+pub fn power_command(action: &str) -> String {
+    let core = if action == POWER_ACTION_SHUTDOWN {
+        "poweroff"
+    } else {
+        "reboot"
+    };
+    let script = format!(
+        "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; \
+sleep {POWER_COMMAND_DELAY_SECS}; {core}"
+    );
+    format!(
+        "nohup sh -c {} >/tmp/modelinfer-power.log 2>&1 </dev/null & echo $!",
+        crate::deploy::script::sh_quote(&script)
+    )
+}
+
+/// 忙碌节点保护：存在活跃运行配置且未显式强制时拒绝电源操作。
+pub fn ensure_power_allowed(
+    node_id: &str,
+    occupied: &[crate::deployments::OccupiedNode],
+    force: bool,
+) -> Result<(), ModelinferError> {
+    if force {
+        return Ok(());
+    }
+    let mut names: Vec<&str> = Vec::new();
+    for o in occupied.iter().filter(|o| o.node_id == node_id) {
+        if !names.contains(&o.deployment_name.as_str()) {
+            names.push(o.deployment_name.as_str());
+        }
+    }
+    if names.is_empty() {
+        return Ok(());
+    }
+    Err(ModelinferError::new(
+        codes::NODE_POWER_IN_USE,
+        format!(
+            "节点正在运行 {} 个运行配置（{}），请先停止或确认强制操作",
+            names.len(),
+            names.join("、")
+        ),
+    ))
+}
+
+/// 下发节点关机 / 重启指令。
+///
+/// 仅代表指令已成功下发；不断言节点已完成断电或重启，也不修改节点状态。
+pub async fn power_node(
+    db: &DatabaseConnection,
+    ssh: &dyn SshExec,
+    id: &str,
+    req: NodePowerReq,
+) -> Result<NodePowerResult, ModelinferError> {
+    let action = normalize_power_action(&req.action)?;
+    let current = get_node(db, id).await?;
+    let occupied = crate::deployments::occupied_nodes(db, "").await?;
+    ensure_power_allowed(&current.id, &occupied, req.force)?;
+
+    let target = ssh_target_of(&current);
+    let out = ssh.run(&target, &power_command(action)).await.map_err(|e| {
+        ModelinferError::new(
+            codes::NODE_POWER_FAILED,
+            format!("{}指令下发失败: {}", power_action_label(action), e.msg),
+        )
+    })?;
+    if !out.success() {
+        let detail = if out.stderr.trim().is_empty() {
+            format!("退出码 {}", out.exit_code)
+        } else {
+            out.stderr.trim().to_string()
+        };
+        return Err(ModelinferError::new(
+            codes::NODE_POWER_FAILED,
+            format!("{}指令下发失败: {detail}", power_action_label(action)),
+        ));
+    }
+
+    Ok(NodePowerResult {
+        node_id: current.id,
+        action: action.to_string(),
+        force: req.force,
+        accepted_at: time::now_iso(),
+    })
+}
+
+/// 校验访问模式（空 → ssh）
+pub fn normalize_access_mode(raw: &str) -> Result<String, ModelinferError> {
+    match raw.trim() {
+        "" | "ssh" => Ok("ssh".to_string()),
+        "local" => Ok("local".to_string()),
+        other => Err(ModelinferError::new(
+            codes::PARAM_INVALID,
+            format!("节点访问模式只能是 ssh 或 local: {other}"),
+        )),
+    }
 }
 
 fn validate_port(port: i32) -> Result<(), ModelinferError> {
@@ -512,11 +678,23 @@ pub async fn create_node(
     if req.name.trim().is_empty() || req.host.trim().is_empty() {
         return Err(ModelinferError::new(codes::PARAM_INVALID, "节点名称与主机地址不能为空"));
     }
-    let ssh_user = normalize_ssh_user(&req.ssh_user)?;
-    let auth_method = normalize_auth_method(&req.auth_method)?;
-    validate_auth(&auth_method, &req.ssh_password, &req.ssh_key)?;
-    validate_sudo_password(&ssh_user, &auth_method, &req.ssh_password, &req.sudo_password)?;
-    validate_port(req.ssh_port)?;
+    let access_mode = normalize_access_mode(&req.access_mode)?;
+    let is_local = access_mode == "local";
+    let ssh_user = if is_local {
+        "root".to_string()
+    } else {
+        normalize_ssh_user(&req.ssh_user)?
+    };
+    let auth_method = if is_local {
+        "local".to_string()
+    } else {
+        normalize_auth_method(&req.auth_method)?
+    };
+    if !is_local {
+        validate_auth(&auth_method, &req.ssh_password, &req.ssh_key)?;
+        validate_sudo_password(&ssh_user, &auth_method, &req.ssh_password, &req.sudo_password)?;
+        validate_port(req.ssh_port)?;
+    }
     validate_monitor_port(req.node_exporter_port)?;
     validate_monitor_port(req.nvidia_gpu_exporter_port)?;
 
@@ -534,12 +712,17 @@ pub async fn create_node(
         return Err(ModelinferError::new(codes::EXISTS, format!("主机已存在: {host}")));
     }
 
-    let target = SshTarget::with_auth(
-        host.clone(),
-        req.ssh_port as u16,
-        ssh_user.clone(),
-        SshAuth::from_parts(&auth_method, &req.ssh_password, &req.ssh_key),
-    ).with_sudo_password(&req.sudo_password);
+    let target = if is_local {
+        SshTarget::local(host.clone())
+    } else {
+        SshTarget::with_auth(
+            host.clone(),
+            req.ssh_port as u16,
+            ssh_user.clone(),
+            SshAuth::from_parts(&auth_method, &req.ssh_password, &req.ssh_key),
+        )
+        .with_sudo_password(&req.sudo_password)
+    };
     ssh.test(&target).await?;
     // 连接并扫描（同时完成探活）；扫描失败即视为节点不可用
     let scan = scan_node(ssh, &target).await?;
@@ -569,12 +752,13 @@ pub async fn create_node(
         detected_profile: Set(scan.detected_profile.clone()),
         name: Set(req.name.trim().to_string()),
         host: Set(host),
-        ssh_port: Set(req.ssh_port),
+        access_mode: Set(access_mode),
+        ssh_port: Set(if is_local { 22 } else { req.ssh_port }),
         ssh_user: Set(ssh_user.clone()),
-        ssh_password: Set(if auth_method == "password" { req.ssh_password } else { String::new() }),
-        ssh_key: Set(if auth_method == "key" { req.ssh_key } else { String::new() }),
+        ssh_password: Set(if !is_local && auth_method == "password" { req.ssh_password } else { String::new() }),
+        ssh_key: Set(if !is_local && auth_method == "key" { req.ssh_key } else { String::new() }),
         auth_method: Set(auth_method),
-        sudo_password: Set(if ssh_user == "root" { String::new() } else { req.sudo_password }),
+        sudo_password: Set(if is_local || ssh_user == "root" { String::new() } else { req.sudo_password }),
         hostname: Set(hostname.trim().to_string()),
         arch: Set(scan.arch.clone()),
         kernel_version: Set(scan.kernel_version.clone()),
@@ -614,6 +798,7 @@ pub async fn update_node(
     req: NodeUpdate,
 ) -> Result<NodeView, ModelinferError> {
     let current = get_node(db, id).await?;
+    let is_local = current.access_mode == "local";
     let mut am: node::ActiveModel = current.clone().into();
     if let Some(profile) = req.profile {
         am.profile_override = Set(profile.resolve(db).await?);
@@ -630,54 +815,64 @@ pub async fn update_node(
         }
         am.host = Set(host.trim().to_string());
     }
-    if let Some(port) = req.ssh_port {
-        validate_port(port)?;
-        am.ssh_port = Set(port);
-    }
-    if let Some(user) = req.ssh_user {
-        am.ssh_user = Set(normalize_ssh_user(&user)?);
-    }
-    // 认证方式 / 凭据：合并「当前值 + 请求覆盖」后整体校验
-    let auth_method = match req.auth_method.as_deref() {
-        Some(m) => normalize_auth_method(m)?,
-        None => current.auth_method.clone(),
-    };
-    let password = req
-        .ssh_password
-        .filter(|p| !p.is_empty())
-        .unwrap_or_else(|| current.ssh_password.clone());
-    let key = req
-        .ssh_key
-        .filter(|k| !k.trim().is_empty())
-        .unwrap_or_else(|| current.ssh_key.clone());
-    validate_auth(&auth_method, &password, &key)?;
-    // 切换认证方式时清除不再使用的凭据（减少凭据足迹）
-    let (password, key) = if auth_method == "key" {
-        (String::new(), key)
+    if is_local {
+        // 本机节点不允许在此接口切换为 SSH；凭据字段保持为空。
+        am.auth_method = Set("local".to_string());
+        am.ssh_user = Set("root".to_string());
+        am.ssh_port = Set(22);
+        am.ssh_password = Set(String::new());
+        am.ssh_key = Set(String::new());
+        am.sudo_password = Set(String::new());
     } else {
-        (password, String::new())
-    };
-    am.auth_method = Set(auth_method);
-    am.ssh_password = Set(password);
-    am.ssh_key = Set(key);
-    let user = am.ssh_user.as_ref();
-    let sudo_password = if user == "root" {
-        String::new()
-    } else {
-        req.sudo_password.unwrap_or_else(|| current.sudo_password.clone())
-    };
-    validate_sudo_password(user, am.auth_method.as_ref(), am.ssh_password.as_ref(), &sudo_password)?;
-    am.sudo_password = Set(sudo_password);
-    // 对合并后的有效配置做检查；仅修改显示名称等配置时无需远程连接。
-    if am.host.as_ref() != &current.host || am.ssh_port.as_ref() != &current.ssh_port
-        || am.ssh_user.as_ref() != &current.ssh_user || am.auth_method.as_ref() != &current.auth_method
-        || am.ssh_password.as_ref() != &current.ssh_password || am.ssh_key.as_ref() != &current.ssh_key
-        || am.sudo_password.as_ref() != &current.sudo_password {
-        let target = SshTarget::from_credentials(
-            am.host.as_ref().clone(), *am.ssh_port.as_ref() as u16, am.ssh_user.as_ref().clone(),
-            am.auth_method.as_ref(), am.ssh_password.as_ref(), am.ssh_key.as_ref(),
-        ).with_sudo_password(am.sudo_password.as_ref());
-        ssh.test(&target).await?;
+        if let Some(port) = req.ssh_port {
+            validate_port(port)?;
+            am.ssh_port = Set(port);
+        }
+        if let Some(user) = req.ssh_user {
+            am.ssh_user = Set(normalize_ssh_user(&user)?);
+        }
+        // 认证方式 / 凭据：合并「当前值 + 请求覆盖」后整体校验
+        let auth_method = match req.auth_method.as_deref() {
+            Some(m) => normalize_auth_method(m)?,
+            None => current.auth_method.clone(),
+        };
+        let password = req
+            .ssh_password
+            .filter(|p| !p.is_empty())
+            .unwrap_or_else(|| current.ssh_password.clone());
+        let key = req
+            .ssh_key
+            .filter(|k| !k.trim().is_empty())
+            .unwrap_or_else(|| current.ssh_key.clone());
+        validate_auth(&auth_method, &password, &key)?;
+        // 切换认证方式时清除不再使用的凭据（减少凭据足迹）
+        let (password, key) = if auth_method == "key" {
+            (String::new(), key)
+        } else {
+            (password, String::new())
+        };
+        am.auth_method = Set(auth_method);
+        am.ssh_password = Set(password);
+        am.ssh_key = Set(key);
+        let user = am.ssh_user.as_ref();
+        let sudo_password = if user == "root" {
+            String::new()
+        } else {
+            req.sudo_password.unwrap_or_else(|| current.sudo_password.clone())
+        };
+        validate_sudo_password(user, am.auth_method.as_ref(), am.ssh_password.as_ref(), &sudo_password)?;
+        am.sudo_password = Set(sudo_password);
+        // 对合并后的有效配置做检查；仅修改显示名称等配置时无需远程连接。
+        if am.host.as_ref() != &current.host || am.ssh_port.as_ref() != &current.ssh_port
+            || am.ssh_user.as_ref() != &current.ssh_user || am.auth_method.as_ref() != &current.auth_method
+            || am.ssh_password.as_ref() != &current.ssh_password || am.ssh_key.as_ref() != &current.ssh_key
+            || am.sudo_password.as_ref() != &current.sudo_password {
+            let target = SshTarget::from_credentials(
+                am.host.as_ref().clone(), *am.ssh_port.as_ref() as u16, am.ssh_user.as_ref().clone(),
+                am.auth_method.as_ref(), am.ssh_password.as_ref(), am.ssh_key.as_ref(),
+            ).with_sudo_password(am.sudo_password.as_ref());
+            ssh.test(&target).await?;
+        }
     }
     if let Some(h) = req.hostname {
         am.hostname = Set(h.trim().to_string());
@@ -711,11 +906,14 @@ pub async fn update_node(
 #[derive(Debug, Clone, Deserialize)]
 pub struct NodeProbeReq {
     pub host: String,
+    /// 访问模式：`ssh`（缺省）/ `local`
+    #[serde(default = "default_access_mode")]
+    pub access_mode: String,
     #[serde(default = "default_port")]
     pub ssh_port: i32,
     #[serde(default = "default_user")]
     pub ssh_user: String,
-    /// 认证方式：`password`（缺省）/ `key`
+    /// 认证方式：`password`（缺省）/ `key`（local 模式忽略）
     #[serde(default)]
     pub auth_method: String,
     #[serde(default)]
@@ -734,19 +932,49 @@ pub async fn probe_node(
     if req.host.trim().is_empty() {
         return Err(ModelinferError::new(codes::PARAM_INVALID, "主机地址不能为空"));
     }
-    let ssh_user = normalize_ssh_user(&req.ssh_user)?;
-    let auth_method = normalize_auth_method(&req.auth_method)?;
-    validate_auth(&auth_method, &req.ssh_password, &req.ssh_key)?;
-    validate_sudo_password(&ssh_user, &auth_method, &req.ssh_password, &req.sudo_password)?;
-    validate_port(req.ssh_port)?;
-    let target = SshTarget::with_auth(
-        req.host.trim().to_string(),
-        req.ssh_port as u16,
-        ssh_user,
-        SshAuth::from_parts(&auth_method, &req.ssh_password, &req.ssh_key),
-    ).with_sudo_password(&req.sudo_password);
+    let access_mode = normalize_access_mode(&req.access_mode)?;
+    let target = if access_mode == "local" {
+        SshTarget::local(req.host.trim().to_string())
+    } else {
+        let ssh_user = normalize_ssh_user(&req.ssh_user)?;
+        let auth_method = normalize_auth_method(&req.auth_method)?;
+        validate_auth(&auth_method, &req.ssh_password, &req.ssh_key)?;
+        validate_sudo_password(&ssh_user, &auth_method, &req.ssh_password, &req.sudo_password)?;
+        validate_port(req.ssh_port)?;
+        SshTarget::with_auth(
+            req.host.trim().to_string(),
+            req.ssh_port as u16,
+            ssh_user,
+            SshAuth::from_parts(&auth_method, &req.ssh_password, &req.ssh_key),
+        ).with_sudo_password(&req.sudo_password)
+    };
     ssh.test(&target).await?;
     scan_node(ssh, &target).await
+}
+
+/// 本机节点探测结果（不落库）
+#[derive(Debug, Clone, Serialize)]
+pub struct LocalNodeInfo {
+    /// 建议用于节点台账 / 集群互通的宿主机 IP
+    pub host: String,
+    pub scan: NodeScanResult,
+}
+
+/// 扫描当前宿主机（经 nsenter）；host 选择由调用方结合平台设备地址决定
+pub async fn probe_local(
+    ssh: &dyn SshExec,
+    preferred_hosts: &[String],
+) -> Result<LocalNodeInfo, ModelinferError> {
+    let target = SshTarget::local("127.0.0.1");
+    ssh.test(&target).await?;
+    let scan = scan_node(ssh, &target).await?;
+    let host = scan::pick_local_host(&scan.interfaces, preferred_hosts).ok_or_else(|| {
+        ModelinferError::new(
+            codes::NODE_SCAN_FAILED,
+            "未能在宿主机上找到可用的 IPv4 地址，无法添加本机节点",
+        )
+    })?;
+    Ok(LocalNodeInfo { host, scan })
 }
 
 /// 重新扫描已有节点并更新硬件字段（不覆盖用户已选的 socket / ib）
@@ -843,6 +1071,7 @@ mod tests {
             profile: None,
             name: format!("n-{host}"),
             host: host.to_string(),
+            access_mode: "ssh".into(),
             ssh_port: 22,
             ssh_user: "root".into(),
             auth_method: "password".into(),
@@ -875,6 +1104,113 @@ mod tests {
         assert_eq!(req.nvidia_gpu_exporter_port, 19835);
     }
 
+    #[test]
+    fn power_action_accepts_only_shutdown_and_reboot() {
+        assert_eq!(normalize_power_action(" shutdown ").unwrap(), POWER_ACTION_SHUTDOWN);
+        assert_eq!(normalize_power_action("reboot").unwrap(), POWER_ACTION_REBOOT);
+        assert_eq!(normalize_power_action("poweroff").unwrap_err().code, codes::PARAM_INVALID);
+    }
+
+    #[test]
+    fn power_command_is_delayed_and_backgrounded() {
+        let shutdown = power_command(POWER_ACTION_SHUTDOWN);
+        assert!(shutdown.contains("sleep 3"));
+        assert!(shutdown.contains("sleep 3; poweroff"));
+        assert!(shutdown.contains("nohup sh -c"));
+        assert!(shutdown.ends_with("echo $!"));
+
+        let reboot = power_command(POWER_ACTION_REBOOT);
+        assert!(reboot.contains("sleep 3"));
+        assert!(reboot.contains("sleep 3; reboot"));
+    }
+
+    #[test]
+    fn power_guard_rejects_busy_node_unless_forced() {
+        let occupied = vec![
+            crate::deployments::OccupiedNode {
+                node_id: "n1".into(),
+                deployment_id: "A".into(),
+                deployment_name: "alpha".into(),
+            },
+            crate::deployments::OccupiedNode {
+                node_id: "n1".into(),
+                deployment_id: "B".into(),
+                deployment_name: "beta".into(),
+            },
+            crate::deployments::OccupiedNode {
+                node_id: "n2".into(),
+                deployment_id: "C".into(),
+                deployment_name: "gamma".into(),
+            },
+        ];
+        let err = ensure_power_allowed("n1", &occupied, false).unwrap_err();
+        assert_eq!(err.code, codes::NODE_POWER_IN_USE);
+        assert!(err.msg.contains("alpha") && err.msg.contains("beta"));
+        assert!(!err.msg.contains("gamma"));
+        assert!(ensure_power_allowed("n1", &occupied, true).is_ok());
+        assert!(ensure_power_allowed("n3", &occupied, false).is_ok());
+    }
+
+    #[tokio::test]
+    async fn power_node_dispatches_command_and_returns_accepted() {
+        let db = db::connect("sqlite::memory:").await.unwrap();
+        let ssh = MockSshExec::new();
+        let created = create_node(&db, &ssh, sample("10.0.0.41")).await.unwrap();
+        ssh.calls.lock().unwrap().clear();
+
+        let result = power_node(
+            &db,
+            &ssh,
+            &created.id,
+            NodePowerReq { action: "shutdown".into(), force: false },
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.node_id, created.id);
+        assert_eq!(result.action, POWER_ACTION_SHUTDOWN);
+        assert!(!result.force);
+        assert!(!result.accepted_at.is_empty());
+
+        let calls = ssh.recorded_calls();
+        assert_eq!(calls.len(), 1);
+        assert!(calls[0].contains("sleep 3; poweroff"));
+    }
+
+    #[tokio::test]
+    async fn power_node_maps_command_failure_to_power_failed() {
+        let db = db::connect("sqlite::memory:").await.unwrap();
+        let normal = MockSshExec::new();
+        let created = create_node(&db, &normal, sample("10.0.0.42")).await.unwrap();
+        let failing = MockSshExec::new().with_failing_host("10.0.0.42");
+
+        let err = power_node(
+            &db,
+            &failing,
+            &created.id,
+            NodePowerReq { action: "reboot".into(), force: false },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err.code, codes::NODE_POWER_FAILED);
+        assert!(err.msg.contains("mock: command failed"));
+    }
+
+    #[tokio::test]
+    async fn power_node_rejects_unknown_node() {
+        let db = db::connect("sqlite::memory:").await.unwrap();
+        let ssh = MockSshExec::new();
+        let err = power_node(
+            &db,
+            &ssh,
+            "missing",
+            NodePowerReq { action: "shutdown".into(), force: false },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err.code, codes::NOT_FOUND);
+        assert!(ssh.recorded_calls().is_empty());
+    }
+
     #[tokio::test]
     async fn create_list_and_delete_roundtrip() {
         let db = db::connect("sqlite::memory:").await.unwrap();
@@ -903,6 +1239,7 @@ mod tests {
             id: "n1".into(),
             name: "node-1".into(),
             host: "10.0.0.1".into(),
+            access_mode: "ssh".into(),
             ssh_port: 22,
             ssh_user: "root".into(),
             auth_method: "password".into(),
@@ -977,6 +1314,41 @@ mod tests {
         // 强制存在路径仍返回 20702
         let err = get_node(&db, "not-exist").await.unwrap_err();
         assert_eq!(err.code, codes::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn create_local_node_without_credentials() {
+        let db = db::connect("sqlite::memory:").await.unwrap();
+        let ssh = MockSshExec::new()
+            .with_rule("ip -o -4", 0, "2: enp1s0    inet 10.100.10.24/24 scope global enp1s0\n")
+            .with_rule("hostname", 0, "vos-host\n");
+        let mut req = sample("10.100.10.24");
+        req.access_mode = "local".into();
+        req.ssh_user = String::new();
+        req.auth_method = "password".into();
+        req.ssh_password = String::new();
+        req.ssh_key = String::new();
+        req.sudo_password = String::new();
+        req.hostname = None;
+        let created = create_node(&db, &ssh, req).await.unwrap();
+        assert_eq!(created.access_mode, "local");
+        assert_eq!(created.auth_method, "local");
+        assert_eq!(created.ssh_user, "root");
+        assert!(!created.has_password);
+        assert!(!created.has_key);
+        assert!(ssh.recorded_auth().iter().all(|a| a == "local"));
+        assert_eq!(created.hostname, "vos-host");
+    }
+
+    #[tokio::test]
+    async fn probe_local_returns_host_from_scan() {
+        let ssh = MockSshExec::new()
+            .with_rule("hostname", 0, "vos-host\n")
+            .with_rule("ip -o -4", 0, "2: enp1s0    inet 10.100.10.24/24 scope global enp1s0\n");
+        let info = probe_local(&ssh, &["10.100.10.24".into()]).await.unwrap();
+        assert_eq!(info.host, "10.100.10.24");
+        assert_eq!(info.scan.hostname, "vos-host");
+        assert!(info.scan.default_socket_ifname.as_deref() == Some("enp1s0"));
     }
 
     #[tokio::test]
@@ -1262,6 +1634,7 @@ mod tests {
             &ssh,
             &NodeProbeReq {
                 host: "10.100.10.21".into(),
+                access_mode: "ssh".into(),
                 ssh_port: 22,
                 ssh_user: "root".into(),
                 auth_method: "password".into(),

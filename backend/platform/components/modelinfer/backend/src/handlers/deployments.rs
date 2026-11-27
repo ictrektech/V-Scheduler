@@ -165,17 +165,20 @@ pub async fn start(
     // 复用完整解析以保持公共目录 / 宿主路径 / NFS 地址推断与实际挂载一致。
     let node_ids: Vec<String> = serde_json::from_str(&d.node_ids_json).unwrap_or_default();
     let selected_nodes = nodes::load_models(&state.db, Some(&node_ids)).await?;
-    let hosts: Vec<String> = selected_nodes.iter().map(|node| node.host.clone()).collect();
-    nfs::resolve_nfs(
-        state.platform.as_ref(),
-        &nfs::ResolveInput {
-            config_name: nfs::MODEL_HUB_CONFIG,
-            fallback_hub_path: &state.model_hub_path,
-            nfs_server_override: &state.nfs_server,
-            node_hosts: &hosts,
-        },
-    )
-    .await?;
+    let has_remote = selected_nodes.iter().any(|n| n.access_mode != "local");
+    if has_remote {
+        let hosts: Vec<String> = selected_nodes.iter().map(|node| node.host.clone()).collect();
+        nfs::resolve_nfs(
+            state.platform.as_ref(),
+            &nfs::ResolveInput {
+                config_name: nfs::MODEL_HUB_CONFIG,
+                fallback_hub_path: &state.model_hub_path,
+                nfs_server_override: &state.nfs_server,
+                node_hosts: &hosts,
+            },
+        )
+        .await?;
+    }
     let card = crate::plaza::get_model(&state.db, &d.plaza_model_id).await?;
     let manifest = serde_json::from_str(&card.manifest_json).unwrap_or(serde_json::Value::Null);
     let hub = crate::images::RealImageHubClient::from_config(&state.image_hub);
@@ -241,6 +244,73 @@ pub async fn stop(
     Ok(Json(ResultBody::ok(deployments::get_view(&state.db, &id).await?, state.version)))
 }
 
+
+
+
+// ============ 运行配置卡片文件 Override ============
+
+/// `GET /api/deployments/{id}/file-overrides`
+pub async fn list_file_overrides(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<Json<ResultBody<deployments::file_overrides::FileOverrideList>>, ModelinferError> {
+    let data = deployments::file_overrides::list(&state.db, &id).await?;
+    Ok(Json(ResultBody::ok(data, state.version)))
+}
+
+/// `GET /api/deployments/{id}/card-files/content?path=scripts/...`
+pub async fn get_card_file_content(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Query(q): Query<deployments::file_overrides::CardFileQuery>,
+) -> Result<Json<ResultBody<serde_json::Value>>, ModelinferError> {
+    let content = deployments::file_overrides::get_original(&state.db, &id, &q.path).await?;
+    Ok(Json(ResultBody::ok(
+        serde_json::json!({ "path": q.path, "content": content }),
+        state.version,
+    )))
+}
+
+/// `POST /api/deployments/{id}/file-overrides`
+pub async fn create_file_override(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(req): Json<deployments::file_overrides::FileOverrideCreate>,
+) -> Result<Json<ResultBody<deployments::file_overrides::FileOverrideDetail>>, ModelinferError> {
+    let data = deployments::file_overrides::create(&state.db, &id, req).await?;
+    Ok(Json(ResultBody::ok(data, state.version)))
+}
+
+/// `GET /api/deployments/{id}/file-overrides/{override_id}`
+pub async fn get_file_override(
+    State(state): State<Arc<AppState>>,
+    Path((id, override_id)): Path<(String, String)>,
+) -> Result<Json<ResultBody<deployments::file_overrides::FileOverrideDetail>>, ModelinferError> {
+    let data = deployments::file_overrides::get(&state.db, &id, &override_id).await?;
+    Ok(Json(ResultBody::ok(data, state.version)))
+}
+
+/// `PUT /api/deployments/{id}/file-overrides/{override_id}`
+pub async fn update_file_override(
+    State(state): State<Arc<AppState>>,
+    Path((id, override_id)): Path<(String, String)>,
+    Json(req): Json<deployments::file_overrides::FileOverrideUpdate>,
+) -> Result<Json<ResultBody<deployments::file_overrides::FileOverrideDetail>>, ModelinferError> {
+    let data = deployments::file_overrides::update(&state.db, &id, &override_id, req).await?;
+    Ok(Json(ResultBody::ok(data, state.version)))
+}
+
+/// `DELETE /api/deployments/{id}/file-overrides/{override_id}`
+pub async fn delete_file_override(
+    State(state): State<Arc<AppState>>,
+    Path((id, override_id)): Path<(String, String)>,
+) -> Result<Json<ResultBody<serde_json::Value>>, ModelinferError> {
+    deployments::file_overrides::delete(&state.db, &id, &override_id).await?;
+    Ok(Json(ResultBody::ok(
+        serde_json::json!({ "deleted": override_id }),
+        state.version,
+    )))
+}
 
 #[cfg(test)]
 mod tests {

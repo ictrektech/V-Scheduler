@@ -114,8 +114,20 @@ RUN if [ "$CARGO_OFFLINE" = true ]; then set -- --offline; else set --; fi; \
       --manifest-path platform/components/modelinfer/backend/Cargo.toml \
       --bin scheduler-node-manager
 
+FROM scheduler-core AS scheduler-modelinfer-build
+RUN if [ "$CARGO_OFFLINE" = true ]; then set -- --offline; else set --; fi; \
+    cargo build --release --locked "$@" \
+      --manifest-path platform/components/modelinfer/backend/Cargo.toml \
+      --bin modelinfer --bin scheduler-node-manager
+
 FROM scheduler-application AS scheduler-with-node-manager
 COPY --from=scheduler-node-manager-build /build/target/release/scheduler-node-manager /usr/local/bin/scheduler-node-manager
+
+FROM scheduler-application AS scheduler-with-modelinfer
+COPY --from=scheduler-modelinfer-build /build/target/release/modelinfer /usr/local/bin/modelinfer
+COPY --from=scheduler-modelinfer-build /build/target/release/scheduler-node-manager /usr/local/bin/scheduler-node-manager
+RUN rm -rf /opt/v-scheduler/inference-ui
+COPY --from=inference-ui /build/modelinfer/dist /opt/v-scheduler/inference-ui
 
 FROM scheduler-core AS backend
 RUN if [ "$CARGO_OFFLINE" = true ]; then set -- --offline; else set --; fi; \

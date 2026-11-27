@@ -66,7 +66,7 @@ pub fn env_exports(rt: &DeployRuntime, node: &DeployNode) -> Vec<(String, String
         ("MODELINFER_HEAD_IP".to_string(), rt.head_ip.clone()),
         ("MODELINFER_NODES".to_string(), rt.nodes_map.clone()),
         ("MODELINFER_MODEL_ID".to_string(), rt.weight_id.clone()),
-        ("MODELINFER_MODEL_PATH".to_string(), rt.model_path.clone()),
+        ("MODELINFER_MODEL_PATH".to_string(), rt.model_path_for(node).to_string()),
         ("MODELINFER_CARD_WEIGHT_ID".to_string(), rt.card_weight_id.clone()),
         ("MODELINFER_WEIGHT_OVERRIDDEN".to_string(), rt.weight_overridden.to_string()),
         ("MODELINFER_IMAGES_SOURCE".to_string(), rt.images_source.clone()),
@@ -75,7 +75,7 @@ pub fn env_exports(rt: &DeployRuntime, node: &DeployNode) -> Vec<(String, String
             (rt.images_source == "override").to_string(),
         ),
         ("MODELINFER_INSTANCE_ID".to_string(), rt.deployment_id.clone()),
-        ("MODELINFER_MODEL_HUB_ROOT".to_string(), rt.model_hub_root.clone()),
+        ("MODELINFER_MODEL_HUB_ROOT".to_string(), rt.model_hub_root_for(node).to_string()),
         ("MODELINFER_SERVE_PORT".to_string(), rt.serve_port.to_string()),
         ("MODELINFER_SERVE_URL_PREFIX".to_string(), rt.serve_url_prefix.clone()),
         ("MODELINFER_SERVE_API_KEY".to_string(), rt.serve_api_key.clone()),
@@ -202,6 +202,8 @@ mod tests {
             weight_source: "hf".into(),
             model_path: "/mnt/model_hub/public/modelhub/export/hf/Qwen/Qwen3-0.6B/current".into(),
             model_hub_root: "/mnt/model_hub/public/modelhub".into(),
+            local_model_path: "/share/model_hub/export/hf/Qwen/Qwen3-0.6B/current".into(),
+            local_model_hub_root: "/share/model_hub".into(),
             serve_port: 8000,
             serve_api_key: "key".into(),
             serve_model_name: "Qwen3-0.6B".into(),
@@ -222,6 +224,17 @@ mod tests {
             manifest_images: Vec::new(),
             images_source: "card".into(),
         }
+    }
+
+    #[test]
+    fn local_node_uses_host_model_path() {
+        let rt = runtime();
+        let mut local = node();
+        local.auth_method = "local".into();
+        local.host = "10.100.10.24".into();
+        let env = build_env_script(&rt, &local);
+        assert!(env.contains("export MODELINFER_MODEL_PATH='/share/model_hub/export/hf/Qwen/Qwen3-0.6B/current'"));
+        assert!(env.contains("export MODELINFER_MODEL_HUB_ROOT='/share/model_hub'"));
     }
 
     #[test]
@@ -370,6 +383,8 @@ mod tests {
                 weight_source: "hf".into(),
                 model_path: "/data/models/w".into(),
                 model_hub_root: "/data/models".into(),
+                local_model_path: "/host/data/models/w".into(),
+                local_model_hub_root: "/host/data/models".into(),
                 serve_port: 8000,
                 serve_api_key: "k".into(),
                 serve_model_name: "w".into(),
@@ -452,6 +467,8 @@ mod tests {
             weight_source: "ms".into(),
             model_path: "/mnt/model_hub/export/ms/org/effective/current".into(),
             model_hub_root: "/mnt/model_hub".into(),
+            local_model_path: "/share/model_hub/export/ms/org/effective/current".into(),
+            local_model_hub_root: "/share/model_hub".into(),
             serve_port: 8000,
             serve_api_key: "k".into(),
             serve_model_name: "effective".into(),

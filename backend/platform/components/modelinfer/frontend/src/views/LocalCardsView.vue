@@ -19,6 +19,8 @@ import {
 } from '@/api/plaza';
 import { GRID_PAGE_SIZE, PAGE_SIZE_OPTIONS } from '@/api/paging';
 import { formatBytes } from '@/utils/format';
+import { imageEntryLabel } from '@/utils/runtimeOverrides';
+import type { ImageEntry } from '@/api/deployments';
 import {
   hexToRgba,
   modelFamilyIcon,
@@ -98,6 +100,12 @@ function enrich(group: LocalModelGroup): EnrichedCard {
 }
 
 const cards = computed<EnrichedCard[]>(() => models.value.map(enrich));
+
+function cardImageLabels(group: LocalModelGroup): string[] {
+  return (Array.isArray(group.images) ? group.images : [])
+    .map((v) => imageEntryLabel(v as ImageEntry))
+    .filter(Boolean);
+}
 
 /** 家族筛选下拉：取响应 `stats.families`（未筛选的全量家族集合） */
 const familyOptions = computed(() => {
@@ -332,10 +340,20 @@ onMounted(load);
           <div class="mi-mcard__tags">
             <a-tag class="mi-family-tag">{{ modelFamilyLabel(m.family, (k) => t(k)) }}</a-tag>
             <a-tag v-for="s in m.sources" :key="s" color="default">{{ sourceLabel(s) }}</a-tag>
-            <span class="mi-mcard__weight">
-              {{ t('cards.weight') }}
+          </div>
+
+          <div class="mi-mcard__resources">
+            <div class="mi-mcard__resource">
+              <span class="mi-mcard__label">{{ t('cards.weight') }}</span>
               <CopyText :text="m.model || '-'" />
-            </span>
+            </div>
+            <div class="mi-mcard__resource">
+              <span class="mi-mcard__label">{{ t('cards.images') }}</span>
+              <template v-if="cardImageLabels(m).length">
+                <a-tag v-for="img in cardImageLabels(m)" :key="img" class="mi-tag-soft mi-mono">{{ img }}</a-tag>
+              </template>
+              <span v-else class="mi-hint">-</span>
+            </div>
           </div>
 
           <div class="mi-mcard__stats">
@@ -543,6 +561,23 @@ onMounted(load);
   gap: 6px;
   font-size: 12px;
   color: var(--mi-text-secondary);
+}
+.mi-mcard__resources {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border-radius: var(--mi-radius-md);
+  background: var(--mi-surface-2);
+  border: 1px solid var(--mi-border);
+}
+.mi-mcard__resource {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+  font-size: 12px;
 }
 .mi-mcard__stats {
   display: flex;

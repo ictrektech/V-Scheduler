@@ -613,7 +613,7 @@ pub fn reconcile_plan(
             }
         }
     }
-    for (sid, _) in actual.iter() {
+    for sid in actual.keys() {
         if is_our_service_id(sid) && !expected_ids.contains(sid) {
             plan.deregister.push(sid.clone());
         }
@@ -953,6 +953,7 @@ mod tests {
             id: "n1".into(),
             name: "node-1".into(),
             host: "10.0.0.1".into(),
+            access_mode: "ssh".into(),
             ssh_port: 22,
             ssh_user: "root".into(),
             auth_method: "password".into(),
@@ -1046,6 +1047,7 @@ mod tests {
             id: "n1".into(),
             name: "node-1".into(),
             host: "10.0.0.1".into(),
+            access_mode: "ssh".into(),
             ssh_port: 22,
             ssh_user: "root".into(),
             auth_method: "password".into(),

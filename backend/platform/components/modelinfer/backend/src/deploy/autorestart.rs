@@ -1,47 +1,38 @@
-//! 探活失败自动重启：判定（纯函数）+ 调度（进程级）+ 运行态持久化
+//! 自动重启：判定（纯函数）+ 调度（进程级）+ 运行态持久化
 //!
-//! 背景：健康巡检（[`crate::deploy::health`]）只把 `health-probe` 结果写入
-//! `health_status`，不负责恢复。推理引擎崩溃 / 容器退出 / 掉电后业务无法自愈。本模块在健康巡检
-//! **之后**、以同一周期运行，对开启 `auto_restart_enabled` 的运行配置执行：
+//! 运行配置可选两种 docker 风格策略：
+//!
+//! - `never`（创建默认）：不自动重启；
+//! - `unless-stop`：除用户显式停止外，**启动失败**或**连续探活失败达到阈值**都会触发自动重启。
+//!
+//! 调度器在健康巡检之后、以同一周期运行：
 //!
 //! ```text
-//! running + unhealthy 且连续失败 >= 阈值
+//! running + unhealthy 且连续失败次数 >= 阈值
 //!        └─► 下发停止（清理节点侧副作用）
 //!                 └─► state=stopped 且过 backoff 截止 ─► 下发启动
 //!                          ├─ state=running  ─► 回 idle，计数清零
 //!                          └─ 启动失败        ─► 再清理 + 指数 backoff → 重试（无限）
+//!
+//! 首次启动失败（state=failed / 启动 run failed）同样进入上述循环。
 //! ```
 //!
 //! 关键约束（设计见 `specs/docs/design/modelinfer/auto-restart.md`）：
 //!
 //! - **纯函数决策**：[`decide`] 只输入运行态 + 现状 + 当前时间，输出「新运行态 + 动作」，
 //!   便于穷举单测；动作执行走 [`crate::deploy::control::Control`]，与手动启停同源；
-//! - **运行态持久化**（相位 / 失败起点 / next_at / 计数）：进程重启与整机掉电后自动续跑，
-//!   不会把已累计的失败时长清零，也不会因为重启而重复等待一个完整阈值周期；
-//! - **用户手动停止 / 启动立即取消循环**：由 HTTP handler 调用 [`reset`]（调度器自身不调用）。
-//!
-//! # 示例
-//!
-//! ```no_run
-//! use chrono::FixedOffset;
-//! use modelinfer::deploy::autorestart::{AutoRestartConfig, tick};
-//!
-//! # async fn demo(db: sea_orm::DatabaseConnection) {
-//! let cfg = AutoRestartConfig::default();
-//! let now = modelinfer::time::now();
-//! // control = None：仅记录判定结果，不下发工作流（Temporal 不可用场景）
-//! let _ = tick(&db, None, &cfg, now).await;
-//! # let _ = FixedOffset::east_opt(8 * 3600);
-//! # }
-//! ```
+//! - **运行态持久化**（相位 / 连续失败次数 / next_at / 计数）：进程重启与整机掉电后自动续跑；
+//! - **用户手动停止 / 启动立即取消循环**：由 HTTP handler 调用 [`reset`]（调度器自身不调用），
+//!   reset 同时记录抑制起点，避免旧启动失败 run 在人工操作后再次触发。
 
 use std::time::Duration;
 
 use chrono::{DateTime, FixedOffset};
-use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
+use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait, Set};
 use serde::Serialize;
 
 use crate::deploy::control::{Control, TRIGGER_AUTO_RESTART};
+use crate::deployments::validate;
 use crate::entities::deployment;
 use crate::error::{ModelinferError, codes};
 use crate::time;
@@ -61,6 +52,11 @@ pub const PHASE_IDLE: &str = "";
 pub const PHASE_STOPPING: &str = "stopping";
 /// 自动重启相位：已下发启动，待结果
 pub const PHASE_STARTING: &str = "starting";
+
+/// 自动重启策略：不自动重启（创建默认）
+pub const POLICY_NEVER: &str = validate::AUTO_RESTART_POLICY_NEVER;
+/// 自动重启策略：除用户显式停止外，启动失败 / 探活失败均自动重启
+pub const POLICY_UNLESS_STOP: &str = validate::AUTO_RESTART_POLICY_UNLESS_STOP;
 
 /// backoff 策略（指数增长 + 上限）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -91,18 +87,6 @@ impl BackoffPolicy {
     }
 
     /// 第 `attempts` 次启动失败后的等待秒数：`min(base * 2^(attempts-1), max)`
-    ///
-    /// # 示例
-    ///
-    /// ```
-    /// use modelinfer::deploy::autorestart::BackoffPolicy;
-    /// let p = BackoffPolicy { base_secs: 15, max_secs: 300 };
-    /// assert_eq!(p.backoff(1), 15);
-    /// assert_eq!(p.backoff(2), 30);
-    /// assert_eq!(p.backoff(5), 240);
-    /// assert_eq!(p.backoff(6), 300);
-    /// assert_eq!(p.backoff(20), 300);
-    /// ```
     pub fn backoff(&self, attempts: i32) -> i64 {
         let p = self.normalized();
         let n = attempts.clamp(1, 16) as u32;
@@ -123,8 +107,10 @@ pub struct AutoRestartConfig {
 pub struct RuntimeState {
     /// 相位：`""` / `stopping` / `starting`
     pub phase: String,
-    /// 本轮连续失败起点（CST ISO-8601）
+    /// 本轮连续失败起点（CST ISO-8601；仅展示 / 诊断）
     pub failed_since: String,
+    /// 当前连续探活失败次数
+    pub consecutive_failures: i32,
     /// backoff 截止时间（CST ISO-8601）
     pub next_at: String,
     /// 当前循环内已下发的启动次数
@@ -133,15 +119,17 @@ pub struct RuntimeState {
     pub last_at: String,
     /// 最近一次失败原因
     pub last_error: String,
+    /// 用户手动启停 / 配置变更后的抑制起点：早于该时间的启动失败不再触发自动重启
+    pub ignore_before: String,
 }
 
 /// 决策输入（纯数据，便于单测穷举）
 #[derive(Debug, Clone)]
 pub struct AutoRestartInput<'a> {
-    /// 是否开启自动重启
-    pub enabled: bool,
-    /// 连续失败阈值（秒）
-    pub fail_secs: i64,
+    /// 自动重启策略（`never` / `unless-stop`）
+    pub policy: &'a str,
+    /// 连续探活失败次数阈值
+    pub fail_count: i32,
     /// 当前运行态
     pub runtime: RuntimeState,
     /// 部署状态
@@ -153,8 +141,10 @@ pub struct AutoRestartInput<'a> {
     /// 本轮自动启动是否已**明确失败**（启动 run 在本次下发后已收尾为 `failed`）
     ///
     /// 阶段脚本失败时启动 workflow 会先 `mark_failed` 再执行 `cleanup`，最终状态回到
-    /// `stopped`，与「已下发但尚未置位」无法从状态区分；该标记消除歧义，使失败可立即进入 backoff。
+    /// `stopped`，与「已下发但尚未置位」无法从状态区分；该标记消除歧义。
     pub start_run_failed: bool,
+    /// idle 阶段是否存在**未被人工操作抑制**的失败启动 run（覆盖首次启动失败）
+    pub unhandled_start_failure: bool,
     /// backoff 策略
     pub backoff: BackoffPolicy,
 }
@@ -192,15 +182,46 @@ fn now_iso(now: DateTime<FixedOffset>) -> String {
     now.to_rfc3339()
 }
 
+/// 有效自动重启策略（兼容历史 `auto_restart_enabled`）
+pub fn effective_policy(m: &deployment::Model) -> String {
+    let raw = m.auto_restart_policy.trim();
+    if raw.is_empty() {
+        return if m.auto_restart_enabled {
+            POLICY_UNLESS_STOP.to_string()
+        } else {
+            POLICY_NEVER.to_string()
+        };
+    }
+    match raw.to_ascii_lowercase().as_str() {
+        "never" => POLICY_NEVER.to_string(),
+        "unless-stop" | "unless_stop" | "unless-stopped" | "unless_stopped" => {
+            POLICY_UNLESS_STOP.to_string()
+        }
+        _ => POLICY_NEVER.to_string(),
+    }
+}
+
+/// 有效连续探活失败次数阈值（历史秒阈值按 30s 周期折算）
+pub fn effective_fail_count(m: &deployment::Model) -> i32 {
+    if m.auto_restart_policy.trim().is_empty() && m.auto_restart_enabled {
+        return validate::legacy_auto_restart_fail_count(m.auto_restart_fail_secs as i64);
+    }
+    if m.auto_restart_fail_count > 0 {
+        return m.auto_restart_fail_count.clamp(
+            validate::MIN_AUTO_RESTART_FAIL_COUNT as i32,
+            validate::MAX_AUTO_RESTART_FAIL_COUNT as i32,
+        );
+    }
+    validate::DEFAULT_AUTO_RESTART_FAIL_COUNT
+}
+
 /// 纯函数决策：依据运行态与当前部署 / 健康状态给出「新运行态 + 动作」
-///
-/// 决策表见 `specs/docs/design/modelinfer/auto-restart.md` §3（D-MI-AR-06）。
 pub fn decide(input: &AutoRestartInput<'_>, now: DateTime<FixedOffset>) -> Decision {
     let cur = &input.runtime;
     let now_epoch = now.timestamp();
 
-    // 1. 关闭开关：运行态清零，不下发
-    if !input.enabled {
+    // 1. 非 unless-stop：运行态清零，不下发
+    if input.policy != POLICY_UNLESS_STOP {
         if *cur != RuntimeState::default() {
             return Decision {
                 runtime: RuntimeState::default(),
@@ -210,75 +231,108 @@ pub fn decide(input: &AutoRestartInput<'_>, now: DateTime<FixedOffset>) -> Decis
         return Decision::keep(cur);
     }
 
-    let failed_since = time::parse_iso_epoch(&cur.failed_since);
     let next_at = time::parse_iso_epoch(&cur.next_at);
     let last_at = time::parse_iso_epoch(&cur.last_at);
     let elapsed_since_last = last_at.map(|t| now_epoch - t);
+    let threshold = input.fail_count.clamp(1, 100);
 
     match cur.phase.as_str() {
-        // 2~4. idle：累计连续失败 / 达阈值触发 / 健康清零
+        // 2~5. idle：累计连续探活失败 / 达阈值触发 / 健康清零 / 首次启动失败
         PHASE_IDLE => {
             if input.state == "running" && input.health_status == "unhealthy" {
-                match failed_since {
-                    None => Decision {
-                        runtime: RuntimeState {
-                            failed_since: now_iso(now),
-                            ..cur.clone()
-                        },
-                        action: Action::None,
-                    },
-                    // 阈值到达 → 进入 stopping 并下发停止
-                    Some(t) if now_epoch.saturating_sub(t) >= input.fail_secs.max(1) => Decision {
+                let failures = cur.consecutive_failures.saturating_add(1);
+                if failures >= threshold {
+                    return Decision {
                         runtime: RuntimeState {
                             phase: PHASE_STOPPING.to_string(),
-                            failed_since: cur.failed_since.clone(),
+                            failed_since: String::new(),
+                            consecutive_failures: 0,
                             next_at: String::new(),
                             attempts: 1,
                             last_at: now_iso(now),
-                            last_error: String::new(),
+                            last_error: format!(
+                                "连续探活失败 {failures} 次（阈值 {threshold}），自动重启：停止清理"
+                            ),
+                            ignore_before: cur.ignore_before.clone(),
                         },
                         action: Action::Stop,
-                    },
-                    _ => Decision::keep(cur),
+                    };
                 }
-            } else if input.state == "running" && input.health_status == "healthy" {
-                if cur.failed_since.is_empty() {
-                    Decision::keep(cur)
-                } else {
-                    Decision {
-                        runtime: RuntimeState {
-                            failed_since: String::new(),
-                            ..cur.clone()
+                return Decision {
+                    runtime: RuntimeState {
+                        failed_since: if cur.failed_since.is_empty() {
+                            now_iso(now)
+                        } else {
+                            cur.failed_since.clone()
                         },
-                        action: Action::None,
-                    }
-                }
-            } else {
-                Decision::keep(cur)
+                        consecutive_failures: failures,
+                        ..cur.clone()
+                    },
+                    action: Action::None,
+                };
             }
+            if input.state == "running" && input.health_status == "healthy" {
+                if cur.failed_since.is_empty() && cur.consecutive_failures == 0 {
+                    return Decision::keep(cur);
+                }
+                return Decision {
+                    runtime: RuntimeState {
+                        failed_since: String::new(),
+                        consecutive_failures: 0,
+                        ..cur.clone()
+                    },
+                    action: Action::None,
+                };
+            }
+            // 首次 / 非循环内启动失败：under unless-stop 同样自动重启。
+            // `state=failed` + 空 ignore 覆盖 prepare 早期失败（可能没有启动 run）的兜底。
+            if input.unhandled_start_failure
+                || (input.state == "failed" && cur.ignore_before.is_empty())
+            {
+                let wait = input.backoff.backoff(1);
+                return Decision {
+                    runtime: RuntimeState {
+                        phase: PHASE_STOPPING.to_string(),
+                        failed_since: String::new(),
+                        consecutive_failures: 0,
+                        next_at: time::iso_after(now, wait),
+                        attempts: 1,
+                        last_at: now_iso(now),
+                        last_error: format!("启动失败，{wait} 秒后自动重试（先停止清理）"),
+                        ignore_before: cur.ignore_before.clone(),
+                    },
+                    action: Action::Stop,
+                };
+            }
+            Decision::keep(cur)
         }
-        // 5~7. stopping：等待停止完成 → 到点启动；卡死 / 未生效 → 重复下发停止
+        // 6~8. stopping：等待停止完成 → 到点启动；卡死 / 未生效 → 重复下发停止
         PHASE_STOPPING => {
             if input.state == "stopped" && input.desired_state == "stopped" {
                 let ready = next_at.map(|t| now_epoch >= t).unwrap_or(true);
                 if !ready {
                     return Decision::keep(cur);
                 }
-                Decision {
+                return Decision {
                     runtime: RuntimeState {
                         phase: PHASE_STARTING.to_string(),
                         failed_since: cur.failed_since.clone(),
+                        consecutive_failures: cur.consecutive_failures,
                         next_at: cur.next_at.clone(),
                         attempts: cur.attempts.max(1),
                         last_at: now_iso(now),
                         last_error: cur.last_error.clone(),
+                        ignore_before: cur.ignore_before.clone(),
                     },
                     action: Action::Start,
-                }
-            } else if input.state == "stopping" || input.state == "failed" {
-                let stuck = elapsed_since_last.map(|e| e >= STOP_STUCK_SECS).unwrap_or(true);
+                };
+            }
+            if input.state == "stopping" || input.state == "failed" {
+                let stuck = elapsed_since_last
+                    .map(|e| e >= STOP_STUCK_SECS)
+                    .unwrap_or(true);
                 if stuck {
-                    Decision {
+                    return Decision {
                         runtime: RuntimeState {
                             last_at: now_iso(now),
                             last_error: format!(
@@ -288,39 +342,36 @@ pub fn decide(input: &AutoRestartInput<'_>, now: DateTime<FixedOffset>) -> Decis
                             ..cur.clone()
                         },
                         action: Action::Stop,
-                    }
-                } else {
-                    Decision::keep(cur)
+                    };
                 }
-            } else if input.state == "running" {
-                // 停止未生效（下发失败 / 尚未推进）：宽限后重复下发
+                return Decision::keep(cur);
+            }
+            if input.state == "running" {
                 let stale = elapsed_since_last
                     .map(|e| e >= STOP_DISPATCH_GRACE_SECS)
                     .unwrap_or(true);
                 if stale {
-                    Decision {
+                    return Decision {
                         runtime: RuntimeState {
                             last_at: now_iso(now),
                             last_error: "停止未生效，重新下发停止".to_string(),
                             ..cur.clone()
                         },
                         action: Action::Stop,
-                    }
-                } else {
-                    Decision::keep(cur)
+                    };
                 }
-            } else {
-                Decision::keep(cur)
             }
+            Decision::keep(cur)
         }
-        // 8~9. starting：成功清零；失败进入 backoff 并清理
+        // 9~10. starting：成功清零；失败进入 backoff 并清理
         PHASE_STARTING => {
             if input.state == "running" {
-                Decision {
+                return Decision {
                     runtime: RuntimeState::default(),
                     action: Action::None,
-                }
-            } else if input.state == "failed" || input.state == "stopped" {
+                };
+            }
+            if input.state == "failed" || input.state == "stopped" {
                 // `failed` 是启动 workflow 明确失败（已收尾），可立即进入 backoff；
                 // `stopped` 可能是「已下发启动、workflow 尚未把状态置为 starting」，需宽限。
                 let elapsed_ok = input.state == "failed"
@@ -333,10 +384,11 @@ pub fn decide(input: &AutoRestartInput<'_>, now: DateTime<FixedOffset>) -> Decis
                 }
                 let attempts = cur.attempts.max(0) + 1;
                 let wait = input.backoff.backoff(attempts);
-                Decision {
+                return Decision {
                     runtime: RuntimeState {
                         phase: PHASE_STOPPING.to_string(),
-                        failed_since: cur.failed_since.clone(),
+                        failed_since: String::new(),
+                        consecutive_failures: 0,
                         next_at: time::iso_after(now, wait),
                         attempts,
                         last_at: now_iso(now),
@@ -344,12 +396,12 @@ pub fn decide(input: &AutoRestartInput<'_>, now: DateTime<FixedOffset>) -> Decis
                             "第 {attempts} 次自动启动未成功（state={}），{wait} 秒后重试",
                             input.state
                         ),
+                        ignore_before: cur.ignore_before.clone(),
                     },
                     action: Action::Stop,
-                }
-            } else {
-                Decision::keep(cur)
+                };
             }
+            Decision::keep(cur)
         }
         _ => Decision::keep(cur),
     }
@@ -360,10 +412,12 @@ pub fn runtime_of(m: &deployment::Model) -> RuntimeState {
     RuntimeState {
         phase: m.auto_restart_phase.clone(),
         failed_since: m.auto_restart_failed_since.clone(),
+        consecutive_failures: m.auto_restart_consecutive_failures,
         next_at: m.auto_restart_next_at.clone(),
         attempts: m.auto_restart_attempts,
         last_at: m.auto_restart_last_at.clone(),
         last_error: m.auto_restart_last_error.clone(),
+        ignore_before: m.auto_restart_ignore_before.clone(),
     }
 }
 
@@ -381,28 +435,36 @@ pub async fn save(
     let mut am: deployment::ActiveModel = m.into();
     am.auto_restart_phase = Set(rt.phase.clone());
     am.auto_restart_failed_since = Set(rt.failed_since.clone());
+    am.auto_restart_consecutive_failures = Set(rt.consecutive_failures);
     am.auto_restart_next_at = Set(rt.next_at.clone());
     am.auto_restart_attempts = Set(rt.attempts);
     am.auto_restart_last_at = Set(rt.last_at.clone());
     am.auto_restart_last_error = Set(rt.last_error.clone());
-    am.updated_at = Set(time::now_iso());
-    am.update(db)
-        .await
-        .map_err(|e| ModelinferError::new(codes::DB_FAILED, format!("更新自动重启状态失败: {e}")))?;
+    am.auto_restart_ignore_before = Set(rt.ignore_before.clone());
+    // 运行态计数/相位变化不刷新 `updated_at`：避免探活失败期间列表排序每 30s 抖动；
+    // 真正的状态迁移由 apply_state / 工作流更新 `updated_at`。
+    am.update(db).await.map_err(|e| {
+        ModelinferError::new(codes::DB_FAILED, format!("更新自动重启状态失败: {e}"))
+    })?;
     Ok(())
 }
 
-/// 清零运行态（用户手动启动 / 停止时调用）
+/// 清零运行态（用户手动启动 / 停止、配置变更时调用）
 ///
-/// 语义：用户操作 = **取消自动重启循环**。调度器自身的动作 MUST NOT 调用（否则自我打断）。
+/// 语义：用户操作 = **取消自动重启循环**。同时记录 `ignore_before=now`，使人工操作前
+/// 已失败的启动 run 不会在下一轮被误判为新失败。
 pub async fn reset(db: &DatabaseConnection, deployment_id: &str) -> Result<(), ModelinferError> {
-    save(db, deployment_id, &RuntimeState::default()).await
+    let rt = RuntimeState {
+        ignore_before: time::now_iso(),
+        ..Default::default()
+    };
+    save(db, deployment_id, &rt).await
 }
 
 /// 单次调度报告（日志 / 测试用）
 #[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
 pub struct TickReport {
-    /// 扫描到的开启自动重启的运行配置数
+    /// 扫描到的开启 unless-stop 的运行配置数
     pub scanned: usize,
     /// 实际下发停止的次数
     pub stops: usize,
@@ -412,22 +474,34 @@ pub struct TickReport {
     pub errors: usize,
 }
 
-/// 本次自动启动下发的启动 run 是否已收尾为失败
-///
-/// 查询最近一条 `kind=start` 的 run：若其 `started_at` 不早于 `since`（本次下发时间）且
-/// `state=failed`，则视为「本轮启动已明确失败」。用于区分「阶段脚本失败但 cleanup 后状态已回到
-/// `stopped`」与「已下发但 workflow 尚未置位」。
-async fn start_run_failed_since(
+fn iso_ge(a: &str, b: &str) -> bool {
+    match (
+        DateTime::parse_from_rfc3339(a.trim()),
+        DateTime::parse_from_rfc3339(b.trim()),
+    ) {
+        (Ok(a), Ok(b)) => a >= b,
+        _ => true,
+    }
+}
+
+fn iso_gt(a: &str, b: &str) -> bool {
+    match (
+        DateTime::parse_from_rfc3339(a.trim()),
+        DateTime::parse_from_rfc3339(b.trim()),
+    ) {
+        (Ok(a), Ok(b)) => a > b,
+        _ => !b.trim().is_empty(),
+    }
+}
+
+/// 最近一条启动 run（用于识别「本轮启动已失败」与「首次启动失败」）
+async fn latest_start_run(
     db: &DatabaseConnection,
     deployment_id: &str,
-    since: &str,
-) -> Result<bool, ModelinferError> {
-    let runs = crate::observability::store::list_runs(db, deployment_id, Some("start"), Some(1))
-        .await?;
-    let Some(latest) = runs.first() else {
-        return Ok(false);
-    };
-    Ok(latest.started_at.as_str() >= since && latest.state == "failed")
+) -> Result<Option<crate::observability::store::RunView>, ModelinferError> {
+    let runs =
+        crate::observability::store::list_runs(db, deployment_id, Some("start"), Some(1)).await?;
+    Ok(runs.into_iter().next())
 }
 
 /// 执行一轮自动重启调度
@@ -440,28 +514,39 @@ pub async fn tick(
     now: DateTime<FixedOffset>,
 ) -> Result<TickReport, ModelinferError> {
     let rows = deployment::Entity::find()
-        .filter(deployment::Column::AutoRestartEnabled.eq(true))
         .all(db)
         .await
         .map_err(|e| ModelinferError::new(codes::DB_FAILED, format!("查询运行配置失败: {e}")))?;
 
     let mut report = TickReport::default();
     for m in rows {
-        report.scanned += 1;
+        let policy = effective_policy(&m);
+        if policy == POLICY_UNLESS_STOP {
+            report.scanned += 1;
+        }
         let current = runtime_of(&m);
+        let latest = latest_start_run(db, &m.id).await.unwrap_or(None);
         let start_run_failed = current.phase == PHASE_STARTING
-            && !current.last_at.is_empty()
-            && start_run_failed_since(db, &m.id, &current.last_at)
-                .await
+            && latest
+                .as_ref()
+                .map(|r| {
+                    r.state == "failed"
+                        && (current.last_at.is_empty() || iso_ge(&r.started_at, &current.last_at))
+                })
                 .unwrap_or(false);
+        let unhandled_start_failure = latest
+            .as_ref()
+            .map(|r| r.state == "failed" && iso_gt(&r.started_at, &current.ignore_before))
+            .unwrap_or(false);
         let input = AutoRestartInput {
-            enabled: m.auto_restart_enabled,
-            fail_secs: m.auto_restart_fail_secs as i64,
+            policy: &policy,
+            fail_count: effective_fail_count(&m),
             runtime: current.clone(),
             state: &m.state,
             desired_state: &m.desired_state,
             health_status: &m.health_status,
             start_run_failed,
+            unhandled_start_failure,
             backoff: cfg.backoff,
         };
         let decision = decide(&input, now);
@@ -493,10 +578,11 @@ pub async fn tick(
         };
         match decision.action {
             Action::Stop => {
-                let reason = format!(
-                    "探活连续失败达到 {} 秒，自动重启：停止清理",
-                    m.auto_restart_fail_secs
-                );
+                let reason = if runtime.last_error.is_empty() {
+                    "自动重启：停止清理".to_string()
+                } else {
+                    format!("自动重启：停止清理（{}）", runtime.last_error)
+                };
                 match ctl.stop(&m.id, false, &reason).await {
                     Ok(()) => {
                         report.stops += 1;
@@ -605,21 +691,22 @@ mod tests {
     }
 
     fn input<'a>(
-        enabled: bool,
-        fail_secs: i64,
+        policy: &'a str,
+        fail_count: i32,
         runtime: RuntimeState,
         state: &'a str,
         desired: &'a str,
         health: &'a str,
     ) -> AutoRestartInput<'a> {
         AutoRestartInput {
-            enabled,
-            fail_secs,
+            policy,
+            fail_count,
             runtime,
             state,
             desired_state: desired,
             health_status: health,
             start_run_failed: false,
+            unhandled_start_failure: false,
             backoff: BackoffPolicy::default(),
         }
     }
@@ -638,12 +725,16 @@ mod tests {
             attempts,
             last_at: last_at.into(),
             last_error: String::new(),
+            ..Default::default()
         }
     }
 
     #[test]
     fn backoff_is_exponential_and_capped() {
-        let p = BackoffPolicy { base_secs: 15, max_secs: 300 };
+        let p = BackoffPolicy {
+            base_secs: 15,
+            max_secs: 300,
+        };
         assert_eq!(p.backoff(1), 15);
         assert_eq!(p.backoff(2), 30);
         assert_eq!(p.backoff(3), 60);
@@ -651,78 +742,194 @@ mod tests {
         assert_eq!(p.backoff(5), 240);
         assert_eq!(p.backoff(6), 300);
         assert_eq!(p.backoff(1000), 300);
-        // 非法 / 异常输入不 panic
         assert_eq!(p.backoff(0), 15);
         assert_eq!(p.backoff(-5), 15);
-        let weird = BackoffPolicy { base_secs: 0, max_secs: 0 };
+        let weird = BackoffPolicy {
+            base_secs: 0,
+            max_secs: 0,
+        };
         assert_eq!(weird.backoff(3), 1, "base 归一到 1、max 归一到 base");
     }
 
     #[test]
-    fn disabled_clears_runtime_and_never_acts() {
+    fn never_clears_runtime_and_never_acts() {
         let now = at("2026-10-21T12:00:00+08:00");
         let r = rt(PHASE_STARTING, "", "", 3, "2026-10-21T11:00:00+08:00");
-        let d = decide(&input(false, 300, r, "running", "running", "unhealthy"), now);
-        assert_eq!(d.action, Action::None);
-        assert_eq!(d.runtime, RuntimeState::default());
-
-        // 已是默认态：保持（不产生无意义写入）
-        let d = decide(&input(false, 300, RuntimeState::default(), "running", "running", "healthy"), now);
-        assert_eq!(d.action, Action::None);
-        assert_eq!(d.runtime, RuntimeState::default());
-    }
-
-    #[test]
-    fn idle_records_first_failure_without_restart() {
-        let now = at("2026-10-21T12:00:00+08:00");
         let d = decide(
-            &input(true, 300, RuntimeState::default(), "running", "running", "unhealthy"),
+            &input(POLICY_NEVER, 10, r, "running", "running", "unhealthy"),
             now,
         );
         assert_eq!(d.action, Action::None);
-        assert_eq!(d.runtime.failed_since, "2026-10-21T12:00:00+08:00");
+        assert_eq!(d.runtime, RuntimeState::default());
+
+        let d = decide(
+            &input(
+                POLICY_NEVER,
+                10,
+                RuntimeState::default(),
+                "running",
+                "running",
+                "healthy",
+            ),
+            now,
+        );
+        assert_eq!(d.action, Action::None);
+        assert_eq!(d.runtime, RuntimeState::default());
     }
 
     #[test]
-    fn idle_triggers_stop_after_threshold() {
+    fn idle_counts_consecutive_failures_without_restart() {
+        let now = at("2026-10-21T12:00:00+08:00");
+        let d = decide(
+            &input(
+                POLICY_UNLESS_STOP,
+                3,
+                RuntimeState::default(),
+                "running",
+                "running",
+                "unhealthy",
+            ),
+            now,
+        );
+        assert_eq!(d.action, Action::None);
+        assert_eq!(d.runtime.consecutive_failures, 1);
+        assert_eq!(d.runtime.failed_since, "2026-10-21T12:00:00+08:00");
+
+        let mut r = d.runtime;
+        r.consecutive_failures = 2;
+        r.failed_since = "2026-10-21T12:00:00+08:00".into();
+        let d = decide(
+            &input(
+                POLICY_UNLESS_STOP,
+                4,
+                r.clone(),
+                "running",
+                "running",
+                "unhealthy",
+            ),
+            at("2026-10-21T12:01:00+08:00"),
+        );
+        assert_eq!(d.action, Action::None);
+        assert_eq!(
+            d.runtime.consecutive_failures, 3,
+            "阈值 4 时第 3 次仍不重启"
+        );
+
+        let d = decide(
+            &input(POLICY_UNLESS_STOP, 3, r, "running", "running", "unhealthy"),
+            at("2026-10-21T12:01:00+08:00"),
+        );
+        assert_eq!(d.action, Action::Stop, "第 3 次达到阈值 → 自动重启");
+    }
+
+    #[test]
+    fn idle_triggers_stop_when_failure_count_reaches_threshold() {
         let now = at("2026-10-21T12:05:00+08:00");
-        let r = rt("", "2026-10-21T12:00:00+08:00", "", 0, "");
-        let d = decide(&input(true, 300, r, "running", "running", "unhealthy"), now);
+        let mut r = rt("", "2026-10-21T12:00:00+08:00", "", 0, "");
+        r.consecutive_failures = 2;
+        let d = decide(
+            &input(POLICY_UNLESS_STOP, 3, r, "running", "running", "unhealthy"),
+            now,
+        );
         assert_eq!(d.action, Action::Stop);
         assert_eq!(d.runtime.phase, PHASE_STOPPING);
         assert_eq!(d.runtime.attempts, 1);
+        assert_eq!(d.runtime.consecutive_failures, 0);
         assert_eq!(d.runtime.last_at, "2026-10-21T12:05:00+08:00");
+        assert!(d.runtime.last_error.contains("连续探活失败 3 次"));
     }
 
     #[test]
-    fn idle_waits_before_threshold() {
-        let now = at("2026-10-21T12:04:59+08:00");
-        let r = rt("", "2026-10-21T12:00:00+08:00", "", 0, "");
-        let d = decide(&input(true, 300, r, "running", "running", "unhealthy"), now);
-        assert_eq!(d.action, Action::None);
-        assert_eq!(d.runtime.phase, "");
-    }
-
-    #[test]
-    fn healthy_clears_failure_timer() {
+    fn healthy_clears_failure_count() {
         let now = at("2026-10-21T12:01:00+08:00");
-        let r = rt("", "2026-10-21T12:00:00+08:00", "", 0, "");
-        let d = decide(&input(true, 300, r, "running", "running", "healthy"), now);
+        let mut r = rt("", "2026-10-21T12:00:00+08:00", "", 0, "");
+        r.consecutive_failures = 2;
+        let d = decide(
+            &input(POLICY_UNLESS_STOP, 3, r, "running", "running", "healthy"),
+            now,
+        );
         assert_eq!(d.action, Action::None);
         assert_eq!(d.runtime.failed_since, "");
+        assert_eq!(d.runtime.consecutive_failures, 0);
+    }
+
+    #[test]
+    fn idle_first_start_failure_triggers_restart() {
+        let now = at("2026-10-21T12:00:00+08:00");
+        let mut inp = input(
+            POLICY_UNLESS_STOP,
+            3,
+            RuntimeState::default(),
+            "stopped",
+            "stopped",
+            "unknown",
+        );
+        inp.unhandled_start_failure = true;
+        let d = decide(&inp, now);
+        assert_eq!(d.action, Action::Stop);
+        assert_eq!(d.runtime.phase, PHASE_STOPPING);
+        assert_eq!(d.runtime.attempts, 1);
+        assert_eq!(d.runtime.next_at, "2026-10-21T12:00:15+08:00");
+
+        // 人工 reset 后（ignore_before=now）同样的旧失败 run 不再触发
+        let r = RuntimeState {
+            ignore_before: "2026-10-21T12:00:00+08:00".into(),
+            ..Default::default()
+        };
+        let d = decide(
+            &input(POLICY_UNLESS_STOP, 3, r, "stopped", "stopped", "unknown"),
+            at("2026-10-21T12:00:30+08:00"),
+        );
+        assert_eq!(d.action, Action::None);
+    }
+
+    #[test]
+    fn idle_state_failed_without_run_is_restarted_when_not_suppressed() {
+        let now = at("2026-10-21T12:00:00+08:00");
+        let d = decide(
+            &input(
+                POLICY_UNLESS_STOP,
+                3,
+                RuntimeState::default(),
+                "failed",
+                "stopped",
+                "unknown",
+            ),
+            now,
+        );
+        assert_eq!(d.action, Action::Stop);
+        assert_eq!(d.runtime.phase, PHASE_STOPPING);
     }
 
     #[test]
     fn stopping_launches_start_once_stopped_and_backoff_passed() {
         let now = at("2026-10-21T12:06:00+08:00");
         let r = rt(PHASE_STOPPING, "", "", 1, "2026-10-21T12:05:00+08:00");
-        let d = decide(&input(true, 300, r.clone(), "stopped", "stopped", "unknown"), now);
+        let d = decide(
+            &input(
+                POLICY_UNLESS_STOP,
+                3,
+                r.clone(),
+                "stopped",
+                "stopped",
+                "unknown",
+            ),
+            now,
+        );
         assert_eq!(d.action, Action::Start);
         assert_eq!(d.runtime.phase, PHASE_STARTING);
 
-        // next_at 未到 → 不启动
-        let r2 = rt(PHASE_STOPPING, "", "2026-10-21T12:10:00+08:00", 2, "2026-10-21T12:05:00+08:00");
-        let d = decide(&input(true, 300, r2, "stopped", "stopped", "unknown"), now);
+        let r2 = rt(
+            PHASE_STOPPING,
+            "",
+            "2026-10-21T12:10:00+08:00",
+            2,
+            "2026-10-21T12:05:00+08:00",
+        );
+        let d = decide(
+            &input(POLICY_UNLESS_STOP, 3, r2, "stopped", "stopped", "unknown"),
+            now,
+        );
         assert_eq!(d.action, Action::None);
         assert_eq!(d.runtime.phase, PHASE_STOPPING);
     }
@@ -731,30 +938,46 @@ mod tests {
     fn stopping_does_not_start_while_still_stopping() {
         let now = at("2026-10-21T12:06:00+08:00");
         let r = rt(PHASE_STOPPING, "", "", 1, "2026-10-21T12:05:30+08:00");
-        let d = decide(&input(true, 300, r, "stopping", "stopping", "unknown"), now);
+        let d = decide(
+            &input(POLICY_UNLESS_STOP, 3, r, "stopping", "stopping", "unknown"),
+            now,
+        );
         assert_eq!(d.action, Action::None);
     }
 
     #[test]
     fn stopping_retries_when_stuck_or_not_effective() {
-        // 卡在 stopping 超时 → 重复下发停止
         let now = at("2026-10-21T12:30:00+08:00");
         let r = rt(PHASE_STOPPING, "", "", 1, "2026-10-21T12:00:00+08:00");
-        let d = decide(&input(true, 300, r, "stopping", "stopping", "unknown"), now);
+        let d = decide(
+            &input(POLICY_UNLESS_STOP, 3, r, "stopping", "stopping", "unknown"),
+            now,
+        );
         assert_eq!(d.action, Action::Stop);
         assert!(d.runtime.last_error.contains("停止清理未在"));
 
-        // 仍 running（停止未生效）且超过下发宽限 → 重复下发
         let r = rt(PHASE_STOPPING, "", "", 1, "2026-10-21T12:00:00+08:00");
-        let d = decide(&input(true, 300, r, "running", "stopping", "unknown"), now);
+        let d = decide(
+            &input(POLICY_UNLESS_STOP, 3, r, "running", "stopping", "unknown"),
+            now,
+        );
         assert_eq!(d.action, Action::Stop);
     }
 
     #[test]
     fn starting_success_resets_everything() {
         let now = at("2026-10-21T12:07:00+08:00");
-        let r = rt(PHASE_STARTING, "2026-10-21T12:00:00+08:00", "", 3, "2026-10-21T12:05:00+08:00");
-        let d = decide(&input(true, 300, r, "running", "running", "healthy"), now);
+        let r = rt(
+            PHASE_STARTING,
+            "2026-10-21T12:00:00+08:00",
+            "",
+            3,
+            "2026-10-21T12:05:00+08:00",
+        );
+        let d = decide(
+            &input(POLICY_UNLESS_STOP, 3, r, "running", "running", "healthy"),
+            now,
+        );
         assert_eq!(d.action, Action::None);
         assert_eq!(d.runtime, RuntimeState::default());
     }
@@ -762,38 +985,31 @@ mod tests {
     #[test]
     fn starting_failure_enters_backoff_with_growing_wait() {
         let now = at("2026-10-21T12:10:00+08:00");
-        // 第 1 次启动失败 → attempts=2 → 等待 30s
         let r = rt(PHASE_STARTING, "", "", 1, "2026-10-21T12:05:00+08:00");
-        let d = decide(&input(true, 300, r, "failed", "stopped", "unknown"), now);
+        let d = decide(
+            &input(POLICY_UNLESS_STOP, 3, r, "failed", "stopped", "unknown"),
+            now,
+        );
         assert_eq!(d.action, Action::Stop);
         assert_eq!(d.runtime.phase, PHASE_STOPPING);
         assert_eq!(d.runtime.attempts, 2);
         assert_eq!(d.runtime.next_at, "2026-10-21T12:10:30+08:00");
         assert!(d.runtime.last_error.contains("第 2 次"));
 
-        // 第 5 次失败 → 等待 240s
         let r = rt(PHASE_STARTING, "", "", 4, "2026-10-21T12:05:00+08:00");
-        let d = decide(&input(true, 300, r, "failed", "stopped", "unknown"), now);
+        let d = decide(
+            &input(POLICY_UNLESS_STOP, 3, r, "failed", "stopped", "unknown"),
+            now,
+        );
         assert_eq!(d.runtime.attempts, 5);
         assert_eq!(d.runtime.next_at, "2026-10-21T12:14:00+08:00");
-    }
-
-    #[test]
-    fn starting_failed_state_is_judged_immediately() {
-        let now = at("2026-10-21T12:05:30+08:00");
-        // workflow 已明确失败：即使距下发只有 30s，也立即进入 backoff（不必等满 180s 宽限）
-        let r = rt(PHASE_STARTING, "", "", 1, "2026-10-21T12:05:00+08:00");
-        let d = decide(&input(true, 300, r, "failed", "stopped", "unknown"), now);
-        assert_eq!(d.action, Action::Stop);
-        assert_eq!(d.runtime.attempts, 2);
-        assert_eq!(d.runtime.next_at, "2026-10-21T12:06:00+08:00");
     }
 
     #[test]
     fn starting_failed_run_judged_immediately_even_when_stopped() {
         let now = at("2026-10-21T12:05:30+08:00");
         let r = rt(PHASE_STARTING, "", "", 1, "2026-10-21T12:05:00+08:00");
-        let mut inp = input(true, 300, r, "stopped", "stopped", "unknown");
+        let mut inp = input(POLICY_UNLESS_STOP, 3, r, "stopped", "stopped", "unknown");
         inp.start_run_failed = true;
         let d = decide(&inp, now);
         assert_eq!(d.action, Action::Stop);
@@ -804,33 +1020,37 @@ mod tests {
     #[test]
     fn starting_failure_within_grace_is_not_judged() {
         let now = at("2026-10-21T12:06:00+08:00");
-        // 刚下发启动 60s（< 180s 宽限），状态尚未推进到 starting
         let r = rt(PHASE_STARTING, "", "", 1, "2026-10-21T12:05:00+08:00");
-        let d = decide(&input(true, 300, r, "stopped", "stopped", "unknown"), now);
+        let d = decide(
+            &input(POLICY_UNLESS_STOP, 3, r, "stopped", "stopped", "unknown"),
+            now,
+        );
         assert_eq!(d.action, Action::None);
         assert_eq!(d.runtime.phase, PHASE_STARTING);
-    }
-
-    #[test]
-    fn starting_in_progress_is_idle() {
-        let now = at("2026-10-21T12:06:00+08:00");
-        let r = rt(PHASE_STARTING, "", "", 1, "2026-10-21T12:05:00+08:00");
-        let d = decide(&input(true, 300, r, "starting", "running", "unknown"), now);
-        assert_eq!(d.action, Action::None);
     }
 
     #[test]
     fn unknown_phase_is_treated_as_idle_but_preserved() {
         let now = at("2026-10-21T12:06:00+08:00");
         let r = rt("weird", "", "", 0, "");
-        let d = decide(&input(true, 300, r.clone(), "running", "running", "unhealthy"), now);
+        let d = decide(
+            &input(
+                POLICY_UNLESS_STOP,
+                3,
+                r.clone(),
+                "running",
+                "running",
+                "unhealthy",
+            ),
+            now,
+        );
         assert_eq!(d.action, Action::None);
-        assert_eq!(d.runtime, r, "未知相位不改写运行态（人工介入排障）");
+        assert_eq!(d.runtime, r);
     }
 
     // ---- tick 集成（sqlite + MockControl） ----
 
-    async fn seed_deployment(db: &DatabaseConnection, enabled: bool, fail_secs: i32) -> String {
+    async fn seed_deployment(db: &DatabaseConnection, policy: &str, fail_count: i32) -> String {
         let now = time::now_iso();
         let manifest = serde_json::json!({
             "id": "com.ictrek.ar-test",
@@ -838,26 +1058,33 @@ mod tests {
             "model": "org/w",
             "lifecycle": { "start": "./s.sh", "health-probe": "./hp.sh" },
         });
-        crate::entities::plaza_model::ActiveModel {
-            id: Set("com.ictrek.ar-test@1.0.0".into()),
-            model_id: Set("com.ictrek.ar-test".into()),
-            model: Set("org/w".into()),
-            name: Set("ar".into()),
-            version: Set("1.0.0".into()),
-            source: Set("plaza".into()),
-            source_id: Set(String::new()),
-            path: Set("/tmp/x".into()),
-            package_path: Set("/tmp/x/model.tar.gz".into()),
-            package_sha256: Set(String::new()),
-            manifest_json: Set(serde_json::to_string(&manifest).unwrap()),
-            state: Set("available".into()),
-            size_bytes: Set(0),
-            created_at: Set(now.clone()),
-            updated_at: Set(now),
+        if crate::entities::plaza_model::Entity::find_by_id("com.ictrek.ar-test@1.0.0")
+            .one(db)
+            .await
+            .unwrap()
+            .is_none()
+        {
+            crate::entities::plaza_model::ActiveModel {
+                id: Set("com.ictrek.ar-test@1.0.0".into()),
+                model_id: Set("com.ictrek.ar-test".into()),
+                model: Set("org/w".into()),
+                name: Set("ar".into()),
+                version: Set("1.0.0".into()),
+                source: Set("plaza".into()),
+                source_id: Set(String::new()),
+                path: Set("/tmp/x".into()),
+                package_path: Set("/tmp/x/model.tar.gz".into()),
+                package_sha256: Set(String::new()),
+                manifest_json: Set(serde_json::to_string(&manifest).unwrap()),
+                state: Set("available".into()),
+                size_bytes: Set(0),
+                created_at: Set(now.clone()),
+                updated_at: Set(now.clone()),
+            }
+            .insert(db)
+            .await
+            .unwrap();
         }
-        .insert(db)
-        .await
-        .unwrap();
 
         let mut platform = MockPlatformClient::new();
         platform.app_configs = serde_json::json!({
@@ -882,7 +1109,9 @@ mod tests {
             state: "Running".into(),
             mounted: true,
         }];
-        platform.device = DeviceInfo { ip_addr: vec!["10.0.0.5".into()] };
+        platform.device = DeviceInfo {
+            ip_addr: vec!["10.0.0.5".into()],
+        };
 
         let node = nodes::create_node(
             db,
@@ -891,6 +1120,7 @@ mod tests {
                 profile: None,
                 name: "n1".into(),
                 host: "10.0.0.1".into(),
+                access_mode: "ssh".into(),
                 ssh_port: 22,
                 ssh_user: "root".into(),
                 auth_method: "password".into(),
@@ -921,21 +1151,30 @@ mod tests {
                 hub_source: "hf".into(),
                 node_ids: vec![node],
                 configs: Map::new(),
-                auto_restart_enabled: enabled,
-                auto_restart_fail_secs: Some(fail_secs as i64),
+                auto_restart_policy: Some(policy.into()),
+                auto_restart_fail_count: Some(fail_count as i64),
                 ..Default::default()
             },
         )
         .await
         .unwrap()
         .id;
-        // 保持临时目录存活（resolved 路径已落库）
         std::mem::forget(tmp);
         id
     }
 
-    async fn set_state(db: &DatabaseConnection, id: &str, state: &str, desired: &str, health: &str) {
-        let m = deployment::Entity::find_by_id(id.to_string()).one(db).await.unwrap().unwrap();
+    async fn set_state(
+        db: &DatabaseConnection,
+        id: &str,
+        state: &str,
+        desired: &str,
+        health: &str,
+    ) {
+        let m = deployment::Entity::find_by_id(id.to_string())
+            .one(db)
+            .await
+            .unwrap()
+            .unwrap();
         let mut am: deployment::ActiveModel = m.into();
         am.state = Set(state.into());
         am.desired_state = Set(desired.into());
@@ -948,32 +1187,64 @@ mod tests {
     }
 
     async fn get_rt(db: &DatabaseConnection, id: &str) -> RuntimeState {
-        let m = deployment::Entity::find_by_id(id.to_string()).one(db).await.unwrap().unwrap();
+        let m = deployment::Entity::find_by_id(id.to_string())
+            .one(db)
+            .await
+            .unwrap()
+            .unwrap();
         runtime_of(&m)
     }
 
+    async fn seed_failed_start_run(db: &DatabaseConnection, deployment_id: &str, started_at: &str) {
+        let run_id = crate::observability::store::create_run(
+            db,
+            deployment_id,
+            crate::observability::kind::START,
+            TRIGGER_AUTO_RESTART,
+            "阶段 start 执行失败",
+            "",
+        )
+        .await
+        .unwrap();
+        let m = crate::entities::run::Entity::find_by_id(run_id)
+            .one(db)
+            .await
+            .unwrap()
+            .unwrap();
+        let mut am: crate::entities::run::ActiveModel = m.into();
+        am.state = Set(crate::observability::state::FAILED.into());
+        am.started_at = Set(started_at.into());
+        am.finished_at = Set(Some(started_at.into()));
+        am.error = Set("stage failed".into());
+        am.update(db).await.unwrap();
+    }
+
     #[tokio::test]
-    async fn tick_full_restart_cycle() {
+    async fn tick_full_restart_cycle_by_probe_failure_count() {
         let db = crate::db::connect("sqlite::memory:").await.unwrap();
-        let id = seed_deployment(&db, true, 60).await;
+        let id = seed_deployment(&db, POLICY_UNLESS_STOP, 2).await;
         let cfg = AutoRestartConfig::default();
         let control = MockControl::new();
         let t0 = at("2026-10-21T12:00:00+08:00");
 
-        // running + unhealthy → 记录失败起点（不重启）
+        // 第 1 次失败：累计计数，不重启
         set_state(&db, &id, "running", "running", "unhealthy").await;
         tick(&db, Some(&control), &cfg, t0).await.unwrap();
         assert_eq!(control.calls().len(), 0);
-        assert_eq!(get_rt(&db, &id).await.failed_since, "2026-10-21T12:00:00+08:00");
+        assert_eq!(get_rt(&db, &id).await.consecutive_failures, 1);
 
-        // 60s 后仍失败 → 下发停止
-        tick(&db, Some(&control), &cfg, at("2026-10-21T12:01:00+08:00")).await.unwrap();
+        // 第 2 次失败：达到阈值 → 下发停止
+        tick(&db, Some(&control), &cfg, at("2026-10-21T12:00:30+08:00"))
+            .await
+            .unwrap();
         assert_eq!(control.stop_count(), 1);
         assert_eq!(get_rt(&db, &id).await.phase, PHASE_STOPPING);
 
         // 停止完成 → 下发启动
         set_state(&db, &id, "stopped", "stopped", "unknown").await;
-        tick(&db, Some(&control), &cfg, at("2026-10-21T12:01:10+08:00")).await.unwrap();
+        tick(&db, Some(&control), &cfg, at("2026-10-21T12:00:40+08:00"))
+            .await
+            .unwrap();
         assert_eq!(control.start_count(), 1);
         assert_eq!(
             control.calls()[1],
@@ -986,20 +1257,78 @@ mod tests {
 
         // 启动成功 → 清零
         set_state(&db, &id, "running", "running", "healthy").await;
-        tick(&db, Some(&control), &cfg, at("2026-10-21T12:02:00+08:00")).await.unwrap();
+        tick(&db, Some(&control), &cfg, at("2026-10-21T12:01:00+08:00"))
+            .await
+            .unwrap();
         assert_eq!(get_rt(&db, &id).await, RuntimeState::default());
         assert_eq!(control.stop_count(), 1);
         assert_eq!(control.start_count(), 1);
     }
 
     #[tokio::test]
+    async fn tick_first_start_failure_auto_restarts() {
+        let db = crate::db::connect("sqlite::memory:").await.unwrap();
+        let id = seed_deployment(&db, POLICY_UNLESS_STOP, 3).await;
+        let cfg = AutoRestartConfig::default();
+        let control = MockControl::new();
+        let t0 = at("2026-10-21T12:00:00+08:00");
+
+        // 用户手动启动后 reset 写入了 ignore_before；随后启动 run 在 t0+1s 失败并 cleanup 到 stopped。
+        let r = RuntimeState {
+            ignore_before: "2026-10-21T12:00:00+08:00".into(),
+            ..Default::default()
+        };
+        seed_runtime(&db, &id, r).await;
+        seed_failed_start_run(&db, &id, "2026-10-21T12:00:01+08:00").await;
+        set_state(&db, &id, "stopped", "stopped", "unknown").await;
+
+        tick(&db, Some(&control), &cfg, t0).await.unwrap();
+        let r = get_rt(&db, &id).await;
+        assert_eq!(control.stop_count(), 1, "首次启动失败也应自动停止清理");
+        assert_eq!(r.phase, PHASE_STOPPING);
+        assert_eq!(r.attempts, 1);
+        assert_eq!(r.next_at, "2026-10-21T12:00:15+08:00");
+
+        // 停止完成且过 backoff → 下发启动
+        set_state(&db, &id, "stopped", "stopped", "unknown").await;
+        tick(&db, Some(&control), &cfg, at("2026-10-21T12:00:16+08:00"))
+            .await
+            .unwrap();
+        assert_eq!(control.start_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn tick_reset_suppresses_stale_failed_run() {
+        let db = crate::db::connect("sqlite::memory:").await.unwrap();
+        let id = seed_deployment(&db, POLICY_UNLESS_STOP, 3).await;
+        seed_failed_start_run(&db, &id, "2026-10-21T12:00:01+08:00").await;
+        set_state(&db, &id, "stopped", "stopped", "unknown").await;
+        reset(&db, &id).await.unwrap();
+
+        let control = MockControl::new();
+        tick(
+            &db,
+            Some(&control),
+            &AutoRestartConfig::default(),
+            at("2026-10-21T12:00:30+08:00"),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            control.calls().len(),
+            0,
+            "人工 reset 后旧失败 run 不得再触发"
+        );
+        assert_eq!(get_rt(&db, &id).await.phase, "");
+    }
+
+    #[tokio::test]
     async fn tick_start_failure_grows_backoff_and_retries() {
         let db = crate::db::connect("sqlite::memory:").await.unwrap();
-        let id = seed_deployment(&db, true, 30).await;
+        let id = seed_deployment(&db, POLICY_UNLESS_STOP, 3).await;
         let cfg = AutoRestartConfig::default();
         let control = MockControl::new();
 
-        // 已在重启循环中，启动失败一次
         seed_runtime(
             &db,
             &id,
@@ -1007,113 +1336,91 @@ mod tests {
         )
         .await;
         set_state(&db, &id, "failed", "stopped", "unknown").await;
-        tick(&db, Some(&control), &cfg, at("2026-10-21T12:05:00+08:00")).await.unwrap();
+        tick(&db, Some(&control), &cfg, at("2026-10-21T12:05:00+08:00"))
+            .await
+            .unwrap();
         let r = get_rt(&db, &id).await;
         assert_eq!(control.stop_count(), 1);
         assert_eq!(r.attempts, 2);
         assert_eq!(r.phase, PHASE_STOPPING);
         assert_eq!(r.next_at, "2026-10-21T12:05:30+08:00");
 
-        // 停止完成但 backoff 未到 → 不下发
         set_state(&db, &id, "stopped", "stopped", "unknown").await;
-        tick(&db, Some(&control), &cfg, at("2026-10-21T12:05:10+08:00")).await.unwrap();
+        tick(&db, Some(&control), &cfg, at("2026-10-21T12:05:10+08:00"))
+            .await
+            .unwrap();
         assert_eq!(control.start_count(), 0);
 
-        // 到点 → 下发启动
-        tick(&db, Some(&control), &cfg, at("2026-10-21T12:05:31+08:00")).await.unwrap();
+        tick(&db, Some(&control), &cfg, at("2026-10-21T12:05:31+08:00"))
+            .await
+            .unwrap();
         assert_eq!(control.start_count(), 1);
 
-        // 再次失败（第 2 次）→ attempts=3、等待 60s
         set_state(&db, &id, "failed", "stopped", "unknown").await;
-        tick(&db, Some(&control), &cfg, at("2026-10-21T12:10:00+08:00")).await.unwrap();
+        tick(&db, Some(&control), &cfg, at("2026-10-21T12:10:00+08:00"))
+            .await
+            .unwrap();
         let r = get_rt(&db, &id).await;
         assert_eq!(r.attempts, 3);
         assert_eq!(r.next_at, "2026-10-21T12:11:00+08:00");
     }
 
     #[tokio::test]
-    async fn tick_skips_disabled_and_resets_stale_runtime() {
+    async fn tick_skips_never_policy() {
         let db = crate::db::connect("sqlite::memory:").await.unwrap();
-        let id = seed_deployment(&db, false, 300).await;
+        let id = seed_deployment(&db, POLICY_NEVER, 3).await;
         set_state(&db, &id, "running", "running", "unhealthy").await;
         let control = MockControl::new();
-        let report = tick(&db, Some(&control), &AutoRestartConfig::default(), time::now())
-            .await
-            .unwrap();
-        assert_eq!(report.scanned, 0, "未开启自动重启的运行配置不参与调度");
-        assert_eq!(control.calls().len(), 0);
-    }
-
-    #[tokio::test]
-    async fn reset_cancels_loop() {
-        let db = crate::db::connect("sqlite::memory:").await.unwrap();
-        let id = seed_deployment(&db, true, 30).await;
-        seed_runtime(
+        let report = tick(
             &db,
-            &id,
-            rt(PHASE_STOPPING, "2026-10-21T12:00:00+08:00", "", 3, "2026-10-21T12:04:00+08:00"),
+            Some(&control),
+            &AutoRestartConfig::default(),
+            time::now(),
         )
-        .await;
-        set_state(&db, &id, "stopped", "stopped", "unknown").await;
-        reset(&db, &id).await.unwrap();
-        let control = MockControl::new();
-        tick(&db, Some(&control), &AutoRestartConfig::default(), at("2026-10-21T12:06:00+08:00"))
-            .await
-            .unwrap();
-        assert_eq!(control.calls().len(), 0, "reset 后 MUST NOT 再下发启动");
-        assert_eq!(get_rt(&db, &id).await.phase, "");
+        .await
+        .unwrap();
+        assert_eq!(report.scanned, 0);
+        assert_eq!(control.calls().len(), 0);
     }
 
     #[tokio::test]
     async fn tick_without_control_only_records_decisions() {
         let db = crate::db::connect("sqlite::memory:").await.unwrap();
-        let id = seed_deployment(&db, true, 30).await;
-        seed_runtime(&db, &id, rt("", "2026-10-21T12:00:00+08:00", "", 0, "")).await;
+        let id = seed_deployment(&db, POLICY_UNLESS_STOP, 1).await;
         set_state(&db, &id, "running", "running", "unhealthy").await;
-        tick(&db, None, &AutoRestartConfig::default(), at("2026-10-21T12:01:00+08:00"))
-            .await
-            .unwrap();
-        // 相位推进为 stopping（决策已持久化），但没有任何动作可下发
+        tick(
+            &db,
+            None,
+            &AutoRestartConfig::default(),
+            at("2026-10-21T12:01:00+08:00"),
+        )
+        .await
+        .unwrap();
         assert_eq!(get_rt(&db, &id).await.phase, PHASE_STOPPING);
     }
 
     #[tokio::test]
     async fn tick_start_run_failure_backs_off_without_waiting_grace() {
         let db = crate::db::connect("sqlite::memory:").await.unwrap();
-        let id = seed_deployment(&db, true, 30).await;
-        // 已下发启动（last_at 刚过 10s），启动 run 已收尾失败
-        seed_runtime(&db, &id, rt(PHASE_STARTING, "", "", 1, "2026-10-21T12:05:00+08:00")).await;
+        let id = seed_deployment(&db, POLICY_UNLESS_STOP, 3).await;
+        seed_runtime(
+            &db,
+            &id,
+            rt(PHASE_STARTING, "", "", 1, "2026-10-21T12:05:00+08:00"),
+        )
+        .await;
         set_state(&db, &id, "stopped", "stopped", "unknown").await;
-        let run_id = crate::observability::store::create_run(
-            &db,
-            &id,
-            crate::observability::kind::START,
-            crate::deploy::control::TRIGGER_AUTO_RESTART,
-            "自动重启：开始启动",
-            &crate::deploy::control::start_workflow_id(&id),
-        )
-        .await
-        .unwrap();
-        let _ = run_id;
-        crate::observability::finish_and_prune(
-            &db,
-            &id,
-            crate::observability::SettingsDefaults::default(),
-            &crate::observability::store::list_runs(&db, &id, Some("start"), Some(1))
-                .await
-                .unwrap()[0]
-                .id,
-            crate::observability::state::FAILED,
-            "阶段 start 执行失败",
-            "阶段 start 执行失败",
-        )
-        .await
-        .unwrap();
+        seed_failed_start_run(&db, &id, "2026-10-21T12:05:01+08:00").await;
 
         let control = MockControl::new();
-        tick(&db, Some(&control), &AutoRestartConfig::default(), at("2026-10-21T12:05:10+08:00"))
-            .await
-            .unwrap();
+        tick(
+            &db,
+            Some(&control),
+            &AutoRestartConfig::default(),
+            at("2026-10-21T12:05:10+08:00"),
+        )
+        .await
+        .unwrap();
         let r = get_rt(&db, &id).await;
         assert_eq!(r.attempts, 2, "启动 run 失败应立即进入 backoff");
         assert_eq!(r.phase, PHASE_STOPPING);
@@ -1123,14 +1430,24 @@ mod tests {
     #[tokio::test]
     async fn tick_start_dispatch_failure_goes_backoff() {
         let db = crate::db::connect("sqlite::memory:").await.unwrap();
-        let id = seed_deployment(&db, true, 30).await;
-        seed_runtime(&db, &id, rt(PHASE_STOPPING, "", "", 1, "2026-10-21T12:00:00+08:00")).await;
+        let id = seed_deployment(&db, POLICY_UNLESS_STOP, 3).await;
+        seed_runtime(
+            &db,
+            &id,
+            rt(PHASE_STOPPING, "", "", 1, "2026-10-21T12:00:00+08:00"),
+        )
+        .await;
         set_state(&db, &id, "stopped", "stopped", "unknown").await;
         let control = MockControl::new();
         control.fail_start("temporal down");
-        tick(&db, Some(&control), &AutoRestartConfig::default(), at("2026-10-21T12:05:00+08:00"))
-            .await
-            .unwrap();
+        tick(
+            &db,
+            Some(&control),
+            &AutoRestartConfig::default(),
+            at("2026-10-21T12:05:00+08:00"),
+        )
+        .await
+        .unwrap();
         let r = get_rt(&db, &id).await;
         assert_eq!(r.attempts, 2);
         assert_eq!(r.phase, PHASE_STOPPING);

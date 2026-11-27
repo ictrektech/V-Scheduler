@@ -169,6 +169,16 @@ pub mod codes {
     pub const START_RESOURCES_MISSING: i32 = 20751;
     /// 启动前资源检查超时
     pub const START_PREFLIGHT_TIMEOUT: i32 = 20752;
+    /// 本机节点 nsenter 执行 / 上传失败（容器缺少 pid: host / privileged）
+    pub const LOCAL_EXEC_FAILED: i32 = 20753;
+    /// 运行配置卡片文件 override 非法（路径 / 类型 / 大小 / 条数）
+    pub const FILE_OVERRIDE_INVALID: i32 = 20754;
+    /// 卡片文件不存在（override 源文件失效）
+    pub const CARD_FILE_NOT_FOUND: i32 = 20755;
+    /// 节点被活跃运行配置占用，拒绝关机 / 重启（需显式强制）
+    pub const NODE_POWER_IN_USE: i32 = 20756;
+    /// 节点关机 / 重启命令下发失败
+    pub const NODE_POWER_FAILED: i32 = 20757;
 }
 
 /// 本组件错误：携带 code + msg，转换为 ResultBody JSON 响应

@@ -11,6 +11,7 @@ const TABLES: &[&str] = &[
     "modelinfer_nodes",
     "modelinfer_node_monitors",
     "modelinfer_deployments",
+    "modelinfer_deployment_file_overrides",
     "modelinfer_plaza_sources",
     "modelinfer_plaza_models",
     "modelinfer_runs",

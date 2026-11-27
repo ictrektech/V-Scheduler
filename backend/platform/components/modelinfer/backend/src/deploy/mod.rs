@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::deployments;
-use crate::error::ModelinferError;
+use crate::error::{ModelinferError, codes};
 use crate::images::ImageHubConfig;
 use crate::model_hub;
 use crate::nfs::{self, NfsResolveResult, ResolveInput};
@@ -198,9 +198,14 @@ pub struct DeployRuntime {
     pub weight_overridden: bool,
     /// 生效权重的来源（hf / ms）
     pub weight_source: String,
+    /// 远程节点路径（NFS 挂载点）
     pub model_path: String,
-    /// 节点侧 model-hub 根路径（NFS 挂载目录 + 存储空间子路径），供 ComfyUI 等定位共享目录
+    /// 节点侧 model-hub 根路径（NFS 挂载目录 + 存储空间子路径），供远程节点定位共享目录
     pub model_hub_root: String,
+    /// 本机节点路径（宿主机 model-hub 绝对路径）
+    pub local_model_path: String,
+    /// 本机节点 model-hub 根路径（宿主机绝对路径）
+    pub local_model_hub_root: String,
     pub serve_port: u16,
     pub serve_api_key: String,
     pub serve_model_name: String,
@@ -232,6 +237,26 @@ impl DeployRuntime {
     }
     pub fn head(&self) -> Option<&DeployNode> {
         self.nodes.first()
+    }
+    /// 节点是否走本机 nsenter 访问
+    pub fn is_local_node(node: &DeployNode) -> bool {
+        node.auth_method == "local"
+    }
+    /// 指定节点的生效权重路径：本机直通宿主机目录，远程使用 NFS 挂载路径
+    pub fn model_path_for(&self, node: &DeployNode) -> &str {
+        if Self::is_local_node(node) {
+            &self.local_model_path
+        } else {
+            &self.model_path
+        }
+    }
+    /// 指定节点的 model-hub 根路径
+    pub fn model_hub_root_for(&self, node: &DeployNode) -> &str {
+        if Self::is_local_node(node) {
+            &self.local_model_hub_root
+        } else {
+            &self.model_hub_root
+        }
     }
     /// head 优先，其余节点保持顺序
     pub fn ordered_nodes(&self) -> Vec<&DeployNode> {
@@ -356,18 +381,25 @@ pub async fn load_runtime(
         .cloned()
         .unwrap_or_default();
 
-    // 权重 MUST 来自 model-hub：解析存储空间 → NFS 挂载 → 定位权重目录
+    // 权重 MUST 来自 model-hub：远程节点解析 NFS；仅本机节点时跳过 NFS 解析与挂载。
     let hosts: Vec<String> = dep_nodes.iter().map(|n| n.host.clone()).collect();
-    let nfs = nfs::resolve_nfs(
-        deps.platform.as_ref(),
-        &ResolveInput {
-            config_name: nfs::MODEL_HUB_CONFIG,
-            fallback_hub_path: &deps.model_hub_path,
-            nfs_server_override: &deps.nfs_server,
-            node_hosts: &hosts,
-        },
-    )
-    .await?;
+    let has_remote = dep_nodes
+        .iter()
+        .any(|n| !DeployRuntime::is_local_node(n));
+    let nfs = if has_remote {
+        nfs::resolve_nfs(
+            deps.platform.as_ref(),
+            &ResolveInput {
+                config_name: nfs::MODEL_HUB_CONFIG,
+                fallback_hub_path: &deps.model_hub_path,
+                nfs_server_override: &deps.nfs_server,
+                node_hosts: &hosts,
+            },
+        )
+        .await?
+    } else {
+        NfsResolveResult::not_mounted()
+    };
 
     // 生效权重：覆盖优先（启动时重新解析，防御 model-hub 目录被删除）
     let card_weight_id = card.model.trim().to_string();
@@ -401,6 +433,26 @@ pub async fn load_runtime(
         model_hub::node_model_path(&deps.mount_dir, &nfs.sub_path, &effective_rel_path)
     };
     let model_hub_root = model_hub::node_model_path(&deps.mount_dir, &nfs.sub_path, "");
+    let has_local = dep_nodes.iter().any(DeployRuntime::is_local_node);
+    let local_model_hub_root = if has_local {
+        if !deps.model_hub_path.trim().is_empty() {
+            deps.model_hub_path.trim().to_string()
+        } else if !nfs.host_path.trim().is_empty() {
+            nfs.host_path.clone()
+        } else {
+            return Err(ModelinferError::new(
+                codes::NFS_RESOLVE_FAILED,
+                "本机节点部署需要配置 MODELINFER_MODEL_HUB_PATH（宿主机 model-hub 绝对路径）",
+            ));
+        }
+    } else {
+        String::new()
+    };
+    let local_model_path = if has_local && !effective_rel_path.trim().is_empty() {
+        model_hub::node_model_path(&local_model_hub_root, "", &effective_rel_path)
+    } else {
+        String::new()
+    };
 
     let head_ip = dep_nodes.first().map(|n| n.host.clone()).unwrap_or_default();
     let nodes_map = dep_nodes
@@ -431,6 +483,8 @@ pub async fn load_runtime(
         weight_source: effective_weight_source,
         model_path,
         model_hub_root,
+        local_model_path,
+        local_model_hub_root,
         serve_port,
         serve_api_key,
         serve_model_name,
@@ -536,6 +590,8 @@ mod tests {
             weight_source: "hf".into(),
             model_path: String::new(),
             model_hub_root: String::new(),
+            local_model_path: String::new(),
+            local_model_hub_root: String::new(),
             serve_port: 8000,
             serve_api_key: String::new(),
             serve_model_name: String::new(),

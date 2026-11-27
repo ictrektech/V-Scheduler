@@ -61,6 +61,13 @@ export default {
     serviceName: '服务名',
     deployFailed: '部署失败',
     componentEmpty: '尚未发起该组件部署',
+    unknownImage: '对应镜像',
+    imageHub: {
+      missing: '需要前往 image-hub，下载 {image} 镜像后重新部署。',
+      pullFailed: '经 image-hub 拉取 {image} 镜像失败，请前往 image-hub 确认镜像可下载后重新部署。',
+      unreachable: '无法连接 image-hub 获取 {image} 镜像，请检查 image-hub 地址与网络，或前往 image-hub 下载后重新部署。',
+    },
+    openImageHub: '前往 image-hub 下载镜像',
   },
   metrics: {
     title: '节点指标',

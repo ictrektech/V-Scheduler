@@ -310,7 +310,7 @@ async fn installed_images(app_id: &str) -> Api<PublishedImages> {
 }
 
 fn fixed_targets(nodes: &[Value], members: &[Value]) -> Vec<(Target, Ipv4Addr)> {
-    let fixed = nodes.iter().filter_map(|node| {
+    let fixed = nodes.iter().filter(|node| node["access_mode"] != "local").filter_map(|node| {
         let id = node["id"].as_str()?;
         let profile = node["profile"].as_str()?;
         let host = node["host"].as_str()?.parse::<Ipv4Addr>().ok()?;
@@ -534,7 +534,7 @@ async fn locate(target: &Target) -> Api<Ipv4Addr> {
     let nodes = managed_inventory().await?;
     let node = nodes
         .iter()
-        .find(|row| row["id"] == target.id)
+        .find(|row| row["id"] == target.id && row["access_mode"] != "local")
         .ok_or_else(dependency)?;
     if !node["compatible_profiles"]
         .as_array()

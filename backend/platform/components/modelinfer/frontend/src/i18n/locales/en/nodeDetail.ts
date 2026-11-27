@@ -61,6 +61,13 @@ export default {
     serviceName: 'Service Name',
     deployFailed: 'Deployment failed',
     componentEmpty: 'Deployment for this component has not been triggered yet',
+    unknownImage: 'the required image',
+    imageHub: {
+      missing: 'Open image-hub and download the {image} image, then redeploy.',
+      pullFailed: 'Pulling the {image} image via image-hub failed. Open image-hub to verify the image is available, then redeploy.',
+      unreachable: 'The image-hub could not be reached to obtain the {image} image. Check the image-hub address and network, or download it in image-hub, then redeploy.',
+    },
+    openImageHub: 'Download image in image-hub',
   },
   metrics: {
     title: 'Node Metrics',

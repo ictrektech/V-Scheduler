@@ -12,6 +12,7 @@ import TimeText from '@/components/TimeText.vue';
 import CopyText from '@/components/CopyText.vue';
 import ModelAvatar from '@/components/ModelAvatar.vue';
 import StartResourcesModal from '@/components/StartResourcesModal.vue';
+import DeploymentFileOverridesModal from '@/components/DeploymentFileOverridesModal.vue';
 import { missingStartResources, type MissingStartResources } from '@/utils/startResources';
 import {
   createDeployment,
@@ -52,13 +53,15 @@ import {
   type EnvRow,
 } from '@/utils/runtimeOverrides';
 import {
-  DEFAULT_FAIL_MINUTES,
-  MAX_FAIL_MINUTES,
-  MIN_FAIL_MINUTES,
+  DEFAULT_FAIL_COUNT,
+  MAX_FAIL_COUNT,
+  MIN_FAIL_COUNT,
+  POLICY_NEVER,
+  POLICY_UNLESS_STOP,
   allVersionsLackHealthProbe,
-  clampMinutes,
-  minutesToSecs,
-  secsToMinutes,
+  clampFailCount,
+  isUnlessStop,
+  normalizePolicy,
 } from '@/utils/autoRestart';
 import { reportApiError, resolveApiErrorMessage } from '@/i18n/api-error';
 import {
@@ -98,6 +101,8 @@ const saving = ref(false);
 const startingIds = ref(new Set<string>());
 const resourcesOpen = ref(false);
 const resourcesRun = ref<DeploymentItem | null>(null);
+const overridesOpen = ref(false);
+const overridesRun = ref<DeploymentItem | null>(null);
 const missingResources = ref<MissingStartResources | null>(null);
 /** 编辑中的配置 id（null = 新建） */
 const editingId = ref<string | null>(null);
@@ -133,9 +138,9 @@ const form = reactive({
   /** 本地反代（本机 TCP 端口 → head vLLM，快速调试；默认关闭） */
   local_proxy_enabled: false,
   local_proxy_port: undefined as number | undefined,
-  /** 探活失败自动重启（默认关闭）与连续失败阈值（分钟，默认 5） */
-  auto_restart_enabled: false,
-  auto_restart_fail_minutes: DEFAULT_FAIL_MINUTES,
+  /** 自动重启策略（默认 never）与连续探活失败次数阈值（默认 10） */
+  auto_restart_policy: POLICY_NEVER as string,
+  auto_restart_fail_count: DEFAULT_FAIL_COUNT,
 });
 
 const workspace = Boolean(getSchedulerRuntime());
@@ -219,7 +224,7 @@ const nodeLimitHint = computed(() => {
   if (capsMaxNodes.value <= 0) return '';
   return t('runs.nodeLimitHint', { max: capsMaxNodes.value, selected: form.node_ids.length });
 });
-/** 所选卡片全部版本都未声明 health-probe 时提示自动重启不会生效 */
+/** 所选卡片全部版本都未声明 health-probe 时提示探活失败不会触发自动重启 */
 const cardLacksHealthProbe = computed(() =>
   allVersionsLackHealthProbe(selectedCard.value?.versions ?? []),
 );
@@ -412,10 +417,18 @@ function rowMarkStyle(row: DeploymentItem): Record<string, string> {
   return { backgroundImage: `url("${modelIconUrl(modelFamilyIcon(row.family))}")` };
 }
 
+function openFileOverrides(row: DeploymentItem) {
+  overridesRun.value = row;
+  overridesOpen.value = true;
+}
+
 function onMoreMenu(e: { key: string | number }, row: DeploymentItem) {
   switch (String(e.key)) {
     case 'edit':
       onEdit(row);
+      break;
+    case 'file-overrides':
+      openFileOverrides(row);
       break;
     case 'force-stop':
       onForceStop(row);
@@ -587,8 +600,8 @@ function openCreate() {
   form.serve_url_prefix = '';
   form.local_proxy_enabled = false;
   form.local_proxy_port = undefined;
-  form.auto_restart_enabled = false;
-  form.auto_restart_fail_minutes = DEFAULT_FAIL_MINUTES;
+  form.auto_restart_policy = POLICY_NEVER;
+  form.auto_restart_fail_count = DEFAULT_FAIL_COUNT;
   variants.value = [];
   modalOpen.value = true;
   void loadRefs();
@@ -619,9 +632,9 @@ async function openEdit(row: DeploymentItem) {
   // 本地反代回填
   form.local_proxy_enabled = !!row.local_proxy_enabled;
   form.local_proxy_port = row.local_proxy_port || undefined;
-  // 自动重启回填（秒 → 分钟；关闭时保留阈值）
-  form.auto_restart_enabled = !!row.auto_restart_enabled;
-  form.auto_restart_fail_minutes = secsToMinutes(row.auto_restart_fail_secs);
+  // 自动重启回填（策略 / 次数；never 时保留阈值供下次切换）
+  form.auto_restart_policy = normalizePolicy(row.auto_restart_policy);
+  form.auto_restart_fail_count = clampFailCount(row.auto_restart_fail_count);
   variants.value = [];
   modalOpen.value = true;
   await loadRefs();
@@ -721,11 +734,9 @@ async function submit() {
   payload.local_proxy_enabled = form.local_proxy_enabled;
   payload.local_proxy_port =
     form.local_proxy_port && form.local_proxy_port > 0 ? form.local_proxy_port : 0;
-  // 自动重启：布尔与阈值始终提交（分钟 → 秒；关闭时保留阈值供下次开启）
-  payload.auto_restart_enabled = form.auto_restart_enabled;
-  payload.auto_restart_fail_secs = minutesToSecs(
-    clampMinutes(form.auto_restart_fail_minutes),
-  );
+  // 自动重启：策略与次数始终提交（never 时保留次数供下次切到 unless-stop）
+  payload.auto_restart_policy = normalizePolicy(form.auto_restart_policy);
+  payload.auto_restart_fail_count = clampFailCount(form.auto_restart_fail_count);
   saving.value = true;
   try {
     if (editingId.value) {
@@ -999,6 +1010,7 @@ onUnmounted(() => {
                 <template #overlay>
                   <a-menu @click="(e: any) => onMoreMenu(e, record)">
                     <a-menu-item key="edit" :disabled="!isRowEditable(record)">{{ t('common.edit') }}</a-menu-item>
+                    <a-menu-item key="file-overrides">{{ t('runs.action.fileOverrides') }}</a-menu-item>
                     <a-menu-item key="force-stop">{{ t('runs.action.forceStop') }}</a-menu-item>
                     <a-menu-divider />
                     <a-menu-item key="delete" danger>{{ t('common.delete') }}</a-menu-item>
@@ -1019,6 +1031,13 @@ onUnmounted(() => {
     <div v-if="stats.total && isFiltering" class="mi-footer-hint">
       {{ t('runs.filteredFooter', { shown: page.total, total: stats.total }) }}
     </div>
+
+    <DeploymentFileOverridesModal
+      v-model:open="overridesOpen"
+      :deployment-id="overridesRun?.id || ''"
+      :deployment-name="overridesRun?.name || ''"
+      :deployment-state="overridesRun?.state || ''"
+    />
 
     <StartResourcesModal
       v-model:open="resourcesOpen"
@@ -1145,28 +1164,39 @@ onUnmounted(() => {
           <span class="mi-step__no">4.2</span>{{ t('runs.form.step42') }}
         </div>
         <a-space style="display: flex" :size="16" align="baseline">
-          <a-form-item :label="t('runs.form.autoRestartEnabled')">
-            <a-switch v-model:checked="form.auto_restart_enabled" />
+          <a-form-item :label="t('runs.form.autoRestartPolicy')" style="min-width: 240px">
+            <a-select v-model:value="form.auto_restart_policy" style="width: 100%">
+              <a-select-option :value="POLICY_NEVER">
+                {{ t('runs.form.autoRestartPolicyNever') }}
+              </a-select-option>
+              <a-select-option :value="POLICY_UNLESS_STOP">
+                {{ t('runs.form.autoRestartPolicyUnlessStop') }}
+              </a-select-option>
+            </a-select>
           </a-form-item>
-          <a-form-item :label="t('runs.form.autoRestartFailMinutes')" style="flex: 1">
+          <a-form-item :label="t('runs.form.autoRestartFailCount')" style="flex: 1">
             <a-input-number
-              v-model:value="form.auto_restart_fail_minutes"
-              :min="MIN_FAIL_MINUTES"
-              :max="MAX_FAIL_MINUTES"
+              v-model:value="form.auto_restart_fail_count"
+              :min="MIN_FAIL_COUNT"
+              :max="MAX_FAIL_COUNT"
               :step="1"
               :precision="0"
-              :disabled="!form.auto_restart_enabled"
+              :disabled="!isUnlessStop(form.auto_restart_policy)"
               style="width: 100%"
             >
-              <template #suffix>{{ t('runs.form.autoRestartMinutesUnit') }}</template>
+              <template #suffix>{{ t('runs.form.autoRestartCountUnit') }}</template>
             </a-input-number>
           </a-form-item>
         </a-space>
         <div class="mi-hint" style="margin-bottom: 12px">
-          {{ t('runs.form.autoRestartHint', { minutes: clampMinutes(form.auto_restart_fail_minutes) }) }}
+          {{
+            t('runs.form.autoRestartHint', {
+              count: clampFailCount(form.auto_restart_fail_count),
+            })
+          }}
         </div>
         <a-alert
-          v-if="form.auto_restart_enabled && cardLacksHealthProbe"
+          v-if="isUnlessStop(form.auto_restart_policy) && cardLacksHealthProbe"
           type="warning"
           show-icon
           :message="t('runs.form.autoRestartNoHealthProbe')"

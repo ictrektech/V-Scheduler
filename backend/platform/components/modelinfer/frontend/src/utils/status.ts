@@ -123,6 +123,7 @@ const USAGE: Record<string, StatusTone> = {
 const AUTH_METHOD: Record<string, StatusTone> = {
   password: 'neutral',
   key: 'processing',
+  local: 'success',
 };
 
 /** 节点监控部署状态 */

@@ -48,6 +48,10 @@ export interface PlazaCardGroup {
   category: string[];
   tags: string[];
   icon: string;
+  /** 最新版本权重 id */
+  model?: string;
+  /** 最新版本镜像声明（string 或 {name, arch}） */
+  images?: unknown[];
   /** 最新版本号（版本号最大者） */
   latest_version: string;
   /** 已登记版本数 */
@@ -111,6 +115,8 @@ export interface LocalModelGroup {
   model: string;
   /** 来源集合（`plaza` / `local`） */
   sources: string[];
+  /** 最新版本镜像声明（string 或 {name, arch}） */
+  images?: unknown[];
   latest_version: string;
   total_size_bytes: number;
   /** 家族标识（后端 SSOT 推断，未命中为 `generic`） */

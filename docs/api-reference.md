@@ -12,6 +12,8 @@ VOS 管理员可从左侧导航打开「推理部署」。列表和详情在 V-S
 
 VOS administrators can open **Inference deployments** from the sidebar. Lists and details open in the V-Scheduler workspace. Manage storage clusters in the standalone VOS Cluster Manager app. The existing `/inference/runtime/`, `/inference/migration/`, and `/cluster/runtime/` API contracts apply.
 
+[本机节点、部署文件覆盖和电源 API / Local node, file overrides and power API](inference-migration.md#modelinfer-本机节点部署文件和电源--local-nodes-deployment-files-and-power)
+
 - [Authentication, visibility and keys / 身份、可见范围与 Key](#identity)
 - [Registration and direct admission / 注册与直接放行](#registration)
 - [Gateway API / 网关接口](#gateway)

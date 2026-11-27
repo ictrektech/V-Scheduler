@@ -943,6 +943,9 @@ pub(crate) async fn upload_script(
 
 /// 节点 SSH 目标（`pub(crate)`：供监控镜像分发复用）
 pub(crate) fn target_of(node: &DeployNode) -> SshTarget {
+    if node.auth_method == "local" {
+        return SshTarget::local(node.host.clone());
+    }
     SshTarget::from_credentials(
         node.host.clone(),
         node.port,
@@ -1183,6 +1186,8 @@ mod tests {
             weight_source: "hf".into(),
             model_path: "/data/w".into(),
             model_hub_root: "/data".into(),
+            local_model_path: "/host/data/w".into(),
+            local_model_hub_root: "/host/data".into(),
             serve_port: 8000,
             serve_api_key: "k".into(),
             serve_model_name: "w".into(),

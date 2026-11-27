@@ -74,6 +74,7 @@ export default {
     authMethod: {
       password: '密码',
       key: '密钥',
+      local: '本机',
     },
     gpuVendor: {
       nvidia: 'NVIDIA',

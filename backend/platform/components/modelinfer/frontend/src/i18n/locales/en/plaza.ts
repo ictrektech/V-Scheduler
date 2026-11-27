@@ -26,6 +26,8 @@ export default {
     registeredOnly: 'Downloaded only',
     noDescription: '(No description)',
     latestVersion: 'Latest Version',
+    weight: 'Weights',
+    images: 'Images',
     registered: 'Downloaded',
     unregistered: 'Not downloaded',
     versionsCount: '{count} versions',

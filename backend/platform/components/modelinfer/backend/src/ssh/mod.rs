@@ -1,4 +1,4 @@
-//! SSH 执行抽象：密码/私钥登录、sudo root 执行，测试用 Mock。
+//! 节点命令执行抽象：SSH 密码/私钥登录、sudo root、本机 nsenter 与测试用 Mock。
 //!
 //! 参考 `components/ai-ray-cluster` 的 paramiko 用法：连接失败重试、命令超时、
 //! 异常分层。此处以 trait 注入，便于领域逻辑单测。
@@ -11,6 +11,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::error::{ModelinferError, codes};
@@ -25,6 +26,8 @@ pub enum SshAuth {
     Password(String),
     /// SSH 私钥内容（OpenSSH / PEM），经内存认证（不落盘）
     PrivateKey(String),
+    /// 本机节点：经 nsenter 进入宿主机 root 命名空间执行（无凭据）
+    Local,
 }
 
 /// 手写 `Debug`：只输出认证类型，**绝不输出凭据明文**
@@ -44,11 +47,12 @@ impl SshAuth {
         }
     }
 
-    /// 认证方式字面值（`password` / `key`）
+    /// 认证方式字面值（`password` / `key` / `local`）
     pub fn kind(&self) -> &'static str {
         match self {
             Self::Password(_) => "password",
             Self::PrivateKey(_) => "key",
+            Self::Local => "local",
         }
     }
 
@@ -57,6 +61,7 @@ impl SshAuth {
         match self {
             Self::Password(p) => !p.is_empty(),
             Self::PrivateKey(k) => !k.trim().is_empty(),
+            Self::Local => true,
         }
     }
 }
@@ -109,6 +114,16 @@ impl SshTarget {
             auth,
             sudo_password: String::new(),
         }
+    }
+
+    /// 本机执行目标（host 仅用于展示 / 节点地址，不参与连接）
+    pub fn local(host: impl Into<String>) -> Self {
+        Self::with_auth(host, 0, "root", SshAuth::Local)
+    }
+
+    /// 是否为本机 nsenter 执行目标
+    pub fn is_local(&self) -> bool {
+        matches!(self.auth, SshAuth::Local)
     }
 
     /// 私钥认证
@@ -315,6 +330,9 @@ impl SshExec for RealSshExec {
     }
 
     async fn run(&self, target: &SshTarget, cmd: &str) -> Result<SshOutput, ModelinferError> {
+        if target.is_local() {
+            return run_local(cmd, self.command_timeout).await;
+        }
         let elevate = self.elevate(target);
         let target = target.clone();
         let cmd = cmd.to_string();
@@ -345,6 +363,9 @@ impl SshExec for RealSshExec {
         cmd: &str,
         timeout: Duration,
     ) -> Result<SshOutput, ModelinferError> {
+        if target.is_local() {
+            return run_local(cmd, timeout).await;
+        }
         let elevate = self.elevate(target);
         let target = target.clone();
         let cmd = cmd.to_string();
@@ -400,6 +421,9 @@ impl SshExec for RealSshExec {
         local: &Path,
         remote: &str,
     ) -> Result<(), ModelinferError> {
+        if target.is_local() {
+            return upload_local(local, remote).await;
+        }
         let target = target.clone();
         let local = local.to_path_buf();
         let remote = remote.to_string();
@@ -429,6 +453,9 @@ impl SshExec for RealSshExec {
         sink: StreamSink,
         idle_timeout: Duration,
     ) -> Result<(), ModelinferError> {
+        if target.is_local() {
+            return stream_local(cmd, sink, idle_timeout).await;
+        }
         let target = target.clone();
         let cmd = cmd.to_string();
         let connect_timeout = self.connect_timeout;
@@ -444,6 +471,163 @@ impl SshExec for RealSshExec {
             )),
         }
     }
+}
+
+/// 本机执行：进入宿主机 mount/uts/ipc/net/pid 命名空间，以宿主 root 运行命令。
+const NSENTER_ARGS: [&str; 8] = ["-t", "1", "-m", "-u", "-i", "-n", "-p", "--"];
+
+fn local_command(cmd: &str) -> Result<tokio::process::Command, ModelinferError> {
+    if let Ok(enabled) = std::env::var("SCHEDULER_MODELINFER_HOST_ACCESS") {
+        if enabled != "true" || std::env::var("SCHEDULER_MODELINFER_PID_MODE").as_deref() != Ok("host") {
+            return Err(local_exec_error("在 VOS 应用配置中开启 ModelInfer 本机免密访问，并将 PID 模式设为 host"));
+        }
+    }
+    let mut c = tokio::process::Command::new("nsenter");
+    c.args(NSENTER_ARGS)
+        .arg("/usr/bin/env")
+        .args(["-i", "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "HOME=/root"])
+        .arg("/bin/sh")
+        .arg("-c")
+        .arg(cmd)
+        .kill_on_drop(true)
+        .stdin(std::process::Stdio::null());
+    Ok(c)
+}
+
+fn local_exec_error(detail: impl Into<String>) -> ModelinferError {
+    ModelinferError::new(
+        codes::LOCAL_EXEC_FAILED,
+        format!(
+            "本机节点执行失败: {}。请确认 modelinfer 容器以 pid: host 和 privileged: true 运行，且宿主机提供 nsenter",
+            detail.into()
+        ),
+    )
+}
+
+async fn run_local(cmd: &str, timeout: Duration) -> Result<SshOutput, ModelinferError> {
+    let child = local_command(cmd)?
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| local_exec_error(format!("启动 nsenter 失败: {e}")))?;
+    let output = tokio::time::timeout(timeout, child.wait_with_output())
+        .await
+        .map_err(|_| local_exec_error(format!("命令执行超时（{}s）", timeout.as_secs())))?
+        .map_err(|e| local_exec_error(format!("等待命令结束失败: {e}")))?;
+    Ok(SshOutput {
+        exit_code: output.status.code().unwrap_or(-1),
+        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+    })
+}
+
+async fn upload_local(local: &Path, remote: &str) -> Result<(), ModelinferError> {
+    let bytes = std::fs::read(local)
+        .map_err(|e| ModelinferError::new(codes::IO_FAILED, format!("读取本地文件失败 {}: {e}", local.display())))?;
+    let parent = Path::new(remote)
+        .parent()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|| "/".to_string());
+    let cmd = format!(
+        "set -e; mkdir -p -- {parent}; cat > {remote}; chmod 0644 -- {remote}",
+        parent = crate::deploy::script::sh_quote(&parent),
+        remote = crate::deploy::script::sh_quote(remote)
+    );
+    let mut child = local_command(&cmd)?
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| local_exec_error(format!("启动 nsenter 上传失败: {e}")))?;
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(&bytes)
+            .await
+            .map_err(|e| local_exec_error(format!("写入宿主机文件失败: {e}")))?;
+    }
+    let output = child
+        .wait_with_output()
+        .await
+        .map_err(|e| local_exec_error(format!("等待上传结束失败: {e}")))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(local_exec_error(format!(
+            "上传退出码 {}: {}",
+            output.status.code().unwrap_or(-1),
+            String::from_utf8_lossy(&output.stderr).trim()
+        )))
+    }
+}
+
+async fn stream_local(
+    cmd: &str,
+    sink: StreamSink,
+    idle_timeout: Duration,
+) -> Result<(), ModelinferError> {
+    let mut child = local_command(cmd)?
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| local_exec_error(format!("启动 nsenter 流式命令失败: {e}")))?;
+    let mut stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| local_exec_error("无法获取 stdout"))?;
+    let mut stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| local_exec_error("无法获取 stderr"))?;
+    let stderr_drain = tokio::spawn(async move {
+        let mut sink_bytes = Vec::new();
+        let _ = stderr.read_to_end(&mut sink_bytes).await;
+        sink_bytes
+    });
+    let mut buf = [0u8; 8192];
+    loop {
+        if sink.is_closed() {
+            let _ = child.kill().await;
+            stderr_drain.abort();
+            return Ok(());
+        }
+        match tokio::time::timeout(idle_timeout, stdout.read(&mut buf)).await {
+            Ok(Ok(0)) => break,
+            Ok(Ok(n)) => {
+                if sink.send(buf[..n].to_vec()).is_err() {
+                    let _ = child.kill().await;
+                    stderr_drain.abort();
+                    return Ok(());
+                }
+            }
+            Ok(Err(e)) => {
+                let _ = child.kill().await;
+                stderr_drain.abort();
+                return Err(local_exec_error(format!("读取 stdout 失败: {e}")));
+            }
+            Err(_) => {
+                let _ = child.kill().await;
+                stderr_drain.abort();
+                return Err(local_exec_error(format!(
+                    "日志流空闲超时（{}s）",
+                    idle_timeout.as_secs()
+                )));
+            }
+        }
+    }
+    let status = child
+        .wait()
+        .await
+        .map_err(|e| local_exec_error(format!("等待流式命令结束失败: {e}")))?;
+    if !status.success() {
+        let err = stderr_drain.await.unwrap_or_default();
+        return Err(local_exec_error(format!(
+            "流式命令退出码 {}: {}",
+            status.code().unwrap_or(-1),
+            String::from_utf8_lossy(&err).trim()
+        )));
+    }
+    stderr_drain.abort();
+    Ok(())
 }
 
 /// 阻塞式流式读取（非阻塞通道 + 轮询；接收端关闭即退出）
@@ -651,6 +835,9 @@ fn connect_session(
                 .map_err(|e| {
                     ModelinferError::new(codes::SSH_CONNECT_FAILED, format!("SSH 认证失败（私钥）: {e}"))
                 })?;
+        }
+        SshAuth::Local => {
+            return Err(local_exec_error("本机目标不应建立 SSH 会话"));
         }
     }
     if !sess.authenticated() {

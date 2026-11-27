@@ -15,13 +15,14 @@ import StatusTag from '@/components/StatusTag.vue';
 import TimeText from '@/components/TimeText.vue';
 import CopyText from '@/components/CopyText.vue';
 import ModelAvatar from '@/components/ModelAvatar.vue';
+import DeploymentFileOverridesModal from '@/components/DeploymentFileOverridesModal.vue';
 import TerminalBlock from '@/components/TerminalBlock.vue';
 import JsonBlock from '@/components/JsonBlock.vue';
 import MetricsBoard from '@/components/MetricsBoard.vue';
 import { useMetrics } from '@/composables/useMetrics';
 import { inferenceProfileFor } from '@/utils/metricProfiles';
 import { imageEntryLabel } from '@/utils/runtimeOverrides';
-import { inRestartLoop, phaseLabelKey, secsToMinutes } from '@/utils/autoRestart';
+import { clampFailCount, inRestartLoop, isUnlessStop, phaseLabelKey } from '@/utils/autoRestart';
 import {
   getDeployment,
   getDeploymentAccess,
@@ -84,6 +85,7 @@ const registering = ref(false);
 const proxyEnabled = ref(false);
 const proxyPort = ref<number | null>(null);
 const savingProxy = ref(false);
+const fileOverridesOpen = ref(false);
 
 // ---------- 推理指标（复用通用取数 composable + 指标板，与节点图表一致）----------
 /**
@@ -137,8 +139,10 @@ async function loadMetricsWithWiden(silent = false) {
     rangeMode.value = '24h';
   }
 }
-/** 自动重启连续失败阈值（分钟，用于展示；非法值回落默认 5 分钟） */
-const autoRestartMinutes = computed(() => secsToMinutes(deployment.value?.auto_restart_fail_secs));
+/** 自动重启连续探活失败次数阈值（非法值回落默认 10） */
+const autoRestartFailCount = computed(() =>
+  clampFailCount(deployment.value?.auto_restart_fail_count),
+);
 /** 是否正处于自动重启循环中（stopping / starting） */
 const autoRestarting = computed(() => inRestartLoop(deployment.value?.auto_restart_phase));
 /** 自动重启相位标签 */
@@ -146,9 +150,11 @@ const autoRestartPhaseLabel = computed(() => {
   void locale.value;
   return t(phaseLabelKey(deployment.value?.auto_restart_phase));
 });
-/** 卡片是否缺 health-probe（自动重启不会生效） */
+/** 卡片是否缺 health-probe（探活失败不会触发自动重启；启动失败仍会触发） */
 const autoRestartIneffective = computed(
-  () => !!deployment.value?.auto_restart_enabled && !deployment.value?.health_probe_declared,
+  () =>
+    isUnlessStop(deployment.value?.auto_restart_policy) &&
+    !deployment.value?.health_probe_declared,
 );
 /** 引擎展示标签 */
 const engineLabel = computed(() => {
@@ -761,6 +767,10 @@ onUnmounted(() => {
     :loading="loading"
   >
     <template #actions>
+      <a-button @click="fileOverridesOpen = true">
+        <FileTextOutlined />
+        {{ t('runs.action.fileOverrides') }}
+      </a-button>
       <a-button @click="refresh">
         <ReloadOutlined />
         {{ t('common.refresh') }}
@@ -881,13 +891,24 @@ onUnmounted(() => {
         <div class="mi-kv mi-kv--wide">
           <div class="mi-kv__k">{{ t('runDetail.overview.autoRestart') }}</div>
           <div class="mi-kv__v">
-            <span v-if="!deployment?.auto_restart_enabled" class="mi-hint">
+            <span v-if="!isUnlessStop(deployment?.auto_restart_policy)" class="mi-hint">
               {{ t('runDetail.overview.autoRestartOff') }}
             </span>
             <template v-else>
               <a-tag color="blue">
-                {{ t('runDetail.overview.autoRestartOn', { minutes: autoRestartMinutes }) }}
+                {{ t('runDetail.overview.autoRestartOn', { count: autoRestartFailCount }) }}
               </a-tag>
+              <span
+                v-if="(deployment?.auto_restart_consecutive_failures ?? 0) > 0"
+                class="mi-hint"
+              >
+                {{
+                  t('runDetail.overview.autoRestartConsecutiveFailures', {
+                    count: deployment?.auto_restart_consecutive_failures ?? 0,
+                    threshold: autoRestartFailCount,
+                  })
+                }}
+              </span>
               <a-tag v-if="autoRestarting" color="orange">
                 {{ t('runDetail.overview.autoRestarting', {
                   phase: autoRestartPhaseLabel,
@@ -1315,6 +1336,13 @@ onUnmounted(() => {
         </a-table>
       </a-tab-pane>
     </a-tabs>
+
+    <DeploymentFileOverridesModal
+      v-model:open="fileOverridesOpen"
+      :deployment-id="id"
+      :deployment-name="deployment?.name || name"
+      :deployment-state="deployment?.state || ''"
+    />
 
     <a-drawer
       :open="logDrawerOpen"

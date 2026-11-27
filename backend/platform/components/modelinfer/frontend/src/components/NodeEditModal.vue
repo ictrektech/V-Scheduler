@@ -39,6 +39,7 @@ const form = reactive({
 });
 
 const isNvidia = computed(() => props.node?.gpu_vendor === 'nvidia');
+const isLocal = computed(() => (props.node?.access_mode || 'ssh') === 'local');
 const ifaceOptions = computed(() =>
   (props.node?.interfaces || []).map((i) => ({
     label: t('common.ifaceLabel', { name: i.name, ips: i.ips.join(', ') }),
@@ -82,26 +83,31 @@ async function submit() {
     message.warning(t('nodes.edit.nameRequired'));
     return;
   }
-  if (!form.ssh_user.trim()) {
+  if (!isLocal.value && !form.ssh_user.trim()) {
     message.warning(t('nodes.msg.sshUserRequired'));
     return;
   }
   saving.value = true;
   try {
-    const updated = await updateNode(props.node.id, {
+    const payload = {
       name: form.name.trim(),
-      ssh_user: form.ssh_user.trim(),
-      auth_method: form.auth_method,
-      sudo_password: form.clear_sudo_password ? '' : form.sudo_password || undefined,
-      // 留空表示不改
-      ssh_password: form.ssh_password || undefined,
-      ssh_key: form.ssh_key || undefined,
       fscache: form.fscache,
       socket_ifname: form.socket_ifname,
       ib_hca: form.ib_hca ?? '',
       node_exporter_port: form.node_exporter_port,
       nvidia_gpu_exporter_port: form.nvidia_gpu_exporter_port,
-    });
+    } as Record<string, unknown>;
+    if (!isLocal.value) {
+      Object.assign(payload, {
+        ssh_user: form.ssh_user.trim(),
+        auth_method: form.auth_method,
+        sudo_password: form.clear_sudo_password ? '' : form.sudo_password || undefined,
+        // 留空表示不改
+        ssh_password: form.ssh_password || undefined,
+        ssh_key: form.ssh_key || undefined,
+      });
+    }
+    const updated = await updateNode(props.node.id, payload);
     message.success(t('nodes.edit.updated'));
     emit('saved', updated);
     close();
@@ -138,36 +144,44 @@ async function submit() {
         </a-col>
       </a-row>
 
-      <div class="mi-form-section">{{ t('nodes.form.authMethod') }}</div>
-      <a-form-item :label="t('nodes.form.sshUser')" required>
-        <a-input v-model:value="form.ssh_user" autocomplete="username" />
-      </a-form-item>
-      <a-form-item :label="t('nodes.edit.sshAuthMethod')">
-        <a-radio-group v-model:value="form.auth_method">
-          <a-radio-button value="password">{{ t('nodes.authMethod.password') }}</a-radio-button>
-          <a-radio-button value="key">{{ t('nodes.authMethod.key') }}</a-radio-button>
-        </a-radio-group>
-      </a-form-item>
-      <a-form-item v-if="form.auth_method === 'password'" :label="t('nodes.edit.sshPassword')">
-        <a-input-password v-model:value="form.ssh_password" autocomplete="new-password" />
-      </a-form-item>
-      <a-form-item v-else :label="t('nodes.edit.rootKey')">
-        <a-textarea
-          v-model:value="form.ssh_key"
-          :rows="4"
-          placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
-        />
-      </a-form-item>
-
-      <template v-if="form.ssh_user.trim() && form.ssh_user.trim() !== 'root'">
-        <a-form-item :label="t('nodes.edit.sudoPassword')" :extra="t('nodes.form.sudoHint')">
-          <a-input-password v-model:value="form.sudo_password" :disabled="form.clear_sudo_password" autocomplete="new-password" />
-          <a-checkbox v-model:checked="form.clear_sudo_password">{{ t('nodes.edit.clearSudoPassword') }}</a-checkbox>
+      <a-alert
+        v-if="isLocal"
+        type="info"
+        show-icon
+        :message="t('nodes.localNode.editHint')"
+        style="margin-bottom: 12px"
+      />
+      <template v-else>
+        <div class="mi-form-section">{{ t('nodes.form.authMethod') }}</div>
+        <a-form-item :label="t('nodes.form.sshUser')" required>
+          <a-input v-model:value="form.ssh_user" autocomplete="username" />
         </a-form-item>
-      </template>
+        <a-form-item :label="t('nodes.edit.sshAuthMethod')">
+          <a-radio-group v-model:value="form.auth_method">
+            <a-radio-button value="password">{{ t('nodes.authMethod.password') }}</a-radio-button>
+            <a-radio-button value="key">{{ t('nodes.authMethod.key') }}</a-radio-button>
+          </a-radio-group>
+        </a-form-item>
+        <a-form-item v-if="form.auth_method === 'password'" :label="t('nodes.edit.sshPassword')">
+          <a-input-password v-model:value="form.ssh_password" autocomplete="new-password" />
+        </a-form-item>
+        <a-form-item v-else :label="t('nodes.edit.rootKey')">
+          <a-textarea
+            v-model:value="form.ssh_key"
+            :rows="4"
+            placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+          />
+        </a-form-item>
 
+        <template v-if="form.ssh_user.trim() && form.ssh_user.trim() !== 'root'">
+          <a-form-item :label="t('nodes.edit.sudoPassword')" :extra="t('nodes.form.sudoHint')">
+            <a-input-password v-model:value="form.sudo_password" :disabled="form.clear_sudo_password" autocomplete="new-password" />
+            <a-checkbox v-model:checked="form.clear_sudo_password">{{ t('nodes.edit.clearSudoPassword') }}</a-checkbox>
+          </a-form-item>
+        </template>
+      </template>
       <div class="mi-form-section">{{ t('nodes.config.general') }}</div>
-      <a-form-item :label="t('nodes.config.enableFscache')">
+      <a-form-item v-if="!isLocal" :label="t('nodes.config.enableFscache')">
         <a-switch v-model:checked="form.fscache" />
         <span class="mi-hint" style="margin-left: 8px">
           {{ t('nodes.config.fscacheHint') }}

@@ -29,6 +29,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/health", get(handlers::health::health))
         // ---- 节点管理 ----
         .route("/nodes", get(handlers::nodes::list).post(handlers::nodes::create))
+        .route("/nodes/local-info", get(handlers::nodes::local_info))
         .route(
             "/nodes/{id}",
             get(handlers::nodes::get)
@@ -36,6 +37,7 @@ pub fn build_router(state: AppState) -> Router {
                 .delete(handlers::nodes::delete),
         )
         .route("/nodes/{id}/test", post(handlers::nodes::test))
+        .route("/nodes/{id}/power", post(handlers::nodes::power))
         .route("/nodes/probe", post(handlers::nodes::probe))
         .route("/nodes/{id}/rescan", post(handlers::nodes::rescan))
         // ---- 节点监控（node-exporter 部署 / 状态 / 指标）----
@@ -76,6 +78,22 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route("/deployments/{id}/start", post(handlers::deployments::start))
         .route("/deployments/{id}/stop", post(handlers::deployments::stop))
+        // ---- 运行配置级卡片脚本 override ----
+        .route(
+            "/deployments/{id}/file-overrides",
+            get(handlers::deployments::list_file_overrides)
+                .post(handlers::deployments::create_file_override),
+        )
+        .route(
+            "/deployments/{id}/file-overrides/{override_id}",
+            get(handlers::deployments::get_file_override)
+                .put(handlers::deployments::update_file_override)
+                .delete(handlers::deployments::delete_file_override),
+        )
+        .route(
+            "/deployments/{id}/card-files/content",
+            get(handlers::deployments::get_card_file_content),
+        )
         .route("/deployments/{id}/metrics", get(handlers::inference::metrics))
         // ---- ComfyUI 实例权重管理 ----
         .route(
@@ -257,6 +275,7 @@ mod tests {
                 profile: None,
                 name: "n1".into(),
                 host: "10.0.0.1".into(),
+                access_mode: "ssh".into(),
                 ssh_port: 22,
                 ssh_user: "root".into(),
                 auth_method: "password".into(),
@@ -568,6 +587,14 @@ models:
     }
 
     #[tokio::test]
+    async fn local_node_info_route_uses_probe_not_node_lookup() {
+        let app = build_router(test_state("").await);
+        let (_, v) = get_json(app, "/api/nodes/local-info").await;
+        // Mock 无 ip 输出 → 本机探测失败（20717），而不是被 /nodes/{id} 当作节点 id 查询（20702）
+        assert_eq!(v["code"], 20717);
+    }
+
+    #[tokio::test]
     async fn nodes_crud_via_http() {
         let tmp = tempfile::TempDir::new().unwrap();
         let frontend = tmp.path().join("dist");
@@ -628,6 +655,43 @@ models:
         assert_eq!(list["data"]["total"], 1);
     }
 
+    #[tokio::test]
+    async fn node_power_route_enforces_busy_guard() {
+        use sea_orm::{ActiveModelTrait, EntityTrait, Set};
+
+        let mut state = test_state("").await;
+        let (dep_id, _hub) = seed_deployment(&state.db).await;
+        let dep = crate::entities::deployment::Entity::find_by_id(dep_id)
+            .one(&state.db)
+            .await
+            .unwrap()
+            .unwrap();
+        let node_ids: Vec<String> = serde_json::from_str(&dep.node_ids_json).unwrap();
+        let node_id = node_ids[0].clone();
+        let mut am: crate::entities::deployment::ActiveModel = dep.into();
+        am.state = Set("running".into());
+        am.update(&state.db).await.unwrap();
+
+        let ssh = Arc::new(MockSshExec::new());
+        state.ssh = ssh.clone();
+        let app = build_router(state);
+        let res = app
+            .oneshot(
+                axum::http::Request::builder()
+                    .method("POST")
+                    .uri(format!("/api/nodes/{node_id}/power"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"action":"shutdown"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let body = axum::body::to_bytes(res.into_body(), 1024 * 64).await.unwrap();
+        let v: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(v["code"], 20756);
+        assert!(ssh.recorded_calls().is_empty());
+    }
+
     /// 播种一个运行配置（卡片 + 节点 + 部署配置），返回 (deployment_id, TempDir)
     async fn seed_deployment(db: &sea_orm::DatabaseConnection) -> (String, tempfile::TempDir) {
         use sea_orm::{ActiveModelTrait, Set};
@@ -665,6 +729,7 @@ models:
                 profile: None,
                 name: "n1".into(),
                 host: "10.0.0.1".into(),
+                access_mode: "ssh".into(),
                 ssh_port: 22,
                 ssh_user: "root".into(),
                 auth_method: "password".into(),
@@ -950,13 +1015,15 @@ models:
         };
         let app = build_router(state);
 
-        // 默认：关闭 + 300s + 卡片声明了 health-probe
+        // 默认：never + 连续失败 10 次 + 卡片声明了 health-probe
         let (_, v) = get_json(app.clone(), &format!("/api/deployments/{dep_id}")).await;
         assert_eq!(v["code"], 0);
+        assert_eq!(v["data"]["auto_restart_policy"], "never");
+        assert_eq!(v["data"]["auto_restart_fail_count"], 10);
         assert_eq!(v["data"]["auto_restart_enabled"], false);
-        assert_eq!(v["data"]["auto_restart_fail_secs"], 300);
         assert_eq!(v["data"]["health_probe_declared"], true);
         assert_eq!(v["data"]["auto_restart_attempts"], 0);
+        assert_eq!(v["data"]["auto_restart_consecutive_failures"], 0);
 
         // 预置运行态，验证关闭开关时是否清零
         crate::deploy::autorestart::save(
@@ -969,48 +1036,59 @@ models:
                 attempts: 2,
                 last_at: "2026-10-21T12:01:00+08:00".into(),
                 last_error: "x".into(),
+                ..Default::default()
             },
         )
         .await
         .unwrap();
 
-        // 开启 + 自定义阈值
+        // 开启 unless-stop + 自定义次数阈值
         let req = axum::http::Request::builder()
             .method("PUT")
             .uri(format!("/api/deployments/{dep_id}"))
             .header("content-type", "application/json")
-            .body(Body::from(r#"{"auto_restart_enabled":true,"auto_restart_fail_secs":120}"#))
+            .body(Body::from(
+                r#"{"auto_restart_policy":"unless-stop","auto_restart_fail_count":3}"#,
+            ))
             .unwrap();
         let res = app.clone().oneshot(req).await.unwrap();
         let body = axum::body::to_bytes(res.into_body(), 1024 * 64).await.unwrap();
         let v: Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(v["code"], 0, "body={v}");
+        assert_eq!(v["data"]["auto_restart_policy"], "unless-stop");
+        assert_eq!(v["data"]["auto_restart_fail_count"], 3);
         assert_eq!(v["data"]["auto_restart_enabled"], true);
-        assert_eq!(v["data"]["auto_restart_fail_secs"], 120);
 
-        // 非法阈值 → 20748
+        // 非法策略 / 次数 → 20748
+        for body in [
+            r#"{"auto_restart_policy":"always"}"#,
+            r#"{"auto_restart_fail_count":0}"#,
+            r#"{"auto_restart_fail_count":101}"#,
+        ] {
+            let req = axum::http::Request::builder()
+                .method("PUT")
+                .uri(format!("/api/deployments/{dep_id}"))
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap();
+            let res = app.clone().oneshot(req).await.unwrap();
+            let body = axum::body::to_bytes(res.into_body(), 1024 * 64).await.unwrap();
+            let v: Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(v["code"], 20748, "body={v}");
+        }
+
+        // 改回 never → 运行态清零
         let req = axum::http::Request::builder()
             .method("PUT")
             .uri(format!("/api/deployments/{dep_id}"))
             .header("content-type", "application/json")
-            .body(Body::from(r#"{"auto_restart_fail_secs":10}"#))
-            .unwrap();
-        let res = app.clone().oneshot(req).await.unwrap();
-        let body = axum::body::to_bytes(res.into_body(), 1024 * 64).await.unwrap();
-        let v: Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(v["code"], 20748, "body={v}");
-
-        // 关闭开关 → 运行态清零
-        let req = axum::http::Request::builder()
-            .method("PUT")
-            .uri(format!("/api/deployments/{dep_id}"))
-            .header("content-type", "application/json")
-            .body(Body::from(r#"{"auto_restart_enabled":false}"#))
+            .body(Body::from(r#"{"auto_restart_policy":"never"}"#))
             .unwrap();
         let res = app.clone().oneshot(req).await.unwrap();
         let body = axum::body::to_bytes(res.into_body(), 1024 * 64).await.unwrap();
         let v: Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(v["code"], 0, "body={v}");
+        assert_eq!(v["data"]["auto_restart_policy"], "never");
         assert_eq!(v["data"]["auto_restart_enabled"], false);
         assert_eq!(v["data"]["auto_restart_phase"], "");
         assert_eq!(v["data"]["auto_restart_attempts"], 0);
@@ -1476,6 +1554,7 @@ models:
                     profile: None,
                     name: format!("node-{i}"),
                     host: (*host).into(),
+                    access_mode: "ssh".into(),
                     ssh_port: 22,
                     ssh_user: "root".into(),
                     auth_method: "password".into(),
@@ -1818,6 +1897,19 @@ models:
 
     /// 运行配置覆盖（权重 / 镜像 / 额外环境变量）HTTP 端到端
     #[tokio::test]
+    async fn card_file_override_routes_are_registered() {
+        let app = build_router(test_state("").await);
+        let (_, list) = get_json(app.clone(), "/api/deployments/missing/file-overrides").await;
+        assert_eq!(list["code"], 20702);
+        let (_, original) = get_json(
+            app,
+            "/api/deployments/missing/card-files/content?path=scripts/start.sh",
+        )
+        .await;
+        assert_eq!(original["code"], 20702);
+    }
+
+    #[tokio::test]
     async fn deployment_overrides_via_http() {
         use sea_orm::{ActiveModelTrait, Set};
 
@@ -1868,6 +1960,7 @@ models:
                 profile: None,
                 name: "n1".into(),
                 host: "10.0.0.1".into(),
+                access_mode: "ssh".into(),
                 ssh_port: 22,
                 ssh_user: "root".into(),
                 auth_method: "password".into(),

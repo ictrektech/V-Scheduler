@@ -1,55 +1,47 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  DEFAULT_FAIL_MINUTES,
-  MAX_FAIL_MINUTES,
-  MIN_FAIL_MINUTES,
+  DEFAULT_FAIL_COUNT,
+  MAX_FAIL_COUNT,
+  MIN_FAIL_COUNT,
   PHASE_IDLE,
   PHASE_STARTING,
   PHASE_STOPPING,
+  POLICY_NEVER,
+  POLICY_UNLESS_STOP,
   allVersionsLackHealthProbe,
-  clampMinutes,
+  clampFailCount,
   hasHealthProbe,
   inRestartLoop,
-  minutesToSecs,
+  isUnlessStop,
+  normalizePolicy,
   phaseLabelKey,
-  secsToMinutes,
+  policyLabelKey,
 } from '../autoRestart';
 
-describe('autoRestart 阈值换算', () => {
-  it('默认 5 分钟 = 300 秒', () => {
-    expect(DEFAULT_FAIL_MINUTES).toBe(5);
-    expect(minutesToSecs(DEFAULT_FAIL_MINUTES)).toBe(300);
-    expect(secsToMinutes(300)).toBe(5);
+describe('autoRestart 策略与次数阈值', () => {
+  it('默认策略为 never', () => {
+    expect(DEFAULT_FAIL_COUNT).toBe(10);
+    expect(normalizePolicy(undefined)).toBe(POLICY_NEVER);
+    expect(normalizePolicy('weird')).toBe(POLICY_NEVER);
+    expect(isUnlessStop(POLICY_UNLESS_STOP)).toBe(true);
+    expect(isUnlessStop(POLICY_NEVER)).toBe(false);
   });
 
-  it('分钟归一到 1~1440', () => {
-    expect(clampMinutes(0)).toBe(MIN_FAIL_MINUTES);
-    expect(clampMinutes(-10)).toBe(MIN_FAIL_MINUTES);
-    expect(clampMinutes(1)).toBe(1);
-    expect(clampMinutes(1440)).toBe(MAX_FAIL_MINUTES);
-    expect(clampMinutes(2000)).toBe(MAX_FAIL_MINUTES);
-    expect(clampMinutes(Number.NaN)).toBe(DEFAULT_FAIL_MINUTES);
-    expect(clampMinutes('10' as unknown)).toBe(10);
-    expect(clampMinutes(7.6)).toBe(8);
+  it('次数归一到 1~100', () => {
+    expect(clampFailCount(0)).toBe(MIN_FAIL_COUNT);
+    expect(clampFailCount(-10)).toBe(MIN_FAIL_COUNT);
+    expect(clampFailCount(1)).toBe(1);
+    expect(clampFailCount(100)).toBe(MAX_FAIL_COUNT);
+    expect(clampFailCount(2000)).toBe(MAX_FAIL_COUNT);
+    expect(clampFailCount(Number.NaN)).toBe(DEFAULT_FAIL_COUNT);
+    expect(clampFailCount('10' as unknown)).toBe(10);
+    expect(clampFailCount(7.6)).toBe(8);
   });
 
-  it('秒 → 分钟向上取整且非法回落默认', () => {
-    expect(secsToMinutes(60)).toBe(1);
-    expect(secsToMinutes(61)).toBe(2);
-    expect(secsToMinutes(90)).toBe(2);
-    expect(secsToMinutes(3600)).toBe(60);
-    // 低于后端下限 / 非法 → 默认 5 分钟
-    expect(secsToMinutes(10)).toBe(DEFAULT_FAIL_MINUTES);
-    expect(secsToMinutes(null)).toBe(DEFAULT_FAIL_MINUTES);
-    expect(secsToMinutes('abc' as unknown)).toBe(DEFAULT_FAIL_MINUTES);
-  });
-
-  it('分钟 → 秒不会越界', () => {
-    expect(minutesToSecs(1)).toBe(60);
-    expect(minutesToSecs(1440)).toBe(86400);
-    expect(minutesToSecs(99999)).toBe(86400);
-    expect(minutesToSecs(0)).toBe(60);
+  it('策略映射到 i18n key', () => {
+    expect(policyLabelKey(POLICY_UNLESS_STOP)).toBe('runs.form.autoRestartPolicyUnlessStop');
+    expect(policyLabelKey(POLICY_NEVER)).toBe('runs.form.autoRestartPolicyNever');
   });
 });
 

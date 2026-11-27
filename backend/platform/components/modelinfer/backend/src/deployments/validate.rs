@@ -427,35 +427,57 @@ pub fn validate_extra_env(
     Ok(out)
 }
 
-/// 自动重启连续失败阈值下限（秒）
-pub const MIN_AUTO_RESTART_FAIL_SECS: i64 = 30;
-/// 自动重启连续失败阈值上限（秒，24 小时）
-pub const MAX_AUTO_RESTART_FAIL_SECS: i64 = 86_400;
-/// 自动重启连续失败阈值默认值（秒，5 分钟）
-pub const DEFAULT_AUTO_RESTART_FAIL_SECS: i32 = 300;
+/// 自动重启策略：不自动重启（创建默认）
+pub const AUTO_RESTART_POLICY_NEVER: &str = "never";
+/// 自动重启策略：除用户显式停止外，启动失败 / 探活失败均自动重启（docker unless-stopped 语义）
+pub const AUTO_RESTART_POLICY_UNLESS_STOP: &str = "unless-stop";
+/// 连续探活失败次数阈值下限
+pub const MIN_AUTO_RESTART_FAIL_COUNT: i64 = 1;
+/// 连续探活失败次数阈值上限
+pub const MAX_AUTO_RESTART_FAIL_COUNT: i64 = 100;
+/// 连续探活失败次数阈值默认值（按默认 30s 巡检周期约 5 分钟）
+pub const DEFAULT_AUTO_RESTART_FAIL_COUNT: i32 = 10;
 
-/// 归一化自动重启连续失败阈值（纯函数）
+/// 归一化自动重启策略（纯函数）
 ///
-/// 合法区间 [`MIN_AUTO_RESTART_FAIL_SECS`, `MAX_AUTO_RESTART_FAIL_SECS`]；越界 / 非正返回
-/// `20748`（`AUTO_RESTART_CONFIG_INVALID`）。
+/// 接受 `never` / `unless-stop`；兼容 `unless_stopped` / `unless-stopped` 拼写。
+/// 其它值返回 `20748`（`AUTO_RESTART_CONFIG_INVALID`）。
+pub fn normalize_auto_restart_policy(raw: &str) -> Result<String, ModelinferError> {
+    let normalized = raw.trim().to_ascii_lowercase();
+    match normalized.as_str() {
+        "" | "never" => Ok(AUTO_RESTART_POLICY_NEVER.to_string()),
+        "unless-stop" | "unless_stop" | "unless-stopped" | "unless_stopped" => {
+            Ok(AUTO_RESTART_POLICY_UNLESS_STOP.to_string())
+        }
+        _ => Err(ModelinferError::new(
+            codes::AUTO_RESTART_CONFIG_INVALID,
+            format!(
+                "自动重启策略必须为 {AUTO_RESTART_POLICY_NEVER} 或 {AUTO_RESTART_POLICY_UNLESS_STOP}（当前 {raw}）"
+            ),
+        )),
+    }
+}
+
+/// 归一化连续探活失败次数阈值（纯函数）
 ///
-/// # 示例
-///
-/// ```
-/// use modelinfer::deployments::validate::normalize_auto_restart_fail_secs;
-/// assert_eq!(normalize_auto_restart_fail_secs(300).unwrap(), 300);
-/// assert!(normalize_auto_restart_fail_secs(10).is_err());
-/// ```
-pub fn normalize_auto_restart_fail_secs(raw: i64) -> Result<i32, ModelinferError> {
-    if !(MIN_AUTO_RESTART_FAIL_SECS..=MAX_AUTO_RESTART_FAIL_SECS).contains(&raw) {
+/// 合法区间 [`MIN_AUTO_RESTART_FAIL_COUNT`, `MAX_AUTO_RESTART_FAIL_COUNT`]；越界 / 非正返回
+/// `20748`。
+pub fn normalize_auto_restart_fail_count(raw: i64) -> Result<i32, ModelinferError> {
+    if !(MIN_AUTO_RESTART_FAIL_COUNT..=MAX_AUTO_RESTART_FAIL_COUNT).contains(&raw) {
         return Err(ModelinferError::new(
             codes::AUTO_RESTART_CONFIG_INVALID,
             format!(
-                "自动重启连续失败阈值必须在 {MIN_AUTO_RESTART_FAIL_SECS}~{MAX_AUTO_RESTART_FAIL_SECS} 秒之间（当前 {raw}）"
+                "自动重启连续探活失败次数必须在 {MIN_AUTO_RESTART_FAIL_COUNT}~{MAX_AUTO_RESTART_FAIL_COUNT} 次之间（当前 {raw}）"
             ),
         ));
     }
     Ok(raw as i32)
+}
+
+/// 历史阈值（秒）→ 新阈值（次数）的兼容换算：按默认 30s 巡检周期折算并归一。
+pub fn legacy_auto_restart_fail_count(fail_secs: i64) -> i32 {
+    let count = (fail_secs.max(1) + 29) / 30;
+    count.clamp(MIN_AUTO_RESTART_FAIL_COUNT, MAX_AUTO_RESTART_FAIL_COUNT) as i32
 }
 
 /// 生效权重 `(weight_id, source)`（纯函数）
@@ -506,17 +528,40 @@ mod tests {
     }
 
     #[test]
-    fn auto_restart_fail_secs_bounds() {
-        // 默认 / 合法边界
-        assert_eq!(normalize_auto_restart_fail_secs(300).unwrap(), 300);
-        assert_eq!(normalize_auto_restart_fail_secs(30).unwrap(), 30);
-        assert_eq!(normalize_auto_restart_fail_secs(86_400).unwrap(), 86_400);
-        // 越界 / 非正
-        for bad in [0i64, -1, 29, 86_401] {
-            let err = normalize_auto_restart_fail_secs(bad).unwrap_err();
+    fn auto_restart_policy_normalization() {
+        assert_eq!(normalize_auto_restart_policy("never").unwrap(), AUTO_RESTART_POLICY_NEVER);
+        assert_eq!(
+            normalize_auto_restart_policy("unless-stop").unwrap(),
+            AUTO_RESTART_POLICY_UNLESS_STOP
+        );
+        assert_eq!(
+            normalize_auto_restart_policy(" Unless_Stopped ").unwrap(),
+            AUTO_RESTART_POLICY_UNLESS_STOP
+        );
+        assert_eq!(normalize_auto_restart_policy("").unwrap(), AUTO_RESTART_POLICY_NEVER);
+        for bad in ["always", "unless-stoppedx", "restart"] {
+            assert_eq!(
+                normalize_auto_restart_policy(bad).unwrap_err().code,
+                codes::AUTO_RESTART_CONFIG_INVALID,
+                "bad={bad}"
+            );
+        }
+    }
+
+    #[test]
+    fn auto_restart_fail_count_bounds() {
+        assert_eq!(normalize_auto_restart_fail_count(1).unwrap(), 1);
+        assert_eq!(normalize_auto_restart_fail_count(10).unwrap(), 10);
+        assert_eq!(normalize_auto_restart_fail_count(100).unwrap(), 100);
+        for bad in [0i64, -1, 101, 86_400] {
+            let err = normalize_auto_restart_fail_count(bad).unwrap_err();
             assert_eq!(err.code, codes::AUTO_RESTART_CONFIG_INVALID, "bad={bad}");
         }
-        assert_eq!(DEFAULT_AUTO_RESTART_FAIL_SECS, 300);
+        assert_eq!(DEFAULT_AUTO_RESTART_FAIL_COUNT, 10);
+        // 历史 300s ≈ 10 次；120s ≈ 4 次
+        assert_eq!(legacy_auto_restart_fail_count(300), 10);
+        assert_eq!(legacy_auto_restart_fail_count(120), 4);
+        assert_eq!(legacy_auto_restart_fail_count(1), 1);
     }
 
     #[test]

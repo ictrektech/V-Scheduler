@@ -7,7 +7,9 @@ import { message, Modal } from 'ant-design-vue';
 import {
   DeleteOutlined,
   EditOutlined,
+  PoweroffOutlined,
   ProfileOutlined,
+  RedoOutlined,
   ReloadOutlined,
   SyncOutlined,
   ThunderboltOutlined,
@@ -18,6 +20,7 @@ import TimeText from '@/components/TimeText.vue';
 import CopyText from '@/components/CopyText.vue';
 import NodeEditModal from '@/components/NodeEditModal.vue';
 import MetricsBoard from '@/components/MetricsBoard.vue';
+import MonitorImageHubHint from '@/components/MonitorImageHubHint.vue';
 import {
   deleteNode,
   deployNodeMonitor,
@@ -32,6 +35,7 @@ import {
 import { useMetrics } from '@/composables/useMetrics';
 import { monitorComponentLabelKey, nodeMetricsProfile } from '@/utils/metricProfiles';
 import { reportApiError } from '@/i18n/api-error';
+import { useNodePower } from '@/composables/useNodePower';
 
 const { t } = useI18n();
 const route = useRoute();
@@ -40,6 +44,7 @@ const nodeId = computed(() => String(route.params.id || ''));
 
 const loading = ref(false);
 const node = ref<NodeItem | null>(null);
+const { confirmPower } = useNodePower();
 const editOpen = ref(false);
 
 // ---------- 监控 ----------
@@ -140,6 +145,10 @@ async function onDeployMonitor() {
   }
 }
 
+function onPower(action: 'reboot' | 'shutdown') {
+  if (node.value) confirmPower(node.value, action);
+}
+
 function onDelete() {
   Modal.confirm({
     title: t('nodeDetail.delete.title'),
@@ -214,6 +223,14 @@ function onEditSaved(n: NodeItem) {
     <template #actions>
       <a-button @click="onTest"><ReloadOutlined />{{ t('nodeDetail.actions.testConnection') }}</a-button>
       <a-button @click="onRescan"><SyncOutlined />{{ t('nodeDetail.actions.rescan') }}</a-button>
+      <a-button @click="onPower('reboot')">
+        <RedoOutlined />
+        {{ t('nodes.power.reboot') }}
+      </a-button>
+      <a-button danger @click="onPower('shutdown')">
+        <PoweroffOutlined />
+        {{ t('nodes.power.shutdown') }}
+      </a-button>
       <a-button type="primary" @click="editOpen = true"><EditOutlined />{{ t('nodeDetail.actions.editConfig') }}</a-button>
       <a-button danger @click="onDelete"><DeleteOutlined />{{ t('common.delete') }}</a-button>
     </template>
@@ -226,12 +243,26 @@ function onEditSaved(n: NodeItem) {
           <a-descriptions-item :label="t('nodeDetail.basic.connectionStatus')">
             <StatusTag kind="node" :status="node.status" />
           </a-descriptions-item>
-          <a-descriptions-item :label="t('nodeDetail.basic.sshUser')">{{ node.ssh_user }}</a-descriptions-item>
-          <a-descriptions-item :label="t('nodeDetail.basic.sshPort')">{{ node.ssh_port }}</a-descriptions-item>
+          <a-descriptions-item :label="t('nodeDetail.basic.sshUser')">
+            {{ node.access_mode === 'local' ? t('nodes.authMethod.local') : node.ssh_user }}
+          </a-descriptions-item>
+          <a-descriptions-item :label="t('nodeDetail.basic.sshPort')">
+            {{ node.access_mode === 'local' ? t('common.none') : node.ssh_port }}
+          </a-descriptions-item>
           <a-descriptions-item :label="t('nodeDetail.basic.authMethod')">
-            <StatusTag kind="authMethod" :status="node.auth_method" />
+            <StatusTag kind="authMethod" :status="node.access_mode === 'local' ? 'local' : node.auth_method" />
             <span class="mi-hint" style="margin-left: 8px">
-              {{ node.auth_method === 'key' ? (node.has_key ? t('nodeDetail.basic.keyConfigured') : t('nodeDetail.basic.notConfigured')) : node.has_password ? t('nodeDetail.basic.passwordConfigured') : t('nodeDetail.basic.notConfigured') }}
+              {{
+                node.access_mode === 'local'
+                  ? t('nodes.localNode.hint')
+                  : node.auth_method === 'key'
+                    ? node.has_key
+                      ? t('nodeDetail.basic.keyConfigured')
+                      : t('nodeDetail.basic.notConfigured')
+                    : node.has_password
+                      ? t('nodeDetail.basic.passwordConfigured')
+                      : t('nodeDetail.basic.notConfigured')
+              }}
             </span>
           </a-descriptions-item>
           <a-descriptions-item :label="t('nodeDetail.basic.hostname')">{{ node.hostname || '-' }}</a-descriptions-item>
@@ -285,7 +316,7 @@ function onEditSaved(n: NodeItem) {
             {{ node.nvidia_gpu_exporter_port }}
           </a-descriptions-item>
           <a-descriptions-item label="SOCKET_IFNAME">{{ node.socket_ifname || '-' }}</a-descriptions-item>
-          <a-descriptions-item label="IB_HCA">{{ node.ib_hca || '-' }}</a-descriptions-item>
+          <a-descriptions-item label="IB_HCA" :span="2">{{ node.ib_hca || '-' }}</a-descriptions-item>
           <a-descriptions-item :label="t('nodeDetail.config.interfaces')" :span="2">
             <span v-if="node.interfaces.length">
               {{ node.interfaces.map((i) => `${i.name}: ${i.ips.join(',')}`).join(t('common.listSep')) }}
@@ -329,9 +360,13 @@ function onEditSaved(n: NodeItem) {
             type="error"
             show-icon
             :message="t('nodeDetail.monitor.failed')"
-            :description="m.last_error || t('nodeDetail.monitor.unknownError')"
             style="margin-top: 8px"
-          />
+          >
+            <template #description>
+              <div class="mi-error-detail">{{ m.last_error || t('nodeDetail.monitor.unknownError') }}</div>
+              <MonitorImageHubHint :monitor="m" />
+            </template>
+          </a-alert>
         </div>
         <a-empty v-if="!monitors.length" :description="t('nodeDetail.monitor.empty')" />
       </a-card>
@@ -388,9 +423,15 @@ function onEditSaved(n: NodeItem) {
           type="error"
           show-icon
           :message="t('nodeDetail.monitor.deployFailed')"
-          :description="progressComponent.last_error || t('nodeDetail.monitor.unknownError')"
           style="margin-bottom: 12px"
-        />
+        >
+          <template #description>
+            <div class="mi-error-detail">
+              {{ progressComponent.last_error || t('nodeDetail.monitor.unknownError') }}
+            </div>
+            <MonitorImageHubHint :monitor="progressComponent" />
+          </template>
+        </a-alert>
         <a-steps
           v-if="progressComponent.steps?.length"
           direction="vertical"
@@ -457,6 +498,10 @@ function onEditSaved(n: NodeItem) {
   font-size: 12px;
   color: var(--mi-text);
   word-break: break-all;
+}
+.mi-error-detail {
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 .mi-modal-footer {
   display: flex;

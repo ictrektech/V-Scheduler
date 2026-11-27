@@ -143,6 +143,33 @@ pub async fn test(
     Ok(Json(ResultBody::ok(node, state.version)))
 }
 
+/// `POST /api/nodes/{id}/power`：下发单节点关机 / 重启指令
+///
+/// 仅表示指令已下发；不等待节点完成断电 / 重启。节点被活跃运行配置占用时默认拒绝，
+/// 需显式 `force=true` 才能执行。
+pub async fn power(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(req): Json<nodes::NodePowerReq>,
+) -> Result<Json<ResultBody<nodes::NodePowerResult>>, ModelinferError> {
+    let result = nodes::power_node(&state.db, state.ssh.as_ref(), &id, req).await?;
+    Ok(Json(ResultBody::ok(result, state.version)))
+}
+
+/// `GET /api/nodes/local-info`：经 nsenter 扫描当前宿主机（不落库）
+pub async fn local_info(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<ResultBody<nodes::LocalNodeInfo>>, ModelinferError> {
+    let preferred = state
+        .platform
+        .device_info()
+        .await
+        .map(|d| d.ip_addr)
+        .unwrap_or_default();
+    let info = nodes::probe_local(state.ssh.as_ref(), &preferred).await?;
+    Ok(Json(ResultBody::ok(info, state.version)))
+}
+
 /// `POST /api/nodes/probe`：连接目标设备并扫描硬件（不落库）
 pub async fn probe(
     State(state): State<Arc<AppState>>,

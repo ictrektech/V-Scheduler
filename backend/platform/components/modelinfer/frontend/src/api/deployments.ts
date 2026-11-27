@@ -78,18 +78,24 @@ export interface DeploymentItem {
   /** 实际监听端口（0 = 未运行） */
   local_proxy_active_port: number;
   local_proxy_last_error: string;
-  /** 探活失败自动重启：开关 / 连续失败阈值（秒） */
-  auto_restart_enabled: boolean;
-  auto_restart_fail_secs: number;
-  /** 自动重启运行态：相位（"" / stopping / starting）/ 失败起点 / backoff 截止 / 尝试次数 /
-   *  最近动作时间 / 最近错误 */
+  /** 自动重启策略：never（默认）/ unless-stop */
+  auto_restart_policy: string;
+  /** 连续探活失败次数阈值（1~100） */
+  auto_restart_fail_count: number;
+  /** 历史兼容派生字段：策略是否非 never */
+  auto_restart_enabled?: boolean;
+  /** 自动重启运行态：相位（"" / stopping / starting）/ 连续失败起点与次数 / backoff 截止 /
+   *  尝试次数 / 最近动作时间 / 最近错误 */
   auto_restart_phase: string;
   auto_restart_failed_since: string;
+  auto_restart_consecutive_failures: number;
   auto_restart_next_at: string;
   auto_restart_attempts: number;
   auto_restart_last_at: string;
   auto_restart_last_error: string;
-  /** 卡片是否声明 `lifecycle.health-probe`（未声明时自动重启不会生效） */
+  /** 用户手动启停 / 配置变更后的抑制起点（内部字段） */
+  auto_restart_ignore_before?: string;
+  /** 卡片是否声明 `lifecycle.health-probe`（未声明时探活失败不会触发自动重启） */
   health_probe_declared: boolean;
   /** 推理引擎类型（vllm / unknown / 空 = 未探测） */
   inference_engine: string;
@@ -163,10 +169,10 @@ export interface DeploymentCreateReq {
   local_proxy_enabled?: boolean;
   /** 本地反代：期望端口（空 / 0 = 自动分配 31000~31100） */
   local_proxy_port?: number | null;
-  /** 探活失败自动重启（默认关闭） */
-  auto_restart_enabled?: boolean;
-  /** 自动重启连续失败阈值（秒，默认 300，范围 30~86400） */
-  auto_restart_fail_secs?: number;
+  /** 自动重启策略（默认 never） */
+  auto_restart_policy?: string;
+  /** 连续探活失败次数阈值（默认 10，范围 1~100） */
+  auto_restart_fail_count?: number;
 }
 
 /** V-Router 注册信息 */
@@ -341,4 +347,81 @@ export function addComfyuiWeight(id: string, req: ComfyuiAddWeightReq): Promise<
 /** 删除 ComfyUI 实例权重（软链 + 台账） */
 export function deleteComfyuiWeight(id: string, recordId: string): Promise<{ deleted: string }> {
   return del<{ deleted: string }>(`/api/deployments/${id}/comfyui/weights/${recordId}`);
+}
+// ============ 运行配置级卡片脚本 override ============
+
+export interface DeploymentScriptFile {
+  path: string;
+  size_bytes: number;
+  /** 已创建 override 时非空 */
+  override_id: string;
+  updated_at?: string | null;
+}
+
+export interface DeploymentFileOverrideList {
+  files: DeploymentScriptFile[];
+  overridden: number;
+  max_content_bytes: number;
+  max_files: number;
+}
+
+export interface DeploymentFileOverrideDetail {
+  id: string;
+  deployment_id: string;
+  path: string;
+  content: string;
+  original_content: string;
+  size_bytes: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** 运行配置可覆盖的卡片 scripts 清单 */
+export function listDeploymentFileOverrides(id: string): Promise<DeploymentFileOverrideList> {
+  return get<DeploymentFileOverrideList>(`/api/deployments/${id}/file-overrides`);
+}
+
+/** 卡片原始脚本内容 */
+export function getDeploymentCardFileContent(
+  id: string,
+  path: string,
+): Promise<{ path: string; content: string }> {
+  return get<{ path: string; content: string }>(`/api/deployments/${id}/card-files/content`, {
+    path,
+  });
+}
+
+/** 创建 override（content 缺省 = 复制原始文件） */
+export function createDeploymentFileOverride(
+  id: string,
+  req: { path: string; content?: string },
+): Promise<DeploymentFileOverrideDetail> {
+  return post<DeploymentFileOverrideDetail>(`/api/deployments/${id}/file-overrides`, req);
+}
+
+export function getDeploymentFileOverride(
+  id: string,
+  overrideId: string,
+): Promise<DeploymentFileOverrideDetail> {
+  return get<DeploymentFileOverrideDetail>(
+    `/api/deployments/${id}/file-overrides/${overrideId}`,
+  );
+}
+
+export function updateDeploymentFileOverride(
+  id: string,
+  overrideId: string,
+  content: string,
+): Promise<DeploymentFileOverrideDetail> {
+  return put<DeploymentFileOverrideDetail>(
+    `/api/deployments/${id}/file-overrides/${overrideId}`,
+    { content },
+  );
+}
+
+export function deleteDeploymentFileOverride(
+  id: string,
+  overrideId: string,
+): Promise<{ deleted: string }> {
+  return del<{ deleted: string }>(`/api/deployments/${id}/file-overrides/${overrideId}`);
 }

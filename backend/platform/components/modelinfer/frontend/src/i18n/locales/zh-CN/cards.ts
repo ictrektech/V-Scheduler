@@ -17,6 +17,7 @@ export default {
   sortByVersions: '按版本数',
   sortByLatest: '按最近登记',
   weight: '权重',
+  images: '镜像',
   versionsSuffix: '个版本',
   cardSizeTooltip: '卡片定义包（model.tar.gz）体积；模型权重经 model-hub 分发，不计入此处',
   cardPackage: '卡片包',

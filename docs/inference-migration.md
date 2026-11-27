@@ -68,3 +68,29 @@ For a model card’s default images, open its manifest in **Inference deployment
 Administrators can open **Resources and tasks → Execution resources** for the logical CPU count and utilization, system memory used, total and available, GPU utilization, and sample timestamp on observation-only nodes. Enable the embedded inference runtime and SSH node management so the controller can sample through the node’s saved connection. Jetson and GB10 report shared system memory once. Discrete GPUs with supported telemetry show their own device memory. Missing or stale samples (90 seconds) are shown as unavailable. Verify the saved SSH connection and wait for the next sample. Scheduling budgets are displayed independently of hardware availability.
 
 `GET /nodes` uses the existing scheduling API administrator Bearer token and takes no parameters. See **API Documentation → Scheduling API → Nodes and placements** for the response fields and errors. Read live samples from `data[].modelinfer_source.node.host_resources` when `modelinfer_source.fresh` is true. The SSH sample object can be absent when the connection or probe fails. GPU fields can be null for unsupported devices.
+
+## ModelInfer 本机节点、部署文件和电源 / Local nodes, deployment files and power
+
+管理员在「推理部署 → 节点监控」选择「添加当前节点」。需要在 VOS 应用配置中启用 `SCHEDULER_MODELINFER_HOST_ACCESS` 并将 `SCHEDULER_MODELINFER_PID_MODE` 设为 `host`。默认使用隔离的 PID 命名空间。启用后容器以特权模式访问当前宿主机，适用于由设备管理员维护的主机。扫描填入硬件信息，节点名称由管理员填写。分节点继续使用 SSH。添加通过 ModelInfer 管理的本机节点后，可用于推理运行配置。
+
+在「推理部署 → 部署列表」打开运行配置的文件覆盖。选择模型卡中的脚本，编辑并保存，下一次启动部署会使用修改后的文件。删掉覆盖可在下次启动恢复卡片默认文件。模型卡原件由模型广场管理。节点列表和详情支持关机及重启，繁忙节点默认拒绝，确认采用强制模式会跳过任务和占用检查。接口成功表示命令已下发。
+
+Administrators can choose **Add current node** under **Inference deployments → Node monitoring**. In the VOS app configuration, enable `SCHEDULER_MODELINFER_HOST_ACCESS` and set `SCHEDULER_MODELINFER_PID_MODE` to `host`. The default keeps the PID namespace isolated. The two settings allow privileged access to the current host and are intended for device administrators. The scan fills in the hardware details. Enter a node name before saving. Remote nodes use SSH. The local node is available to ModelInfer deployments.
+
+Open a deployment's file overrides from **Inference deployments → Deployments**. Select a script from the model card and save an override to use it on the next deployment start. Removing the override restores the card's default on the next start. The node list and details provide shutdown and reboot. Requests are blocked when the node has active work. Explicit force skips both Scheduler and ModelInfer occupancy checks. A successful response confirms command dispatch.
+
+API base: `/api/com.ictrek.v-scheduler/scheduler/api/v1/inference/runtime`. Use an administrator VOS bearer token. Direct controller access uses `http://<vos-host>:38120/api/v1/inference/runtime` by default. The native operations use the existing numeric ModelInfer envelope. An API client checks both HTTP status and the envelope `code` (0 means success). / 使用 VOS 管理员 Bearer。调用同时检查 HTTP 状态和 ModelInfer 响应的数字 `code`（0 为成功）。
+
+| Method and path | Contract / 契约 |
+| --- | --- |
+| `GET /nodes/local-info` | Probe the current host without saving a node. Requires local host access. / 扫描本机并返回硬件信息。需启用本机免密访问。 |
+| `POST /nodes` | Existing node fields apply. Set optional `access_mode` to `local` for the current host (SSH credentials are ignored) or leave it at the default `ssh` for remote nodes. / 沿用节点字段。指定 `local` 时忽略 SSH 凭据，默认 `ssh`。 |
+| `POST /nodes/{id}/power` | JSON `{"action":"reboot","force":false}`. `action` is required and accepts `reboot` or `shutdown`. Optional boolean `force` defaults to false. Success returns `node_id`, `action`, `force` and ISO-8601 `accepted_at`. Scheduler returns HTTP 409 `NODE_HAS_SCHEDULER_WORK` for pending or active work. Native codes `20756` and `20757` indicate an occupied node and a failed command. / 可选 `force` 默认 false。409 表示有调度任务，20756 表示运行配置占用，20757 表示下发失败。 |
+| `GET /deployments/{id}/file-overrides` | Returns `files` (each has `path`, `size_bytes`, `override_id` and nullable `updated_at`), plus `overridden`, `max_content_bytes` and `max_files`. / 查看文件和覆盖数量与限制。 |
+| `GET /deployments/{id}/card-files/content?path=<relative-script>` | Read the original model card script. / 读取原始脚本。 |
+| `POST /deployments/{id}/file-overrides` | JSON with required script `path` and optional `content`. Omitted or null content copies the original. / 提交路径和可选内容，未指定内容时复制原文。 |
+| `GET /deployments/{id}/file-overrides/{override_id}` | Returns `id`, `deployment_id`, `path`, `content`, `original_content`, `size_bytes`, `created_at` and `updated_at`. Create and update return the same shape. / 读取覆盖详情。创建和更新返回相同字段。 |
+| `PUT /deployments/{id}/file-overrides/{override_id}` | JSON with string `content`; replace a script override. / 替换覆盖内容。 |
+| `DELETE /deployments/{id}/file-overrides/{override_id}` | Clear the deployment override. / 删除覆盖。 |
+
+Overrides accept up to 64 script files per deployment and 1 MiB of UTF-8 content per file. Use a script path from the file list. Native `20753` means local host execution is unavailable, `20754` means the override input is invalid and `20755` means the model-card file or override was not found. / 每个部署最多覆盖 64 个文件，每个文件最多 1 MiB。使用文件清单里的路径。20753 表示本机执行不可用，20754 表示覆盖输入无效，20755 表示脚本或覆盖不存在。

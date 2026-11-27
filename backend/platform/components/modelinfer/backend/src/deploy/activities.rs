@@ -285,6 +285,13 @@ impl DeployActivities {
     ) -> Result<serde_json::Value, ActivityError> {
         let rt = load_runtime(&self.deps, &req.deployment_id).await.map_err(map_err)?;
         let nodes = mount_nodes_of(&rt);
+        if nodes.is_empty() {
+            return Ok(serde_json::json!({
+                "mount_source": "",
+                "nodes": 0,
+                "message": "仅本机节点，跳过 NFS 挂载",
+            }));
+        }
         // 共享节点保护：若本次挂载失败需要回滚，不得卸载其他活跃运行配置正在使用的 NFS。
         let protected = other_active_node_ids(&self.deps.db, &rt.deployment_id)
             .await
@@ -318,6 +325,10 @@ impl DeployActivities {
                 format!("模型包不存在: {}", rt.package_path),
             )));
         }
+        let file_overrides =
+            deployments::file_overrides::for_deployment(&self.deps.db, &req.deployment_id)
+                .await
+                .map_err(map_err)?;
         for node in rt.ordered_nodes() {
             let mk = self
                 .deps
@@ -351,6 +362,37 @@ impl DeployActivities {
                     format!("节点 {} 解压失败: {}", node.host, untar.stderr.trim()),
                 )));
             }
+            // 卡片文件 override：模型包解压完成后、生命周期脚本执行前按相对路径覆盖。
+            for (rel, content) in &file_overrides {
+                let remote = format!("{}/{}", rt.workdir, rel);
+                upload_script(&self.deps, node, &remote, content)
+                    .await
+                    .map_err(map_err)?;
+                if rel.ends_with(".sh") {
+                    let chmod = self
+                        .deps
+                        .ssh
+                        .run(
+                            &target_of(node),
+                            &format!(
+                                "chmod 0755 -- {}",
+                                crate::deploy::script::sh_quote(&remote)
+                            ),
+                        )
+                        .await
+                        .map_err(map_err)?;
+                    if !chmod.success() {
+                        return Err(act_err(ModelinferError::new(
+                            codes::MODEL_DISTRIBUTION_FAILED,
+                            format!(
+                                "节点 {} 设置 override 脚本可执行权限失败: {}",
+                                node.host,
+                                chmod.stderr.trim()
+                            ),
+                        )));
+                    }
+                }
+            }
             // env.sh
             let env_content = build_env_script(&rt, node);
             upload_script(&self.deps, node, &rt.env_script(), &env_content)
@@ -365,7 +407,10 @@ impl DeployActivities {
                 }
             }
         }
-        Ok(serde_json::json!({ "nodes": rt.nodes.len() }))
+        Ok(serde_json::json!({
+            "nodes": rt.nodes.len(),
+            "file_overrides": file_overrides.len(),
+        }))
     }
 
     /// `run_stage` 主体（不含步骤记录）：逐节点执行阶段脚本，记录日志 / 结构化数据
@@ -720,6 +765,7 @@ async fn other_active_node_ids(
 fn mount_nodes_of(rt: &DeployRuntime) -> Vec<MountNode> {
     rt.nodes
         .iter()
+        .filter(|n| !DeployRuntime::is_local_node(n))
         .map(|n| MountNode {
             id: n.id.clone(),
             name: n.name.clone(),
@@ -736,6 +782,9 @@ fn mount_nodes_of(rt: &DeployRuntime) -> Vec<MountNode> {
 }
 
 pub(crate) fn target_of(n: &DeployNode) -> SshTarget {
+    if DeployRuntime::is_local_node(n) {
+        return SshTarget::local(n.host.clone());
+    }
     SshTarget::from_credentials(
         n.host.clone(),
         n.port,
@@ -808,7 +857,6 @@ impl DeployActivities {
         ctx: ActivityContext,
         req: DeploymentStartReq,
     ) -> Result<DeployPlan, ActivityError> {
-        let rt = load_runtime(&self.deps, &req.deployment_id).await.map_err(map_err)?;
         // Temporal 工作流 id：仅作按需查询句柄（不落 activity 历史）
         let workflow_id = ctx
             .info()
@@ -816,7 +864,9 @@ impl DeployActivities {
             .as_ref()
             .map(|e| e.workflow_id.clone())
             .unwrap_or_default();
-        // 创建启动运行记录（run_id 经计划回传，避免 workflow 生成非确定性标识）
+        // 创建启动运行记录（run_id 经计划回传，避免 workflow 生成非确定性标识）。
+        // 必须先于 load_runtime：启动失败（含 prepare 早期失败）必须留下 failed run，
+        // 自动重启据此识别「首次启动失败」。
         let trigger = if req.trigger.trim().is_empty() {
             "manual"
         } else {
@@ -836,6 +886,22 @@ impl DeployActivities {
         )
         .await
         .map_err(map_err)?;
+        let rt = match load_runtime(&self.deps, &req.deployment_id).await {
+            Ok(rt) => rt,
+            Err(e) => {
+                let _ = observability::finish_and_prune(
+                    &self.deps.db,
+                    &req.deployment_id,
+                    self.deps.settings_defaults,
+                    &run_id,
+                    state::FAILED,
+                    &format!("准备阶段失败: {}", e.msg),
+                    &e.msg,
+                )
+                .await;
+                return Err(map_err(e));
+            }
+        };
         let plan = plan_of(&rt, &run_id);
         let step = self
             .begin_step(&req.deployment_id, &run_id, kind::START, "prepare", "", None)
@@ -865,7 +931,20 @@ impl DeployActivities {
                 )
                 .await;
             }
-            Err(e) => self.end_step_err(step.as_deref(), &act_err_msg(e)).await,
+            Err(e) => {
+                let detail = act_err_msg(e);
+                self.end_step_err(step.as_deref(), &detail).await;
+                let _ = observability::finish_and_prune(
+                    &self.deps.db,
+                    &req.deployment_id,
+                    self.deps.settings_defaults,
+                    &run_id,
+                    state::FAILED,
+                    &format!("准备阶段失败: {detail}"),
+                    &detail,
+                )
+                .await;
+            }
         }
         outcome?;
         Ok(plan)
@@ -1281,6 +1360,7 @@ impl DeployActivities {
         // 解除挂载
         let mount_nodes: Vec<MountNode> = dep_nodes
             .iter()
+            .filter(|n| !DeployRuntime::is_local_node(n))
             .map(|n| MountNode {
                 id: n.id.clone(),
                 name: n.name.clone(),
@@ -1297,6 +1377,7 @@ impl DeployActivities {
         let umount_step = self
             .begin_step(&d.id, &stop_run_id, kind::STOP, "umount", "", None)
             .await;
+        let had_remote_mounts = !mount_nodes.is_empty();
         // 共享节点保护：其他活跃运行配置仍引用该节点时保留 NFS 挂载。
         // DB 读取失败时保守地保护全部节点（宁可残留挂载，也不破坏其他运行中的配置）。
         let protected = other_active_node_ids(&self.deps.db, &d.id)
@@ -1306,12 +1387,17 @@ impl DeployActivities {
             .into_iter()
             .partition(|n| protected.iter().any(|id| id == &n.id));
         if to_umount.is_empty() {
+            let message = if had_remote_mounts {
+                "节点均被其他活跃运行配置共享，保留 NFS 挂载"
+            } else {
+                "仅本机节点，跳过 NFS 卸载"
+            };
             self.end_step_ok(
                 umount_step.as_deref(),
                 serde_json::json!({
                     "nodes": 0,
                     "skipped_shared_nodes": skipped.len(),
-                    "message": "节点均被其他活跃运行配置共享，保留 NFS 挂载",
+                    "message": message,
                 }),
             )
             .await;
@@ -1706,6 +1792,16 @@ mod tests {
         }
     }
 
+    #[test]
+    fn local_deploy_node_target_uses_nsenter() {
+        let mut n = node();
+        n.auth_method = "local".into();
+        n.password.clear();
+        let target = target_of(&n);
+        assert!(target.is_local());
+        assert_eq!(target.auth.kind(), "local");
+    }
+
     /// `run_on_node` MUST 把调用方给定的超时透传到 SSH 执行器（长启动阶段不再被 90s 强杀）
     #[tokio::test]
     async fn run_on_node_passes_timeout_to_ssh() {
@@ -1723,6 +1819,106 @@ mod tests {
             ssh.recorded_timeouts(),
             vec![Duration::from_secs(900)],
             "阶段超时应透传到 SSH"
+        );
+    }
+
+    #[tokio::test]
+    async fn distribute_model_uploads_file_overrides_after_package() {
+        use sea_orm::{ActiveModelTrait, Set};
+        let ssh = Arc::new(crate::ssh::MockSshExec::new());
+        let mut deps = deps_with(ssh.clone()).await;
+        let tmp = tempfile::tempdir().unwrap();
+        deps.model_hub_path = tmp.path().display().to_string();
+        let card_dir = tmp.path().join("card");
+        let src_dir = card_dir.join("src");
+        std::fs::create_dir_all(src_dir.join("scripts")).unwrap();
+        std::fs::write(src_dir.join("manifest.yaml"), "id: c\nversion: '1'\n").unwrap();
+        std::fs::write(src_dir.join("scripts/start.sh"), "echo original\n").unwrap();
+        std::fs::write(card_dir.join("model.tar.gz"), b"mock").unwrap();
+
+        let now = crate::time::now_iso();
+        crate::entities::node::ActiveModel {
+            id: Set("n1".into()),
+            name: Set("local-n1".into()),
+            host: Set("127.0.0.1".into()),
+            access_mode: Set("local".into()),
+            auth_method: Set("local".into()),
+            created_at: Set(now.clone()),
+            updated_at: Set(now.clone()),
+            ..Default::default()
+        }
+        .insert(&deps.db)
+        .await
+        .unwrap();
+        crate::entities::plaza_model::ActiveModel {
+            id: Set("c@1".into()),
+            model_id: Set("c".into()),
+            model: Set(String::new()),
+            name: Set("c".into()),
+            version: Set("1".into()),
+            source: Set("local".into()),
+            source_id: Set(String::new()),
+            path: Set(src_dir.display().to_string()),
+            package_path: Set(card_dir.join("model.tar.gz").display().to_string()),
+            package_sha256: Set(String::new()),
+            manifest_json: Set("{}".into()),
+            state: Set("available".into()),
+            size_bytes: Set(4),
+            created_at: Set(now.clone()),
+            updated_at: Set(now.clone()),
+        }
+        .insert(&deps.db)
+        .await
+        .unwrap();
+        crate::entities::deployment::ActiveModel {
+            id: Set("d1".into()),
+            name: Set("d1".into()),
+            plaza_model_id: Set("c@1".into()),
+            card_id: Set("c".into()),
+            node_ids_json: Set("[\"n1\"]".into()),
+            head_node_id: Set("n1".into()),
+            serve_port: Set(8000),
+            created_at: Set(now.clone()),
+            updated_at: Set(now.clone()),
+            ..Default::default()
+        }
+        .insert(&deps.db)
+        .await
+        .unwrap();
+        crate::entities::deployment_file_override::ActiveModel {
+            id: Set("o1".into()),
+            deployment_id: Set("d1".into()),
+            path: Set("scripts/start.sh".into()),
+            content: Set("echo override\n".into()),
+            size_bytes: Set(14),
+            created_at: Set(now.clone()),
+            updated_at: Set(now),
+        }
+        .insert(&deps.db)
+        .await
+        .unwrap();
+
+        let acts = DeployActivities::new(deps);
+        let out = acts
+            .distribute_model_impl(&DeploymentIdReq {
+                deployment_id: "d1".into(),
+                run_id: String::new(),
+            })
+            .await
+            .unwrap();
+        assert_eq!(out["file_overrides"], 1);
+        let remote = "/opt/modelinfer/deployments/d1/scripts/start.sh";
+        assert!(
+            ssh.recorded_uploads().iter().any(|u| u.ends_with(remote)),
+            "uploads={:?}",
+            ssh.recorded_uploads()
+        );
+        assert!(
+            ssh.recorded_calls()
+                .iter()
+                .any(|c| c.contains(&format!("chmod 0755 -- '{}'", remote))),
+            "calls={:?}",
+            ssh.recorded_calls()
         );
     }
 

@@ -2,7 +2,16 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { message, Modal } from 'ant-design-vue';
-import { DownOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, SyncOutlined } from '@ant-design/icons-vue';
+import {
+  CloudServerOutlined,
+  DownOutlined,
+  PlusOutlined,
+  PoweroffOutlined,
+  RedoOutlined,
+  ReloadOutlined,
+  SearchOutlined,
+  SyncOutlined,
+} from '@ant-design/icons-vue';
 import PageShell from '@/components/PageShell.vue';
 import StatPill from '@/components/StatPill.vue';
 import StatusTag from '@/components/StatusTag.vue';
@@ -14,6 +23,7 @@ import {
   DEFAULT_NVIDIA_GPU_EXPORTER_PORT,
   createNode,
   deleteNode,
+  fetchLocalNodeInfo,
   listNodes,
   probeNode,
   rescanNode,
@@ -29,10 +39,12 @@ import { useI18n } from 'vue-i18n';
 import { reportApiError } from '@/i18n/api-error';
 import { localizedTitle } from '@/platform/localized-title';
 import { openDetailInNewTab } from '@/platform/open-tab';
+import { useNodePower } from '@/composables/useNodePower';
 
 const { t } = useI18n();
 
 const router = useRouter();
+const { confirmPower } = useNodePower();
 
 const loading = ref(false);
 /** 当前页节点（服务端分页） */
@@ -49,6 +61,7 @@ const wizardOpen = ref(false);
 const step = ref(0);
 const scanning = ref(false);
 const saving = ref(false);
+const localLoading = ref(false);
 const scanned = ref<NodeScanResult | null>(null);
 
 // ---------- 编辑（配置） ----------
@@ -65,6 +78,7 @@ const filters = reactive({
 const form = reactive<NodeCreateReq>({
   name: '',
   host: '',
+  access_mode: 'ssh',
   ssh_port: 22,
   ssh_user: 'root',
   auth_method: 'password',
@@ -209,6 +223,7 @@ onBeforeUnmount(() => debouncedKeywordReload.cancel());
 function resetForm() {
   form.name = '';
   form.host = '';
+  form.access_mode = 'ssh';
   form.ssh_port = 22;
   form.ssh_user = 'root';
   form.auth_method = 'password';
@@ -228,6 +243,29 @@ function openCreate() {
   resetForm();
   step.value = 0;
   wizardOpen.value = true;
+}
+
+/** 添加当前节点：先经 nsenter 探测宿主机并预填主机信息，节点名称留空由用户填写 */
+async function openLocalCreate() {
+  resetForm();
+  localLoading.value = true;
+  try {
+    const info = await fetchLocalNodeInfo();
+    form.access_mode = 'local';
+    form.host = info.host;
+    form.hostname = info.scan.hostname;
+    form.ssh_user = 'root';
+    form.auth_method = 'local';
+    form.socket_ifname = info.scan.default_socket_ifname || '';
+    form.ib_hca = info.scan.suggested_ib_hca || '';
+    scanned.value = info.scan;
+    step.value = 0;
+    wizardOpen.value = true;
+  } catch (e) {
+    message.error(resolveApiErrorMessage(e));
+  } finally {
+    localLoading.value = false;
+  }
 }
 
 function openEdit(row: NodeItem) {
@@ -250,6 +288,7 @@ function validateBasic(): boolean {
     message.warning(t('nodes.msg.nameHostRequired'));
     return false;
   }
+  if (form.access_mode === 'local') return true;
   if (!form.ssh_user?.trim()) {
     message.warning(t('nodes.msg.sshUserRequired'));
     return false;
@@ -270,7 +309,14 @@ async function doScan() {
   if (!validateBasic()) return false;
   scanning.value = true;
   try {
-    const scan = await probeNode({ ...form });
+    let scan: NodeScanResult;
+    if (form.access_mode === 'local') {
+      const info = await fetchLocalNodeInfo();
+      scan = info.scan;
+      if (!form.host) form.host = info.host;
+    } else {
+      scan = await probeNode({ ...form });
+    }
     scanned.value = scan;
     if (!form.hostname) form.hostname = scan.hostname;
     if (!form.socket_ifname && scan.default_socket_ifname) form.socket_ifname = scan.default_socket_ifname;
@@ -310,7 +356,12 @@ async function submitCreate() {
   }
   saving.value = true;
   try {
-    await createNode({ ...form, name: form.name.trim(), host: form.host.trim() });
+    await createNode({
+      ...form,
+      name: form.name.trim(),
+      host: form.host.trim(),
+      access_mode: form.access_mode || 'ssh',
+    });
     message.success(t('nodes.msg.nodeAdded'));
     wizardOpen.value = false;
     await load();
@@ -358,6 +409,10 @@ function onDelete(row: NodeItem) {
   });
 }
 
+function onPower(row: NodeItem, action: 'reboot' | 'shutdown') {
+  confirmPower(row, action);
+}
+
 function onMoreMenu(e: { key: string | number }, row: NodeItem) {
   switch (e.key) {
     case 'detail':
@@ -396,6 +451,10 @@ onMounted(load);
       <a-button @click="load">
         <ReloadOutlined />
         {{ t('common.refresh') }}
+      </a-button>
+      <a-button :loading="localLoading" @click="openLocalCreate">
+        <CloudServerOutlined />
+        {{ t('nodes.addLocalNode') }}
       </a-button>
       <a-button type="primary" @click="openCreate">
         <PlusOutlined />
@@ -439,6 +498,7 @@ onMounted(load);
 
         <template v-else-if="column.key === 'host'">
           <CopyText :text="record.host" />
+          <div v-if="record.access_mode === 'local'" class="mi-hint">{{ t('nodes.localNode.tag') }}</div>
           <div v-if="record.profile" class="mi-hint">{{ record.profile }}</div>
         </template>
 
@@ -498,6 +558,14 @@ onMounted(load);
           <a-space :size="4">
             <a-button size="small" type="link" @click="openDetail(record)">{{ t('common.detail') }}</a-button>
             <a-button size="small" type="link" @click="onRescan(record)">{{ t('nodes.rescan') }}</a-button>
+            <a-button size="small" type="link" @click="onPower(record, 'reboot')">
+              <RedoOutlined />
+              {{ t('nodes.power.reboot') }}
+            </a-button>
+            <a-button size="small" type="link" danger @click="onPower(record, 'shutdown')">
+              <PoweroffOutlined />
+              {{ t('nodes.power.shutdown') }}
+            </a-button>
             <a-dropdown :trigger="['click']">
               <a-button size="small" type="link">
                 {{ t('common.more') }}
@@ -529,7 +597,7 @@ onMounted(load);
     <!-- 添加节点：多步向导 -->
     <a-modal
       v-model:open="wizardOpen"
-      :title="t('nodes.addNode')"
+      :title="form.access_mode === 'local' ? t('nodes.addLocalNode') : t('nodes.addNode')"
       width="760px"
       :mask-closable="false"
       :footer="null"
@@ -556,49 +624,67 @@ onMounted(load);
               </a-form-item>
             </a-col>
           </a-row>
-          <a-row :gutter="12">
-            <a-col :span="12">
-              <a-form-item :label="t('nodes.form.sshPort')">
-                <a-input-number v-model:value="form.ssh_port" :min="1" :max="65535" style="width: 100%" />
-              </a-form-item>
-            </a-col>
-            <a-col :span="12">
-              <a-form-item :label="t('nodes.form.sshUser')">
-                <a-input v-model:value="form.ssh_user" autocomplete="username" />
-              </a-form-item>
-            </a-col>
-          </a-row>
-          <a-form-item :label="t('nodes.form.authMethod')">
-            <a-radio-group v-model:value="form.auth_method">
-              <a-radio-button value="password">{{ t('nodes.form.rootPassword') }}</a-radio-button>
-              <a-radio-button value="key">{{ t('nodes.form.rootKey') }}</a-radio-button>
-            </a-radio-group>
-          </a-form-item>
-          <a-form-item v-if="form.auth_method === 'password'" :label="t('nodes.form.rootPassword')" required>
-            <a-input-password v-model:value="form.ssh_password" autocomplete="new-password" />
-          </a-form-item>
-          <a-form-item v-else :label="t('nodes.form.rootKey')" required>
-            <a-textarea
-              v-model:value="form.ssh_key"
-              :rows="5"
-              placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
-            />
-          </a-form-item>
-          <a-form-item
-            v-if="form.ssh_user?.trim() && form.ssh_user.trim() !== 'root'"
-            :label="t('nodes.form.sudoPassword')"
-            :extra="t('nodes.form.sudoHint')"
-          >
-            <a-input-password v-model:value="form.sudo_password" autocomplete="new-password" />
-          </a-form-item>
+          <a-alert
+            v-if="form.access_mode === 'local'"
+            type="info"
+            show-icon
+            :message="t('nodes.localNode.title')"
+            :description="t('nodes.localNode.hint')"
+            style="margin-bottom: 12px"
+          />
+          <template v-else>
+            <a-row :gutter="12">
+              <a-col :span="12">
+                <a-form-item :label="t('nodes.form.sshPort')">
+                  <a-input-number v-model:value="form.ssh_port" :min="1" :max="65535" style="width: 100%" />
+                </a-form-item>
+              </a-col>
+              <a-col :span="12">
+                <a-form-item :label="t('nodes.form.sshUser')">
+                  <a-input v-model:value="form.ssh_user" autocomplete="username" />
+                </a-form-item>
+              </a-col>
+            </a-row>
+            <a-form-item :label="t('nodes.form.authMethod')">
+              <a-radio-group v-model:value="form.auth_method">
+                <a-radio-button value="password">{{ t('nodes.form.rootPassword') }}</a-radio-button>
+                <a-radio-button value="key">{{ t('nodes.form.rootKey') }}</a-radio-button>
+              </a-radio-group>
+            </a-form-item>
+            <a-form-item v-if="form.auth_method === 'password'" :label="t('nodes.form.rootPassword')" required>
+              <a-input-password v-model:value="form.ssh_password" autocomplete="new-password" />
+            </a-form-item>
+            <a-form-item v-else :label="t('nodes.form.rootKey')" required>
+              <a-textarea
+                v-model:value="form.ssh_key"
+                :rows="5"
+                placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+              />
+            </a-form-item>
+            <a-form-item
+              v-if="form.ssh_user?.trim() && form.ssh_user.trim() !== 'root'"
+              :label="t('nodes.form.sudoPassword')"
+              :extra="t('nodes.form.sudoHint')"
+            >
+              <a-input-password v-model:value="form.sudo_password" autocomplete="new-password" />
+            </a-form-item>
+          </template>
         </a-form>
       </template>
 
       <!-- Step 1 扫描环境 -->
       <template v-else-if="step === 1">
         <div class="mi-scan-head">
+          <a-tag v-if="form.access_mode === 'local'" color="blue">{{ t('nodes.localNode.tag') }}</a-tag>
           <a-button :loading="scanning" @click="rescanInWizard"><SyncOutlined />{{ t('nodes.rescan') }}</a-button>
         </div>
+        <a-alert
+          v-if="form.access_mode === 'local'"
+          type="info"
+          show-icon
+          :message="t('nodes.localNode.ncclHint')"
+          style="margin-bottom: 12px"
+        />
         <template v-if="scanned">
           <a-descriptions size="small" :column="2" bordered>
             <a-descriptions-item :label="t('nodes.scan.hostname')">
@@ -662,7 +748,7 @@ onMounted(load);
       <template v-else-if="step === 2">
         <a-form layout="vertical">
           <div class="mi-form-section">{{ t('nodes.config.general') }}</div>
-          <a-form-item :label="t('nodes.config.enableFscache')">
+          <a-form-item v-if="form.access_mode !== 'local'" :label="t('nodes.config.enableFscache')">
             <a-switch v-model:checked="form.fscache" />
             <span class="mi-hint" style="margin-left: 8px">
               {{ t('nodes.config.fscacheHint') }}
@@ -729,13 +815,19 @@ onMounted(load);
         <a-descriptions size="small" :column="2" bordered>
           <a-descriptions-item :label="t('nodes.confirm.name')">{{ form.name }}</a-descriptions-item>
           <a-descriptions-item :label="t('nodes.form.host')">
-            {{ form.host }}:{{ form.ssh_port }}
+            {{ form.access_mode === 'local' ? form.host : `${form.host}:${form.ssh_port}` }}
           </a-descriptions-item>
           <a-descriptions-item :label="t('nodes.form.sshUser')">
-            {{ form.ssh_user }}
+            {{ form.access_mode === 'local' ? t('nodes.authMethod.local') : form.ssh_user }}
           </a-descriptions-item>
           <a-descriptions-item :label="t('nodes.form.authMethod')">
-            {{ form.auth_method === 'key' ? t('nodes.authMethod.key') : t('nodes.authMethod.password') }}
+            {{
+              form.access_mode === 'local'
+                ? t('nodes.authMethod.local')
+                : form.auth_method === 'key'
+                  ? t('nodes.authMethod.key')
+                  : t('nodes.authMethod.password')
+            }}
           </a-descriptions-item>
           <a-descriptions-item :label="t('nodes.scan.arch')">
             {{ scanned?.arch || t('common.none') }}
@@ -750,7 +842,7 @@ onMounted(load);
                 : t('common.notRecognized')
             }}
           </a-descriptions-item>
-          <a-descriptions-item label="fscache">
+          <a-descriptions-item v-if="form.access_mode !== 'local'" label="fscache">
             {{ form.fscache ? t('common.enabled') : t('common.disabled') }}
           </a-descriptions-item>
           <a-descriptions-item label="SOCKET_IFNAME">
