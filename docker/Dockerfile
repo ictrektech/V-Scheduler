@@ -1,4 +1,5 @@
 ARG RUST_BUILD_IMAGE=rust:1.97-bookworm
+ARG SCHEDULER_APPLICATION_BASE=debian:bookworm-slim
 FROM node:24-bookworm-slim AS ui
 WORKDIR /build/frontend
 COPY frontend/package*.json ./
@@ -99,7 +100,7 @@ RUN npm ci --omit=dev --ignore-scripts
 COPY providers/worker.mjs providers/bridge.mjs providers/catalog.json providers/presets.json ./
 COPY providers/LICENSE.pi-reference ./LICENSE.pi-reference
 
-FROM ${RUST_BUILD_IMAGE} AS backend
+FROM ${RUST_BUILD_IMAGE} AS scheduler-core
 WORKDIR /build/backend
 RUN apt-get -o Acquire::Retries=3 update && apt-get install -y --no-install-recommends \
     protobuf-compiler libprotobuf-dev libssl-dev liblzma-dev && rm -rf /var/lib/apt/lists/*
@@ -110,6 +111,13 @@ COPY providers/models-dev/ /build/providers/models-dev/
 ENV CARGO_TARGET_DIR=/build/target
 ARG CARGO_OFFLINE=false
 RUN if [ "$CARGO_OFFLINE" = true ]; then cargo build --release --locked --offline; else cargo build --release --locked; fi
+FROM ${SCHEDULER_APPLICATION_BASE} AS scheduler-application
+COPY --from=scheduler-core /build/target/release/v-scheduler /usr/local/bin/v-scheduler
+RUN rm -rf /opt/v-scheduler/ui
+COPY --from=ui /build/frontend/dist /opt/v-scheduler/ui
+COPY config/app-calibrations.json /opt/v-scheduler/app-calibrations.json
+
+FROM scheduler-core AS backend
 RUN if [ "$CARGO_OFFLINE" = true ]; then set -- --offline; else set --; fi; \
     cargo build --release --locked "$@" \
       --manifest-path platform/components/modelinfer/backend/Cargo.toml \

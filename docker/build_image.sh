@@ -293,11 +293,12 @@ PY
 }
 
 
-usage() { echo 'Usage: docker/build_image.sh --sheet AMD_with_cuda|ARM_with_cuda [--dry-run]'; }
-sheet=""; dry_run=false
+usage() { echo 'Usage: docker/build_image.sh --sheet AMD_with_cuda|ARM_with_cuda [--application-only <published-scheduler-image>] [--dry-run]'; }
+sheet=""; dry_run=false; application_base=""
 while (($#)); do
  case "$1" in
   --sheet) [[ $# -ge 2 ]] || die 'missing sheet'; [[ -z "$sheet" ]] || die 'one sheet per build invocation'; sheet="$2"; shift 2 ;;
+  --application-only) [[ $# -ge 2 && -z "$application_base" ]] || die 'provide one published base image'; application_base="$2"; shift 2 ;;
   --dry-run) dry_run=true; shift ;;
   -h|--help) usage; exit 0 ;;
   *) usage >&2; exit 1 ;;
@@ -315,6 +316,9 @@ RUST_BUILDER_REPOSITORY="${RUST_BUILDER_REPOSITORY:-swr.cn-southwest-2.myhuaweic
 if [[ -z "${SCHEDULER_RUST_BUILD_IMAGE:-}" ]]; then
   SCHEDULER_RUST_BUILD_IMAGE="${RUST_BUILDER_REPOSITORY}:1.97-${arch}"
   SCHEDULER_CARGO_OFFLINE="${SCHEDULER_CARGO_OFFLINE:-1}"
+fi
+if [[ -n "$application_base" ]]; then
+  [[ "$application_base" == "${REPOSITORY}:${profile}_"* || "$application_base" == "${REPOSITORY}@sha256:"* ]]     || die 'use a published Scheduler base for the matching architecture'
 fi
 DATE="$(TZ=Asia/Shanghai date +%Y%m%d)"
 TAG="${profile}_${DATE}"
@@ -349,6 +353,10 @@ if [[ -n "${SCHEDULER_RUST_BUILD_IMAGE:-}" ]]; then
 fi
 if [[ "${SCHEDULER_CARGO_OFFLINE:-0}" == 1 ]]; then
   build_args+=(--build-arg CARGO_OFFLINE=true)
+fi
+if [[ -n "$application_base" ]]; then
+  [[ "$(docker image inspect --format '{{.Architecture}}' "$application_base")" == "$arch" ]]     || die 'pull the published base image for the selected architecture'
+  build_args+=(--target scheduler-application --build-arg "SCHEDULER_APPLICATION_BASE=$application_base")
 fi
 log "Rust builder: ${SCHEDULER_RUST_BUILD_IMAGE:-rust:1.97-bookworm} (offline=${SCHEDULER_CARGO_OFFLINE:-0})"
 docker buildx build "${build_args[@]}" --platform "linux/${arch}" --load --provenance=false --sbom=false -f "$BUILD_DIR/context/docker/Dockerfile" -t "$IMAGE" "$BUILD_DIR/context"

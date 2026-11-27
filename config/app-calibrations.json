@@ -1,4 +1,42 @@
 {
+  "application_backends": [
+    {
+      "app_id": "com.ictrek.v-voice",
+      "image": "swr.cn-southwest-2.myhuaweicloud.com/ictrek/v-voice:l4t_0.0.41",
+      "profile": "jetson-orin",
+      "architecture": "aarch64",
+      "hardware": [
+        {
+          "name": "Orin (nvgpu)",
+          "memory_type": "unified"
+        }
+      ],
+      "model_id": "sensevoice-int8",
+      "task_type": "voice.transcribe",
+      "execution_settings": {
+        "provider": "cuda",
+        "num_threads": 4
+      },
+      "resources": {
+        "cpu_millicores": 4000,
+        "memory_mib": 4096,
+        "gpu_slots": 1
+      },
+      "evidence": {
+        "id": "voice-orin-cross-node-041-48k-20s",
+        "confirmed_stopped": true,
+        "successful_runs": 3,
+        "peak_child_mib": 931,
+        "observed_host_available_delta_mib": 1110
+      },
+      "model_limits": {
+        "input_bytes": 2097152,
+        "sample_rate": 48000,
+        "duration_seconds": 20
+      },
+      "model_parameters": {}
+    }
+  ],
   "protocol_version": 1,
   "credential_epoch": 1,
   "approvals": [
