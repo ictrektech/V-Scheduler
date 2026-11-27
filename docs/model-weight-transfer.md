@@ -10,6 +10,10 @@ Scheduler currently enables this weight channel, shared-mount probe and model re
 
 ## 入口与认证 / Entry point and identity
 
+在 V-Scheduler 打开「API 文档 → 跨节点模型权重传输」。该标签提供接口索引、请求和响应字段，并可下载本规范。
+
+Open **API Documentation → Cross-node model weight transfer** in V-Scheduler for the endpoint index, request and response fields, and this downloadable guide.
+
 - VOS 同域 / VOS same origin: `https://<vos-host>/api/com.ictrek.v-scheduler/scheduler/api/v1`
 - 内部服务 / Internal service: `http://v-scheduler:38120/api/v1`
 - 下表从 `/backend-deployments/{id}` 开始，`id` 取实际运行中的部署 ID。每次请求使用 `Authorization: Bearer <scheduler-service-token>`。应用服务身份只能操作本应用的部署，管理员通过 VOS 登录操作。Image Studio 的浏览器管理员调用应用自己的准备接口，由应用后端使用其 Scheduler 服务身份。
@@ -22,9 +26,10 @@ Scheduler currently enables this weight channel, shared-mount probe and model re
 | `GET /model-hub` | Probe the target mount / 探测目标共享挂载 | `state` is `ready` or `unavailable` |
 | `POST /transfers` | JSON manifest / JSON 清单 | Transfer receipt / 传输回执 |
 | `GET /transfers/{transfer_id}` | Read the current offset after an interruption / 断线后读取当前偏移 | Transfer receipt |
-| `PUT /transfers/{transfer_id}/files/{file_id}?offset=<bytes>` | `Content-Type: application/octet-stream`, 1 byte to 1 MiB / 二进制原始数据 | Transfer receipt |
+| `PUT /transfers/{transfer_id}/files/{file_id}?offset=<bytes>` | `Content-Type: application/octet-stream`, 1 byte to 1 MiB / 二进制原始数据 | `received_bytes` |
 | `POST /transfers/{transfer_id}/complete` | Empty body; verify size and SHA-256 on the worker / 空请求体，在 worker 上校验完整长度与摘要 | Transfer receipt with `verified: true` |
 | `POST /models` | JSON `{"model_id":"sd-turbo","transfer_id":"<receipt id>"}` | `executor_id`, `node_id`, `profile`, `model_limits`, `model_parameters` |
+| `DELETE /models/{model_id}` | Empty body. Worker must support model deletion. / 空请求体，需要支持删除的 worker。 | `deleted_transfers` is the number of staged or verified transfer records removed. / 本次清理的未完成及已校验传输记录数。 |
 
 共享就绪时使用 `source: "shared"` 并在每个文件填相对于 Model Hub 根目录的 `shared_path`。若挂载探测为 `unavailable`，或共享准备返回 `409 BACKEND_SHARED_MODEL_HUB_UNAVAILABLE`，创建新的复制清单时省略 `source` 和所有 `shared_path`。传输和校验必须用同一部署的回执。
 
@@ -59,6 +64,9 @@ In the Scheduler success envelope, `data` has `transfer_id`, `model_id`, `source
 | 404 `BACKEND_TRANSFER_NOT_FOUND` | Check the deployment and IDs; recreate from the same manifest if absent / 核对部署及 ID，缺失时重建原清单 |
 | 409 `BACKEND_STATE_CONFLICT` | Wait for the deployment to run / 等待部署进入运行状态 |
 | 409 `BACKEND_TRANSFER_CONFLICT` | Re-read offsets and check completeness / 重读偏移并检查文件是否已完整 |
+| 409 `BACKEND_TASKS_ACTIVE` | Wait for jobs using this model to finish before deleting / 等待使用该模型的任务结束后再删除 |
+| 409 `BACKEND_MODEL_DELETING` | Retry pending deletion before preparing or dispatching this model / 完成该模型的待处理删除后再准备或调度 |
+| 409 `BACKEND_MODEL_DELETE_UNSUPPORTED` | Update the deployment's worker image / 更新该部署的计算后端镜像 |
 | 413 / 415 | Keep chunks within 1 MiB and set their content type / 校验分块长度、使用正确 Content-Type |
 | 422 `BACKEND_TRANSFER_INVALID` | Check fields, model roles, file bytes and SHA-256 / 检查清单、文件角色、内容和摘要 |
 | 429 / 502 | Back off, then read the receipt before sending more bytes / 退避并读取回执后再续传 |
@@ -79,3 +87,7 @@ $IMAGE_STUDIO_DATA_DIR/weight-transfers/<transfer_id>/
 默认 `IMAGE_STUDIO_DATA_DIR=/data`。这是 Image Studio worker 的持久化布局，其他应用按自身 worker 的持久存储实现相同接口。主应用以回执为准，运行时仅使用已校验文件。共享模式使用只读 `/modelhub-shared`，只为验证及登记保存记录，无需重复写入权重副本。
 
 `IMAGE_STUDIO_DATA_DIR` defaults to `/data`. This is Image Studio's worker layout. Other applications implement the same channel contract with their own worker persistence. The worker uses verified files for execution. Shared mode reads the read-only `/modelhub-shared` mount and persists verification metadata without copying weights.
+
+删除接口清理目标端指定模型的所有传输记录和本地副本，再解除调度登记。目标端保留主节点和 NFS 上的文件。中途中断时重试相同的 `DELETE`，成功回执允许返回零。Image Studio 的管理员界面和 `DELETE /api/v1/compute/deployments/{deployment_id}/models/{model_id}` 使用这条流程。
+
+Deletion removes this model's transfer records and copied weights from the target, then removes its scheduling registration. It preserves the main-node and NFS files. Retry the same `DELETE` after an interruption. A successful retry may report zero. Image Studio's administrator UI and `DELETE /api/v1/compute/deployments/{deployment_id}/models/{model_id}` use this flow.

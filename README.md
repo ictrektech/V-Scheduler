@@ -498,3 +498,5 @@ English readers can use the [complete API integration handbook](docs/api-referen
 在「节点管理 → SSH 算力节点」添加或编辑节点时，用「应用后端的 Model Hub 权重」选择优先使用只读 NFS 或直接复制。管理员可在 `POST /managed-nodes` 或 `PUT /managed-nodes/{id}` 发送布尔字段 `app_model_hub_nfs`。创建时默认 `true`。编辑时省略或传 `null` 保留设置。管理员从节点列表与写入回执读取该字段。关闭后，新的模型准备立即走复制。已有后端停止并重新启动后更新挂载，部署持久卷保留。原先走共享的模型需要重新准备。
 
 删除单个 Image Studio 远端模型时，使用 `DELETE /backend-deployments/{id}/models/{model_id}`。该操作要求部署所属应用或管理员身份及支持删除的 Worker。存在活跃任务时返回 `BACKEND_TASKS_ACTIVE`。清理失败后可重试同一请求，期间该模型停止新任务准入。成功回执的 `data.deleted_transfers` 为本次移除的目标传输记录数。
+
+「API 文档 → 跨节点模型权重传输」单独列出共享探测、复制续传、权重校验、模型登记和删除等接口，并提供[权重传输规范](docs/model-weight-transfer.md)下载。
