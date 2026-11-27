@@ -78,6 +78,8 @@ V-Voice 已绑定的网关模型在 GET `/api/v1/models` 的 `models[]` 和 GET 
 | GET | `/api/v1/apidoc` | API documentation data |
 | GET | `/api/v1/auth-probe` | Authentication diagnostics |
 | GET | `/api/v1/auth/me` | Verify caller identity |
+| GET | `/api/v1/voice/compute/placements` | List V-Voice execution placements |
+| POST | `/api/v1/voice/compute/transcriptions` | Transcribe on a selected V-Voice deployment |
 | GET | `/api/v1/models` | Model list with metadata |
 | PATCH | `/api/v1/models` | Update model metadata |
 | GET | `/api/v1/openapi.json` | OpenAPI 3.1 contract |
@@ -397,6 +399,7 @@ Base: `http://v-scheduler:38120/api/v1`. [Complete OpenAPI](../api/openapi-v1.js
 | GET | `/backend-deployments/{id}/transfers/{transfer_id}` | Read received offsets / 查询已接收偏移 |
 | PUT | `/backend-deployments/{id}/transfers/{transfer_id}/files/{file_id}` | Write one chunk at a byte offset / 按字节偏移上传分块 |
 | POST | `/backend-deployments/{id}/transfers/{transfer_id}/complete` | Verify file sizes and SHA-256 / 验证文件尺寸和 SHA-256 |
+| GET | `/backend-deployments/{id}/models` | List currently selectable execution placements |
 | POST | `/backend-deployments/{id}/models` | Bind a verified model to the calibrated target executor / 将已校验的模型登记到目标节点的校准执行器 |
 | DELETE | `/backend-deployments/{id}/models/{model_id}` | 删除远端模型副本和调度登记 / Delete the remote model copy and scheduling registration |
 | POST | `/backend-deployments/{id}/executions/{attempt_id}/{action}` | Start, inspect or cancel a fenced attempt / 启动、查询或取消指定代次的执行 |

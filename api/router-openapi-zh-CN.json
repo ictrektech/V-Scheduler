@@ -4324,6 +4324,217 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/voice/compute/placements": {
+      "get": {
+        "description": "使用 VOS 用户 Bearer 令牌，查询已登记可用的 V-Voice SenseVoice 后端。每个选项包含部署 ID、节点 ID 和执行器 ID。",
+        "summary": "查询 V-Voice 可选执行节点",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "items"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "deployment_id",
+                          "model_id",
+                          "executor_id",
+                          "node_id",
+                          "profile",
+                          "task_type"
+                        ],
+                        "properties": {
+                          "deployment_id": {
+                            "type": "string"
+                          },
+                          "model_id": {
+                            "type": "string",
+                            "const": "sensevoice-int8"
+                          },
+                          "executor_id": {
+                            "type": "string"
+                          },
+                          "node_id": {
+                            "type": "string"
+                          },
+                          "profile": {
+                            "type": "string"
+                          },
+                          "task_type": {
+                            "type": "string",
+                            "const": "voice.transcribe"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "需要 VOS 用户登录"
+          },
+          "403": {
+            "description": "身份或权限不符"
+          },
+          "409": {
+            "description": "节点部署不可用或任务执行失败"
+          },
+          "429": {
+            "description": "网关或目标算力繁忙"
+          },
+          "502": {
+            "description": "无法核验执行回执"
+          },
+          "503": {
+            "description": "应用或调度器暂不可用"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "openai"
+        ],
+        "x-gateway-auth": "inference"
+      }
+    },
+    "/api/v1/voice/compute/transcriptions": {
+      "post": {
+        "description": "使用 VOS 用户 Bearer 令牌，以 multipart 提交 file、deployment_id 和 executor_id。返回实际节点和转写结果。断开请求会请求取消。",
+        "summary": "指定 V-Voice 执行节点进行转写",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "task_id",
+                    "deployment_id",
+                    "node_id",
+                    "executor_id",
+                    "transcription"
+                  ],
+                  "properties": {
+                    "task_id": {
+                      "type": "string"
+                    },
+                    "deployment_id": {
+                      "type": "string"
+                    },
+                    "node_id": {
+                      "type": "string"
+                    },
+                    "executor_id": {
+                      "type": "string"
+                    },
+                    "transcription": {
+                      "type": "object",
+                      "required": [
+                        "text"
+                      ],
+                      "properties": {
+                        "text": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "需要 VOS 用户登录"
+          },
+          "403": {
+            "description": "身份或权限不符"
+          },
+          "409": {
+            "description": "节点部署不可用或任务执行失败"
+          },
+          "413": {
+            "description": "音频超过请求上限"
+          },
+          "415": {
+            "description": "需使用 multipart 内容类型"
+          },
+          "422": {
+            "description": "表单字段或音频格式错误"
+          },
+          "429": {
+            "description": "网关或目标算力繁忙"
+          },
+          "502": {
+            "description": "无法核验执行回执"
+          },
+          "503": {
+            "description": "应用或调度器暂不可用"
+          },
+          "504": {
+            "description": "执行超时"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "openai"
+        ],
+        "x-gateway-auth": "inference",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "deployment_id",
+                  "executor_id",
+                  "file"
+                ],
+                "properties": {
+                  "deployment_id": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{32}$"
+                  },
+                  "executor_id": {
+                    "type": "string",
+                    "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,95}$"
+                  },
+                  "language": {
+                    "type": "string",
+                    "default": "",
+                    "pattern": "^[a-zA-Z0-9_-]{0,24}$"
+                  },
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "WAV, FLAC, MP3, OGG, M4A; max 20 MiB and within the selected calibration."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/apidoc": {
       "get": {
         "description": "返回当前版本全部端点的说明与示例；管理界面的“API 文档”页由此实时渲染，永远与运行中的接口一致。",

@@ -4324,6 +4324,217 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/voice/compute/placements": {
+      "get": {
+        "description": "Use the current VOS user's bearer credential. Each selectable SenseVoice deployment has a deployment ID, node ID and executor ID.",
+        "summary": "List V-Voice execution placements",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "items"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "deployment_id",
+                          "model_id",
+                          "executor_id",
+                          "node_id",
+                          "profile",
+                          "task_type"
+                        ],
+                        "properties": {
+                          "deployment_id": {
+                            "type": "string"
+                          },
+                          "model_id": {
+                            "type": "string",
+                            "const": "sensevoice-int8"
+                          },
+                          "executor_id": {
+                            "type": "string"
+                          },
+                          "node_id": {
+                            "type": "string"
+                          },
+                          "profile": {
+                            "type": "string"
+                          },
+                          "task_type": {
+                            "type": "string",
+                            "const": "voice.transcribe"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "VOS user login required"
+          },
+          "403": {
+            "description": "Credential or access rejected"
+          },
+          "409": {
+            "description": "Placement is unavailable or execution could not complete"
+          },
+          "429": {
+            "description": "Gateway or target capacity busy"
+          },
+          "502": {
+            "description": "Execution evidence could not be verified"
+          },
+          "503": {
+            "description": "Target application or Scheduler unavailable"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "openai"
+        ],
+        "x-gateway-auth": "inference"
+      }
+    },
+    "/api/v1/voice/compute/transcriptions": {
+      "post": {
+        "description": "Use the current VOS user's bearer credential with multipart file, deployment_id and executor_id. The result identifies the actual node. Cancel the HTTP request to request task cancellation.",
+        "summary": "Transcribe on a selected V-Voice deployment",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "task_id",
+                    "deployment_id",
+                    "node_id",
+                    "executor_id",
+                    "transcription"
+                  ],
+                  "properties": {
+                    "task_id": {
+                      "type": "string"
+                    },
+                    "deployment_id": {
+                      "type": "string"
+                    },
+                    "node_id": {
+                      "type": "string"
+                    },
+                    "executor_id": {
+                      "type": "string"
+                    },
+                    "transcription": {
+                      "type": "object",
+                      "required": [
+                        "text"
+                      ],
+                      "properties": {
+                        "text": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "VOS user login required"
+          },
+          "403": {
+            "description": "Credential or access rejected"
+          },
+          "409": {
+            "description": "Placement is unavailable or execution could not complete"
+          },
+          "413": {
+            "description": "Audio exceeds request size limit"
+          },
+          "415": {
+            "description": "Multipart content type required"
+          },
+          "422": {
+            "description": "Invalid form fields or audio format"
+          },
+          "429": {
+            "description": "Gateway or target capacity busy"
+          },
+          "502": {
+            "description": "Execution evidence could not be verified"
+          },
+          "503": {
+            "description": "Target application or Scheduler unavailable"
+          },
+          "504": {
+            "description": "Execution timed out"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "tags": [
+          "openai"
+        ],
+        "x-gateway-auth": "inference",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "deployment_id",
+                  "executor_id",
+                  "file"
+                ],
+                "properties": {
+                  "deployment_id": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{32}$"
+                  },
+                  "executor_id": {
+                    "type": "string",
+                    "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,95}$"
+                  },
+                  "language": {
+                    "type": "string",
+                    "default": "",
+                    "pattern": "^[a-zA-Z0-9_-]{0,24}$"
+                  },
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "WAV, FLAC, MP3, OGG, M4A; max 20 MiB and within the selected calibration."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/apidoc": {
       "get": {
         "description": "Returns descriptions and examples for every endpoint in the running version. The API Documentation tab renders this contract live. Use lang=en for English; the default is Chinese.",

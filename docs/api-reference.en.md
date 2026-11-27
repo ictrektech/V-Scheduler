@@ -157,6 +157,8 @@ For V-Voice gateway models with a Scheduler binding, GET `/api/v1/models` and GE
 | GET | `/api/v1/apidoc` | API documentation data |
 | GET | `/api/v1/auth-probe` | Authentication diagnostics |
 | GET | `/api/v1/auth/me` | Verify caller identity |
+| GET | `/api/v1/voice/compute/placements` | List V-Voice execution placements |
+| POST | `/api/v1/voice/compute/transcriptions` | Transcribe on a selected V-Voice deployment |
 | GET | `/api/v1/models` | Model list with metadata |
 | PATCH | `/api/v1/models` | Update model metadata |
 | GET | `/api/v1/openapi.json` | OpenAPI 3.1 contract |

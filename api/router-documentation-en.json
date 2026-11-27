@@ -42,6 +42,22 @@
       "endpoints": [
         {
           "auth": "inference",
+          "desc": "Use the current VOS user's bearer credential. Each selectable SenseVoice deployment has a deployment ID, node ID and executor ID.",
+          "example": "curl -H \"Authorization: Bearer $VOS_TOKEN\" \"$SCHEDULER/api/v1/voice/compute/placements\"",
+          "method": "GET",
+          "path": "/api/v1/voice/compute/placements",
+          "summary": "List V-Voice execution placements"
+        },
+        {
+          "auth": "inference",
+          "desc": "Use the current VOS user's bearer credential with multipart file, deployment_id and executor_id. The result identifies the actual node. Cancel the HTTP request to request task cancellation.",
+          "example": "curl -H \"Authorization: Bearer $VOS_TOKEN\" -F file=@sample.wav -F deployment_id=<deployment-id> -F executor_id=<executor-id> \"$SCHEDULER/api/v1/voice/compute/transcriptions\"",
+          "method": "POST",
+          "path": "/api/v1/voice/compute/transcriptions",
+          "summary": "Transcribe on a selected V-Voice deployment"
+        },
+        {
+          "auth": "inference",
           "desc": "Combines models from all healthy upstreams. Only source-qualified names are returned, such as model-hub/xxx, image-studio/xxx, registered/xxx, manual/xxx and ai.ictrek.com/xxx. Auto appears only for callers authorized to use it. An active Auto key requires authentication for Auto.",
           "example": "curl http://<vos-host>:22888/v1/models",
           "method": "GET",
