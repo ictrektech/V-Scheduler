@@ -94,6 +94,7 @@ export const messages:Record<string,[string,string]>={
   "局域网客户端配置":["LAN client setup","區域網路用戶端設定"],
   "返回入口页面":["Back to entry page","返回入口頁面"],
   "跨节点模型权重传输":["Cross-node model weight transfer","跨節點模型權重傳輸"],
+  "当前权重通道用于 Image Studio。其他应用可参考规范，接入时需要 Scheduler 支持其部署通道。":["The weight channel currently serves Image Studio. Other apps can follow the specification and require Scheduler support for their deployment channel.","目前的權重通道用於 Image Studio。其他應用可參考規範，接入時需要 Scheduler 支援其部署通道。"],
   "下载权重传输规范":["Download the weight transfer specification","下載權重傳輸規範"],
   "应用先探测目标节点的只读 Model Hub。共享不可用时，从主应用通过 Scheduler 部署通道按字节偏移续传权重；目标 worker 校验 SHA-256 后使用自己的持久卷。":["Probe the target’s read-only Model Hub first. If the share is unavailable, resume weight uploads by byte offset through the Scheduler deployment channel. The target worker verifies SHA-256 and uses its own persistent volume.","應用先探測目標節點的唯讀 Model Hub。共享無法使用時，透過 Scheduler 部署通道按位元組偏移續傳權重。目標 worker 驗證 SHA-256 後使用自己的持久磁碟區。"],
   "在客户端选择 OpenAI 兼容接口，填写下列地址和 Key。模型 ID 从该 Key 可见的模型列表中选择。":["Choose an OpenAI-compatible provider and enter the address and key below. Select a model ID from the models visible to this key.","在用戶端選擇 OpenAI 相容介面，填寫下列位址與 Key。模型 ID 從該 Key 可見的模型清單中選擇。"],

@@ -4,6 +4,10 @@
 
 This flow prepares a model for an already deployed compute worker. The main application reads its prepared weights and sends them to the Scheduler deployment channel. Scheduler forwards requests for that deployment through its trusted SSH or VOS cluster connection. The target worker writes to its persistent volume. The caller works with file manifests and receipts.
 
+当前 V-Scheduler 为 Image Studio 的 `image-studio-worker-v1` 启用此权重通道、共享探测和模型登记。其他应用可沿用这份协议设计自己的 worker，接入前仍需 Scheduler 支持其部署通道和模型登记。普通的应用后端部署不会自动获得该能力。
+
+Scheduler currently enables this weight channel, shared-mount probe and model registration for Image Studio's `image-studio-worker-v1`. Other applications can design workers against this contract. Scheduler must add support for their deployment channel and model registration before they can use it.
+
 ## 入口与认证 / Entry point and identity
 
 - VOS 同域 / VOS same origin: `https://<vos-host>/api/com.ictrek.v-scheduler/scheduler/api/v1`

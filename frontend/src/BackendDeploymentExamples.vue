@@ -39,6 +39,7 @@ const json=(value:unknown)=>JSON.stringify(value,null,2)
   </div>
   <p>{{t('后端镜像把 V_SCHEDULER_BACKEND_CONFIG_B64 解码为 UTF-8 JSON，再读取 workers、batch_size 等自己的配置。CPU 和内存字段限制容器使用量。应用凭据通过各自的机密配置渠道管理。')}}</p>
   <h3>{{t('跨节点模型权重传输')}}</h3>
+  <p>{{t('当前权重通道用于 Image Studio。其他应用可参考规范，接入时需要 Scheduler 支持其部署通道。')}}</p>
   <p>{{t('应用先探测目标节点的只读 Model Hub。共享不可用时，从主应用通过 Scheduler 部署通道按字节偏移续传权重；目标 worker 校验 SHA-256 后使用自己的持久卷。')}}</p>
   <a :href="weightTransferGuide" download="model-weight-transfer.md">{{t('下载权重传输规范')}}</a>
  </section>
