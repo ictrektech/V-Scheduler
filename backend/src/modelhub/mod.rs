@@ -607,19 +607,29 @@ async fn delete_model_impl(h: &Hub, model_id: &str) -> Result<Value> {
         ensure!(r.status().is_success(), "Ollama delete failed");
         model["size"].as_u64().unwrap_or(0)
     } else {
-        let root = std::path::Path::new(model["path"].as_str().unwrap())
-            .canonicalize()
-            .map_err(anyhow::Error::from)?;
-        let shared = h.store.root.canonicalize().map_err(anyhow::Error::from)?;
-        ensure!(
-            root.starts_with(&shared)
-                && root != shared
-                && root.components().count() >= shared.components().count() + 3,
-            "unsafe model delete path"
-        );
-        let bytes = size(&root);
-        fs::remove_dir_all(root).map_err(anyhow::Error::from)?;
-        bytes
+        let path = std::path::Path::new(model["path"].as_str()
+            .ok_or_else(|| anyhow::anyhow!("missing model path"))?);
+        let shared = h.store.root.canonicalize()?;
+        match path.canonicalize() {
+            Ok(root) => {
+                ensure!(
+                    root.starts_with(&shared)
+                        && root.components().count() >= shared.components().count() + 3,
+                    "unsafe model delete path"
+                );
+                let bytes = size(&root);
+                fs::remove_dir_all(root)?;
+                bytes
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound
+                && model["status"] == "failed"
+                && path == h.store.model_root(model["source"].as_str().unwrap_or_default(), id)? =>
+            {
+                // The first download can fail before publishing an export.
+                0
+            }
+            Err(error) => return Err(error.into()),
+        }
     };
     h.store.registry("models", |data| {
         data.as_object_mut().unwrap().remove(id);
@@ -658,6 +668,38 @@ async fn integration() -> Json<Value> {
 #[cfg(test)]
 mod mutation_tests {
     use super::*;
+
+    #[tokio::test]
+    async fn failed_first_download_can_be_deleted_without_an_export_directory() {
+        struct TestRoot(std::path::PathBuf);
+        impl Drop for TestRoot {
+            fn drop(&mut self) {
+                let _ = fs::remove_dir_all(&self.0);
+            }
+        }
+        let root = TestRoot(std::env::temp_dir().join(format!("modelhub-delete-{}", uuid::Uuid::new_v4())));
+        let hub = Hub {
+            store: Store::new(root.0.clone()).unwrap(),
+            client: reqwest::Client::new(),
+            active: Default::default(),
+            model_locks: Default::default(),
+        };
+        let id = "ms://org/failed-model";
+        let export = hub.store.model_root("ms", id).unwrap();
+        hub.store.put_model(json!({"model_id":id,"source":"ms","path":export,"status":"failed"})).unwrap();
+        hub.store.put_task(&json!({"task_id":"task-failed","model_id":id,"phase":"FAILED"})).unwrap();
+        hub.store.registry("aliases", |aliases| {
+            aliases["fixture"] = json!(id);
+            Ok(())
+        }).unwrap();
+        assert!(!export.exists());
+        let result = delete_model_impl(&hub, "fixture").await.unwrap();
+        assert_eq!(result["freed_bytes"], 0);
+        assert!(hub.store.model(id).is_err());
+        assert!(hub.store.entries("aliases").unwrap()["fixture"].is_null());
+        assert_eq!(hub.store.task("task-failed").unwrap()["phase"], "FAILED");
+    }
+
     #[tokio::test]
     async fn latest_alias_shares_inference_mutation_lock() {
         assert_eq!(model_lock_key("ollama://org/model"), model_lock_key("ollama://org/model:latest"));

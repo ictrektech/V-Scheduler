@@ -91,7 +91,8 @@
         }
       },
       "delete": {
-        "summary": "Safely delete an unreferenced model; model_id query",
+        "summary": "Delete an unused model by model_id",
+        "description": "After a failed first download, a managed HF/MS card without an export directory can be removed. The response reports freed_bytes: 0 and keeps task history. / 首次下载失败且尚未生成导出目录时，可移除受管 HF/MS 权重卡片，返回 freed_bytes: 0 并保留下载任务历史。",
         "operationId": "delete_models",
         "tags": [
           "models"

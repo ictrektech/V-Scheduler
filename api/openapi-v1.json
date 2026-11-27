@@ -2291,7 +2291,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Disabled or ready. / 已停用或已就绪。",
+            "description": "Not started or ready. The runtime starts automatically once VOS confirms legacy ModelInfer is absent. / 尚未启动或已就绪。VOS 确认旧 ModelInfer 未安装后自动启动。",
             "content": {
               "application/json": {
                 "schema": {

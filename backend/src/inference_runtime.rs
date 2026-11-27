@@ -7,6 +7,29 @@ use std::{
 const PORT: u16 = 38122;
 static ACTIVE: AtomicBool = AtomicBool::new(false);
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum LegacyState {
+    Absent,
+    Stopped,
+    Installed,
+}
+
+fn legacy_state(status: &serde_json::Value) -> Option<LegacyState> {
+    match status["code"].as_u64()? {
+        10067 => Some(LegacyState::Absent),
+        0 => status["data"]["state"].as_str().map(|state| match state {
+            "not_installed" | "uninstalled" => LegacyState::Absent,
+            "stopped" => LegacyState::Stopped,
+            _ => LegacyState::Installed,
+        }),
+        _ => None,
+    }
+}
+
+fn may_start(legacy: Option<LegacyState>, take_over: bool) -> bool {
+    legacy == Some(LegacyState::Absent) || (legacy == Some(LegacyState::Stopped) && take_over)
+}
+
 pub fn enabled() -> bool {
     ACTIVE.load(Ordering::Acquire)
 }
@@ -43,10 +66,10 @@ pub fn start(database_url: &str) -> Option<tokio::task::JoinHandle<()>> {
             }
         }
         loop {
-            let adopted = !explicitly_enabled();
-            if (adopted && !has_imported_deployments(&database_url).await)
-                || legacy_is_inactive().await != Some(true)
-            {
+            let legacy = lookup_legacy_state().await;
+            let take_over = legacy == Some(LegacyState::Stopped)
+                && (explicitly_enabled() || has_imported_deployments(&database_url).await);
+            if !may_start(legacy, take_over) {
                 tokio::time::sleep(Duration::from_secs(10)).await;
                 continue;
             }
@@ -109,7 +132,7 @@ async fn has_imported_deployments(database_url: &str) -> bool {
         .fetch_one(&mut db).await.unwrap_or(false)
 }
 
-async fn legacy_is_inactive() -> Option<bool> {
+async fn lookup_legacy_state() -> Option<LegacyState> {
     let endpoint = crate::model::VosEndpoint {
         url: crate::identity::base()?,
         token: crate::modelinfer::context_token()?,
@@ -120,22 +143,31 @@ async fn legacy_is_inactive() -> Option<bool> {
         .build().ok()?;
     let legacy = crate::vos::get_envelope(&client, &endpoint, "/v1000/app/detail?app_id=com.ictrek.modelinfer")
         .await.ok()?;
-    match legacy["code"].as_u64()? {
-        // AppNotInstalled is an explicit platform response. A failed status lookup
-        // cannot establish that a new worker may take ownership.
-        10067 => Some(true),
-        0 => legacy["data"]["state"].as_str().map(|state| {
-            matches!(state, "stopped" | "not_installed" | "uninstalled")
-        }),
-        _ => None,
-    }
+    legacy_state(&legacy)
 }
 
 async fn watch_legacy_owner() {
     loop {
         tokio::time::sleep(Duration::from_secs(5)).await;
-        if legacy_is_inactive().await == Some(false) {
+        if lookup_legacy_state().await == Some(LegacyState::Installed) {
             return;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn starts_after_legacy_uninstall_without_requiring_an_import_or_override() {
+        assert!(may_start(legacy_state(&json!({"code":10067})), false));
+        assert!(may_start(legacy_state(&json!({"code":0,"data":{"state":"not_installed"}})), false));
+        let stopped = legacy_state(&json!({"code":0,"data":{"state":"stopped"}}));
+        assert!(!may_start(stopped, false));
+        assert!(may_start(stopped, true));
+        assert!(!may_start(legacy_state(&json!({"code":0,"data":{"state":"installed"}})), true));
+        assert!(!may_start(legacy_state(&json!({"code":401})), true));
     }
 }

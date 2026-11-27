@@ -18,7 +18,7 @@ API 基址为 `/api/com.ictrek.v-scheduler/scheduler/api/v1`，管理接口使�
 
 VOS 集群管理按需部署子项目。跨主机操作要求目标节点也运行 V-Scheduler 集群管理，并配置对应的受信 HTTPS 地址和独立管理员凭据。应用存储 `cluster/peers.json` 的键为节点 IP，每个值包含 `origin` 和 `token`。私有 CA 可放在同目录的 `peer-ca.pem`。限制凭据文件访问并在修改后重启控制器。
 
-新安装可在 VOS 应用配置中开启「内置推理运行时」。运行时启动前会确认旧 ModelInfer 未安装或已停用。目标节点应已具备模型卡要求的镜像，缺少时仍可由原 Image Hub 分发。
+VOS 确认旧 ModelInfer 未安装或已卸载后，V-Scheduler 自动启动内置推理运行时。要保留旧版部署，请先停用旧应用并从「节点管理 → 迁移 ModelInfer 部署」完成导入。保留的停用安装也可由管理员显式开启接管。目标节点应已具备模型卡要求的镜像，缺少时仍可由原 Image Hub 分发。
 
 ### 推理镜像登记
 
@@ -48,7 +48,7 @@ Preview and import take no request parameters. Preview returns `source_present`,
 
 Cluster Manager projects are deployed on demand. Remote operations require V-Scheduler Cluster Manager on the target and a trusted HTTPS origin with a separate administrator credential. In `cluster/peers.json` under app storage, use the node IP as the key and supply `origin` and `token` for each peer. Place a private trust anchor at `cluster/peer-ca.pem` if needed. Restrict file access and restart the controller after changes.
 
-On a new installation, enable **Embedded Inference Runtime** in the VOS app configuration. The runtime checks that the legacy ModelInfer app is absent or stopped before starting. Target nodes should already have the images required by the model card. The existing Image Hub can distribute missing images.
+V-Scheduler starts its inference runtime automatically after VOS confirms that the legacy ModelInfer app is absent or uninstalled. To retain legacy deployments, stop the old app and import them from **Node Management → Migrate ModelInfer deployments** before uninstalling. An administrator can also explicitly take over a stopped installation. Target nodes should already have the images required by the model card. The existing Image Hub can distribute missing images.
 
 
 ### Inference image registration

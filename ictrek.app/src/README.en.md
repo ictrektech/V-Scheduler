@@ -55,6 +55,8 @@ Administrators open **Inference deployments** from the V-Scheduler sidebar. Depl
 
 Open Node management → Nodes and permissions → Nodes discovered by VOS apps to see the same host measurements as Resources & Tasks → Execution resources. The panel shows CPU utilization and logical processors, used/total/available RAM, GPU utilization, and sample time. It indicates when a sample is missing or stale. The node discovery record can still be current. Both views use the existing Scheduling API GET /nodes. Embedded inference samples are in modelinfer_source.node.host_resources.
 
+The inference runtime starts automatically after VOS confirms that legacy ModelInfer is absent or uninstalled. To retain legacy deployments, stop the old app and import them from Node Management before uninstalling. If a first weight download fails before exporting files, delete its model card from Model Management.
+
 Inference deployments keeps its tabs visible while their runtimes start or reconnect. The content area shows the reason and retries automatically. Select Retry connection to retry immediately without reloading. Runtime health API contracts stay the same.
 
 Open **Inference deployments → Inference images** to browse registered references and compatible profiles. Administrators can register images, select built-in profiles, and add custom names. Assign a custom profile under **Node management → SSH compute nodes → Edit**.

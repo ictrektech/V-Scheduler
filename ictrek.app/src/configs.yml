@@ -19,10 +19,10 @@ configs:
 
   - name: SCHEDULER_EMBEDDED_INFERENCE
     type: boolean
-    title: {zh-CN: 内置推理运行时, en: Embedded Inference Runtime}
+    title: {zh-CN: 接管已停用的旧推理应用, en: Take over a stopped legacy inference app}
     description:
-      zh-CN: 使用 V-Scheduler 管理推理部署。接管旧 ModelInfer 部署前，请先准备迁移并完成导入。
-      en: Manage inference deployments within V-Scheduler. Prepare and import legacy ModelInfer deployments before taking them over.
+      zh-CN: 未安装旧 ModelInfer 时，内置推理运行时自动启动。若旧应用仅停用并需要保留历史部署，先保持此项关闭，从节点管理完成导入。
+      en: The embedded runtime starts automatically when legacy ModelInfer is absent. To retain previous deployments from a stopped app, keep this off and import them from Node Management first.
     default: false
 
   - name: SCHEDULER_EMBEDDED_CLUSTER_MANAGER

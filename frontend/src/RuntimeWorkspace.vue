@@ -42,7 +42,7 @@ async function check() {
   if (ready) frameStarted.value = true
   if (sessionRestored) child?.dispatchEvent(new Event('scheduler:session-restored'))
   failureDetail.value = ready ? '' : result?.enabled === false
-   ? props.t('VOS 应用配置中尚未启用内置推理运行时。')
+   ? props.t('正在等待 VOS 确认旧版 ModelInfer 状态。若旧应用仅已停用，请先导入旧部署，或在 VOS 应用配置中开启接管。')
    : props.t(props.kind === 'image-hub' ? '镜像仓库尚未就绪。' : '推理运行时尚未就绪。')
  } catch (error) {
   if (isRuntimeAuthError(error)) {
