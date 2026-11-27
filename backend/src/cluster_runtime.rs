@@ -35,7 +35,7 @@ pub fn start(database_url: &str) -> Option<tokio::task::JoinHandle<()>> {
             let process = tokio::process::Command::new("vos-cluster-manager")
                 .args([
                     "--bind-address", "127.0.0.1", "--port", "38123",
-                    "--frontend-dir", "/opt/v-scheduler/cluster-ui",
+                    "--frontend-dir", "/opt/v-scheduler/no-cluster-ui",
                     "--data-dir", "/var/lib/vos-cluster-manager", "--url-base", "/",
                 ])
                 .env("VOS_CLUSTER_MANAGER_DATABASE_URL", &database_url)

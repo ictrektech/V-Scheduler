@@ -576,14 +576,6 @@ pub async fn serve(
                 ServeDir::new(parent.join("inference-ui")).append_index_html_on_directories(true),
             );
         }
-        if crate::cluster_runtime::enabled()
-            && let Some(parent) = path.parent()
-        {
-            router = router.nest_service(
-                "/cluster/",
-                ServeDir::new(parent.join("cluster-ui")).append_index_html_on_directories(true),
-            );
-        }
         if crate::image_hub_runtime::enabled()
             && let Some(parent) = path.parent()
         {
@@ -1072,6 +1064,9 @@ async fn claim(
             continue;
         }
         if backend_models::admit(&mut tx, e).await.is_err() {
+            continue;
+        }
+        if backend_models::worker_busy(&mut tx, e).await? {
             continue;
         }
         if voice_admission(&a, &e.id).is_err() {

@@ -707,6 +707,9 @@ pub(super) struct ChannelTarget {
     pub profile: String,
     pub image: String,
     pub legacy_studio: bool,
+    pub cpu_millicores: Option<i32>,
+    pub memory_mib: Option<i32>,
+    pub nvidia: bool,
 }
 
 pub(super) async fn channel_target(
@@ -746,7 +749,8 @@ pub(super) async fn channel_target(
         row.profile
     };
     Ok(ChannelTarget { app_id: row.app_id, kind: row.target_kind,
-        id: row.target_id, profile, image: row.image, legacy_studio })
+        id: row.target_id, profile, image: row.image, legacy_studio,
+        cpu_millicores: row.cpu_millicores, memory_mib: row.memory_mib, nvidia: row.nvidia })
 }
 
 pub(super) async fn exchange(

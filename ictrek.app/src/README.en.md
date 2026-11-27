@@ -51,11 +51,11 @@ The dashboard shows 24-hour queue wait, occupancy P50/P95, task failure rate and
 
 Node management reuses the installed ModelInfer app’s remote-node inventory and existing monitoring. Users do not install Agents on individual machines. Save budget plans, manage approved nodes, executors and scoped service credentials, and inspect activity. Plans do not grant execution; remote scheduling control awaits verification. Existing deployments remain managed by their owning VOS app.
 
-Administrators open **Inference deployments** from the V-Scheduler sidebar or go to **Advanced Management → VOS Cluster Manager**. Deployment lists, details, model cards, and cluster views open in this workspace. To import existing deployments, use **Node Management → Migrate ModelInfer deployments**. **API Documentation → Scheduler Management API** lists the existing migration and runtime endpoints.
+Administrators open **Inference deployments** from the V-Scheduler sidebar. Deployment lists, details and model cards open in this workspace. Manage storage clusters in the standalone VOS Cluster Manager app. To import existing deployments, use **Node Management → Migrate ModelInfer deployments**. **API Documentation → Scheduler Management API** lists the existing migration and runtime endpoints.
 
 Open Node management → Nodes and permissions → Nodes discovered by VOS apps to see the same host measurements as Resources & Tasks → Execution resources. The panel shows CPU utilization and logical processors, used/total/available RAM, GPU utilization, and sample time. It indicates when a sample is missing or stale. The node discovery record can still be current. Both views use the existing Scheduling API GET /nodes. Embedded inference samples are in modelinfer_source.node.host_resources.
 
-Inference deployments and VOS Cluster Manager keep all tabs visible while their runtimes start or reconnect. The content area shows the reason and retries automatically. Select Retry connection to retry immediately without reloading. Runtime health API contracts stay the same.
+Inference deployments keeps its tabs visible while their runtimes start or reconnect. The content area shows the reason and retries automatically. Select Retry connection to retry immediately without reloading. Runtime health API contracts stay the same.
 
 Open **Inference deployments → Inference images** to browse registered references and compatible profiles. Administrators can register images, select built-in profiles, and add custom names. Assign a custom profile under **Node management → SSH compute nodes → Edit**.
 

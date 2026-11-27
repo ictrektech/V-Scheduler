@@ -27,10 +27,10 @@ configs:
 
   - name: SCHEDULER_EMBEDDED_CLUSTER_MANAGER
     type: boolean
-    title: {zh-CN: 内置 VOS 集群管理, en: Embedded VOS Cluster Manager}
+    title: {zh-CN: VOS Projects 跨节点部署, en: Cross-node deployment through VOS Projects}
     description:
-      zh-CN: 在 V-Scheduler 中启动 VOS 集群管理控制面。集群基础设施由管理员按需部署。
-      en: Start the VOS cluster management control plane within V-Scheduler. Administrators deploy cluster infrastructure on demand.
+      zh-CN: 为通过 VOS Projects 部署的应用后端启用集群成员发现和跨节点操作。
+      en: Enable cluster member discovery and remote operations for application backends deployed through VOS Projects.
     default: false
 
   - name: SCHEDULER_NODE_TEST_IMAGE

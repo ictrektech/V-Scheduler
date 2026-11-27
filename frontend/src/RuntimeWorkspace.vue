@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { getVOSBearerToken, clearCachedVOSBearerToken, isRuntimeAuthError, type SchedulerRuntimeFrame } from './vos-auth'
 
 const props = defineProps<{
- kind: 'inference' | 'cluster' | 'image-hub'
+ kind: 'inference' | 'image-hub'
  images?: boolean
  sessionRecovering?: boolean
  locale: string
@@ -12,17 +12,14 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ weights: []; nodes: []; images: []; runtime: [] }>()
 
-const title = computed(() => ({ inference: '推理部署', cluster: 'VOS 集群管理', 'image-hub': '镜像仓库' })[props.kind])
+const title = computed(() => ({ inference: '推理部署', 'image-hub': '镜像仓库' })[props.kind])
 const views = computed(() => props.kind === 'inference' ? [
  { route: '/runs', label: '部署列表' },
  { route: '/cards', label: '模型卡片' },
  { route: '/plaza', label: '模型广场' },
  { route: '/nodes', label: '节点监控' },
  { route: '/settings', label: '推理设置' },
-] : props.kind === 'image-hub' ? [{ route: '/images', label: '镜像仓库' }] : [
- { route: '/overview', label: '集群概览' },
- { route: '/nodes', label: '集群成员' },
-])
+] : [{ route: '/images', label: '镜像仓库' }])
 const route = ref(views.value[0].route)
 const initialRoute = ref(route.value)
 const src = computed(() => new URL(`./${props.kind}/#${initialRoute.value}`, location.href).href)
@@ -39,7 +36,7 @@ async function check() {
  checking.value = true
  try {
   const result = await props.request(props.kind + '/runtime/health') as { enabled?: boolean; ready?: boolean; registry_reachable?: boolean } | null
-  const ready = props.kind === 'cluster' || (props.kind === 'image-hub' ? result?.registry_reachable : result?.ready)
+  const ready = props.kind === 'image-hub' ? result?.registry_reachable : result?.ready
   const sessionRestored = ready && health.value === 'session'
   health.value = ready ? 'ready' : 'unavailable'
   if (ready) frameStarted.value = true

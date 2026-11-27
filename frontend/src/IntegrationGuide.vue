@@ -190,7 +190,7 @@ curl -fsS -X PUT "$GATEWAY/api/v1/model-routing" -H "Authorization: Bearer $VOS_
 </pre>
   <h3 id="integration-reference" tabindex="-1">{{t('完整 API 索引与错误处理')}}</h3>
   <p>{{t('在对应 API 页签查看模型与网关、调度管理、模型管理和镜像仓库接口。下面的完整参考按服务列出接口索引，包含 Key、可见范围、能力、Auto、节点心跳、资源查询、下载选文件和模型停止。')}}</p>
-  <p>{{t('推理部署和 VOS 集群管理在运行时启动或断线时保留全部页签，内容区显示原因并自动重试。也可点「重试连接」，无需刷新整个页面。调度管理 API 中的运行时健康检查沿用原有接口。')}}</p>
+  <p>{{t('推理部署在运行时启动或断线时保留全部页签，内容区显示原因并自动重试。也可点「重试连接」，无需刷新整个页面。调度管理 API 中的运行时健康检查沿用原有接口。')}}</p>
   <p>{{t('401/403 检查 VOS 身份、所有者与管理员权限；推理 Key 不能修改配置。503 SCHEDULER_BINDING_MISSING/INVALID 表示缺失或无效的资源绑定，MODEL_RESOURCE_POLICY_NOT_APPROVED 表示模型预算尚未批准；查看高级控制中的接入状态与日志。429 按 Retry-After 重试或设置队列等待；不要自动重放已经开始的计算。上游 400 上下文超限应缩短输入或修改上游配置，不是资源预算不足。')}}</p>
   <p><a href="https://github.com/ictrektech/V-Scheduler/blob/main/docs/api-reference.md" target="_blank" rel="noopener">{{t('按服务查看完整 API 参考')}}</a></p>
   <h3 id="integration-nodes" tabindex="-1">{{t('节点注册与资源查询')}}</h3>
@@ -211,7 +211,7 @@ curl -fsS -X PUT "$GATEWAY/api/v1/model-routing" -H "Authorization: Bearer $VOS_
   <p>{{t('示例数值仅说明格式。生产节点由 VOS App 自动上报真实采样，无需手工安装 Agent。ModelInfer 的观察节点仍由所属应用管理。')}}</p>
   <h3 id="integration-application-backends" tabindex="-1">{{t('为接入应用指定执行节点')}}</h3>
   <p>{{t('已有后端的应用登记时引用已批准的 executor ID，执行节点来自执行器的 node_id。要在指定节点部署应用后端，先从节点清单选择 SSH 节点或集群成员，再用部署请求的 target.kind、target.id 和 target.profile 指定目标。网关模型注册只发布可调用的上游。')}}</p>
-  <p>{{t('在「节点管理 → 应用后端」查看和启停部署。权重校验及校准完成后，模型登记返回所选部署的 node_id 和 executor_id。调用方选定执行器后，用任务详情的 node_id 核对实际执行位置。')}}</p>
+  <p>{{t('在「节点管理 → 应用后端」查看和启停部署。权重校验后登记模型，返回所选部署的 node_id 和 executor_id。匹配的实测校准可覆盖预算。任务在所选节点排队，用任务详情的 node_id 核对实际执行位置。')}}</p>
   <p><code>GET /scheduler/api/v1/managed-nodes</code> → <code>POST /scheduler/api/v1/backend-deployments</code> → <code>POST /scheduler/api/v1/backend-deployments/{id}/models</code></p>
   <p><code>GET /api/v1/voice/compute/placements</code> · <code>POST /api/v1/voice/compute/transcriptions</code></p>
   <h3 id="integration-lifecycle" tabindex="-1">{{t('节点、应用、预算与停止的统一流程')}}</h3>

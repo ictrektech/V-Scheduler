@@ -88,10 +88,10 @@ futures-util = "0.3"
 
 # === 共享错误库（category 实现，对齐 vos-http-response-spec）===
 trackerror = { path = "../../../shared/trackerror" }
+tempfile = "3"
 
 [dev-dependencies]
 http-body-util = "0.1"
-tempfile = "3"
 
 # === 约束发现直查 pg_catalog（对齐 vos-platform-backend，见 docs/migrate-schema-sync-slow-analysis.md）===
 # vendored 自 SeaQL/sea-schema 0.18.1（third_party/sea-schema），已应用上游 PR #169 修复，

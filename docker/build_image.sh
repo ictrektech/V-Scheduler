@@ -293,17 +293,21 @@ PY
 }
 
 
-usage() { echo 'Usage: docker/build_image.sh --sheet AMD_with_cuda|ARM_with_cuda [--application-only <published-scheduler-image>] [--dry-run]'; }
-sheet=""; dry_run=false; application_base=""
+usage() { echo 'Usage: docker/build_image.sh --sheet AMD_with_cuda|ARM_with_cuda [--application-only <published-scheduler-image> [--with-node-manager]] [--dry-run]'; }
+sheet=""; dry_run=false; application_base=""; with_node_manager=false
 while (($#)); do
  case "$1" in
   --sheet) [[ $# -ge 2 ]] || die 'missing sheet'; [[ -z "$sheet" ]] || die 'one sheet per build invocation'; sheet="$2"; shift 2 ;;
   --application-only) [[ $# -ge 2 && -z "$application_base" ]] || die 'provide one published base image'; application_base="$2"; shift 2 ;;
+  --with-node-manager) with_node_manager=true; shift ;;
   --dry-run) dry_run=true; shift ;;
   -h|--help) usage; exit 0 ;;
   *) usage >&2; exit 1 ;;
  esac
 done
+if [[ "$with_node_manager" == true && -z "$application_base" ]]; then
+  die '--with-node-manager requires --application-only'
+fi
 case "$sheet" in
  AMD_with_cuda) profile=amd; arch=amd64 ;;
  ARM_with_cuda) profile=arm; arch=arm64 ;;
@@ -356,7 +360,11 @@ if [[ "${SCHEDULER_CARGO_OFFLINE:-0}" == 1 ]]; then
 fi
 if [[ -n "$application_base" ]]; then
   [[ "$(docker image inspect --format '{{.Architecture}}' "$application_base")" == "$arch" ]]     || die 'pull the published base image for the selected architecture'
-  build_args+=(--target scheduler-application --build-arg "SCHEDULER_APPLICATION_BASE=$application_base")
+  target=scheduler-application
+  if [[ "$with_node_manager" == true ]]; then
+    target=scheduler-with-node-manager
+  fi
+  build_args+=(--target "$target" --build-arg "SCHEDULER_APPLICATION_BASE=$application_base")
 fi
 log "Rust builder: ${SCHEDULER_RUST_BUILD_IMAGE:-rust:1.97-bookworm} (offline=${SCHEDULER_CARGO_OFFLINE:-0})"
 docker buildx build "${build_args[@]}" --platform "linux/${arch}" --load --provenance=false --sbom=false -f "$BUILD_DIR/context/docker/Dockerfile" -t "$IMAGE" "$BUILD_DIR/context"

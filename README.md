@@ -2,6 +2,8 @@
 
 Jetson Orin 的 SenseVoice CUDA 文件转写支持 V-Voice 0.0.41 和 0.0.42。每个镜像分别匹配其目标节点校准。已有部署可继续运行，新部署使用当前应用安装包发布的对应 Profile 镜像。
 
+语音模型自动绑定只在有已批准的对话模型时发送对话字段。仍使用旧版 ARM CPU 镜像的 V-Voice 可继续自动绑定已有的语音执行器，无需手工配置令牌。绑定 API 的身份、路由和字段约定保持兼容。
+
 推理部署页面会自动恢复 VOS 会话。恢复期间保留已加载内容并显示一条状态提示；恢复后刷新当前视图。真正的推理运行时错误仍在当前页面显示。推理接口及认证权限保持原有约定。
 
 ## Image Studio 节点权重传输
@@ -17,6 +19,8 @@ Image Studio 优先在目标节点只读使用 ModelInfer 已解析的 Model Hub
 「添加单个模型」与「编辑元数据」允许填写可选的 Chat Completions 思考控制。模型目录返回 `reasoning_control`，包含 `format`、`efforts` 和可选 `default`。例如 `{"format":"openai","efforts":{"off":"none","high":"high"},"default":"high"}`。各模型填写后端实际支持的档位和发送值；留空时可使用上游目录声明。管理 API 在添加上游的 `models[]` 或 `PATCH /api/v1/models` 接收同一结构。显式传 `null` 可清除当前配置。
 
 ## 镜像仓库
+
+在「镜像仓库 → 设置 → 上游认证」保存私有仓库的拉取凭据。部署 SSH 应用后端时，Scheduler 优先复用目标节点匹配架构的已有镜像，再尝试直拉。目标直拉失败时，主节点可以下载目标平台的带标签镜像并通过 SSH 导入。镜像准备期间保持 `pending`。应用仍通过既有 API 提供它的 Profile 镜像。 [部署接口](docs/application-backend-deployment.md)
 
 VOS 管理员打开 **V-Scheduler → 镜像仓库**。用「拉取镜像」把上游镜像存入本地仓库，已有镜像可按仓库或标签同步。离线环境可用「导入镜像」上传 Docker 或 OCI 归档，省略目标名称时保留归档中的镜像名。任务面板显示进度和失败原因。仓库的管理数据与镜像层分别保存在应用的 `image-hub/` 和 `image-registry/` 持久化目录。
 
@@ -67,7 +71,7 @@ V-Scheduler 统一安装包包含 V-Router 网关与调度控制器，提供一�
 
 在「节点管理 → 节点与权限 → VOS 应用发现的节点」可查看与「资源与任务 → 执行资源」一致的宿主机实测数据，包括 CPU 使用率与逻辑处理器数、内存已用／总量／可用、GPU 使用率及采样时间。采样缺失或过期时会显示暂不可用。节点发现记录可以仍然有效。两处沿用调度管理 API 的 GET /nodes，内置推理采样位于 modelinfer_source.node.host_resources。
 
-推理部署和 VOS 集群管理在运行时启动或断线时保留全部页签，内容区显示原因并自动重试。也可点「重试连接」，无需刷新整个页面。调度管理 API 中的运行时健康检查沿用原有接口。
+推理部署在运行时启动或断线时保留全部页签，内容区显示原因并自动重试。也可点「重试连接」，无需刷新整个页面。调度管理 API 中的运行时健康检查沿用原有接口。
 
 顶部「关于」在所有页面均可打开，显示当前 VOS App 版本、运行配置，以及 Scheduler（内置 Router、模型仓库、界面）和三个 Ollama 实例共四个容器的镜像名与版本标签。
 
@@ -132,7 +136,7 @@ ModelInfer 和 Image Hub 的 Rust 后端、管理页面及构建定义位于 [�
 在「节点管理 → SSH 算力节点」中，管理员可以保存密钥或密码连接、自动识别或指定 Profile，并验证节点拉取镜像和启动容器。登录 VOS 的用户和持有服务凭据的应用可查看脱敏清单。见 [SSH 算力节点](docs/node-management.md#ssh-算力节点--ssh-compute-nodes)。
 重新扫描会在硬件探测成功后刷新识别结果。SSH 临时中断时，节点保留上一次成功识别的 Profile，可以稍后重试。
 
-管理员可在「节点管理 → 迁移 ModelInfer 部署」预览并导入已有部署。接管后从 V-Scheduler 左侧导航打开「推理部署」。集群入口位于「高级管理 → VOS 集群管理」。列表、详情和集群成员在同一工作区操作。对应端点可在「API 文档 → 调度管理 API」查看。现有推理运行时及迁移接口契约保持一致。文件备份、运行时启用和集群配置见 [迁移与集群节点指南](docs/inference-migration.md)。
+管理员可在「节点管理 → 迁移 ModelInfer 部署」预览并导入已有部署。接管后从 V-Scheduler 左侧导航打开「推理部署」。列表和详情在同一工作区操作。SSH 算力节点在「节点管理」登记。存储集群由独立的 VOS 集群管理应用维护。对应端点可在「API 文档 → 调度管理 API」查看。现有推理运行时及迁移接口契约保持一致。文件备份、运行时启用和集群配置见 [迁移与集群节点指南](docs/inference-migration.md)。
 
 「推理部署 → 推理镜像」公开已登记的镜像地址与适用 Profile，所有已登录的 VOS 用户都能查看。管理员可以勾选八个内置 Profile，也可登记新名称。新名称立即可在 SSH 算力节点的编辑表单中手动选择。通过 `/inference/images` 和 `/compute-profiles` API 可读取和登记。清单预置已观察到在 Thor、Orin 上运行的镜像地址，展示可编辑的适用 Profile 及已运行记录。安装写入目录信息，镜像分发沿用推理运行时的镜像准备流程。
 
@@ -495,7 +499,7 @@ English readers can use the [complete API integration handbook](docs/api-referen
 
 从「API Key」生成个人 Key 后，结果区显示可复制的局域网 Base URL 和完整 Key。使用该 Key 查询 `GET /v1/models` 并选择可见的模型 ID。生成和查询接口契约保持一致。
 
-应用可通过 `application-backend-v1` 接入同一套节点部署、权重传输和异步任务协议。安装包声明发布镜像，worker 声明模型能力，Scheduler 按实测校准登记执行器。应用通过 `GET /backend-deployments/{id}/models` 查询可选的模型、节点和执行器。平台接口和接入流程见[应用后端部署](docs/application-backend-deployment.md)。
+应用可通过 `application-backend-v1` 接入同一套节点部署、权重传输和异步任务协议。安装包声明发布镜像，worker 声明模型能力，权重校验后 Scheduler 登记执行器，实测校准可覆盖预算。请求在所选节点排队，等待资源和后端空闲。应用通过 `GET /backend-deployments/{id}/models` 查询可选的模型、节点和执行器。平台接口和接入流程见[应用后端部署](docs/application-backend-deployment.md)。
 
 无共享挂载时的目标节点目录、分块上传、续传和校验见[跨节点模型权重传输规范](docs/model-weight-transfer.md)，也可从「API 文档 → 跨节点模型权重传输」下载。
 

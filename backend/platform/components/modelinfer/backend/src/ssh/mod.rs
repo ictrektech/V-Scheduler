@@ -266,6 +266,39 @@ impl RealSshExec {
     fn elevate(&self, target: &SshTarget) -> bool {
         self.require_root || !target.sudo_password.is_empty()
     }
+
+    /// 把文件流式送入已登记节点的命令，避免把多 GB 镜像归档读入内存。
+    pub async fn run_with_docker_input(
+        &self,
+        target: &SshTarget,
+        cmd: &str,
+        mut input: impl Read + Send + 'static,
+        timeout: Duration,
+    ) -> Result<SshOutput, ModelinferError> {
+        let elevate = self.elevate(target);
+        let target = target.clone();
+        let cmd = cmd.to_owned();
+        let connect_timeout = self.connect_timeout;
+        let operation = tokio::task::spawn_blocking(move || {
+            let session = connect_session(&target, connect_timeout, timeout)?;
+            let mut channel = if elevate {
+                open_root_channel_mode(&session, &target, &cmd, true)?
+            } else {
+                open_channel(&session, &format!("/bin/sh -c {}", crate::deploy::script::sh_quote(&cmd)))?
+            };
+            std::io::copy(&mut input, &mut channel).map_err(|_| {
+                ModelinferError::new(codes::SSH_COMMAND_FAILED, "Unable to stream SSH stdin")
+            })?;
+            channel.send_eof().map_err(|_| {
+                ModelinferError::new(codes::SSH_COMMAND_FAILED, "Unable to close SSH stdin")
+            })?;
+            collect_output(&session, channel, timeout)
+        });
+        match tokio::time::timeout(timeout, operation).await {
+            Ok(Ok(result)) => result,
+            _ => Err(ModelinferError::new(codes::SSH_COMMAND_FAILED, "SSH file input operation failed")),
+        }
+    }
 }
 
 #[async_trait]
@@ -487,14 +520,18 @@ fn sudo_error() -> ModelinferError {
 
 /// 整段命令在 root shell 中执行，覆盖管道、重定向和环境变量。
 /// 密码通过通道 stdin 单独发送，绝不进入 shell 命令参数。
+#[cfg(test)]
 fn root_command(target: &SshTarget, cmd: &str) -> String {
+    root_command_mode(target, cmd, false)
+}
+
+fn root_command_mode(target: &SshTarget, cmd: &str, keep_stdin: bool) -> String {
     if target.user == "root" {
         return cmd.to_string();
     }
     let auth = if target.elevation_password().is_some() { "-S -p ''" } else { "-n" };
-    let body = format!(
-        "{ROOT_CHECK} || exit 1; printf 'MODELINFER_ROOT_READY\\n'; exec </dev/null; {cmd}"
-    );
+    let reset = if keep_stdin { "" } else { "exec </dev/null; " };
+    let body = format!("{ROOT_CHECK} || exit 1; printf 'MODELINFER_ROOT_READY\\n'; {reset}{cmd}");
     format!("sudo -k -H {auth} -u root -- /bin/sh -c {}", crate::deploy::script::sh_quote(&body))
 }
 
@@ -511,16 +548,27 @@ fn open_root_channel(
     target: &SshTarget,
     cmd: &str,
 ) -> Result<ssh2::Channel, ModelinferError> {
+    open_root_channel_mode(sess, target, cmd, false)
+}
+
+fn open_root_channel_mode(
+    sess: &ssh2::Session,
+    target: &SshTarget,
+    cmd: &str,
+    keep_stdin: bool,
+) -> Result<ssh2::Channel, ModelinferError> {
     if target.elevation_password().is_some_and(|p| p.contains(['\r', '\n', '\0'])) {
         return Err(sudo_error());
     }
-    let mut channel = open_channel(sess, &root_command(target, cmd))?;
+    let mut channel = open_channel(sess, &root_command_mode(target, cmd, keep_stdin))?;
     if let Some(password) = target.elevation_password() {
         channel.write_all(password.as_bytes()).map_err(|_| sudo_error())?;
         channel.write_all(b"\n").map_err(|_| sudo_error())?;
     }
-    channel.send_eof()
-        .map_err(|e| ModelinferError::new(codes::SSH_COMMAND_FAILED, format!("关闭 SSH 输入失败: {e}")))?;
+    if !keep_stdin {
+        channel.send_eof()
+            .map_err(|e| ModelinferError::new(codes::SSH_COMMAND_FAILED, format!("关闭 SSH 输入失败: {e}")))?;
+    }
     if target.user != "root" {
         // 握手标记由成功提权后的 shell 输出，不让 sudo 失败混入业务退出码或日志流。
         let mut ready = vec![0; ROOT_READY.len()];

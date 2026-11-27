@@ -2,7 +2,7 @@
 
 ## 中文
 
-管理员从 V-Scheduler 左侧导航打开「推理部署」，通过「部署列表」「模型卡片」「模型广场」「节点监控」「推理设置」切换。选择部署详情仍在当前工作区。「高级管理 → VOS 集群管理」提供「集群概览」和「集群成员」。这些页面继续使用原有运行时和迁移 API。SSH 算力节点与 VOS 集群成员按相同 IP 关联。集群成员状态用于显示来源，调度准入仍由节点授权、执行器与预算决定。列表暂时读取失败时会保留上次读取结果并停用操作。身份失效或权限撤销时会清空列表。
+管理员从 V-Scheduler 左侧导航打开「推理部署」，通过「部署列表」「模型卡片」「模型广场」「节点监控」「推理设置」切换。选择部署详情仍在当前工作区。存储集群的概览和成员由独立的 VOS 集群管理应用提供。推理部署继续使用原有运行时和迁移 API。SSH 算力节点与 VOS 集群成员按相同 IP 关联。集群成员状态用于显示来源，调度准入仍由节点授权、执行器与预算决定。列表暂时读取失败时会保留上次读取结果并停用操作。身份失效或权限撤销时会清空列表。
 
 接管旧 ModelInfer 时，先记录部署和容器状态，备份 ModelInfer 数据库及 `/var/lib/modelinfer/plaza`。在 V-Scheduler 应用存储的 `inference/plaza` 下准备相同的卡片目录结构。模型权重继续使用已配置的模型仓库共享路径。
 
@@ -32,7 +32,7 @@ VOS 集群管理按需部署子项目。跨主机操作要求目标节点也运�
 
 ## English
 
-Administrators open **Inference deployments** from the V-Scheduler sidebar and switch between **Deployments**, **Model cards**, **Model catalog**, **Node monitoring**, and **Inference settings**. Deployment details open in the same workspace. Go to **Advanced Management → VOS Cluster Manager** for **Cluster overview** and **Cluster members**. The pages use the existing runtime and migration API contracts. An SSH node and a VOS cluster member are linked by exact IP. Cluster membership identifies the source. Task admission uses separate permissions, executors and budgets. A temporary inventory error retains the last loaded rows and disables actions. Authentication or access errors clear the list.
+Administrators open **Inference deployments** from the V-Scheduler sidebar and switch between **Deployments**, **Model cards**, **Model catalog**, **Node monitoring**, and **Inference settings**. Deployment details open in the same workspace. Open the standalone **VOS Cluster Manager** app for the storage cluster overview and member list. Inference deployments use the existing runtime and migration APIs. An SSH node and a VOS cluster member are linked by exact IP. Cluster membership identifies the source. Task admission uses separate permissions, executors and budgets. A temporary inventory error retains the last loaded rows and disables actions. Authentication or access errors clear the list.
 
 For migration, record the current deployments and container state, then back up the ModelInfer database and `/var/lib/modelinfer/plaza`. Stage the same card directory structure in `inference/plaza` under V-Scheduler app storage. Weights continue to use the configured shared model repository.
 

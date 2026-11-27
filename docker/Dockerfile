@@ -18,15 +18,6 @@ COPY frontend/src/vos-auth.ts frontend/src/diagnostics.js /build/scheduler/
 COPY --from=ui /build/frontend/node_modules/@noble/hashes /build/scheduler/node_modules/@noble/hashes
 RUN VITE_SCHEDULER_INFERENCE=true pnpm build
 
-FROM node:24-bookworm-slim AS cluster-ui
-WORKDIR /build/cluster
-COPY backend/platform/components/vos-cluster-manager/frontend/package.json backend/platform/components/vos-cluster-manager/frontend/pnpm-lock.yaml backend/platform/components/vos-cluster-manager/frontend/pnpm-workspace.yaml ./
-RUN npm install -g pnpm@11.10.0 && pnpm install --frozen-lockfile
-COPY backend/platform/components/vos-cluster-manager/frontend/ ./
-COPY frontend/src/vos-auth.ts frontend/src/diagnostics.js /build/scheduler/
-COPY --from=ui /build/frontend/node_modules/@noble/hashes /build/scheduler/node_modules/@noble/hashes
-RUN VITE_SCHEDULER_CLUSTER=true pnpm build
-
 FROM node:24-bookworm-slim AS image-hub-ui
 WORKDIR /build/image-hub
 COPY backend/platform/components/image-hub/frontend/package.json backend/platform/components/image-hub/frontend/pnpm-lock.yaml backend/platform/components/image-hub/frontend/pnpm-workspace.yaml ./
@@ -113,9 +104,18 @@ ARG CARGO_OFFLINE=false
 RUN if [ "$CARGO_OFFLINE" = true ]; then cargo build --release --locked --offline; else cargo build --release --locked; fi
 FROM ${SCHEDULER_APPLICATION_BASE} AS scheduler-application
 COPY --from=scheduler-core /build/target/release/v-scheduler /usr/local/bin/v-scheduler
-RUN rm -rf /opt/v-scheduler/ui
+RUN rm -rf /opt/v-scheduler/ui /opt/v-scheduler/cluster-ui
 COPY --from=ui /build/frontend/dist /opt/v-scheduler/ui
 COPY config/app-calibrations.json /opt/v-scheduler/app-calibrations.json
+
+FROM scheduler-core AS scheduler-node-manager-build
+RUN if [ "$CARGO_OFFLINE" = true ]; then set -- --offline; else set --; fi; \
+    cargo build --release --locked "$@" \
+      --manifest-path platform/components/modelinfer/backend/Cargo.toml \
+      --bin scheduler-node-manager
+
+FROM scheduler-application AS scheduler-with-node-manager
+COPY --from=scheduler-node-manager-build /build/target/release/scheduler-node-manager /usr/local/bin/scheduler-node-manager
 
 FROM scheduler-core AS backend
 RUN if [ "$CARGO_OFFLINE" = true ]; then set -- --offline; else set --; fi; \
@@ -151,7 +151,6 @@ COPY --chmod=755 backend/platform/components/vos-cluster-manager/keepalived/noti
 COPY --from=ui /build/frontend/dist /opt/v-scheduler/ui
 COPY --from=inference-ui /build/modelinfer/dist /opt/v-scheduler/inference-ui
 COPY --from=image-hub-ui /build/image-hub/dist /opt/v-scheduler/image-hub-ui
-COPY --from=cluster-ui /build/cluster/dist /opt/v-scheduler/cluster-ui
 COPY config/voice-calibrations.json /opt/v-scheduler/voice-calibrations.json
 COPY config/app-calibrations.json /opt/v-scheduler/app-calibrations.json
 COPY config/vsub-calibrations.json /opt/v-scheduler/vsub-calibrations.json

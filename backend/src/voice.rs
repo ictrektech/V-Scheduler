@@ -676,10 +676,15 @@ fn build_voice_binding(
         }
     }
     let controller_url = binding_controller_url(contract)?;
-    let mut state = json!({"credential_epoch":epoch,"binding":{"protocol_version":1,"binding_revision":1,"app_id":APP,"url":controller_url,"token":token,"executor_token":executor_token,"upstream_url":UPSTREAM,"models":models,"dialogue_models":dialogue_models,"dialogue_limits":dialogue_limits,"gateway_executors":gateway_executors,"secondary_models":secondary_models},
+    let mut state = json!({"credential_epoch":epoch,"binding":{"protocol_version":1,"binding_revision":1,"app_id":APP,"url":controller_url,"token":token,"executor_token":executor_token,"upstream_url":UPSTREAM,"models":models,"gateway_executors":gateway_executors,"secondary_models":secondary_models},
         "principals":[{"token":token,"role":"submitter","app_id":APP,"permit_executors":gateway_ids},{"token":gateway_token,"role":"submitter","app_id":"v-scheduler.voice-gateway"}],
         "executors":executors,"adapters":adapters,
         "gateway":{"url":controller_url,"token":gateway_token,"require_model_policy":true,"models":policies}});
+    // 老版本 V-Voice 会拒绝未知的对话字段。只有实际批准对话模型时才发送。
+    if !dialogue_models.is_empty() {
+        state["binding"]["dialogue_models"] = json!(dialogue_models);
+        state["binding"]["dialogue_limits"] = json!(dialogue_limits);
+    }
     if !model_limits.is_empty() && !legacy_unbounded_models.is_empty() {
         ensure!(
             contract["mixed_input_limits_version"] == 1,
@@ -957,6 +962,18 @@ mod tests {
         let contract = json!({"protocol_version":1,"app_id":APP,"executor_base_url":ORIGIN,"upstream_url":UPSTREAM,"binding_endpoint":"/api/v1/scheduler/binding","provider":"cpu","cpu_models":[],"num_threads":4,"max_concurrent_inference":2,"_execution_hardware":[],"_ready_sync":["asr","speaker"],"_ready_async":["tts"],"sync_models":[{"id":"asr","task_type":"model.infer"},{"id":"speaker","task_type":"model.infer"}],"async_models":[{"id":"tts","task_type":"voice.generate","weight_bytes":1}]});
         let approvals = json!({"protocol_version":1,"approvals":[{"id":"measured","architecture":std::env::consts::ARCH,"provider":"cpu","cpu_models":[],"num_threads":4,"max_concurrent_inference":2,"hardware":[],"calibration":{"evidence_id":"unit-fixture","peak_memory_mib":1024},"resources":{"cpu_millicores":4000,"memory_mib":2048},"max_input_bytes":1048576,"limits":{},"sync_models":["asr","speaker"],"async_models":["tts"],"secondary_models":{"asr":["speaker"]}}]});
         (runtime, contract, approvals)
+    }
+
+    #[test]
+    fn speech_only_binding_omits_dialogue_fields_for_older_voice_images() {
+        let (runtime, mut contract, approvals) = fixtures();
+        contract["dialogue_models"] = json!([]);
+        contract["_ready_dialogue"] = json!([]);
+        let state = build(&runtime, &contract, &approvals, None).unwrap();
+        let binding = state["binding"].as_object().unwrap();
+        assert!(binding["models"]["asr"].is_string());
+        assert!(!binding.contains_key("dialogue_models"));
+        assert!(!binding.contains_key("dialogue_limits"));
     }
 
     #[test]

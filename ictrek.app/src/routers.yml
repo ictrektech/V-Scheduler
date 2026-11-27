@@ -73,14 +73,6 @@ routers:
     order: 223
     keep-alive: true
     embed: true
-  - id: cluster
-    kind: page
-    title: {zh-CN: VOS 集群管理, en: VOS Cluster Management, zh-TW: VOS 叢集管理}
-    icon: lucide:boxes
-    iframe-src: /app/com.ictrek.v-scheduler/?v=__APP_VERSION__&page=cluster
-    order: 224
-    keep-alive: true
-    embed: true
   - id: logs
     kind: page
     title: {zh-CN: 诊断日志, en: Diagnostics, zh-TW: 診斷日誌}

@@ -30,14 +30,10 @@ fn remote_approval(
             &target.profile, architecture, report, capabilities, model_id, approvals,
         );
     }
-    if capabilities["protocol_version"] != 1 || approvals["protocol_version"] != 1 {
+    if approvals["protocol_version"] != 1 {
         return None;
     }
-    let mut models = capabilities["async_models"].as_array()?.iter().filter(|row| row["id"] == model_id);
-    let task_type = models.next()?["task_type"].as_str()?;
-    if models.next().is_some() || !backend_transfers::wire::identifier(task_type) || task_type == "model.infer" {
-        return None;
-    }
+    let (task_type, _) = model_capability(capabilities, model_id, false)?;
     let hardware = app_bindings::hardware(report);
     let mut matching = approvals["application_backends"].as_array()?.iter().filter(|policy| {
         policy["app_id"] == target.app_id
@@ -74,8 +70,41 @@ fn unavailable_target() -> Error {
     Error(StatusCode::CONFLICT, "BACKEND_EXECUTOR_TARGET_NOT_READY")
 }
 
-fn missing_approval() -> Error {
-    Error(StatusCode::CONFLICT, "BACKEND_MODEL_NOT_CALIBRATED")
+fn model_capability<'a>(capabilities: &'a Value, model_id: &str, legacy_studio: bool) -> Option<(&'a str, &'a Value)> {
+    if capabilities["protocol_version"] != 1 {
+        return None;
+    }
+    let mut models = capabilities["async_models"].as_array()?.iter().filter(|row| row["id"] == model_id);
+    let model = models.next()?;
+    let task_type = model["task_type"].as_str()?;
+    if models.next().is_some() || !backend_transfers::wire::identifier(task_type) || task_type == "model.infer"
+        || (legacy_studio && !matches!(task_type, "image.generate" | "video.generate"))
+    {
+        return None;
+    }
+    Some((task_type, model))
+}
+
+fn direct_policy(
+    target: &backend_deployments::ChannelTarget, model: &Value, capacity: &Resources, baseline: &Resources,
+) -> Api<Value> {
+    let limits = match &model["model_limits"] {
+        Value::Null => json!({}),
+        Value::Object(_) => model["model_limits"].clone(),
+        _ => return Err(invalid()),
+    };
+    if serde_json::to_vec(&limits).map_err(|_| invalid())?.len() > 16 * 1024 {
+        return Err(invalid());
+    }
+    let resources = Resources {
+        cpu_millicores: target.cpu_millicores.map(i64::from)
+            .unwrap_or_else(|| 4000.min(capacity.cpu_millicores.saturating_sub(baseline.cpu_millicores))),
+        memory_mib: target.memory_mib.map(i64::from)
+            .unwrap_or_else(|| 4096.min(capacity.memory_mib.saturating_sub(baseline.memory_mib))),
+        gpu_slots: i64::from(target.nvidia),
+        gpu_memory_mib: 0,
+    };
+    Ok(json!({"resources": resources, "model_limits": limits, "model_parameters": {"policy":"direct"}}))
 }
 
 fn approvals() -> anyhow::Result<Value> {
@@ -107,6 +136,21 @@ pub(super) async fn admit(tx: &mut Transaction<'_, Postgres>, executor: &Executo
     ).bind(&executor.id).bind(deployment_id).fetch_one(&mut **tx).await.map_err(unavailable)?;
     if !admissible { return Err(Error(StatusCode::CONFLICT, "BACKEND_MODEL_DELETING")); }
     Ok(())
+}
+
+// A deployment exposes multiple models through one worker. Wait for stop
+// confirmation before giving it a second attempt, even if the node has spare resources.
+pub(super) async fn worker_busy(tx: &mut Transaction<'_, Postgres>, executor: &Executor) -> Api<bool> {
+    if !executor.id.starts_with(EXECUTOR_PREFIX) {
+        return Ok(false);
+    }
+    sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM vrs_backend_executor_bindings selected
+          JOIN vrs_backend_executor_bindings active USING (deployment_id)
+          JOIN vrs_tasks t ON t.body->'executor'->>'id'=active.executor_id AND t.node=$2
+          JOIN vrs_reservations r ON r.task=t.id AND r.state<>'released'
+          WHERE selected.executor_id=$1)",
+    ).bind(&executor.id).bind(&executor.node_id).fetch_one(&mut **tx).await.map_err(unavailable)
 }
 
 pub(super) async fn ensure_model_not_deleting(
@@ -249,16 +293,21 @@ pub(super) async fn register(
         return Err(unavailable_target());
     }
     let architecture = report["arch"].as_str().ok_or_else(unavailable_target)?;
-    let (task_type, approval) = remote_approval(
-        &target, architecture, &report, &capability["data"], &request.model_id,
-        &approvals().map_err(|_| missing_approval())?,
-    ).ok_or_else(missing_approval)?;
-    let resources: Resources = serde_json::from_value(approval["resources"].clone()).map_err(|_| missing_approval())?;
+    let capabilities = &capability["data"];
+    let (task_type, model) = model_capability(capabilities, &request.model_id, target.legacy_studio)
+        .ok_or(Error(StatusCode::CONFLICT, "BACKEND_MODEL_NOT_ADVERTISED"))?;
     let capacity: Resources = serde_json::from_value(sample.get("capacities")).map_err(|_| unavailable_target())?;
     let baseline: Resources = serde_json::from_value(sample.get("resident_baseline")).map_err(|_| unavailable_target())?;
+    let measured = approvals().ok().and_then(|policies| {
+        remote_approval(&target, architecture, &report, capabilities, &request.model_id, &policies)
+    });
+    let approval = if let Some((_, approval)) = measured { approval }
+        else { direct_policy(&target, model, &capacity, &baseline)? };
+    let invalid_budget = || Error(StatusCode::CONFLICT, "BACKEND_MODEL_EXCEEDS_NODE_BUDGET");
+    let resources: Resources = serde_json::from_value(approval["resources"].clone()).map_err(|_| invalid_budget())?;
     if !resources.valid() || resources.cpu_millicores <= 0 || resources.memory_mib <= 0
         || !resources.fits(&baseline, &capacity) {
-        return Err(missing_approval());
+        return Err(invalid_budget());
     }
 
     let digest = format!("{:x}", Sha256::digest(
@@ -270,7 +319,7 @@ pub(super) async fn register(
     let executor = Executor {
         id: executor_id.clone(),
         contract_version: "1".into(),
-        task_type,
+        task_type: task_type.to_owned(),
         node_id: node.id.clone(),
         app_id: target.app_id.clone(),
         resources,
@@ -491,6 +540,9 @@ mod tests {
             kind: "ssh".into(),
             id: "example-orin".into(),
             legacy_studio: false,
+            cpu_millicores: None,
+            memory_mib: None,
+            nvidia: true,
         };
         let report = json!({});
         let capabilities = json!({
@@ -515,5 +567,69 @@ mod tests {
         assert!(approval(&target, &policy).is_some());
         policy["execution_settings"]["provider"] = json!("cpu");
         assert!(approval(&target, &policy).is_none());
+    }
+
+    #[test]
+    fn direct_policy_uses_node_budget_and_unique_verified_worker_capability() {
+        let target = backend_deployments::ChannelTarget {
+            app_id: "com.example.speech".into(),
+            profile: "dgx-spark".into(),
+            image: "registry.example.com/example/speech:v1".into(),
+            kind: "ssh".into(),
+            id: "example-spark".into(),
+            legacy_studio: false,
+            cpu_millicores: Some(2000),
+            memory_mib: None,
+            nvidia: true,
+        };
+        let row = json!({"id":"speech-model","task_type":"voice.transcribe","model_limits":{"duration_seconds":20}});
+        let capabilities = json!({"protocol_version":1,"async_models":[row.clone()]});
+        let (task_type, model) = model_capability(&capabilities, "speech-model", false).unwrap();
+        assert_eq!(task_type, "voice.transcribe");
+        assert!(model_capability(&capabilities, "missing", false).is_none());
+        assert!(model_capability(&json!({"protocol_version":1,"async_models":[row.clone(),row]}), "speech-model", false).is_none());
+        let policy = direct_policy(
+            &target, model,
+            &Resources { cpu_millicores: 8000, memory_mib: 4096, gpu_slots: 1, ..Resources::default() },
+            &Resources { memory_mib: 1024, ..Resources::default() },
+        ).ok().unwrap();
+        assert_eq!(policy["resources"]["cpu_millicores"], 2000);
+        assert_eq!(policy["resources"]["memory_mib"], 3072);
+        assert_eq!(policy["resources"]["gpu_slots"], 1);
+        assert_eq!(policy["model_limits"]["duration_seconds"], 20);
+        assert_eq!(policy["model_parameters"], json!({"policy":"direct"}));
+    }
+
+    #[tokio::test]
+    #[ignore = "requires SCHEDULER_TEST_DATABASE_URL pointing at disposable PostgreSQL"]
+    async fn another_model_waits_for_the_same_worker_to_stop() {
+        let url = std::env::var("SCHEDULER_TEST_DATABASE_URL").unwrap();
+        let db = sqlx::PgPool::connect(&url).await.unwrap();
+        let mut tx = db.begin().await.unwrap();
+        sqlx::raw_sql(
+            "CREATE TEMP TABLE vrs_backend_executor_bindings(executor_id text, deployment_id text);
+             CREATE TEMP TABLE vrs_tasks(id text, node text, body jsonb);
+             CREATE TEMP TABLE vrs_reservations(task text, state text);",
+        ).execute(&mut *tx).await.unwrap();
+        let mut executor: Executor = serde_json::from_value(json!({
+            "id":format!("{EXECUTOR_PREFIX}second"), "contract_version":"1", "task_type":"voice.transcribe",
+            "node_id":"selected-node","app_id":"com.example.speech","resources":{}
+        })).unwrap();
+        sqlx::query("INSERT INTO vrs_backend_executor_bindings VALUES ($1,'same-worker'),($2,'same-worker'),($3,'different-worker')")
+            .bind(format!("{EXECUTOR_PREFIX}first")).bind(&executor.id).bind(format!("{EXECUTOR_PREFIX}third"))
+            .execute(&mut *tx).await.unwrap();
+        assert_eq!(worker_busy(&mut tx, &executor).await.ok(), Some(false));
+        sqlx::query("INSERT INTO vrs_tasks VALUES ('active','selected-node',$1)")
+            .bind(json!({"executor":{"id":format!("{EXECUTOR_PREFIX}first")}}))
+            .execute(&mut *tx).await.unwrap();
+        sqlx::query("INSERT INTO vrs_reservations VALUES ('active','suspect')")
+            .execute(&mut *tx).await.unwrap();
+        assert_eq!(worker_busy(&mut tx, &executor).await.ok(), Some(true));
+        let chosen = std::mem::replace(&mut executor.id, format!("{EXECUTOR_PREFIX}third"));
+        assert_eq!(worker_busy(&mut tx, &executor).await.ok(), Some(false));
+        executor.id = chosen;
+        sqlx::query("UPDATE vrs_reservations SET state='released'")
+            .execute(&mut *tx).await.unwrap();
+        assert_eq!(worker_busy(&mut tx, &executor).await.ok(), Some(false));
     }
 }

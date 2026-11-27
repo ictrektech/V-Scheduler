@@ -361,7 +361,7 @@ PYPROFILES
   if ! printf '%s\n' "$routers_text" | grep -Fxq 'router-type: structured'; then
     die "routers.yml must place sidebar pages in the VOS application group"
   fi
-  for page in overview models inference playground model-hub image-hub resources auto nodes cluster logs api; do
+  for page in overview models inference playground model-hub image-hub resources auto nodes logs api; do
     if ! printf '%s\n' "$routers_text" | grep -Fq "iframe-src: ${ROUTER_IFRAME_SRC}?v=${APP_VERSION}&page=${page}"; then
       die "routers.yml is missing the VOS entry for ${page}"
     fi

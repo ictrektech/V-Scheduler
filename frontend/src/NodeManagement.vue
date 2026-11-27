@@ -7,7 +7,7 @@ import Icon from './Icon.vue'
 import NodeTelemetry from './NodeTelemetry.vue'
 import ApplicationIntegrations from './ApplicationIntegrations.vue'
 const props=defineProps<{request:(path:string,body?:unknown,method?:string)=>Promise<any>,nodes:any[],apiUrl:string,t:(value:string)=>string,locale:string}>()
-const emit=defineEmits<{refresh:[];select:[page:'inference'|'cluster']}>()
+const emit=defineEmits<{refresh:[];select:[page:'inference']}>()
 const data=ref<any>({nodes:[],executors:[],enrollments:[],service_identities:[],events:[]})
 const busy=ref(false),error=ref(''),tab=ref('nodes'),dialog=ref(''),secret=ref<any>(null),nodeForm=ref<any>(null),executorForm=ref<any>(null),confirm=ref<any>(null)
 const identityApp=ref(''),permitGrants=ref<string[]>([]),delegatedGrants=ref<string[]>([]),copied=ref(false)
@@ -19,7 +19,6 @@ const nodeName=(node:any)=>nodeIdentity(live(node.id)).name||nodeIdentity(node).
 const pending=computed(()=>data.value.nodes.filter((node:any)=>node.state==='pending').length+data.value.executors.filter((e:any)=>e.state==='pending').length)
 const observed=computed(()=>props.nodes.filter(n=>n.modelinfer_source))
 const inferenceReady=ref(false)
-const clusterReady=ref(false)
 const migration=ref<{pending:boolean,error:string,preview:any,receipt:any}>({pending:false,error:'',preview:null,receipt:null})
 const events:Record<string,string>={'enrollment.revoked':'撤销接入凭据','node.draining':'排空节点','node.resumed':'恢复接收','enrollment.created':'创建接入凭据','worker.pending':'节点申请接入','node.approved':'批准节点','node.budget.updated':'更新节点预算','node.revoked':'撤销节点','executor.pending':'执行器申请接入','executor.enabled':'批准执行器','executor.disabled':'停用执行器','identity.created':'创建服务凭据','identity.revoked':'撤销服务凭据','source.plan.updated':'更新节点预算规划'}
 const zero=()=>({cpu_millicores:0,memory_mib:0,gpu_slots:0,gpu_memory_mib:0})
@@ -46,10 +45,9 @@ let refreshing=false
 async function refresh(){
   if(busy.value||refreshing)return
   refreshing=true
-  const [management, inference, cluster] = await Promise.allSettled([
+  const [management, inference] = await Promise.allSettled([
     props.request('management'),
     props.request('inference/runtime/health'),
-    props.request('cluster/runtime/health'),
   ])
   refreshing=false
   if(management.status==='fulfilled')data.value=management.value
@@ -57,8 +55,6 @@ async function refresh(){
     ? failureText(management.reason) : ''
   if(inference.status==='fulfilled')inferenceReady.value=inference.value?.ready===true
   else if(!isTemporaryReadFailure(inference.reason)&&!isSessionError(inference.reason))inferenceReady.value=false
-  if(cluster.status==='fulfilled')clusterReady.value=true
-  else if(!isTemporaryReadFailure(cluster.reason)&&!isSessionError(cluster.reason))clusterReady.value=false
 }
 async function action(fn:()=>Promise<void>){if(busy.value)return;busy.value=true;error.value='';try{await fn();emit('refresh')}catch(e){error.value=failureText(e)}finally{busy.value=false}await refresh()}
 function close(){dialog.value='';secret.value=null;nodeForm.value=null;executorForm.value=null;copied.value=false}
@@ -87,7 +83,6 @@ onUnmounted(()=>{clearInterval(timer);secret.value=null})
    <div class="dialog-actions">
     <button v-if="inferenceReady" type="button" class="quiet" @click="emit('select','inference')">{{t('推理部署')}}</button>
     <button v-else type="button" class="quiet" :disabled="migration.pending" @click="loadMigration">{{t('迁移 ModelInfer 部署')}}</button>
-    <button v-if="clusterReady" type="button" class="quiet" @click="emit('select','cluster')">{{t('VOS 集群管理')}}</button>
    </div>
   </div>
   <div v-if="error" class="error" role="alert">{{error}}</div>

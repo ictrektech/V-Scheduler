@@ -2,11 +2,13 @@
 mod application_backend;
 #[path = "../../../../../shared/application_backend_channel.rs"]
 mod backend_channel;
+#[path = "scheduler-node-manager/image_delivery.rs"]
+mod image_delivery;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 
 use application_backend::{Instance, Operation, RuntimeState};
-use std::{collections::HashMap, net::Ipv4Addr, sync::Arc, time::Duration};
+use std::{collections::HashMap, net::Ipv4Addr, sync::Arc, time::{Duration, Instant}};
 
 use axum::{
     Json, Router,
@@ -44,10 +46,16 @@ struct Manager {
     ssh: RealSshExec,
     test_image: String,
     connection_errors: tokio::sync::Mutex<HashMap<String, &'static str>>,
+    image_jobs: tokio::sync::Mutex<HashMap<String, ImageJob>>,
+    image_slots: tokio::sync::Semaphore,
 }
 
 type App = State<Arc<Manager>>;
 type Result<T> = std::result::Result<Json<T>, ModelinferError>;
+struct ImageJob {
+    started: Instant,
+    task: tokio::task::JoinHandle<std::result::Result<(), ModelinferError>>,
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -64,6 +72,8 @@ async fn main() -> anyhow::Result<()> {
         ssh: RealSshExec::node_manager(),
         test_image: config.test_image,
         connection_errors: tokio::sync::Mutex::new(HashMap::new()),
+        image_jobs: tokio::sync::Mutex::new(HashMap::new()),
+        image_slots: tokio::sync::Semaphore::new(2),
     });
     tokio::spawn(recheck_connections(manager.clone()));
     let app = Router::new()
@@ -345,6 +355,41 @@ async fn application_backend(
     }
     let name = instance.name();
     let target = nodes::ssh_target_of(&node);
+    if instance.operation == Operation::Ensure {
+        let mut jobs = app.image_jobs.lock().await;
+        jobs.retain(|id, job| id == &instance.id || !job.task.is_finished()
+            || job.started.elapsed() < Duration::from_secs(7200));
+        match jobs.get(&instance.id) {
+            Some(job) if !job.task.is_finished() => return Ok(Json(RuntimeState::Pending)),
+            Some(_) => {
+                let job = jobs.remove(&instance.id).expect("image job exists");
+                drop(jobs);
+                job.task.await.map_err(|_| ModelinferError::new(codes::SSH_COMMAND_FAILED, "backend_image_pull_failed"))??;
+            }
+            None if jobs.len() >= 32 => return Ok(Json(RuntimeState::Pending)),
+            None => {
+                let owner = app.clone();
+                let image = instance.image.clone();
+                let target = target.clone();
+                let arch = node.arch.clone();
+                let job = tokio::spawn(async move {
+                    let _slot = owner.image_slots.acquire().await.map_err(|_| {
+                        ModelinferError::new(codes::SSH_COMMAND_FAILED, "backend_image_pull_failed")
+                    })?;
+                    let repository = application_backend::image_repository(&image).ok_or_else(|| {
+                        ModelinferError::new(codes::PARAM_INVALID, "invalid_backend_target")
+                    })?;
+                    image_delivery::prepare(&owner.ssh, &target, &image, repository, &arch).await
+                });
+                jobs.insert(instance.id.clone(), ImageJob { started: Instant::now(), task: job });
+                return Ok(Json(RuntimeState::Pending));
+            }
+        }
+    } else if instance.operation == Operation::Remove {
+        if let Some(job) = app.image_jobs.lock().await.remove(&instance.id) {
+            job.task.abort();
+        }
+    }
     let state_check = format!(
         "docker info >/dev/null || exit 1\n\
          current=$(docker ps -aq --filter 'name=^/{name}$') || exit 1\n\
@@ -396,7 +441,7 @@ async fn application_backend(
                 "if test -n \"$current\"; then\n\
                    test \"$running\" = true || docker start \"$current\" >/dev/null || exit 1\n\
                  else\n\
-                   if ! docker image inspect '{}' >/dev/null 2>&1; then docker pull '{}' >/dev/null || {{ echo image_pull_failed; exit 1; }}; fi
+                   if ! docker image inspect '{}' >/dev/null 2>&1; then echo image_pull_failed; exit 1; fi
 \
                    docker run --detach --pull=never --name '{name}' --restart unless-stopped \
                      --label 'com.ictrek.v-scheduler.backend={}' --security-opt no-new-privileges \
@@ -404,7 +449,7 @@ async fn application_backend(
                  fi\n\
                  docker inspect --format '{{{{.State.Running}}}}' '{name}' | grep -qx true || exit 1\n\
                  echo running",
-                instance.image, instance.image, instance.id, instance.host_port, instance.container_port, instance.image,
+                instance.image, instance.id, instance.host_port, instance.container_port, instance.image,
             )
         }
     };

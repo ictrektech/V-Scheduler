@@ -8,9 +8,9 @@ This index is generated from the shipped OpenAPI documents. Each operation links
 
 本索引来自随镜像交付的 OpenAPI。每个接口链接到完整的请求、响应及鉴权契约。应用内进入 **API 文档 → 模型与网关 API / 调度管理 API / 模型管理 API**，可按路径搜索；「应用接入」提供完整流程。
 
-VOS 管理员可从左侧导航打开「推理部署」，或进入「高级管理 → VOS 集群管理」。列表和详情在 V-Scheduler 工作区切换。对应的 `/inference/runtime/`、`/inference/migration/` 和 `/cluster/runtime/` API 契约保持一致。
+VOS 管理员可从左侧导航打开「推理部署」。列表和详情在 V-Scheduler 工作区切换。存储集群在独立的 VOS 集群管理应用中操作。以下 `/inference/runtime/`、`/inference/migration/` 和 `/cluster/runtime/` API 契约保持一致。
 
-VOS administrators can open **Inference deployments** from the sidebar or go to **Advanced Management → VOS Cluster Manager**. Lists and details open in the V-Scheduler workspace. The existing `/inference/runtime/`, `/inference/migration/`, and `/cluster/runtime/` API contracts apply.
+VOS administrators can open **Inference deployments** from the sidebar. Lists and details open in the V-Scheduler workspace. Manage storage clusters in the standalone VOS Cluster Manager app. The existing `/inference/runtime/`, `/inference/migration/`, and `/cluster/runtime/` API contracts apply.
 
 - [Authentication, visibility and keys / 身份、可见范围与 Key](#identity)
 - [Registration and direct admission / 注册与直接放行](#registration)
