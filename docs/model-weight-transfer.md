@@ -4,9 +4,9 @@
 
 This flow prepares a model for an already deployed compute worker. The main application reads its prepared weights and sends them to the Scheduler deployment channel. Scheduler forwards requests for that deployment through its trusted SSH or VOS cluster connection. The target worker writes to its persistent volume. The caller works with file manifests and receipts.
 
-当前 V-Scheduler 为 Image Studio 的 `image-studio-worker-v1` 启用此权重通道、共享探测和模型登记。其他应用可沿用这份协议设计自己的 worker，接入前仍需 Scheduler 支持其部署通道和模型登记。普通的应用后端部署不会自动获得该能力。
+应用可将支持此协议的发布镜像部署为 `application-backend-v1`，复用权重通道和异步模型登记。现有 Image Studio 的 `image-studio-worker-v1` 继续兼容。应用 worker 实现接收、校验和执行，Scheduler 管理授权、节点和任务租约。接入要求见[应用后端部署](application-backend-deployment.md)。
 
-Scheduler currently enables this weight channel, shared-mount probe and model registration for Image Studio's `image-studio-worker-v1`. Other applications can design workers against this contract. Scheduler must add support for their deployment channel and model registration before they can use it.
+Applications can deploy a published image that implements this protocol in `application-backend-v1` mode to use weight transfer and asynchronous model registration. Existing Image Studio `image-studio-worker-v1` deployments remain compatible. Workers receive and verify files and run inference. Scheduler owns authorization, node selection and task leases. See [application backend deployments](application-backend-deployment.md).
 
 ## 入口与认证 / Entry point and identity
 
@@ -28,6 +28,7 @@ Open **API Documentation → Cross-node model weight transfer** in V-Scheduler f
 | `GET /transfers/{transfer_id}` | Read the current offset after an interruption / 断线后读取当前偏移 | Transfer receipt |
 | `PUT /transfers/{transfer_id}/files/{file_id}?offset=<bytes>` | `Content-Type: application/octet-stream`, 1 byte to 1 MiB / 二进制原始数据 | `received_bytes` |
 | `POST /transfers/{transfer_id}/complete` | Empty body; verify size and SHA-256 on the worker / 空请求体，在 worker 上校验完整长度与摘要 | Transfer receipt with `verified: true` |
+| `GET /models` | Empty request / 空请求 | `items[]` with `deployment_id`, `model_id`, `executor_id`, `node_id`, `profile`, `task_type` / 当前可选的模型部署 |
 | `POST /models` | JSON `{"model_id":"sd-turbo","transfer_id":"<receipt id>"}` | `executor_id`, `node_id`, `profile`, `model_limits`, `model_parameters` |
 | `DELETE /models/{model_id}` | Empty body. Worker must support model deletion. / 空请求体，需要支持删除的 worker。 | `deleted_transfers` is the number of staged or verified transfer records removed. / 本次清理的未完成及已校验传输记录数。 |
 

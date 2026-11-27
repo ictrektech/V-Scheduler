@@ -72,7 +72,7 @@ pub(super) async fn create(
             return Err(Error(StatusCode::CONFLICT, "BACKEND_SHARED_MODEL_HUB_UNAVAILABLE"));
         }
     } else {
-        backend_deployments::image_studio_target(&app, &headers, &id).await?;
+        backend_deployments::channel_target(&app, &headers, &id).await?;
     }
     let bytes = serde_json::to_vec(&manifest).map_err(|_| invalid())?;
     let mut tx = app.db.begin().await.map_err(unavailable)?;
@@ -85,7 +85,7 @@ pub(super) async fn create(
 }
 
 async fn model_hub_ready(app: &App, headers: &HeaderMap, id: &str) -> Api<bool> {
-    backend_deployments::image_studio_target(app, headers, id).await?;
+    backend_deployments::channel_target(app, headers, id).await?;
     match backend_deployments::exchange(app, headers, id, wire::Operation::ModelHub, &[]).await {
         Ok(reply) => Ok(reply.0["data"]["state"] == "ready"),
         Err(Error(_, "BACKEND_CHANNEL_UNAVAILABLE" | "BACKEND_TRANSFER_NOT_FOUND")) => Ok(false),

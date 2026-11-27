@@ -23,7 +23,7 @@
     "/backend-deployments/{id}/model-hub": {
       "get": {
         "summary": "Check read-only Model Hub access / 检查只读 Model Hub",
-        "description": "Checks the authorized running Image Studio deployment. Unavailable means the app can use its chunk transfer fallback. / 检查授权且运行中的 Image Studio 实例。不可用时可使用分块传输。",
+        "description": "Checks the authorized running application backend. Unavailable means the app can use its chunk transfer fallback. / 检查授权且运行中的应用后端。不可用时可使用分块传输。",
         "security": [{ "bearerAuth": [] }],
         "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
         "responses": {
@@ -57,7 +57,7 @@
       "post": {
         "operationId": "backend_weight_transfer_create",
         "summary": "Create/resume a weight transfer / 创建或续传权重",
-        "description": "Only a deployment owner with current target and repository authorization or a VOS administrator can access an enabled running Image Studio deployment. / 实例所有方须持有当前节点和仓库授权，VOS 管理员同样受实例状态和部署授权约束。",
+        "description": "Only a deployment owner with current target and repository authorization or a VOS administrator can access an enabled running application backend. / 实例所有方须持有当前节点和仓库授权，VOS 管理员同样受实例状态和部署授权约束。",
         "security": [
           {
             "bearerAuth": []
@@ -224,7 +224,7 @@
       "get": {
         "operationId": "backend_weight_transfer_read",
         "summary": "Read received offsets / 查询已接收偏移",
-        "description": "Only a deployment owner with current target and repository authorization or a VOS administrator can access an enabled running Image Studio deployment. / 实例所有方须持有当前节点和仓库授权，VOS 管理员同样受实例状态和部署授权约束。",
+        "description": "Only a deployment owner with current target and repository authorization or a VOS administrator can access an enabled running application backend. / 实例所有方须持有当前节点和仓库授权，VOS 管理员同样受实例状态和部署授权约束。",
         "security": [
           {
             "bearerAuth": []
@@ -336,7 +336,7 @@
       "put": {
         "operationId": "backend_weight_transfer_write",
         "summary": "Write one chunk at a byte offset / 按字节偏移上传分块",
-        "description": "Only a deployment owner with current target and repository authorization or a VOS administrator can access an enabled running Image Studio deployment. / 实例所有方须持有当前节点和仓库授权，VOS 管理员同样受实例状态和部署授权约束。",
+        "description": "Only a deployment owner with current target and repository authorization or a VOS administrator can access an enabled running application backend. / 实例所有方须持有当前节点和仓库授权，VOS 管理员同样受实例状态和部署授权约束。",
         "security": [
           {
             "bearerAuth": []
@@ -452,7 +452,7 @@
       "post": {
         "operationId": "backend_weight_transfer_complete",
         "summary": "Verify file sizes and SHA-256 / 验证文件尺寸和 SHA-256",
-        "description": "Only a deployment owner with current target and repository authorization or a VOS administrator can access an enabled running Image Studio deployment. / 实例所有方须持有当前节点和仓库授权，VOS 管理员同样受实例状态和部署授权约束。",
+        "description": "Only a deployment owner with current target and repository authorization or a VOS administrator can access an enabled running application backend. / 实例所有方须持有当前节点和仓库授权，VOS 管理员同样受实例状态和部署授权约束。",
         "security": [
           {
             "bearerAuth": []
@@ -652,9 +652,107 @@
       }
     },
     "/backend-deployments/{id}/models": {
+      "get": {
+        "summary": "List active model placements / 列出可用的模型部署",
+        "description": "List enabled, non-deleting bindings for the running deployment on fresh, managed nodes. Free compute is checked when submitting. / 列出运行中的部署在心跳正常的受管节点上已启用且未删除的模型绑定。提交时检查可用资源。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Active placements; items may be empty / 可用部署，items 可以为空",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "const": "OK"
+                    },
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "items"
+                      ],
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "required": [
+                              "deployment_id",
+                              "model_id",
+                              "executor_id",
+                              "node_id",
+                              "profile",
+                              "task_type"
+                            ],
+                            "properties": {
+                              "deployment_id": {
+                                "type": "string"
+                              },
+                              "model_id": {
+                                "type": "string"
+                              },
+                              "executor_id": {
+                                "type": "string"
+                              },
+                              "node_id": {
+                                "type": "string"
+                              },
+                              "profile": {
+                                "type": "string"
+                              },
+                              "task_type": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required / 需要认证"
+          },
+          "403": {
+            "description": "No access to the application channel / 应用通道未授权"
+          },
+          "404": {
+            "description": "Deployment not found or outside app scope / 实例不存在或超出应用范围"
+          },
+          "409": {
+            "description": "BACKEND_STATE_CONFLICT. Deployment is unavailable / 部署暂不可用"
+          },
+          "503": {
+            "description": "Scheduler storage temporarily unavailable / 调度器存储暂不可用"
+          }
+        }
+      },
       "post": {
         "summary": "Register a verified worker model / 登记已校验的模型",
-        "description": "Requires deployment ownership and current node/repository authorization for a running Image Studio worker. / 需要拥有运行中的 Image Studio 实例及当前节点和镜像仓库授权。 The worker model and actual node must match a single measured approval. / 模型和实际节点须匹配唯一实测校准。",
+        "description": "Requires deployment ownership and current node/repository authorization for a running application worker. / 需要拥有运行中的应用实例及当前节点和镜像仓库授权。 The worker model and actual node must match a single measured approval. / 模型和实际节点须匹配唯一实测校准。",
         "security": [
           {
             "bearerAuth": []
@@ -770,7 +868,7 @@
     "/backend-deployments/{id}/executions/{attempt_id}/{action}": {
       "post": {
         "summary": "Execute a fenced attempt / 执行指定代次的任务",
-        "description": "Requires deployment ownership and current node/repository authorization for a running Image Studio worker. / 需要拥有运行中的 Image Studio 实例及当前节点和镜像仓库授权。 Start requires a live lease and a JobRecord without node-local paths. The registered weight and calibrated limits are chosen by Scheduler. / 启动需要有效租约和不含节点本地路径的任务信息，权重及校准限额由 Scheduler 选取。",
+        "description": "Requires deployment ownership and current node/repository authorization for a running application worker. / 需要拥有运行中的应用实例及当前节点和镜像仓库授权。 Legacy Image Studio only. Generic workers receive task commands directly from Scheduler. Start requires a live lease and a JobRecord without node-local paths. The registered weight and calibrated limits are chosen by Scheduler. / 启动需要有效租约和不含节点本地路径的任务信息，权重及校准限额由 Scheduler 选取。",
         "security": [
           {
             "bearerAuth": []
@@ -946,7 +1044,7 @@
     "/backend-deployments/{id}/executions/{attempt_id}/inputs/reference": {
       "put": {
         "summary": "Upload a reference chunk / 上传参考图分块",
-        "description": "Requires deployment ownership and current node/repository authorization for a running Image Studio worker. / 需要拥有运行中的 Image Studio 实例及当前节点和镜像仓库授权。 Binary chunks are at most 1 MiB, up to 20 MiB per attempt. The receipt gives the next offset. / 每块最多 1 MiB，每次执行最多 20 MiB，回执返回下一个偏移。",
+        "description": "Requires deployment ownership and current node/repository authorization for a running application worker. / 需要拥有运行中的应用实例及当前节点和镜像仓库授权。 Binary chunks are at most 1 MiB, up to 20 MiB per attempt. The receipt gives the next offset. / 每块最多 1 MiB，每次执行最多 20 MiB，回执返回下一个偏移。",
         "security": [
           {
             "bearerAuth": []
@@ -1065,7 +1163,7 @@
     "/backend-deployments/{id}/executions/{attempt_id}/outputs/{file_id}": {
       "get": {
         "summary": "Download an output chunk / 下载产物分块",
-        "description": "Requires deployment ownership and current node/repository authorization for a running Image Studio worker. / 需要拥有运行中的 Image Studio 实例及当前节点和镜像仓库授权。 Compare each receipt offset, total size and SHA-256 before publishing the assembled file. / 合并文件后发布前须校验分块偏移、总长度及 SHA-256。",
+        "description": "Requires deployment ownership and current node/repository authorization for a running application worker. / 需要拥有运行中的应用实例及当前节点和镜像仓库授权。 Compare each receipt offset, total size and SHA-256 before publishing the assembled file. / 合并文件后发布前须校验分块偏移、总长度及 SHA-256。",
         "security": [
           {
             "bearerAuth": []

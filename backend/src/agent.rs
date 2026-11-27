@@ -580,7 +580,7 @@ pub async fn run(path: PathBuf) -> anyhow::Result<()> {
         }
         if let Some(cmd) = journal.command.clone() {
             let adapter = cfg.executors.iter().find(|e| e.id == cmd.executor_id);
-            let remote = cmd.executor_id.starts_with("app-remote-image-studio-");
+            let remote = cmd.executor_id.starts_with(crate::model::APPLICATION_BACKEND_EXECUTOR_PREFIX);
             if adapter.is_none() && !remote {
                 anyhow::bail!("command has unknown adapter; reservation remains held");
             }

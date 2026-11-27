@@ -21,6 +21,7 @@ i18n.apply();
 //   /api/com.ictrek.v-router/  -> gateway backend
 const API = options.apiBase;
 const STUDIO_API = "/api/com.ictrek.image-studio/api/v1";
+const VOICE_API = "/api/v1/voice";
 
 const $ = (id) => root.getElementById(id);
 const esc = (s) =>
@@ -45,7 +46,7 @@ const PG_ENDPOINTS = [
 
 const app = {
   element: id => root.getElementById(id),
-  state: { status: null, models: [], upstreams: [], studioPlacements: [], usage: null, usagePeriod: "day", usageQuery: "", usageSort: "total_tokens", tab: "overview", timer: null },
+  state: { status: null, models: [], upstreams: [], studioPlacements: [], voicePlacements: [], usage: null, usagePeriod: "day", usageQuery: "", usageSort: "total_tokens", tab: "overview", timer: null },
 
   // ---------- api ----------
   gatewayKey() {
@@ -202,6 +203,7 @@ const app = {
       if (this.state.tab === "apidoc") this.renderApiDoc();
       if (admin) this.loadBudgets();
       void this.loadStudioPlacements();
+      void this.loadVoicePlacements();
     } catch (err) {
       if(isSessionError(err)){recordDiagnostic("AUTH_REQUEST_REJECTED","gateway_request");this.showError("");return;}
       if (err.status === 401) {
@@ -239,6 +241,38 @@ const app = {
     this.state.studioPlacements = rows;
     this.renderModels();
     this.renderPlaygroundPlacement();
+  },
+
+  async loadVoicePlacements() {
+    const sequence = this.voiceSequence = (this.voiceSequence || 0) + 1;
+    let rows = [];
+    if (API && this.state.models.some(model => model.upstream_id === "app-v-voice")) {
+      try {
+        if (await VRouterOIDC.accessToken()) {
+          const response = await authenticatedFetch(API + VOICE_API + "/compute/placements", {method:"GET"}, {
+            token: VRouterOIDC.accessToken,
+            clearToken: VRouterOIDC.clear,
+          });
+          if (response.ok) {
+            const data = await response.json();
+            if (Array.isArray(data.items)) rows = data.items.filter(row =>
+              row.task_type === "voice.transcribe" && typeof row.model_id === "string" &&
+              /^[0-9a-f]{32}$/.test(row.deployment_id) && typeof row.node_id === "string" &&
+              typeof row.executor_id === "string");
+          }
+        }
+      } catch {}
+    }
+    if (sequence !== this.voiceSequence) return;
+    this.state.voicePlacements = rows;
+    this.renderModels();
+  },
+
+  catalogPlacementsFor(model) {
+    if (model.upstream_id === "app-v-voice") {
+      return this.state.voicePlacements.filter(row => row.model_id === model.id);
+    }
+    return this.studioPlacementsFor(model.qualified, model.upstream_id);
   },
 
   studioPlacementsFor(qualified, upstreamId) {
@@ -558,7 +592,7 @@ const app = {
   },
 
   modelCatalogTable(upstream) {
-    const showExecutionNodes = upstream.id === "app-image-studio";
+    const showExecutionNodes = upstream.id === "app-image-studio" || upstream.id === "app-v-voice";
     const headers = [
       "模型与能力", "类型", showExecutionNodes ? "上游位置" : "位置",
       ...(showExecutionNodes ? ["执行节点"] : []),
@@ -572,7 +606,7 @@ const app = {
     return models.flatMap(m=>{
             const budget = this.budgetFor(m);
             const actions = [];
-            const placements = showExecutionNodes ? this.studioPlacementsFor(m.qualified,m.upstream_id) : [];
+            const placements = showExecutionNodes ? this.catalogPlacementsFor(m) : [];
             if (!m.short && m.kind !== "service" && ["api", "registered"].includes(m.upstream_source) && m.upstream_manageable !== false) {
               actions.push(`<button class="btn" onclick="app.openModelDialog(${jsArg(m.qualified)}, ${jsArg(m.upstream_id)})">${VRouterI18n.t("编辑元数据")}</button>`);
             }
@@ -602,10 +636,10 @@ const app = {
               `<span class="mono model-identifier">${esc(m.short ? m.id : (m.name || m.qualified))}</span><div class="model-capability-tags">${(m.capabilities || []).slice(0,4).map(c=>`<span class="capability-tag">${esc(VRouterI18n.t(CAPABILITIES.find(([id])=>id===c)?.[1] || c))}</span>`).join('')}</div><div class="hint">${(m.domains || ['general']).map(id => esc(VRouterI18n.t((this.state.domainCatalog || []).find(d => d.id === id)?.name || id))).join(' · ')}</div>${m.short ? ` <span class="pill kind">${VRouterI18n.t("短名")}</span>` : ""}`,
               ({embedding:"Embedding",chat:VRouterI18n.t("对话"),unknown:VRouterI18n.t("由上游决定"),service:VRouterI18n.t("服务接口")})[m.kind] || esc(m.kind),
               `<span class="pill ${m.upstream_kind}">${kindLabel(m.upstream_kind)}</span>`,
-              ...(showExecutionNodes ? [`<div class="model-execution-node">${esc(placement ? this.studioPlacementName(placement) : VRouterI18n.t("主节点"))}${placement ? ` <small class="pill local">${VRouterI18n.t("可调用")}</small>` : ""}</div>`] : []),
+              ...(showExecutionNodes ? [`<div class="model-execution-node">${esc(placement ? (m.upstream_id === "app-v-voice" ? placement.node_id : this.studioPlacementName(placement)) : (m.execution_placement?.node_id || VRouterI18n.t(m.upstream_id === "app-v-voice" ? "未确认" : "主节点")))}${placement ? ` <small class="pill local">${VRouterI18n.t("可调用")}</small>` : ""}</div>${m.execution_placement ? `<div class="hint">${esc(m.execution_placement.executor_id)}</div>` : ""}`] : []),
               `${esc(VRouterI18n.t(m.upstream_name))}${!placement && !m.short && !m.virtual && m.kind !== 'service' ? `<div class="hint">${esc(VRouterI18n.t("最近一次测试"))} · ${esc(this.testResultText(m.upstream_id, m.id))}</div>` : ''}`,
               placement ? VRouterI18n.t("由部署决定") : this.budgetCell(m, budget),
-              `<div class="model-row-actions">${!m.short && m.kind !== 'service' ? `<button type="button" class="btn" onclick="app.tryModel(${jsArg(m.qualified)}, ${jsArg(m.upstream_id)}, ${jsArg(placement?.deployment_id || "")})">${VRouterI18n.t("测试")}</button>` : ''}<button type="button" class="btn" onclick="app.openModelCall(${jsArg(m.qualified)}, ${jsArg(m.upstream_id)}, ${jsArg(placement?.deployment_id || "")})">${VRouterI18n.t("调用方式")}</button>${!placement && !m.short && m.kind !== "service" ? `<button type="button" class="btn" onclick="app.openModelSpeed(${jsArg(m.id)}, ${jsArg(m.upstream_id || 'auto')}, ${jsArg(m.name || m.qualified)})">${VRouterI18n.t("速度趋势")}</button>` : ''}${!placement && actions.length ? `<details class="catalog-actions" ${this.catalogActionOpen.has(m.qualified)?'open':''} ontoggle="app.rememberCatalogAction(${jsArg(m.qualified)},this.open)"><summary>${VRouterI18n.t('模型设置')}</summary><div>${actions.join('')}</div></details>` : ''}</div>`,
+              `<div class="model-row-actions">${!m.short && m.kind !== 'service' && !(placement && m.upstream_id === "app-v-voice") ? `<button type="button" class="btn" onclick="app.tryModel(${jsArg(m.qualified)}, ${jsArg(m.upstream_id)}, ${jsArg(placement?.deployment_id || "")})">${VRouterI18n.t("测试")}</button>` : ''}<button type="button" class="btn" onclick="app.openModelCall(${jsArg(m.qualified)}, ${jsArg(m.upstream_id)}, ${jsArg(placement?.deployment_id || "")})">${VRouterI18n.t("调用方式")}</button>${!placement && !m.short && m.kind !== "service" ? `<button type="button" class="btn" onclick="app.openModelSpeed(${jsArg(m.id)}, ${jsArg(m.upstream_id || 'auto')}, ${jsArg(m.name || m.qualified)})">${VRouterI18n.t("速度趋势")}</button>` : ''}${!placement && actions.length ? `<details class="catalog-actions" ${this.catalogActionOpen.has(m.qualified)?'open':''} ontoggle="app.rememberCatalogAction(${jsArg(m.qualified)},this.open)"><summary>${VRouterI18n.t('模型设置')}</summary><div>${actions.join('')}</div></details>` : ''}</div>`,
             ];
             return [row(null), ...placements.map(row)];
     });
@@ -669,14 +703,16 @@ const app = {
     if (!model) return;
     const upstream = this.state.upstreams.find(u => u.id === upstreamId);
     const pinned = Boolean(upstream && !model.virtual && model.kind !== "service");
-    const placements=this.studioPlacementsFor(qualified,upstreamId);
+    const placements=this.catalogPlacementsFor(model);
     const placement=placements.find(item=>item.deployment_id===placementId);
     if (placementId && !placement) {
       this.toast(VRouterI18n.t("所选执行节点暂不可用。"));
       return;
     }
-    $("modelCallPlacementField").hidden=upstreamId!=="app-image-studio";
-    VRouterI18n.bind($("modelCallPlacementName"),"textContent",()=>placement ? this.studioPlacementName(placement) : VRouterI18n.t("主节点"));
+    const voicePlacement = placement && upstreamId === "app-v-voice";
+    $("modelCallPlacementField").hidden=upstreamId!=="app-image-studio" && !voicePlacement;
+    VRouterI18n.bind($("modelCallPlacementName"),"textContent",()=>placement
+      ? (voicePlacement ? placement.node_id : this.studioPlacementName(placement)) : VRouterI18n.t("主节点"));
     const bases = this.state.status?.base_urls || {};
     const base = (bases.internal || "http://v-scheduler:8080/v1").replace(/\/$/, "");
     const shell = value => "'" + String(value).replaceAll("'", "'\\''") + "'";
@@ -706,6 +742,7 @@ const app = {
     const known = [...new Set([...Object.keys(jsonBodies), ...Object.keys(multipart)])];
     const declared = (model.endpoints || []).map(value => this.normalizeEndpoint(value));
     const methods = known.filter(path => {
+      if (voicePlacement) return path === "/audio/transcriptions";
       if (placement && path !== "/images/generations") return false;
       if (model.virtual) return ["/chat/completions", "/messages"].includes(path);
       if (!upstream || !PG_ENDPOINTS.some(endpoint => endpoint.path === path)) {
@@ -725,16 +762,20 @@ const app = {
       const headers = path === "/messages"
         ? ['-H "x-api-key: $ACCESS_TOKEN"', "-H 'anthropic-version: 2023-06-01'"]
         : ['-H "Authorization: Bearer $ACCESS_TOKEN"'];
-      if (pinned) headers.push("-H " + shell("X-VRouter-Upstream: " + upstreamId));
-      const data = multipart[path]
+      if (pinned && !voicePlacement) headers.push("-H " + shell("X-VRouter-Upstream: " + upstreamId));
+      const data = voicePlacement
+        ? ["file=@audio.wav", "deployment_id=" + placement.deployment_id,
+           "executor_id=" + placement.executor_id].map(value => "-F " + shell(value))
+        : multipart[path]
         ? ["model=" + native, ...multipart[path]].map(value => "-F " + shell(value))
         : ["-H 'Content-Type: application/json'", "-d " + shell(JSON.stringify({model:native,...(path === "/systemone" && upstream?.protocol === "openai_decisions"
           ? {state:"Example request",questions:{category:{type:"choice",instructions:"Classify the request",criteria:{general:"General request",technical:"Technical request"}}}}
           : jsonBodies[path]),...(placement ? {compute_deployment_id:placement.deployment_id} : {})}))];
-      const command = ["curl -fsS " + shell(base + path), ...headers, ...data].join(" \\\n  ");
+      const url = voicePlacement ? window.location.origin + API + VOICE_API + "/compute/transcriptions" : base + path;
+      const command = ["curl -fsS " + shell(url), ...headers, ...data].join(" \\\n  ");
       const section = document.createElement("section");
       const title = document.createElement("h4");
-      title.textContent = "POST /v1" + path;
+      title.textContent = voicePlacement ? "POST " + VOICE_API + "/compute/transcriptions" : "POST /v1" + path;
       const pre = document.createElement("pre");
       pre.textContent = command;
       const copy = document.createElement("button");
@@ -1104,7 +1145,7 @@ const app = {
     const usable = this.state.models
       .filter((m) => !m.short && m.kind !== "service" && this.playgroundEndpointsForModel(m).length)
       .sort((a, b) => this.playgroundModelRank(a.qualified) - this.playgroundModelRank(b.qualified) || a.qualified.localeCompare(b.qualified));
-    VRouterI18n.bind($("pgModel"), "innerHTML", () => usable.map(m => `<option value="${esc(m.qualified)}">${esc(m.name || m.qualified)}</option>`).join("") || `<option value="">（${VRouterI18n.t("无可用模型")}）</option>`);
+    VRouterI18n.bind($("pgModel"), "innerHTML", () => usable.map(m => `<option value="${esc(m.qualified)}">${esc(m.name || m.qualified)}${m.execution_placement ? ` · ${esc(m.execution_placement.node_id)}` : ""}</option>`).join("") || `<option value="">（${VRouterI18n.t("无可用模型")}）</option>`);
     if ([...$("pgModel").options].some(o => o.value === previous)) $("pgModel").value = previous;
     this.renderPlaygroundEndpoints();
   },

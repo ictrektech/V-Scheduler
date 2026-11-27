@@ -207,6 +207,38 @@ pub(super) async fn management(g: &Gateway, mut request: Request, path: &str) ->
     *out.headers_mut() = headers;
     Ok(out)
 }
+pub(super) async fn voice_compute(
+    g: &Gateway, identity: &Identity, request: Request, path: &str,
+) -> Api<Response> {
+    if !identity.vos_user {
+        let status = identity.auth_failure.unwrap_or(if identity.api_key_id.is_some() { 403 } else { 401 });
+        return Err(Failure::new(status, "VOS user bearer required for V-Voice compute"));
+    }
+    let authorization = request.headers().get("authorization").cloned()
+        .ok_or_else(|| Failure::new(401, "VOS user bearer required for V-Voice compute"))?;
+    let slot = g.slots.try_acquire().map_err(|_| Failure::new(429, "gateway request capacity exhausted"))?;
+    let (parts, body) = request.into_parts();
+    let suffix = path.trim_start_matches("/api/v1/voice");
+    let target = format!("http://v-voice-backend:7070/api/v1{suffix}");
+    let mut upstream = g.client.request(parts.method.clone(), target)
+        .header("authorization", authorization).timeout(Duration::from_secs(190));
+    if parts.method == axum::http::Method::POST {
+        let content_type = parts.headers.get("content-type")
+            .filter(|value| value.as_bytes().starts_with(b"multipart/form-data;"))
+            .ok_or_else(|| Failure::new(415, "multipart/form-data required"))?;
+        let input = axum::body::to_bytes(body, 20 * 1024 * 1024 + 65536).await
+            .map_err(|_| Failure::new(413, "V-Voice compute request is too large"))?;
+        upstream = upstream.header("content-type", content_type).body(input);
+    }
+    let response = upstream.send().await.map_err(|error| {
+        Failure::new(if error.is_timeout() { 504 } else { 503 }, "V-Voice compute is unavailable")
+    })?;
+    let status = response.status();
+    let data = read_limited(response, 65536).await?;
+    drop(slot);
+    Ok((status, [("content-type", "application/json")], data).into_response())
+}
+
 fn json_body(bytes: &[u8]) -> Api<Value> {
     serde_json::from_slice(bytes).map_err(|_| Failure::new(400, "invalid JSON request"))
 }
@@ -396,12 +428,16 @@ async fn handle_inner(g: Arc<Gateway>, id: Identity, request: Request, classifie
         return Ok(axum::Json(json!({"available":detect&&structure,"services":{"scene_detect":detect,"structure":structure}})).into_response());
     }
     if path == "/v1/models" && pinned.is_empty() {
+        let voice_binding = lease::voice_placement_config(&g);
         let r=g.registry.lock().unwrap();
         let mut models = r.list_models(&id).iter().map(|m| {
             let name = r.catalog_ref(&m.upstream_id, &m.qualified, &id);
             let mut model = json!({"id":name,"name":name,"object":"model","created":0,"owned_by":m.owned_by,"domains":domains::effective(&r,m)});
             if let Some(control) = &m.reasoning_control {
                 model["reasoning_control"] = json!(control);
+            }
+            if let Some(placement) = lease::voice_placement(&r, m, voice_binding.as_ref()) {
+                model["execution_placement"] = placement;
             }
             model
         }).collect::<Vec<_>>();

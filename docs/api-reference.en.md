@@ -150,6 +150,8 @@ Transient VOS login expiry is automatically renewed where the app bridge support
 
 ## Gateway — base http://v-scheduler:8080
 
+For V-Voice gateway models with a Scheduler binding, GET `/api/v1/models` and GET `/v1/models` include optional `execution_placement` on each corresponding row. Its string fields are `node_id` (Scheduler node ID), `executor_id` (Scheduler executor ID) and `backend_id` (gateway backend ID, currently `app-v-voice`). Submit the model ID returned by the catalog.
+
 | Method | Path | Operation |
 | --- | --- | --- |
 | GET | `/api/v1/apidoc` | API documentation data |
@@ -366,6 +368,15 @@ Transient VOS login expiry is automatically renewed where the app bridge support
 | DELETE | `/api/v1/api-keys/{id}` | Revoke an API key |
 | PUT | `/api/v1/models/access-key` | Set, rotate or revoke a model access key |
 | PUT | `/api/v1/model-routing` | Set per-model direct admission |
+
+
+### Select the V-Voice execution node through Scheduler
+
+Use gateway base `/api/com.ictrek.v-scheduler` on the VOS origin, or `http://v-scheduler:8080` on the container network. Send the current user's `Authorization: Bearer <VOS token>` on both calls.
+
+- `GET /api/v1/voice/compute/placements` returns `items[]`. Each entry has string fields `deployment_id`, `model_id`, `executor_id`, `node_id`, `profile`, and `task_type`. Supported here are `sensevoice-int8` and `voice.transcribe`. An empty array means no callable remote deployment.
+- `POST /api/v1/voice/compute/transcriptions` accepts multipart `deployment_id`, `executor_id`, `file` and optional `language`. Audio accepts WAV, FLAC, MP3, OGG or M4A up to 20 MiB, subject to measured node duration and sample-rate limits. Returns `task_id`, actual `node_id`, `executor_id`, `deployment_id` and `transcription`. Disconnect or timeout requests cancellation. Success verifies both executor and node.
+- 401 requires sign-in. For 403 check credential type, 409 refresh the placement list, 413 shorten audio, 415 check multipart content type, 422 check form and format, 429 wait for capacity, 502 check execution evidence, and 503/504 check V-Voice and the target.
 
 
 ## Controller — base http://v-scheduler:38120/api/v1

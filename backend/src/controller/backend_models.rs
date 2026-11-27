@@ -2,8 +2,66 @@ use super::*;
 use crate::model::Executor;
 use std::path::Path as FsPath;
 
-const OWNER: &str = "com.ictrek.image-studio";
-pub(super) const EXECUTOR_PREFIX: &str = "app-remote-image-studio-";
+const LEGACY_STUDIO: &str = "com.ictrek.image-studio";
+const LEGACY_PREFIX: &str = "app-remote-image-studio-";
+pub(super) const EXECUTOR_PREFIX: &str = crate::model::APPLICATION_BACKEND_EXECUTOR_PREFIX;
+
+pub(super) fn check_task_parameters(executor: &Executor, parameters: &Value) -> Api<()> {
+    if executor.id.starts_with(EXECUTOR_PREFIX)
+        && !executor.id.starts_with(LEGACY_PREFIX)
+        && serde_json::to_vec(parameters).map_err(|_| invalid())?.len() > 32 * 1024
+    {
+        return Err(Error(StatusCode::PAYLOAD_TOO_LARGE, "BACKEND_EXECUTION_PARAMETERS_TOO_LARGE"));
+    }
+    Ok(())
+}
+
+
+fn remote_approval(
+    target: &backend_deployments::ChannelTarget,
+    architecture: &str,
+    report: &Value,
+    capabilities: &Value,
+    model_id: &str,
+    approvals: &Value,
+) -> Option<(String, Value)> {
+    if target.legacy_studio {
+        return app_bindings::remote_image_approval(
+            &target.profile, architecture, report, capabilities, model_id, approvals,
+        );
+    }
+    if capabilities["protocol_version"] != 1 || approvals["protocol_version"] != 1 {
+        return None;
+    }
+    let mut models = capabilities["async_models"].as_array()?.iter().filter(|row| row["id"] == model_id);
+    let task_type = models.next()?["task_type"].as_str()?;
+    if models.next().is_some() || !backend_transfers::wire::identifier(task_type) || task_type == "model.infer" {
+        return None;
+    }
+    let hardware = app_bindings::hardware(report);
+    let mut matching = approvals["application_backends"].as_array()?.iter().filter(|policy| {
+        policy["app_id"] == target.app_id
+            && policy["image"] == target.image
+            && policy["profile"] == target.profile
+            && policy["architecture"] == architecture
+            && policy["hardware"] == hardware
+            && policy["model_id"] == model_id
+            && policy["task_type"] == task_type
+            && policy["execution_settings"].is_object()
+            && policy["execution_settings"] == capabilities["execution_settings"]
+            && policy["evidence"]["confirmed_stopped"] == true
+            && policy["evidence"]["id"].as_str().is_some_and(|id| !id.is_empty())
+            && policy["model_limits"].is_object()
+            && policy["model_parameters"].is_object()
+    });
+    let policy = matching.next()?;
+    if matching.next().is_some()
+        || serde_json::to_vec(&json!([policy["model_limits"], policy["model_parameters"]])).ok()?.len() > 16 * 1024
+    {
+        return None;
+    }
+    Some((task_type.to_owned(), policy.clone()))
+}
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -87,7 +145,7 @@ pub(super) async fn remove(
     State(app): State<App>, headers: HeaderMap, Path((deployment, model)): Path<(String, String)>,
 ) -> Api<Json<Value>> {
     if !backend_transfers::wire::model_identifier(&model) { return Err(invalid()); }
-    backend_deployments::image_studio_target(&app, &headers, &deployment).await?;
+    backend_deployments::channel_target(&app, &headers, &deployment).await?;
     let principal = auth(&app, &headers).await?;
     let capabilities = backend_deployments::exchange(&app, &headers, &deployment,
         backend_transfers::wire::Operation::Capabilities, &[]).await?.0;
@@ -132,20 +190,49 @@ pub(super) async fn remove(
     Ok(ok(json!({"deleted_transfers":deleted})))
 }
 
+pub(super) async fn list(
+    State(app): State<App>,
+    headers: HeaderMap,
+    Path(deployment): Path<String>,
+) -> Api<Json<Value>> {
+    backend_deployments::channel_target(&app, &headers, &deployment).await?;
+    let items: Vec<(String, String, String, String, String)> = sqlx::query_as(
+        "SELECT b.model_id,b.executor_id,e.node_id,b.profile,e.definition->>'task_type'
+         FROM vrs_backend_executor_bindings b
+         JOIN vrs_executor_settings e ON e.id=b.executor_id AND e.state='enabled'
+         JOIN vrs_backend_deployments d ON d.id=b.deployment_id
+         JOIN vrs_nodes n ON n.id=e.node_id
+         WHERE b.deployment_id=$1 AND d.state='running' AND d.last_error IS NULL
+         AND n.management_enabled AND NOT n.draining AND n.heartbeat>now()-interval '12 seconds'
+         AND NOT EXISTS(SELECT 1 FROM vrs_backend_model_deletions m
+             WHERE m.deployment_id=b.deployment_id AND m.model_id=b.model_id)
+         ORDER BY b.model_id",
+    ).bind(&deployment).fetch_all(&app.db).await.map_err(unavailable)?;
+    let items: Vec<_> = items.into_iter().map(|(model_id, executor_id, node_id, profile, task_type)| {
+        json!({ "deployment_id": deployment, "model_id": model_id, "executor_id": executor_id,
+            "node_id": node_id, "profile": profile, "task_type": task_type })
+    }).collect();
+    Ok(ok(json!({"items": items})))
+}
+
 pub(super) async fn register(
     State(app): State<App>,
     headers: HeaderMap,
     Path(deployment_id): Path<String>,
     Json(request): Json<Registration>,
 ) -> Api<Json<Value>> {
-    let (kind, target_id, profile) = backend_deployments::image_studio_target(&app, &headers, &deployment_id).await?;
+    if !backend_transfers::wire::model_identifier(&request.model_id)
+        || !backend_transfers::wire::identifier(&request.transfer_id) {
+        return Err(invalid());
+    }
+    let target = backend_deployments::channel_target(&app, &headers, &deployment_id).await?;
     let authn = auth(&app, &headers).await?;
     verify_transfer(&app, &headers, &deployment_id, &request).await?;
     let capability = backend_deployments::exchange(&app, &headers, &deployment_id,
         backend_transfers::wire::Operation::Capabilities, &[]).await?.0;
-    let mut candidates = app.config.nodes.iter().filter(|node| match kind.as_str() {
-        "cluster" => node.vos_member_id == target_id,
-        "ssh" => node.discovery_source == "modelinfer" && node.discovery_id == target_id,
+    let mut candidates = app.config.nodes.iter().filter(|node| match target.kind.as_str() {
+        "cluster" => node.vos_member_id == target.id,
+        "ssh" => node.discovery_source == "modelinfer" && node.discovery_id == target.id,
         _ => false,
     });
     let node = candidates.next().ok_or_else(unavailable_target)?;
@@ -162,8 +249,8 @@ pub(super) async fn register(
         return Err(unavailable_target());
     }
     let architecture = report["arch"].as_str().ok_or_else(unavailable_target)?;
-    let (task_type, approval) = app_bindings::remote_image_approval(
-        &profile, architecture, &report, &capability["data"], &request.model_id,
+    let (task_type, approval) = remote_approval(
+        &target, architecture, &report, &capability["data"], &request.model_id,
         &approvals().map_err(|_| missing_approval())?,
     ).ok_or_else(missing_approval)?;
     let resources: Resources = serde_json::from_value(approval["resources"].clone()).map_err(|_| missing_approval())?;
@@ -178,13 +265,14 @@ pub(super) async fn register(
         serde_json::to_vec(&json!([deployment_id, node.id, request.model_id, approval]))
             .map_err(|_| invalid())?,
     ));
-    let executor_id = format!("{EXECUTOR_PREFIX}{}", &digest[..24]);
+    let prefix = if target.legacy_studio { LEGACY_PREFIX } else { EXECUTOR_PREFIX };
+    let executor_id = format!("{prefix}{}", &digest[..24]);
     let executor = Executor {
         id: executor_id.clone(),
         contract_version: "1".into(),
         task_type,
         node_id: node.id.clone(),
-        app_id: OWNER.into(),
+        app_id: target.app_id.clone(),
         resources,
         upstream_urls: vec![],
         placements: vec![],
@@ -221,13 +309,13 @@ pub(super) async fn register(
     if !enabled { return Err(Error(StatusCode::FORBIDDEN, "EXECUTOR_NOT_ALLOWED")); }
     sqlx::query("INSERT INTO vrs_backend_executor_bindings(executor_id,deployment_id,transfer_id,model_id,profile,model_limits,model_parameters) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(executor_id) DO NOTHING")
         .bind(&executor_id).bind(&deployment_id).bind(&request.transfer_id).bind(&request.model_id)
-        .bind(&profile).bind(&approval["model_limits"]).bind(&approval["model_parameters"]).execute(&mut *tx).await.map_err(unavailable)?;
+        .bind(&target.profile).bind(&approval["model_limits"]).bind(&approval["model_parameters"]).execute(&mut *tx).await.map_err(unavailable)?;
     management::audit(&mut tx, &authn, "backend_model.bind", &executor_id).await?;
     tx.commit().await.map_err(unavailable)?;
     management::restore(&app.db, &app.voice_config).await
         .map_err(|_| Error(StatusCode::SERVICE_UNAVAILABLE, "BACKEND_EXECUTOR_UNAVAILABLE"))?;
     Ok(ok(json!({
-        "executor_id": executor_id, "node_id": node.id, "profile": profile,
+        "executor_id": executor_id, "node_id": node.id, "profile": target.profile,
         "model_limits": approval["model_limits"], "model_parameters": approval["model_parameters"]
     })))
 }
@@ -235,6 +323,8 @@ pub(super) async fn register(
 #[derive(sqlx::FromRow)]
 struct Attempt {
     task_id: String,
+    app_id: String,
+    model_id: String,
     executor_id: String,
     deployment_id: String,
     transfer_id: String,
@@ -251,16 +341,17 @@ struct Attempt {
 
 async fn attempt(db: &PgPool, id: &str) -> Api<Attempt> {
     sqlx::query_as(
-        "SELECT t.id AS task_id,b.executor_id,b.deployment_id,b.transfer_id,t.node AS node_id,n.session,
+        "SELECT t.id AS task_id,t.app AS app_id,b.model_id,b.executor_id,b.deployment_id,b.transfer_id,t.node AS node_id,n.session,
          t.fence,t.status,(r.state IN ('held','active') AND r.lease_until>now()) AS lease_active,
          t.body->'parameters' AS parameters,(t.body ? '_scheduler_preemption') AS preempted,
          b.model_limits,b.model_parameters FROM vrs_tasks t
          JOIN vrs_backend_executor_bindings b ON b.executor_id=t.body->'executor'->>'id'
          JOIN vrs_nodes n ON n.id=t.node
+         JOIN vrs_backend_deployments d ON d.id=b.deployment_id AND d.app_id=t.app
          LEFT JOIN vrs_reservations r ON r.attempt=t.attempt
-         WHERE t.attempt=$1 AND t.app=$2",
+         WHERE t.attempt=$1",
     )
-    .bind(id).bind(OWNER).fetch_optional(db).await.map_err(unavailable)?
+    .bind(id).fetch_optional(db).await.map_err(unavailable)?
     .ok_or(Error(StatusCode::NOT_FOUND, "BACKEND_ATTEMPT_NOT_FOUND"))
 }
 
@@ -284,7 +375,10 @@ pub(super) async fn execute(
     Path((id, attempt_id, action)): Path<(String, String, backend_transfers::wire::Action)>,
     Json(input): Json<Value>,
 ) -> Api<Json<Value>> {
-    backend_deployments::image_studio_target(&app, &headers, &id).await?;
+    let target = backend_deployments::channel_target(&app, &headers, &id).await?;
+    if !target.legacy_studio {
+        return Err(backend_deployments::denied());
+    }
     let record = attempt(&app.db,&attempt_id).await?;
     if record.deployment_id != id || input["task_id"] != record.task_id {
         return Err(Error(StatusCode::NOT_FOUND, "BACKEND_ATTEMPT_NOT_FOUND"));
@@ -309,7 +403,7 @@ pub(super) async fn execute(
 pub(super) struct IoOffset { offset: u64 }
 
 async fn verify_io(app: &App, headers: &HeaderMap, id: &str, attempt_id: &str, write: bool) -> Api<()> {
-    backend_deployments::image_studio_target(app,headers,id).await?;
+    backend_deployments::channel_target(app,headers,id).await?;
     let record = attempt(&app.db,attempt_id).await?;
     if record.deployment_id != id {
         return Err(Error(StatusCode::NOT_FOUND, "BACKEND_ATTEMPT_NOT_FOUND"));
@@ -356,6 +450,23 @@ pub(super) async fn dispatch(
         return Err(Error(StatusCode::CONFLICT,"WORKER_SESSION_CONFLICT"));
     }
     verify_action(&record,input.fence,action)?;
+    if !record.executor_id.starts_with(LEGACY_PREFIX) {
+        let mut body = payload(&record);
+        if matches!(action, backend_transfers::wire::Action::Start) {
+            body["model_id"] = json!(record.model_id);
+            body["transfer_id"] = json!(record.transfer_id);
+            body["model_limits"] = record.model_limits.clone();
+            body["model_parameters"] = record.model_parameters.clone();
+        }
+        let bytes = serde_json::to_vec(&body).map_err(|_| invalid())?;
+        return backend_deployments::dispatch_channel(
+            &app, &record.deployment_id, &record.app_id,
+            backend_transfers::wire::Operation::Execute { attempt_id, action }, &bytes,
+        ).await;
+    }
+    if record.app_id != LEGACY_STUDIO {
+        return Err(backend_deployments::denied());
+    }
     let failure = || Error(StatusCode::BAD_GATEWAY,"BACKEND_EXECUTOR_UNAVAILABLE");
     let token = app_bindings::image_studio_executor_token().map_err(|_| failure())?;
     let endpoint = format!("http://image-studio-backend:5000/api/v1/scheduler/executions/{attempt_id}/{}", action.segment());
@@ -365,4 +476,44 @@ pub(super) async fn dispatch(
     let value = app_bindings::bounded_json(response).await.map_err(|_| failure())?;
     // The existing Agent client expects the Scheduler response envelope.
     Ok(ok(value))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn generic_approval_matches_the_application_runtime_and_measured_target() {
+        let mut target = backend_deployments::ChannelTarget {
+            app_id: "com.example.speech".into(),
+            profile: "jetson-orin".into(),
+            image: "registry.example.com/example/speech:v1".into(),
+            kind: "ssh".into(),
+            id: "example-orin".into(),
+            legacy_studio: false,
+        };
+        let report = json!({});
+        let capabilities = json!({
+            "protocol_version": 1,
+            "async_models": [{"id":"speech-model","task_type":"speech.render"}],
+            "execution_settings": {"provider":"cuda","threads":4}
+        });
+        let mut policy = json!({
+            "app_id":target.app_id, "image":target.image, "profile":target.profile,
+            "architecture":"aarch64", "hardware":app_bindings::hardware(&report),
+            "model_id":"speech-model", "task_type":"speech.render",
+            "execution_settings":capabilities["execution_settings"],
+            "evidence":{"id":"sample-calibration","confirmed_stopped":true},
+            "model_limits":{}, "model_parameters":{}
+        });
+        let approval = |target: &backend_deployments::ChannelTarget, policy: &Value| remote_approval(target, "aarch64", &report,
+            &capabilities, "speech-model", &json!({"protocol_version":1,"application_backends":[policy]}));
+        assert_eq!(approval(&target, &policy).unwrap().0, "speech.render");
+        target.app_id = "com.example.other".into();
+        assert!(approval(&target, &policy).is_none());
+        policy["app_id"] = json!(target.app_id);
+        assert!(approval(&target, &policy).is_some());
+        policy["execution_settings"]["provider"] = json!("cpu");
+        assert!(approval(&target, &policy).is_none());
+    }
 }

@@ -221,6 +221,32 @@ fn bounded_config(_g: &Gateway, path: &Path) -> Api<Value> {
         failure
     })
 }
+pub(super) fn voice_placement_config(g: &Gateway) -> Option<Value> {
+    let directory = g.state_path.parent()?;
+    bounded_config(g, &directory.join("voice-scheduler.local.json")).ok()
+}
+
+pub(super) fn voice_placement(r: &Registry, m: &Model, binding: Option<&Value>) -> Option<Value> {
+    if m.upstream_id != "app-v-voice"
+        || r.upstreams.get(&m.upstream_id)?.base_url.trim_end_matches('/') != "http://v-voice-backend:7070/v1"
+    {
+        return None;
+    }
+    let key = format!("{}/{}", m.upstream_id, m.id);
+    if r.routing.get(&m.upstream_id).is_some_and(|policy| policy.direct)
+        || r.model_routing.get(&key).is_some_and(|policy| policy.direct)
+    {
+        return None;
+    }
+    let policy = &binding?["models"][key];
+    if policy["mode"] != "permit" {
+        return None;
+    }
+    let executor_id = policy["executor_id"].as_str().filter(|id| !id.is_empty())?;
+    let node_id = policy["node_id"].as_str().filter(|id| !id.is_empty())?;
+    Some(json!({"node_id": node_id, "executor_id": executor_id, "backend_id": m.upstream_id}))
+}
+
 pub(super) async fn classify_cloud(u: &mut Upstream) -> Api<()> {
     if env("V_ROUTER_SCHEDULER_REQUIRED", "") != "true" || u.kind != "cloud" {
         return Ok(());

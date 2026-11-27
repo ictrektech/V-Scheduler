@@ -348,6 +348,8 @@ pub struct Placement {
     pub resources: Resources,
 }
 
+pub(crate) const APPLICATION_BACKEND_EXECUTOR_PREFIX: &str = "app-remote-";
+
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Executor {

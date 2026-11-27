@@ -53,6 +53,54 @@ pub(super) fn model(id: &str) -> Model {
 }
 
 #[tokio::test]
+async fn voice_catalog_exposes_the_bound_node_without_credentials() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let root = temp();
+    let g = gateway(&root, Router::new());
+    let mut voice = upstream("app-v-voice");
+    voice.source = "v-voice".into();
+    voice.base_url = "http://v-voice-backend:7070/v1".into();
+    voice.model_prefix = "v-voice".into();
+    g.registry.lock().unwrap().put(voice.clone(), vec![model("bound"), model("unbound")]);
+    let path = root.join("voice-scheduler.local.json");
+    std::fs::write(&path, json!({
+        "token": "fixture-private-gateway-identity-should-not-be-returned",
+        "models": {"app-v-voice/bound": {
+            "mode": "permit",
+            "executor_id": "v-scheduler.voice.fixture.infer",
+            "node_id": "registered-orin"
+        }}
+    }).to_string()).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+
+    for uri in ["/v1/models", "/api/v1/models"] {
+        let identity = principal("caller");
+        let request = Request::builder().uri(uri).body(Body::empty()).unwrap();
+        let response = if uri == "/v1/models" {
+            proxy::handle(g.clone(), identity, request).await.unwrap()
+        } else {
+            manage::handle(&g, &identity, request).await.unwrap()
+        };
+        let bytes = axum::body::to_bytes(response.into_body(), 65536).await.unwrap();
+        let result: Value = serde_json::from_slice(&bytes).unwrap();
+        let models = result[if uri == "/v1/models" { "data" } else { "models" }].as_array().unwrap();
+        let placements: Vec<_> = models.iter().filter_map(|item| item.get("execution_placement")).collect();
+        assert_eq!(placements, vec![&json!({
+            "node_id": "registered-orin",
+            "executor_id": "v-scheduler.voice.fixture.infer",
+            "backend_id": "app-v-voice"
+        })]);
+        assert!(!result.to_string().contains("fixture-private-gateway-identity"));
+    }
+    let mut registry = g.registry.lock().unwrap();
+    registry.upstreams.get_mut(&voice.id).unwrap().base_url = "http://unbound/v1".into();
+    let binding = lease::voice_placement_config(&g);
+    assert!(registry.models[&voice.id].iter().all(|m| lease::voice_placement(&registry, m, binding.as_ref()).is_none()));
+    std::fs::remove_dir_all(&root).unwrap();
+}
+
+#[tokio::test]
 async fn registered_model_metadata_survives_rediscovery_and_can_be_reset() {
     let root = temp();
     let g = gateway(&root, Router::new());

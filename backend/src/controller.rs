@@ -475,7 +475,7 @@ pub async fn serve(
         .route("/backend-deployments/{id}", get(backend_deployments::detail).delete(backend_deployments::remove))
         .route("/backend-deployments/{id}/start", post(backend_deployments::start))
         .route("/backend-deployments/{id}/stop", post(backend_deployments::stop))
-        .route("/backend-deployments/{id}/models", post(backend_models::register))
+        .route("/backend-deployments/{id}/models", get(backend_models::list).post(backend_models::register))
         .route("/backend-deployments/{id}/models/{model_id}", axum::routing::delete(backend_models::remove))
         .route("/backend-deployments/{id}/model-hub", get(backend_transfers::model_hub))
         .route("/backend-deployments/{id}/executions/{attempt_id}/{action}", post(backend_models::execute))
@@ -656,6 +656,7 @@ async fn submit(State(a): State<App>, h: HeaderMap, Json(body): Json<TaskSubmit>
     if body.scheduling.preemptible && (e.retry_mode != "idempotent" || e.max_attempts < 2) {
         return Err(Error(StatusCode::UNPROCESSABLE_ENTITY, "EXECUTOR_RESTART_NOT_SUPPORTED"));
     }
+    backend_models::check_task_parameters(e, &body.parameters)?;
     voice_admission(&a, &e.id)?;
     let mut value = json!(body);
     let hash = format!(

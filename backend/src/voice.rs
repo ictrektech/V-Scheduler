@@ -543,7 +543,7 @@ fn build_voice_binding(
                         limits["duration"] = approval["model_limits"][model]["duration_seconds"].clone();
                         limits["duration_seconds"] = limits["duration"].clone();
                     }
-                    policies.insert(format!("app-v-voice/{model}"),json!({"mode":"permit","executor_id":gateway,"completion":"synchronous","max_input_bytes":max_input,"limits":limits,"secondary_models":secondary}));
+                    policies.insert(format!("app-v-voice/{model}"),json!({"mode":"permit","executor_id":gateway,"node_id":node_id,"completion":"synchronous","max_input_bytes":max_input,"limits":limits,"secondary_models":secondary}));
                 }
             }
             if task_type == "model.infer" {
@@ -643,7 +643,7 @@ fn build_voice_binding(
                 if task == "model.infer" {
                     gateway_executors.insert(model.to_owned(), json!(gateway));
                     policies.insert(format!("app-v-voice/{model}"), json!({
-                        "mode":"permit","executor_id":gateway,"completion":"synchronous",
+                        "mode":"permit","executor_id":gateway,"node_id":node_id,"completion":"synchronous",
                         "max_input_bytes":33554432,"limits":{}
                     }));
                 }

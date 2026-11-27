@@ -71,6 +71,8 @@ Managed services enroll/register a node, report heartbeat, request executor reso
 
 Base: `http://v-scheduler:8080`. [Complete OpenAPI](../api/router-openapi-en.json)
 
+V-Voice 已绑定的网关模型在 GET `/api/v1/models` 的 `models[]` 和 GET `/v1/models` 的 `data[]` 返回可选的 `execution_placement`。三个字符串字段分别为 `node_id`（调度节点 ID）、`executor_id`（调度执行器 ID）和 `backend_id`（网关后端 ID，当前为 `app-v-voice`）。调用仍使用模型目录返回的模型 ID。
+
 | Method | Path | Purpose / 用途 |
 | --- | --- | --- |
 | GET | `/api/v1/apidoc` | API documentation data |
@@ -297,6 +299,15 @@ For the built-in Image Studio upstream, use `compute_deployment_id` in JSON or m
 「模型与上游」的模型行显示已就绪的远端执行节点，可在「测试」或「调用方式」选择节点。选择后请求仍使用上述协议。 In Models & Providers, use the node selector under Test or API usage for a model with a ready placement. The request uses the contract above.
 
 <a id="controller"></a>
+### 通过 Scheduler 选择 V-Voice 执行节点
+
+同域网关基址 `/api/com.ictrek.v-scheduler`，容器网络基址 `http://v-scheduler:8080`。这两条接口均传当前用户的 `Authorization: Bearer <VOS token>`。
+
+- `GET /api/v1/voice/compute/placements` 返回 `items[]`，每项有字符串 `deployment_id`、`model_id`、`executor_id`、`node_id`、`profile`、`task_type`。当前为 `sensevoice-int8` / `voice.transcribe`。列表为空时无可调用远端部署。
+- `POST /api/v1/voice/compute/transcriptions` 用 multipart 提交所选条目的 `deployment_id`、`executor_id`、`file` 及可选 `language`。音频支持 WAV、FLAC、MP3、OGG、M4A，最多 20 MiB，另受节点实测时长和采样率约束。返回 `task_id`、实际 `node_id`、`executor_id`、`deployment_id` 和 `transcription`。断开请求或超时会请求取消；仅在核对执行器和实际节点后返回成功。
+- 401 检查登录，403 检查身份类型，409 刷新部署选项，413 缩减音频，415 检查 multipart 内容类型，422 检查表单与格式，429 等待资源，502 检查执行回执，503/504 检查 V-Voice 和执行节点。
+
+
 ## Controller / 调度管理
 
 Base: `http://v-scheduler:38120/api/v1`. [Complete OpenAPI](../api/openapi-v1.json)

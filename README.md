@@ -493,6 +493,8 @@ English readers can use the [complete API integration handbook](docs/api-referen
 
 从「API Key」生成个人 Key 后，结果区显示可复制的局域网 Base URL 和完整 Key。使用该 Key 查询 `GET /v1/models` 并选择可见的模型 ID。生成和查询接口契约保持一致。
 
+应用可通过 `application-backend-v1` 接入同一套节点部署、权重传输和异步任务协议。安装包声明发布镜像，worker 声明模型能力，Scheduler 按实测校准登记执行器。应用通过 `GET /backend-deployments/{id}/models` 查询可选的模型、节点和执行器。平台接口和接入流程见[应用后端部署](docs/application-backend-deployment.md)。
+
 无共享挂载时的目标节点目录、分块上传、续传和校验见[跨节点模型权重传输规范](docs/model-weight-transfer.md)，也可从「API 文档 → 跨节点模型权重传输」下载。
 
 在「节点管理 → SSH 算力节点」添加或编辑节点时，用「应用后端的 Model Hub 权重」选择优先使用只读 NFS 或直接复制。管理员可在 `POST /managed-nodes` 或 `PUT /managed-nodes/{id}` 发送布尔字段 `app_model_hub_nfs`。创建时默认 `true`。编辑时省略或传 `null` 保留设置。管理员从节点列表与写入回执读取该字段。关闭后，新的模型准备立即走复制。已有后端停止并重新启动后更新挂载，部署持久卷保留。原先走共享的模型需要重新准备。

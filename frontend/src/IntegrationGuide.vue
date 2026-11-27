@@ -209,6 +209,11 @@ curl -fsS -X PUT "$GATEWAY/api/v1/model-routing" -H "Authorization: Bearer $VOS_
   <h4>heartbeat.json</h4>
   <pre>{"session_id":"session-a","report":{"observed_at":"&lt;UTC ISO timestamp&gt;","cpu_logical_count":8,"cpu_used_percent":20,"memory_total_mib":16384,"memory_available_mib":8192,"gpus":[]}}</pre>
   <p>{{t('示例数值仅说明格式。生产节点由 VOS App 自动上报真实采样，无需手工安装 Agent。ModelInfer 的观察节点仍由所属应用管理。')}}</p>
+  <h3 id="integration-application-backends" tabindex="-1">{{t('为接入应用指定执行节点')}}</h3>
+  <p>{{t('已有后端的应用登记时引用已批准的 executor ID，执行节点来自执行器的 node_id。要在指定节点部署应用后端，先从节点清单选择 SSH 节点或集群成员，再用部署请求的 target.kind、target.id 和 target.profile 指定目标。网关模型注册只发布可调用的上游。')}}</p>
+  <p>{{t('在「节点管理 → 应用后端」查看和启停部署。权重校验及校准完成后，模型登记返回所选部署的 node_id 和 executor_id。调用方选定执行器后，用任务详情的 node_id 核对实际执行位置。')}}</p>
+  <p><code>GET /scheduler/api/v1/managed-nodes</code> → <code>POST /scheduler/api/v1/backend-deployments</code> → <code>POST /scheduler/api/v1/backend-deployments/{id}/models</code></p>
+  <p><code>GET /api/v1/voice/compute/placements</code> · <code>POST /api/v1/voice/compute/transcriptions</code></p>
   <h3 id="integration-lifecycle" tabindex="-1">{{t('节点、应用、预算与停止的统一流程')}}</h3>
   <p>{{t('节点遥测由 VOS App 内置组件自动上报；应用登记已批准的执行器并定时心跳，停止请求经原生退出及权重卸载核验后释放预约。')}}</p>
   <p>{{t('节点约每 2 秒上报，超过 12 秒无心跳暂停新准入。应用按响应间隔心跳（当前 5 秒），超过 20 秒暂停该执行器新准入；心跳恢复后重新核验。用户无需 SSH 或手工部署 Agent。')}}</p>

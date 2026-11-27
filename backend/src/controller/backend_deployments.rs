@@ -8,6 +8,13 @@ use wire::{Instance, Operation, PORT_MAX, PORT_MIN, RuntimeState};
 use super::backend_transfers::wire as channel;
 
 const IMAGE_STUDIO: &str = "com.ictrek.image-studio";
+const CHANNEL_MODE: &str = "application-backend-v1";
+
+fn channel_enabled(app_id: &str, mode: Option<&str>, published: bool) -> bool {
+    (published && mode == Some(CHANNEL_MODE))
+        || (app_id == IMAGE_STUDIO && mode == Some("image-studio-worker-v1"))
+}
+
 type PublishedImages = std::collections::BTreeMap<String, String>;
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, Deserialize)]
@@ -199,7 +206,7 @@ fn valid_target(target: &Target) -> bool {
         && identifier(&target.profile)
 }
 
-fn denied() -> Error {
+pub(super) fn denied() -> Error {
     Error(StatusCode::FORBIDDEN, "BACKEND_DEPLOYMENT_FORBIDDEN")
 }
 fn missing() -> Error {
@@ -338,6 +345,15 @@ async fn automatic_targets() -> Api<Vec<(Target, Ipv4Addr)>> {
 #[cfg(test)]
 mod authorization_tests {
     use super::*;
+
+    #[test]
+    fn channel_requires_a_published_image_or_the_legacy_studio_mode() {
+        assert!(channel_enabled("com.example.voice", Some(CHANNEL_MODE), true));
+        assert!(!channel_enabled("com.example.voice", Some(CHANNEL_MODE), false));
+        assert!(!channel_enabled("com.example.voice", Some("image-studio-worker-v1"), true));
+        assert!(channel_enabled(IMAGE_STUDIO, Some("image-studio-worker-v1"), false));
+        assert!(!channel_enabled("com.example.voice", None, true));
+    }
 
     #[test]
     fn published_app_gets_matching_nodes_without_operator_grants() {
@@ -590,8 +606,11 @@ pub(super) async fn create(
         input.target.profile.as_str(),
         "arm-cuda" | "amd-cuda" | "jetson-orin" | "jetson-thor" | "dgx-spark"
     );
-    let channel_token = (app_id == IMAGE_STUDIO
-        && input.config.get("mode").and_then(Value::as_str) == Some("image-studio-worker-v1"))
+    let mode = input.config.get("mode").and_then(Value::as_str);
+    if mode == Some(CHANNEL_MODE) && !automatic_access {
+        return Err(conflict("BACKEND_IMAGE_NOT_PUBLISHED"));
+    }
+    let channel_token = channel_enabled(app_id, mode, automatic_access)
         .then(|| format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple()));
     let uuid = Uuid::new_v4();
     let offset = i32::from(u16::from_be_bytes([uuid.as_bytes()[0], uuid.as_bytes()[1]])) % 1000;
@@ -681,36 +700,53 @@ pub(super) async fn detail(
     Ok(ok(row.view()))
 }
 
-pub(super) async fn image_studio_target(
+pub(super) struct ChannelTarget {
+    pub app_id: String,
+    pub kind: String,
+    pub id: String,
+    pub profile: String,
+    pub image: String,
+    pub legacy_studio: bool,
+}
+
+pub(super) async fn channel_target(
     app: &App,
     headers: &HeaderMap,
     id: &str,
-) -> Api<(String, String, String)> {
+) -> Api<ChannelTarget> {
     let principal = auth(app, headers).await?;
     let row = sqlx::query_as::<_, Deployment>(
         "SELECT * FROM vrs_backend_deployments WHERE id=$1 AND ($2::text IS NULL OR app_id=$2)",
     )
     .bind(id).bind(owner(&principal)?)
     .fetch_optional(&app.db).await.map_err(unavailable)?.ok_or_else(missing)?;
-    if row.app_id != "com.ictrek.image-studio" || row.channel_token.is_none() {
+    let mode = row.config["mode"].as_str();
+    if row.channel_token.is_none() || !channel_enabled(&row.app_id, mode, row.automatic_access) {
         return Err(denied());
     }
     if row.state != "running" || row.last_error.is_some() {
         return Err(conflict("BACKEND_STATE_CONFLICT"));
     }
-    let profile = match row.profile.as_str() {
-        "amd-cpu" => "amd",
-        "arm-cpu" => "arm",
-        "jetson-orin" => "l4t",
-        "jetson-thor" | "dgx-spark" => "thor",
-        "amd-cuda" => "amd-cuda",
-        "arm-cuda" => "arm-cuda",
-        _ => return Err(conflict("BACKEND_PROFILE_UNSUPPORTED")),
+    let legacy_studio = mode == Some("image-studio-worker-v1");
+    let profile = if legacy_studio {
+        let profile = match row.profile.as_str() {
+            "amd-cpu" => "amd",
+            "arm-cpu" => "arm",
+            "jetson-orin" => "l4t",
+            "jetson-thor" | "dgx-spark" => "thor",
+            "amd-cuda" => "amd-cuda",
+            "arm-cuda" => "arm-cuda",
+            _ => return Err(conflict("BACKEND_PROFILE_UNSUPPORTED")),
+        };
+        if row.config["profile"] != profile {
+            return Err(conflict("BACKEND_PROFILE_MISMATCH"));
+        }
+        profile.to_owned()
+    } else {
+        row.profile
     };
-    if row.config["profile"] != profile {
-        return Err(conflict("BACKEND_PROFILE_MISMATCH"));
-    }
-    Ok((row.target_kind, row.target_id, profile.to_owned()))
+    Ok(ChannelTarget { app_id: row.app_id, kind: row.target_kind,
+        id: row.target_id, profile, image: row.image, legacy_studio })
 }
 
 pub(super) async fn exchange(
@@ -720,15 +756,42 @@ pub(super) async fn exchange(
     operation: channel::Operation,
     bytes: &[u8],
 ) -> Api<Json<Value>> {
-    if operation.request(bytes.len()).is_none() {
-        return Err(invalid());
-    }
     let principal = auth(app, headers).await?;
     let row = sqlx::query_as::<_, Deployment>(
         "SELECT * FROM vrs_backend_deployments WHERE id=$1 AND ($2::text IS NULL OR app_id=$2)",
     )
     .bind(id).bind(owner(&principal)?)
     .fetch_optional(&app.db).await.map_err(unavailable)?.ok_or_else(missing)?;
+    exchange_row(app, row, operation, bytes).await
+}
+
+pub(super) async fn dispatch_channel(
+    app: &App,
+    id: &str,
+    app_id: &str,
+    operation: channel::Operation,
+    bytes: &[u8],
+) -> Api<Json<Value>> {
+    let row = sqlx::query_as::<_, Deployment>(
+        "SELECT * FROM vrs_backend_deployments WHERE id=$1 AND app_id=$2",
+    )
+    .bind(id).bind(app_id)
+    .fetch_optional(&app.db).await.map_err(unavailable)?.ok_or_else(missing)?;
+    if row.config["mode"] != CHANNEL_MODE || !row.automatic_access {
+        return Err(denied());
+    }
+    exchange_row(app, row, operation, bytes).await
+}
+
+async fn exchange_row(
+    app: &App,
+    row: Deployment,
+    operation: channel::Operation,
+    bytes: &[u8],
+) -> Api<Json<Value>> {
+    if operation.request(bytes.len()).is_none() {
+        return Err(invalid());
+    }
     let token = row.channel_token.ok_or_else(denied)?;
     if row.state != "running" || row.last_error.is_some() {
         return Err(conflict("BACKEND_STATE_CONFLICT"));

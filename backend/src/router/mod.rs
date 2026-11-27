@@ -466,6 +466,11 @@ async fn dispatch(g: Arc<Gateway>, mut request: Request) -> Api<Response> {
         || request.method() == "GET" && ["/api/v1/models", "/api/v1/model-domains", "/api/v1/auth/me"].contains(&path.as_str())) {
         return Err(Failure::new(403, "API keys permit inference and model discovery only"));
     }
+    if matches!(path.as_str(),
+        "/api/v1/voice/compute/placements" | "/api/v1/voice/compute/transcriptions")
+    {
+        return proxy::voice_compute(&g, &id, request, &path).await;
+    }
     if path == "/api/v1/models/access-key" {
         return api_keys::model_access(&g, &id, request).await;
     }

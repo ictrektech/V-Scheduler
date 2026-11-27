@@ -109,12 +109,19 @@ pub(super) fn model_view(r: &Registry, m: &Model, id: &Identity) -> Value {
     v
 }
 fn model_views(g: &Gateway, r: &Registry, id: &Identity) -> Vec<Value> {
+    let voice_binding = lease::voice_placement_config(g);
     // Management needs every source's own model/settings. Only inference discovery
     // collapses identical qualified IDs into one routable catalog entry.
     let mut rows = r.upstreams.values()
         .filter(|u| u.live())
         .flat_map(|u| r.models.get(&u.id).into_iter().flatten().filter(move |m| m.visible(u, id)))
-        .map(|m| model_view(r, m, id))
+        .map(|m| {
+            let mut view = model_view(r, m, id);
+            if let Some(placement) = lease::voice_placement(r, m, voice_binding.as_ref()) {
+                view["execution_placement"] = placement;
+            }
+            view
+        })
         .collect::<Vec<_>>();
     rows.extend(business_views(r).1);
     if auto::advertised(g,id) { let mut model=auto::model_view();model["visibility_manageable"]=json!(id.vos_user && id.admin);model["domains"]=json!(r.auto.domains);rows.push(model); }
