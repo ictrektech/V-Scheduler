@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import weightTransferGuide from '../../docs/model-weight-transfer.md?url'
-const {t}=defineProps<{t:(text:string)=>string}>()
+const {t}=defineProps<{t:(text:string)=>string;transferOnly?:boolean}>()
 const repository='registry.example.com/team/backend'
 const images=[
  ['jetson-orin','linux/arm64','jetson-orin'],
@@ -23,6 +23,7 @@ const json=(value:unknown)=>JSON.stringify(value,null,2)
 
 <template>
  <section class="section panel backend-examples">
+  <template v-if="!transferOnly">
   <h2>{{t('应用后端镜像准备和部署示例')}}</h2>
   <p>{{t('应用为不同 Profile 发布自己的镜像标签，按目标节点架构和加速器构建。后端在容器内监听 0.0.0.0:8080；使用不同端口时，在部署请求里填写实际端口。')}}</p>
   <div class="example-table">
@@ -38,7 +39,9 @@ const json=(value:unknown)=>JSON.stringify(value,null,2)
    <details><summary>{{t('部署到其他 VOS 集群成员')}}</summary><pre class="code-block">{{json(cluster)}}</pre></details>
   </div>
   <p>{{t('后端镜像把 V_SCHEDULER_BACKEND_CONFIG_B64 解码为 UTF-8 JSON，再读取 workers、batch_size 等自己的配置。CPU 和内存字段限制容器使用量。应用凭据通过各自的机密配置渠道管理。')}}</p>
-  <h3>{{t('跨节点模型权重传输')}}</h3>
+  </template>
+  <h2 v-if="transferOnly">{{t('跨节点模型权重传输')}}</h2>
+  <h3 v-else>{{t('跨节点模型权重传输')}}</h3>
   <p>{{t('当前权重通道用于 Image Studio。其他应用可参考规范，接入时需要 Scheduler 支持其部署通道。')}}</p>
   <p>{{t('应用先探测目标节点的只读 Model Hub。共享不可用时，从主应用通过 Scheduler 部署通道按字节偏移续传权重；目标 worker 校验 SHA-256 后使用自己的持久卷。')}}</p>
   <a :href="weightTransferGuide" download="model-weight-transfer.md">{{t('下载权重传输规范')}}</a>
