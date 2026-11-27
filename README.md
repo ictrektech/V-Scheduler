@@ -505,6 +505,8 @@ English readers can use the [complete API integration handbook](docs/api-referen
 
 应用可通过 `application-backend-v1` 接入同一套节点部署、权重传输和异步任务协议。安装包声明发布镜像，worker 声明模型能力，权重校验后 Scheduler 登记执行器，实测校准可覆盖预算。请求在所选节点排队，等待资源和后端空闲。应用通过 `GET /backend-deployments/{id}/models` 查询可选的模型、节点和执行器。平台接口和接入流程见[应用后端部署](docs/application-backend-deployment.md)。
 
+应用登记模型时可在 `POST /backend-deployments/{id}/models` 提交可选 `budget`。按模型设置 CPU 毫核、内存 MiB 和 GPU 显存 MiB，响应 `data.resources` 返回实际预算。省略字段时使用校准或部署默认值。 / Set optional per-model CPU, host memory, and GPU memory in the same registration API. Omitted fields inherit calibration or deployment defaults. Read the effective budget in `data.resources`.
+
 无共享挂载时的目标节点目录、分块上传、续传和校验见[跨节点模型权重传输规范](docs/model-weight-transfer.md)，也可从「API 文档 → 跨节点模型权重传输」下载。
 
 在「节点管理 → SSH 算力节点」添加或编辑节点时，用「应用后端的 Model Hub 权重」选择优先使用只读 NFS 或直接复制。管理员可在 `POST /managed-nodes` 或 `PUT /managed-nodes/{id}` 发送布尔字段 `app_model_hub_nfs`。创建时默认 `true`。编辑时省略或传 `null` 保留设置。管理员从节点列表与写入回执读取该字段。关闭后，新的模型准备立即走复制。已有后端停止并重新启动后更新挂载，部署持久卷保留。原先走共享的模型需要重新准备。

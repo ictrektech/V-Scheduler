@@ -752,7 +752,7 @@
       },
       "post": {
         "summary": "Register a verified worker model / 登记已校验的模型",
-        "description": "Requires deployment ownership and current node/repository authorization for a running application worker. / 需要拥有运行中的应用实例及当前节点和镜像仓库授权。 Verified weights and a unique worker capability are required. A matching measured approval overrides defaults. Otherwise the deployment budget and worker limits apply, with model_parameters.policy=direct. / 要求已校验权重和唯一 Worker 能力声明。匹配的实测校准可覆盖默认值，否则使用部署预算和 Worker 输入上限，且 model_parameters.policy=direct。",
+        "description": "Requires deployment ownership and current node/repository authorization for a running application worker. / 需要拥有运行中的应用实例及当前节点和镜像仓库授权。 Verified weights and a unique worker capability are required. The optional budget overrides deployment defaults per field. Matching calibration remains a minimum. / 要求已校验权重和唯一 Worker 能力声明。可选 budget 按字段覆盖部署默认预算，匹配的实测校准作为下限。",
         "security": [
           {
             "bearerAuth": []
@@ -809,6 +809,16 @@
                         },
                         "model_parameters": {
                           "type": "object"
+                        },
+                        "resources": {
+                          "type": "object",
+                          "required": ["cpu_millicores", "memory_mib", "gpu_slots", "gpu_memory_mib"],
+                          "properties": {
+                            "cpu_millicores": {"type": "integer", "minimum": 1},
+                            "memory_mib": {"type": "integer", "minimum": 1},
+                            "gpu_slots": {"type": "integer", "minimum": 0},
+                            "gpu_memory_mib": {"type": "integer", "minimum": 0}
+                          }
                         }
                       }
                     }
@@ -827,7 +837,7 @@
             "description": "Resource not found / 资源不存在"
           },
           "409": {
-            "description": "Deployment or registration conflict. BACKEND_MODEL_NOT_VERIFIED: verify the transfer; BACKEND_MODEL_NOT_ADVERTISED: check the worker capability; BACKEND_MODEL_EXCEEDS_NODE_BUDGET: check the deployment and approved node limits; BACKEND_EXECUTOR_TARGET_NOT_READY: wait for the target heartbeat. / 部署或登记冲突，请按业务码检查权重校验、Worker 能力、部署预算和节点心跳。"
+            "description": "Deployment or registration conflict. BACKEND_MODEL_NOT_VERIFIED: verify the transfer; BACKEND_MODEL_NOT_ADVERTISED: check the worker capability; BACKEND_MODEL_INVALID_BUDGET: requested values violate deployment, profile or calibration constraints; BACKEND_MODEL_EXCEEDS_NODE_BUDGET: check the deployment and approved node limits; BACKEND_EXECUTOR_TARGET_NOT_READY: wait for the target heartbeat. / 部署或登记冲突，请按业务码检查权重校验、Worker 能力、部署预算和节点心跳。BACKEND_MODEL_INVALID_BUDGET 表示模型声明超出部署、Profile 或实测校准边界。"
           },
           "422": {
             "description": "Invalid request / 请求无效"
@@ -857,6 +867,16 @@
                   "transfer_id": {
                     "type": "string",
                     "pattern": "^[0-9a-f]{64}$"
+                  },
+                  "budget": {
+                    "type": ["object", "null"],
+                    "additionalProperties": false,
+                    "description": "Omit or null to inherit the calibrated or deployment budget. Each omitted/null field inherits its default. Deployment CPU and memory limits and node capacity apply. GPU slots come from the profile or calibration. / 省略或传 null 时使用实测或部署预算。单个字段省略或传 null 时继承默认值。受部署 CPU、内存上限与节点容量约束。GPU 槽由 Profile 或校准决定。",
+                    "properties": {
+                      "cpu_millicores": {"type": ["integer", "null"], "minimum": 1, "format": "int64"},
+                      "memory_mib": {"type": ["integer", "null"], "minimum": 1, "format": "int64"},
+                      "gpu_memory_mib": {"type": ["integer", "null"], "minimum": 0, "format": "int64"}
+                    }
                   }
                 }
               }

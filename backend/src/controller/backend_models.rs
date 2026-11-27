@@ -64,6 +64,34 @@ fn remote_approval(
 pub(super) struct Registration {
     model_id: String,
     transfer_id: String,
+    budget: Option<RegistrationBudget>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RegistrationBudget {
+    cpu_millicores: Option<i64>,
+    memory_mib: Option<i64>,
+    gpu_memory_mib: Option<i64>,
+}
+
+impl RegistrationBudget {
+    fn apply(&self, resources: &mut Resources, target: &backend_deployments::ChannelTarget, calibrated: bool) -> Api<()> {
+        let invalid_budget = || Error(StatusCode::CONFLICT, "BACKEND_MODEL_INVALID_BUDGET");
+        for (specified, effective, minimum, maximum) in [
+            (self.cpu_millicores, &mut resources.cpu_millicores, 1, target.cpu_millicores.map(i64::from)),
+            (self.memory_mib, &mut resources.memory_mib, 1, target.memory_mib.map(i64::from)),
+            (self.gpu_memory_mib, &mut resources.gpu_memory_mib, 0, (!target.nvidia).then_some(0)),
+        ] {
+            if let Some(value) = specified {
+                if value < minimum || maximum.is_some_and(|max| value > max) || (calibrated && value < *effective) {
+                    return Err(invalid_budget());
+                }
+                *effective = value;
+            }
+        }
+        Ok(())
+    }
 }
 
 fn unavailable_target() -> Error {
@@ -301,10 +329,15 @@ pub(super) async fn register(
     let measured = approvals().ok().and_then(|policies| {
         remote_approval(&target, architecture, &report, capabilities, &request.model_id, &policies)
     });
-    let approval = if let Some((_, approval)) = measured { approval }
+    let calibrated = measured.is_some();
+    let mut approval = if let Some((_, approval)) = measured { approval }
         else { direct_policy(&target, model, &capacity, &baseline)? };
     let invalid_budget = || Error(StatusCode::CONFLICT, "BACKEND_MODEL_EXCEEDS_NODE_BUDGET");
-    let resources: Resources = serde_json::from_value(approval["resources"].clone()).map_err(|_| invalid_budget())?;
+    let mut resources: Resources = serde_json::from_value(approval["resources"].clone()).map_err(|_| invalid_budget())?;
+    if let Some(budget) = &request.budget {
+        budget.apply(&mut resources, &target, calibrated)?;
+        approval["resources"] = json!(resources);
+    }
     if !resources.valid() || resources.cpu_millicores <= 0 || resources.memory_mib <= 0
         || !resources.fits(&baseline, &capacity) {
         return Err(invalid_budget());
@@ -322,7 +355,7 @@ pub(super) async fn register(
         task_type: task_type.to_owned(),
         node_id: node.id.clone(),
         app_id: target.app_id.clone(),
-        resources,
+        resources: resources.clone(),
         upstream_urls: vec![],
         placements: vec![],
         retry_mode: "none".into(),
@@ -365,7 +398,8 @@ pub(super) async fn register(
         .map_err(|_| Error(StatusCode::SERVICE_UNAVAILABLE, "BACKEND_EXECUTOR_UNAVAILABLE"))?;
     Ok(ok(json!({
         "executor_id": executor_id, "node_id": node.id, "profile": target.profile,
-        "model_limits": approval["model_limits"], "model_parameters": approval["model_parameters"]
+        "model_limits": approval["model_limits"], "model_parameters": approval["model_parameters"],
+        "resources": resources
     })))
 }
 
@@ -598,6 +632,17 @@ mod tests {
         assert_eq!(policy["resources"]["gpu_slots"], 1);
         assert_eq!(policy["model_limits"]["duration_seconds"], 20);
         assert_eq!(policy["model_parameters"], json!({"policy":"direct"}));
+
+        let mut reservation: Resources = serde_json::from_value(policy["resources"].clone()).unwrap();
+        let parse = |budget| serde_json::from_value::<RegistrationBudget>(budget).unwrap();
+        assert!(parse(json!({"memory_mib":3500,"gpu_memory_mib":1024}))
+            .apply(&mut reservation, &target, false).is_ok());
+        assert_eq!((reservation.cpu_millicores, reservation.memory_mib, reservation.gpu_slots, reservation.gpu_memory_mib),
+            (2000, 3500, 1, 1024));
+        assert!(parse(json!({"cpu_millicores":2001})).apply(&mut reservation, &target, false).is_err());
+        assert!(parse(json!({"memory_mib":0})).apply(&mut reservation, &target, false).is_err());
+        assert!(parse(json!({"gpu_memory_mib":512})).apply(&mut reservation, &target, true).is_err());
+        assert!(serde_json::from_value::<RegistrationBudget>(json!({"gpu_slots":0})).is_err());
     }
 
     #[tokio::test]

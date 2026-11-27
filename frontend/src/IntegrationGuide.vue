@@ -64,7 +64,7 @@ const backendDeployment = JSON.stringify({
   container_port:8080,
   config:{mode:'application-backend-v1',profile:'dgx-spark'},
 },null,2)
-const backendRegistration = JSON.stringify({model_id:'example-model',transfer_id:'<verified-transfer-id>'},null,2)
+const backendRegistration = JSON.stringify({model_id:'example-model',transfer_id:'<verified-transfer-id>',budget:{cpu_millicores:2000,memory_mib:3072}},null,2)
 const backendTask = JSON.stringify({
   protocol_version:1,
   app_task_id:'example-request-1',
@@ -240,6 +240,7 @@ curl -fsS -X PUT "$GATEWAY/api/v1/model-routing" -H "Authorization: Bearer $VOS_
    <pre>{{backendDeployment}}</pre>
    <h4><code>POST /backend-deployments/{id}/models</code></h4>
    <pre>{{backendRegistration}}</pre>
+   <p>{{t("登记时可选 budget，按字段指定 CPU 毫核、内存 MiB 或 GPU 显存 MiB。省略字段继承默认值，实测校准保留为下限。响应 data.resources 返回生效预算。")}}</p>
    <h4><code>POST /tasks</code> · <code>Idempotency-Key: example-request-1</code></h4>
    <pre>{{backendTask}}</pre>
   </details>

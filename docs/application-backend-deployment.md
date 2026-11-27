@@ -100,6 +100,23 @@ Declare the published image for each fixed hardware Profile in the installed VOS
 
 当前通用执行协议覆盖异步任务。任务 parameters 序列化后最多 32 KiB，校准的 model_limits 与 model_parameters 合计最多 16 KiB。媒体输入使用分块通道。实时 WebSocket 和同步在线许可有各自生命周期。 / The generic execution protocol covers asynchronous jobs. Serialized task parameters are limited to 32 KiB. The calibrated model_limits and model_parameters together have a 16 KiB limit. Use the chunk input channel for media. Real-time WebSocket and synchronous permits have separate lifecycles.
 
+
+### 可选的单模型预算 / Optional per-model budget
+
+应用可在同一登记请求中附加 `budget`，例如 `{"model_id":"example-model","transfer_id":"<verified-transfer-id>","budget":{"cpu_millicores":2000,"memory_mib":3072}}`。三个字段都是可空的 64 位整数。省略、传 null 或传空对象可继承全部默认值。响应 `data.resources` 返回最终采用的四项预算。
+
+The same registration request accepts `budget`. Omit it, send null, or send an empty object to keep all defaults. Each field is a nullable signed 64-bit integer. The response's `data.resources` reports the effective values, including the scheduler-managed `gpu_slots`.
+
+| 字段 / Field | 单位与约束 / Unit and constraints |
+| --- | --- |
+| `cpu_millicores` | 至少 1，1000 为一个逻辑核，受后端部署 CPU 限额约束。 / At least 1 millicore, with 1000 equal to one logical core. Capped by the configured backend deployment CPU limit. |
+| `memory_mib` | 至少 1 MiB，受后端部署内存限额约束。 / At least 1 MiB, capped by the configured backend deployment memory limit. |
+| `gpu_memory_mib` | 至少 0 MiB。CPU Profile 只能填 0。GPU 槽按 Profile 或校准确定。在统一内存节点，显存预算也占用系统内存；已计入 `memory_mib` 的统一内存可保持此项为 0。 / At least 0 MiB; CPU profiles accept only zero. GPU slots come from the Profile or calibration. On unified-memory nodes, VRAM also consumes host memory. Leave this at zero for unified memory already included in `memory_mib`. |
+
+未指定的字段继承匹配的实测校准或部署默认值。显式字段受实测下限和容器限制约束，违反时返回 HTTP 409 和 `BACKEND_MODEL_INVALID_BUDGET`。超出节点静态预算时返回 HTTP 409 和 `BACKEND_MODEL_EXCEEDS_NODE_BUDGET`。未知字段或非整数值返回 HTTP 422。按原参数重试可复用登记。已有模型的预算发生变化时返回 `BACKEND_MODEL_BINDING_CONFLICT`。等任务结束后删除旧登记，再准备权重并重新登记。
+
+An unspecified field inherits matching calibration or the deployment default. A request that violates a calibration floor or deployment/profile limit returns HTTP 409 `BACKEND_MODEL_INVALID_BUDGET`. A budget exceeding static node capacity returns HTTP 409 `BACKEND_MODEL_EXCEEDS_NODE_BUDGET`. Unknown fields or non-integer values return HTTP 422. Retry with the same effective budget to reuse a binding. A changed budget on an existing binding returns `BACKEND_MODEL_BINDING_CONFLICT`. Wait for active work to finish, remove the old registration, then prepare weights and register again.
+
 ## 应用内接入流程 / Application-owned integration
 
 应用的部署页面调用本应用后端。本应用后端持有自己的 Scheduler 服务身份，按下表完成节点发现、部署、权重准备和模型登记。用户在该应用的业务页选择模型与执行节点。V-Scheduler 提供机制和资源管理，应用决定模型目录、支持的节点与 Profile、操作界面和任务参数。
