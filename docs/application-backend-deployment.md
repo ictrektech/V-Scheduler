@@ -122,6 +122,10 @@ Use `/api/com.ictrek.v-scheduler/scheduler/api/v1` under VOS or `http://v-schedu
 
 A running container can still return `409 BACKEND_EXECUTOR_TARGET_NOT_READY`. Registration needs one approved compute agent linked to the target, with a fresh heartbeat and `report.application_backend_dispatch=true` in `GET /nodes`. For SSH, link the invitation using `discovery_source=modelinfer` and `discovery_id=<target.id>` in `POST /enrollments`. For a cluster target, match its `vos_member_id`. Complete [node enrollment and approval](application-integration.md), then retry with the same transfer ID.
 
+滚动升级时，先检查分节点 Agent 版本。使用与控制器同版的 Agent 验证应用接入。旧版 Agent 可能通过心跳检查，却无法识别通用执行器。更新时保留节点身份和 Agent 日志状态，停用旧实例的自动重启。
+
+For a rolling upgrade, verify the remote Agent version. Validate integrations with the Agent from the controller release. An older Agent can report a heartbeat yet fail to recognize a generic executor. Preserve its node identity and journal when replacing it, and disable restarts on the retired instance.
+
 ## 在调度界面部署 / Deploy from the Scheduler workspace
 
 管理员打开「节点管理 → 应用后端」。可用节点区显示主机名、IP、节点类型和 Profile。「部署后端」在选定应用和兼容节点后显示对应发布镜像。已有实例可以启动、停止或删除。
