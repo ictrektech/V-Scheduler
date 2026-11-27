@@ -1,5 +1,7 @@
 # V-Scheduler Resource Scheduling
 
+Open **API Documentation → Application integration → Choose execution nodes for applications** for the built-in workflow and request examples for deployment, verified weights, model registration and execution on the chosen node. The Scheduler API contract is unchanged.
+
 Open **V-Scheduler** in the VOS application group to find Models & Usage, Models & Providers, inference deployments, Playground, Model Weights, Image Registry, Resources & Tasks, management pages and API Documentation. After creating a personal key from **API Key**, copy the LAN Base URL and key from the result panel. Choose a model visible to that key. Under **API Documentation → Cross-node model weight transfer**, download the specification for preparing weights without a Model Hub mount.
 
 Image Studio shows the main node and each ready compute node in separate rows for the same model. **Test** and **API usage** use that row’s node. Main-node requests use local execution. Remote requests include the node’s `compute_deployment_id`. Under **Model settings**, a VOS administrator can enable or cancel direct admission using `PUT /api/v1/model-routing`.

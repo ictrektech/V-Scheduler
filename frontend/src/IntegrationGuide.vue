@@ -9,7 +9,7 @@ const guide = ref<HTMLElement>()
 const contents = [
   ['addresses','接入地址'], ['keys','API Key 设置与修改'], ['key-responses','模型 Key 的请求与响应'], ['deepseek','DeepSeek Flash 调用'], ['auto','Auto 自动选型'],
   ['providers','模型与上游'], ['anthropic-auth','Anthropic 上游鉴权'], ['register','模型注册 API 与自动能力识别'],
-  ['scheduling','注册调度模式与直接放行'], ['reference','完整 API 索引与错误处理'], ['nodes','节点注册与资源查询'], ['lifecycle','节点、应用、预算与停止的统一流程'],
+  ['scheduling','注册调度模式与直接放行'], ['reference','完整 API 索引与错误处理'], ['nodes','节点注册与资源查询'], ['application-backends','为接入应用指定执行节点'], ['lifecycle','节点、应用、预算与停止的统一流程'],
   ['controls','计算启动与停止 API'], ['queue','推理等待队列'],
   ['residency','模型驻留与卸载'], ['diagnostics','诊断日志'],
 ]
@@ -57,6 +57,20 @@ curl -fsS "$SCHEDULER/workers/$NODE/executors" -H "Authorization: Bearer $WORKER
 curl -fsS "$SCHEDULER/workers/$NODE/heartbeat" -H "Authorization: Bearer $WORKER_TOKEN" -H 'Content-Type: application/json' --data-binary @heartbeat.json
 curl -fsS "$SCHEDULER/workers/$NODE/resources" -H "Authorization: Bearer $WORKER_TOKEN"`
 const executorExample = JSON.stringify({executors:[{id:'demo-infer',node_id:'compute-a',app_id:'demo-app',contract_version:'1',task_type:'model.infer',resources:{cpu_millicores:1000,memory_mib:1024,gpu_slots:0,gpu_memory_mib:0},upstream_urls:['http://demo-infer:8000/v1']}]},null,2)
+const backendDeployment = JSON.stringify({
+  request_key:'worker-on-node-a',
+  target:{kind:'ssh',id:'node-a',profile:'dgx-spark'},
+  image:'registry.example.com/team/worker:spark-v1',
+  container_port:8080,
+  config:{mode:'application-backend-v1',profile:'dgx-spark'},
+},null,2)
+const backendRegistration = JSON.stringify({model_id:'example-model',transfer_id:'<verified-transfer-id>'},null,2)
+const backendTask = JSON.stringify({
+  protocol_version:1,
+  app_task_id:'example-request-1',
+  executor:{id:'<registered-executor-id>',contract_version:'1',task_type:'example.infer'},
+  parameters:{},
+},null,2)
 const anthropicExamples=`GATEWAY=http://v-scheduler:8080
 # x-api-key: V-Scheduler gateway key
 # AUTO: JSON response
@@ -210,10 +224,26 @@ curl -fsS -X PUT "$GATEWAY/api/v1/model-routing" -H "Authorization: Bearer $VOS_
   <pre>{"session_id":"session-a","report":{"observed_at":"&lt;UTC ISO timestamp&gt;","cpu_logical_count":8,"cpu_used_percent":20,"memory_total_mib":16384,"memory_available_mib":8192,"gpus":[]}}</pre>
   <p>{{t('示例数值仅说明格式。生产节点由 VOS App 自动上报真实采样，无需手工安装 Agent。ModelInfer 的观察节点仍由所属应用管理。')}}</p>
   <h3 id="integration-application-backends" tabindex="-1">{{t('为接入应用指定执行节点')}}</h3>
-  <p>{{t('已有后端的应用登记时引用已批准的 executor ID，执行节点来自执行器的 node_id。要在指定节点部署应用后端，先从节点清单选择 SSH 节点或集群成员，再用部署请求的 target.kind、target.id 和 target.profile 指定目标。网关模型注册只发布可调用的上游。')}}</p>
-  <p>{{t('在「节点管理 → 应用后端」查看和启停部署。权重校验后登记模型，返回所选部署的 node_id 和 executor_id。匹配的实测校准可覆盖预算。任务在所选节点排队，用任务详情的 node_id 核对实际执行位置。')}}</p>
-  <p><code>GET /scheduler/api/v1/managed-nodes</code> → <code>POST /scheduler/api/v1/backend-deployments</code> → <code>POST /scheduler/api/v1/backend-deployments/{id}/models</code></p>
-  <p><code>GET /api/v1/voice/compute/placements</code> · <code>POST /api/v1/voice/compute/transcriptions</code></p>
+  <p>{{t("应用负责自己的部署、模型管理和推理界面。浏览器使用 VOS 用户身份调用所属应用；应用后端使用自己的 Scheduler 服务 Bearer。管理员可用 POST /service-identities 为应用发放凭据。Scheduler 提供通用节点发现、部署、权重通道、登记和执行回执。")}}</p>
+  <p><code>/api/com.ictrek.v-scheduler/scheduler/api/v1</code> · <code>http://v-scheduler:8080/scheduler/api/v1</code></p>
+  <ol>
+   <li>{{t("发现节点和镜像。用 GET /managed-nodes 读取节点名称和 Profile，用 GET /backend-deployment-access/{app_id} 确认本应用可用的 targets 和 images。应用在安装后的 Compose 中用 x-v-scheduler-backend-images 声明各 Profile 的完整发布镜像。部署使用目标 Profile；DGX Spark 使用经验证的 ARM64 CUDA 镜像。")}}</li>
+   <li>{{t("部署后端。用 POST /backend-deployments 提交目标、匹配的镜像和端口。重复同一创建请求时保留 request_key 和参数。查询 GET /backend-deployments/{id}，等 running 且 endpoint 可用再准备模型。pending 包括镜像拉取、按目标架构中转和容器启动。")}}</li>
+   <li>{{t("准备并登记模型。优先校验节点上可用的只读 Model Hub 文件；共享不可用时按回执偏移分块复制。Worker 用 Scheduler 注入的通道凭据处理受保护的请求。核对大小和 SHA-256 并取得 verified: true 后，向 POST /backend-deployments/{id}/models 提交 model_id 和 transfer_id。符合目标和预算要求时可直接登记，匹配的实测校准可覆盖预算。")}}</li>
+   <li>{{t("调用指定节点。应用读取 GET /backend-deployments/{id}/models，保留 deployment_id、model_id、node_id、executor_id、profile 和 task_type，并显示模型与节点的选择项。用 POST /tasks 指定执行器，资源不足时在所选节点排队。用 GET /tasks/{id} 核对实际 node_id 和 executor_id，结合应用回执检查 deployment_id。位置失效或回执不符时提示重新选择。未结束的任务可用 POST /tasks/{id}/cancel 请求取消。")}}</li>
+   <li>{{t("检查 Agent 和镜像。BACKEND_EXECUTOR_TARGET_NOT_READY 时检查已批准的目标绑定和新鲜心跳。用 GET /nodes 核对 application_backend_dispatch，并使用与控制器同版的 Agent 验证接入。收到 BACKEND_IMAGE_PULL_FAILED 时检查仓库认证、连通性、目标架构和镜像引用。")}}</li>
+  </ol>
+  <details>
+   <summary>{{t("应用自有后端的部署、登记与调用示例")}}</summary>
+   <p><code>Authorization: Bearer &lt;app-service-token&gt;</code> · <code>Content-Type: application/json</code></p>
+   <h4><code>POST /backend-deployments</code></h4>
+   <pre>{{backendDeployment}}</pre>
+   <h4><code>POST /backend-deployments/{id}/models</code></h4>
+   <pre>{{backendRegistration}}</pre>
+   <h4><code>POST /tasks</code> · <code>Idempotency-Key: example-request-1</code></h4>
+   <pre>{{backendTask}}</pre>
+  </details>
+  <p><a href="https://github.com/ictrektech/V-Scheduler/blob/main/docs/application-backend-deployment.md" target="_blank" rel="noopener">{{t("通用后端接入与完整字段")}}</a></p>
   <h3 id="integration-lifecycle" tabindex="-1">{{t('节点、应用、预算与停止的统一流程')}}</h3>
   <p>{{t('节点遥测由 VOS App 内置组件自动上报；应用登记已批准的执行器并定时心跳，停止请求经原生退出及权重卸载核验后释放预约。')}}</p>
   <p>{{t('节点约每 2 秒上报，超过 12 秒无心跳暂停新准入。应用按响应间隔心跳（当前 5 秒），超过 20 秒暂停该执行器新准入；心跳恢复后重新核验。用户无需 SSH 或手工部署 Agent。')}}</p>

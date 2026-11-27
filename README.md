@@ -1,5 +1,9 @@
 # V-Scheduler · 资源调度
 
+打开「API 文档 → 应用接入 → 为接入应用指定执行节点」，在内置文档中查看目标节点部署、权重校验、模型登记以及指定节点执行的流程与请求示例。Scheduler API 契约保持一致。
+
+Open **API Documentation → Application integration → Choose execution nodes for applications** for the built-in workflow and request examples for deployment, verified weights, model registration and execution on the chosen node. The Scheduler API contract is unchanged.
+
 Jetson Orin 的 SenseVoice CUDA 文件转写支持 V-Voice 0.0.41 和 0.0.42。每个镜像分别匹配其目标节点校准。已有部署可继续运行，新部署使用当前应用安装包发布的对应 Profile 镜像。
 
 语音模型自动绑定只在有已批准的对话模型时发送对话字段。仍使用旧版 ARM CPU 镜像的 V-Voice 可继续自动绑定已有的语音执行器，无需手工配置令牌。绑定 API 的身份、路由和字段约定保持兼容。
