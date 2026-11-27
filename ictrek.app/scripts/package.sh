@@ -341,7 +341,7 @@ PYPROFILES
   fi
   routers_text="$(tar xOf "$app_tarball" routers.yml)"
   if printf '%s\n' "$routers_text" | grep -q 'kind:[[:space:]]*group'; then
-    die "V-Scheduler must expose one VOS page without an extra navigation group"
+    die "V-Scheduler pages must be siblings in the generated VOS application group"
   fi
   if printf '%s\n' "$routers_text" | grep -q '^[[:space:]]*icon:'; then
     : # Group/page icons are part of current VOS navigation specification.
@@ -358,6 +358,14 @@ PYPROFILES
   if ! printf '%s\n' "$routers_text" | grep -q 'entry-point:[[:space:]]*true'; then
     die "routers.yml sidebar page must declare entry-point: true"
   fi
+  if ! printf '%s\n' "$routers_text" | grep -Fxq 'router-type: structured'; then
+    die "routers.yml must place sidebar pages in the VOS application group"
+  fi
+  for page in overview models inference playground model-hub image-hub resources auto nodes cluster logs api; do
+    if ! printf '%s\n' "$routers_text" | grep -Fq "iframe-src: ${ROUTER_IFRAME_SRC}?v=${APP_VERSION}&page=${page}"; then
+      die "routers.yml is missing the VOS entry for ${page}"
+    fi
+  done
   if ! printf '%s\n' "$routers_text" | grep -q 'embed:[[:space:]]*true'; then
     die "routers.yml must declare embed: true for sidebar iframe"
   fi

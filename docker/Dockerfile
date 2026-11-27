@@ -5,6 +5,7 @@ COPY frontend/package*.json ./
 RUN npm ci
 COPY frontend/ ./
 COPY assets/ /build/assets/
+COPY docs/model-weight-transfer.md /build/docs/model-weight-transfer.md
 RUN npm run build
 
 FROM node:24-bookworm-slim AS inference-ui

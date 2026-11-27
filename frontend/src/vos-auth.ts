@@ -30,6 +30,9 @@ interface VOSOAuth2 {
 declare global {
   interface Window {
     vos_platform?: {
+      platform?: {
+        openTab?: (options: {app: {id: string; page: string}}) => Promise<unknown>
+      }
       api?: {
         v1000?: {
           oauth2?: VOSOAuth2

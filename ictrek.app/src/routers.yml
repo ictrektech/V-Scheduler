@@ -1,10 +1,99 @@
+router-type: structured
 routers:
   - id: v-scheduler
     kind: page
-    title: {zh-CN: V-Scheduler, en: V-Scheduler, zh-TW: V-Scheduler}
+    title: {zh-CN: 模型与调用, en: Models & Usage, zh-TW: 模型與呼叫}
     icon: lucide:workflow
-    iframe-src: /app/com.ictrek.v-scheduler/?v=__APP_VERSION__
+    iframe-src: /app/com.ictrek.v-scheduler/?v=__APP_VERSION__&page=overview
     order: 215
     keep-alive: true
     entry-point: true
+    embed: true
+  - id: models
+    kind: page
+    title: {zh-CN: 模型与上游, en: Models & Providers, zh-TW: 模型與上游}
+    icon: lucide:layers
+    iframe-src: /app/com.ictrek.v-scheduler/?v=__APP_VERSION__&page=models
+    order: 216
+    keep-alive: true
+    embed: true
+  - id: inference
+    kind: page
+    title: {zh-CN: 推理部署, en: Inference Deployments, zh-TW: 推論部署}
+    icon: lucide:server
+    iframe-src: /app/com.ictrek.v-scheduler/?v=__APP_VERSION__&page=inference
+    order: 217
+    keep-alive: true
+    embed: true
+  - id: playground
+    kind: page
+    title: {zh-CN: 试聊, en: Playground, zh-TW: 試聊}
+    icon: lucide:message-square
+    iframe-src: /app/com.ictrek.v-scheduler/?v=__APP_VERSION__&page=playground
+    order: 218
+    keep-alive: true
+    embed: true
+  - id: model-hub
+    kind: page
+    title: {zh-CN: 权重管理, en: Model Weights, zh-TW: 權重管理}
+    icon: lucide:hard-drive
+    iframe-src: /app/com.ictrek.v-scheduler/?v=__APP_VERSION__&page=model-hub
+    order: 219
+    keep-alive: true
+    embed: true
+  - id: image-hub
+    kind: page
+    title: {zh-CN: 镜像仓库, en: Image Registry, zh-TW: 映像倉庫}
+    icon: lucide:container
+    iframe-src: /app/com.ictrek.v-scheduler/?v=__APP_VERSION__&page=image-hub
+    order: 220
+    keep-alive: true
+    embed: true
+  - id: resources
+    kind: page
+    title: {zh-CN: 资源与任务, en: Resources & Tasks, zh-TW: 資源與任務}
+    icon: lucide:list
+    iframe-src: /app/com.ictrek.v-scheduler/?v=__APP_VERSION__&page=resources
+    order: 221
+    keep-alive: true
+    embed: true
+  - id: auto
+    kind: page
+    title: {zh-CN: Auto 自动选型, en: Auto Routing, zh-TW: Auto 自動選型}
+    icon: lucide:route
+    iframe-src: /app/com.ictrek.v-scheduler/?v=__APP_VERSION__&page=auto
+    order: 222
+    keep-alive: true
+    embed: true
+  - id: nodes
+    kind: page
+    title: {zh-CN: 节点管理, en: Node Management, zh-TW: 節點管理}
+    icon: lucide:network
+    iframe-src: /app/com.ictrek.v-scheduler/?v=__APP_VERSION__&page=nodes
+    order: 223
+    keep-alive: true
+    embed: true
+  - id: cluster
+    kind: page
+    title: {zh-CN: VOS 集群管理, en: VOS Cluster Management, zh-TW: VOS 叢集管理}
+    icon: lucide:boxes
+    iframe-src: /app/com.ictrek.v-scheduler/?v=__APP_VERSION__&page=cluster
+    order: 224
+    keep-alive: true
+    embed: true
+  - id: logs
+    kind: page
+    title: {zh-CN: 诊断日志, en: Diagnostics, zh-TW: 診斷日誌}
+    icon: lucide:file-text
+    iframe-src: /app/com.ictrek.v-scheduler/?v=__APP_VERSION__&page=logs
+    order: 225
+    keep-alive: true
+    embed: true
+  - id: api
+    kind: page
+    title: {zh-CN: API 文档, en: API Documentation, zh-TW: API 文件}
+    icon: lucide:book-open
+    iframe-src: /app/com.ictrek.v-scheduler/?v=__APP_VERSION__&page=api
+    order: 226
+    keep-alive: true
     embed: true

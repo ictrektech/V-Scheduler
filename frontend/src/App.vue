@@ -46,7 +46,9 @@ const setupMessages:Record<string,string>={
 }
 const vosEmbedded=window.parent!==window||location.pathname.startsWith('/app/com.ictrek.v-scheduler')
 const pages=['overview','models','upstreams','playground','auto','api','resources','nodes','model-hub','logs','inference','cluster','images','image-hub']
-const initialPage=location.hash.slice(1)
+const requestedPage=new URLSearchParams(location.search).get('page')||''
+const vosPage=vosEmbedded&&pages.includes(requestedPage)?requestedPage:''
+const initialPage=vosPage||location.hash.slice(1)
 const nodeTab=ref<'nodes'|'backends'>('nodes')
 const targetService=ref('')
 const page=ref(pages.includes(initialPage)?initialPage:'overview'),docMode=ref('gateway'),connected=ref(false),busy=ref(false),error=ref(''),tasks=ref<Task[]>([]),nodes=ref<Node[]>([]),reservations=ref<Reservation[]>([]),filter=ref('all'),search=ref(''),selected=ref<Task|null>(null),deleting=ref<Task|null>(null),confirmPermit=ref<Reservation|null>(null),stopEvidence=ref(''),copied=ref(false)
@@ -80,6 +82,17 @@ const docDescription=computed(()=>operation.value?.['x-description']?.[locale.va
 const code=computed(()=>exampleTab.value==='json'?JSON.stringify(sample.value,null,2):`curl -X ${operation.value?.method.toUpperCase()||'GET'} '${location.origin}${apiBase}${(operation.value?.path||'/discovery').slice(1)}'${operation.value?.security?.length?" \\\n  -H 'Authorization: Bearer <service-access-token>'":''}${operation.value?.parameters?.some((p:any)=>p.name==='Idempotency-Key')?" \\\n  -H 'Idempotency-Key: stable-business-key'":''}${operation.value?.requestBody?" \\\n  -H 'Content-Type: application/json' \\\n  -d '"+JSON.stringify(sample.value)+"'":''}`)
 function openInferenceService(id:string){targetService.value=id;page.value='model-hub'}
 function selectGatewayPage(value:string){targetService.value='';page.value=value}
+async function openPage(value:string){
+ if(vosPage&&value===vosPage){page.value=value;return}
+ const platform=window.vos_platform?.platform
+ if(vosPage&&platform?.openTab){
+  try{
+   await platform.openTab({app:{id:'com.ictrek.v-scheduler',page:value==='overview'?'v-scheduler':value}})
+   return
+  }catch{ /* Keep navigation available inside the current tab. */ }
+ }
+ page.value=value
+}
 function prettyTime(value:string){return new Intl.DateTimeFormat(locale.value,{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}).format(new Date(value))}
 const errors:Record<string,string>={UNAUTHENTICATED:'未授权或令牌无效',FORBIDDEN:'权限不足',STATE_CONFLICT:'任务或资源状态不允许此操作',RETRY_NOT_ALLOWED:'任务或资源状态不允许此操作',TASK_NOT_STOPPED:'任务或资源状态不允许此操作',TEMPORARILY_UNAVAILABLE:'调度器暂不可用',WAIT_RESOURCE:'资源忙，请稍后重试',WAIT_MEMORY_HEADROOM:'可用内存不足，请卸载空闲模型或选择更小的模型配置',WAIT_RESOURCE_OR_NODE:'资源忙，请稍后重试',WAIT_STOP_CONFIRMATION:'等待停止确认'}
 async function api(path:string,body?:unknown,method?:string,extra:Record<string,string>={}){
@@ -195,11 +208,12 @@ const healthLabels:Record<string,string>={ready:'可调度',degraded:'降级',un
 async function copy(value:string){try{await navigator.clipboard.writeText(value);copied.value=true;setTimeout(()=>copied.value=false,1500)}catch{error.value='COPY_UNAVAILABLE'}}
 async function tryDiscovery(){try{discoveryResult.value=await (await fetch(apiBase+'discovery')).json()}catch(e){showError(e)}}
 function syncPage(){
+ if(vosPage)return
  const next=location.hash.slice(1)||'overview'
  if(pages.includes(next)&&(!nodeViewerOnly.value||!['inference','cluster','image-hub'].includes(next)))page.value=next
 }
 window.addEventListener('hashchange',syncPage)
-watch(page,value=>{if(value!=='model-hub')targetService.value='';if((location.hash.slice(1)||'overview')!==value)location.hash=value;selected.value=null;void nextTick(()=>window.scrollTo(0,0))})
+watch(page,value=>{if(value!=='model-hub')targetService.value='';if(!vosPage&&(location.hash.slice(1)||'overview')!==value)location.hash=value;selected.value=null;void nextTick(()=>window.scrollTo(0,0))})
 watch(locale,()=>{document.title=`V-Scheduler · ${t('模型路由与资源调度')}`},{immediate:true})
 let timer:ReturnType<typeof setInterval>
 onMounted(()=>{
@@ -219,19 +233,20 @@ onUnmounted(()=>{
 onUnmounted(()=>{clearInterval(timer);language.dispose();window.removeEventListener('hashchange',syncPage)})
 </script>
 <template>
- <div class="shell">
-  <aside><div class="brand"><img :src="logoUrl" alt=""><div>V-Scheduler<small>{{t('模型路由与资源调度')}}</small></div></div><nav :aria-label="t('主导航')"><button v-for="item in [{id:'overview',label:'模型与调用'},{id:'models',label:'模型与上游'},...(connected&&!demo?[nodeViewerOnly?{id:'images',label:'推理镜像'}:{id:'inference',label:'推理部署'}]:[]),{id:'playground',label:'试聊'},{id:'model-hub',label:'权重管理'},...(connected&&!nodeViewerOnly&&!demo?[{id:'image-hub',label:'镜像仓库'}]:[]),{id:'resources',label:'资源与任务'}]" :key="item.id" :class="{current:page===item.id||(item.id==='models'&&page==='upstreams')||(item.id==='inference'&&page==='images')}" @click="page=item.id"><Icon :name="item.id==='resources'?'queue':'server'"/>{{t(item.label)}}</button><details class="advanced-nav" :open="['auto','nodes','cluster','logs'].includes(page)"><summary>{{t('高级管理')}}</summary><button :class="{current:page==='auto'}" @click="page='auto'"><Icon name="server"/>{{t('Auto 自动选型')}}</button><button :class="{current:page==='nodes'}" @click="page='nodes'"><Icon name="server"/>{{t('节点管理')}}</button><button v-if="connected&&!nodeViewerOnly&&!demo" :class="{current:page==='cluster'}" @click="page='cluster'"><Icon name="server"/>{{t('VOS 集群管理')}}</button><button :class="{current:page==='logs'}" @click="page='logs'"><Icon name="book"/>{{t('诊断日志')}}</button></details><button :class="{current:page==='api'}" @click="page='api'"><Icon name="book"/>{{t('API 文档')}}</button></nav><div class="aside-note"><span class="connection-dot" :class="{on:connected}"></span>{{t(error==='FORBIDDEN'?'调度管理需管理员身份':demo?'演示模式':connected?'已连接':'调度未连接')}}<small>{{t('按能力分配')}}<br>{{t('确认停止后释放')}}</small><small v-if="appVersion">v{{appVersion}}</small></div></aside>
+ <div class="shell" :class="{'vos-page':vosPage}">
+  <aside v-if="!vosPage"><div class="brand"><img :src="logoUrl" alt=""><div>V-Scheduler<small>{{t('模型路由与资源调度')}}</small></div></div><nav :aria-label="t('主导航')"><button v-for="item in [{id:'overview',label:'模型与调用'},{id:'models',label:'模型与上游'},...(connected&&!demo?[nodeViewerOnly?{id:'images',label:'推理镜像'}:{id:'inference',label:'推理部署'}]:[]),{id:'playground',label:'试聊'},{id:'model-hub',label:'权重管理'},...(connected&&!nodeViewerOnly&&!demo?[{id:'image-hub',label:'镜像仓库'}]:[]),{id:'resources',label:'资源与任务'}]" :key="item.id" :class="{current:page===item.id||(item.id==='models'&&page==='upstreams')||(item.id==='inference'&&page==='images')}" @click="page=item.id"><Icon :name="item.id==='resources'?'queue':'server'"/>{{t(item.label)}}</button><details class="advanced-nav" :open="['auto','nodes','cluster','logs'].includes(page)"><summary>{{t('高级管理')}}</summary><button :class="{current:page==='auto'}" @click="page='auto'"><Icon name="server"/>{{t('Auto 自动选型')}}</button><button :class="{current:page==='nodes'}" @click="page='nodes'"><Icon name="server"/>{{t('节点管理')}}</button><button v-if="connected&&!nodeViewerOnly&&!demo" :class="{current:page==='cluster'}" @click="page='cluster'"><Icon name="server"/>{{t('VOS 集群管理')}}</button><button :class="{current:page==='logs'}" @click="page='logs'"><Icon name="book"/>{{t('诊断日志')}}</button></details><button :class="{current:page==='api'}" @click="page='api'"><Icon name="book"/>{{t('API 文档')}}</button></nav><div class="aside-note"><span class="connection-dot" :class="{on:connected}"></span>{{t(error==='FORBIDDEN'?'调度管理需管理员身份':demo?'演示模式':connected?'已连接':'调度未连接')}}<small>{{t('按能力分配')}}<br>{{t('确认停止后释放')}}</small><small v-if="appVersion">v{{appVersion}}</small></div></aside>
   <main>
    <header><div><h1>{{t(pageTitle)}}</h1><p v-if="page!=='inference'&&page!=='cluster'&&page!=='images'&&page!=='image-hub'">{{t(page==='api'?'接口标准、认证方式与可复制的请求示例。':page==='nodes'?'登记、审批与管理执行节点和服务权限。':page==='resources'?'查看执行资源、预约与排队任务。':'统一管理模型、上游和调用；本地计算经过资源准入。')}}</p></div><div class="header-actions"><label class="locale-control"><Icon name="globe"/><select v-model="preference" :aria-label="t('界面语言')" @change="language.setPreference(preference)"><option value="auto">{{t('跟随 VOS')}}</option><option value="zh-CN">简体中文</option><option value="en">English</option><option value="zh-TW">繁體中文</option></select></label><ApiKeysDialog :t="t"/><AboutDialog :t="t"/></div></header>
+   <div v-if="vosPage&&page!==vosPage" class="vos-return"><button class="quiet" @click="page=vosPage">{{t('返回入口页面')}}</button></div>
    <div v-if="(sessionStale||runtimeStale)&&!(['inference','cluster','image-hub'].includes(page)&&connected&&!nodeViewerOnly)" class="panel session-notice" role="status">
     <span>{{t(runtimeStale?'正在等待调度服务恢复，页面会自动重新连接。':'正在恢复 VOS 会话，已加载的数据仍可查看。')}}</span>
     <button class="quiet" type="button" @click="resumeWorkspace">{{t('重试连接')}}</button>
    </div>
    <div v-if="error&&(page==='resources'||page==='nodes')" class="error" role="alert">{{t(errors[error]||error)}}<code v-if="errors[error]">{{error}}</code><code v-if="errorRequestId">{{errorRequestId}}</code></div>
    <div v-if="setupError" class="error" role="alert">{{locale==='zh-CN'?(setupMessages[setupError]||setupError):t(setupError)}} <button :disabled="busy" @click="connect(true)">{{t('重试连接')}}</button></div>
-   <section v-if="page==='overview'" class="overview-entry" :aria-label="t('模型接入与调用')"><div class="overview-entry-tabs"><span aria-current="page">{{t('调用概览')}}</span><button class="configure-models" @click="page='models'"><Icon name="server"/>{{t('去配置上游模型')}}<Icon name="arrow"/></button></div><p>{{t('先连接模型来源，再试聊或接入应用。模型、上游和调度设置集中管理。')}}</p></section>
-   <section v-if="page==='overview'&&connected" class="unified-summary panel"><button class="quiet" @click="page='resources'">{{t('就绪节点')}} {{nodes.filter(n=>nodeHealth(n)==='ready').length}} / {{nodes.length}}</button><button class="quiet" @click="page='resources'">{{t('正在执行')}} {{active}}</button><button class="quiet" @click="page='resources'">{{t('等待队列')}} {{queued}}</button><span>{{t('外部云模型不占本地资源预约')}}</span></section>
-   <div v-if="page==='api'" class="documentation-tabs api-tabs"><button :class="{current:docMode==='gateway'}" @click="docMode='gateway'">{{t('模型与网关 API')}}</button><button :class="{current:docMode==='scheduler'}" @click="docMode='scheduler'">{{t('调度管理 API')}}</button><button :class="{current:docMode==='model-hub'}" @click="docMode='model-hub'">{{t('模型管理 API')}}</button><button :class="{current:docMode==='image-hub'}" @click="docMode='image-hub'">{{t('镜像仓库 API')}}</button><button :class="{current:docMode==='guide'}" @click="docMode='guide'">{{t('应用接入')}}</button></div>
+   <section v-if="page==='overview'" class="overview-entry" :aria-label="t('模型接入与调用')"><div class="overview-entry-tabs"><span aria-current="page">{{t('调用概览')}}</span><button class="configure-models" @click="openPage('models')"><Icon name="server"/>{{t('去配置上游模型')}}<Icon name="arrow"/></button></div><p>{{t('先连接模型来源，再试聊或接入应用。模型、上游和调度设置集中管理。')}}</p></section>
+   <section v-if="page==='overview'&&connected" class="unified-summary panel"><button class="quiet" @click="openPage('resources')">{{t('就绪节点')}} {{nodes.filter(n=>nodeHealth(n)==='ready').length}} / {{nodes.length}}</button><button class="quiet" @click="openPage('resources')">{{t('正在执行')}} {{active}}</button><button class="quiet" @click="openPage('resources')">{{t('等待队列')}} {{queued}}</button><span>{{t('外部云模型不占本地资源预约')}}</span></section>
+   <div v-if="page==='api'" class="documentation-tabs api-tabs"><button :class="{current:docMode==='gateway'}" @click="docMode='gateway'">{{t('模型与网关 API')}}</button><button :class="{current:docMode==='scheduler'}" @click="docMode='scheduler'">{{t('调度管理 API')}}</button><button :class="{current:docMode==='model-hub'}" @click="docMode='model-hub'">{{t('模型管理 API')}}</button><button :class="{current:docMode==='image-hub'}" @click="docMode='image-hub'">{{t('镜像仓库 API')}}</button><button :class="{current:docMode==='guide'}" @click="docMode='guide'">{{t('应用接入')}}</button><button @click="docMode='scheduler';operationKey='POST /backend-deployments/{id}/transfers'">{{t('跨节点模型权重传输')}}</button></div>
    <AutoRouting v-if="page==='auto'" :t="t"/>
    <DiagnosticLogs v-if="page==='logs'" :t="t" :locale="locale"/>
    <ModelHub v-if="page==='model-hub'" :locale="locale" :t="t" :target-service="targetService" @service-focused="targetService=''"/>
@@ -244,12 +259,12 @@ onUnmounted(()=>{clearInterval(timer);language.dispose();window.removeEventListe
    <ApplicationBackends v-if="page==='nodes'&&connected&&!nodeViewerOnly&&!demo&&nodeTab==='backends'" :request="api" :t="t"
      @api="page='api';docMode='scheduler';operationKey='POST /backend-deployments'"/>
    <ManagedComputeNodes v-if="page==='nodes'&&connected&&(nodeViewerOnly||demo||nodeTab==='nodes')" :request="api" :locale="locale"/>
-   <NodeManagement v-if="page==='nodes'&&connected&&!nodeViewerOnly&&(demo||nodeTab==='nodes')" :request="api" :nodes="nodes" :api-url="managementApiUrl" :t="t" :locale="locale" @refresh="refresh" @select="page=$event"/>
+   <NodeManagement v-if="page==='nodes'&&connected&&!nodeViewerOnly&&(demo||nodeTab==='nodes')" :request="api" :nodes="nodes" :api-url="managementApiUrl" :t="t" :locale="locale" @refresh="refresh" @select="openPage($event)"/>
    <RuntimeWorkspace v-if="connected&&!nodeViewerOnly&&page==='image-hub'" key="image-hub"
      kind="image-hub" :session-recovering="sessionStale" :request="api" :locale="locale" :t="t"/>
    <RuntimeWorkspace v-if="connected&&!nodeViewerOnly&&(page==='inference'||page==='images'||page==='cluster')"
      :key="page==='cluster'?'cluster':'inference'" :kind="page==='cluster'?'cluster':'inference'" :images="page==='images'"
-     :session-recovering="sessionStale" :request="api" :locale="locale" :t="t" @weights="page='model-hub'" @nodes="page='nodes'" @images="page='images'" @runtime="page='inference'">
+     :session-recovering="sessionStale" :request="api" :locale="locale" :t="t" @weights="page='model-hub'" @nodes="openPage('nodes')" @images="page='images'" @runtime="page='inference'">
     <template #images><ImageCatalog :locale="locale" :request="api" :t="t"/></template>
    </RuntimeWorkspace>
    <ImageCatalog v-if="connected&&nodeViewerOnly&&page==='images'" :locale="locale" :request="api" :t="t"/>
@@ -287,6 +302,7 @@ onUnmounted(()=>{clearInterval(timer);language.dispose();window.removeEventListe
 </template>
 
 <style scoped>
+.shell.vos-page{display:block}.vos-return{margin-bottom:16px}
 @media (min-width: 541px) {
   .shell > aside { overflow-y: auto; overscroll-behavior-y: contain; }
 }

@@ -394,6 +394,8 @@ Base: `http://v-scheduler:38120/api/v1`. [Complete OpenAPI](../api/openapi-v1.js
 
 Check `model-hub` first. When `state` is `ready`, send `source: "shared"` and each file's `shared_path` relative to the Model Hub root. Run `complete` to verify the files. If the probe returns `unavailable` or preparation returns `409 BACKEND_SHARED_MODEL_HUB_UNAVAILABLE`, omit `source` and `shared_path` and upload the files in chunks. Each request still requires the deployment's current grants.
 
+See the [cross-node model weight transfer specification](model-weight-transfer.md) for requests, receipts, resume behavior and worker storage. 完整请求、回执、续传和目标目录参见[跨节点权重传输规范](model-weight-transfer.md)。
+
 先查询 `model-hub`。若 `state` 为 `ready`，创建清单时传 `source: "shared"` 和每个文件相对 Model Hub 根目录的 `shared_path`，再调用 `complete` 校验文件。若探测返回 `unavailable` 或准备时返回 `409 BACKEND_SHARED_MODEL_HUB_UNAVAILABLE`，省略 `source` 和 `shared_path`，按分块上传文件。每个请求仍需要部署的当前授权。
 
 After a transfer reports `verified: true`, post its `model_id` and `transfer_id` to `/backend-deployments/{id}/models`. The response gives `executor_id`, `node_id`, the runtime `profile`, and the calibrated `model_limits` and `model_parameters`. Scheduler requires a matching node report and a measured calibration. Deployment owners need current grants for the target and image repository. Stop or removal returns `409 BACKEND_TASKS_ACTIVE` while the deployment has queued or active work.

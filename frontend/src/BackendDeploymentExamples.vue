@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import weightTransferGuide from '../../docs/model-weight-transfer.md?url'
 const {t}=defineProps<{t:(text:string)=>string}>()
 const repository='registry.example.com/team/backend'
 const images=[
@@ -37,6 +38,9 @@ const json=(value:unknown)=>JSON.stringify(value,null,2)
    <details><summary>{{t('部署到其他 VOS 集群成员')}}</summary><pre class="code-block">{{json(cluster)}}</pre></details>
   </div>
   <p>{{t('后端镜像把 V_SCHEDULER_BACKEND_CONFIG_B64 解码为 UTF-8 JSON，再读取 workers、batch_size 等自己的配置。CPU 和内存字段限制容器使用量。应用凭据通过各自的机密配置渠道管理。')}}</p>
+  <h3>{{t('跨节点模型权重传输')}}</h3>
+  <p>{{t('应用先探测目标节点的只读 Model Hub。共享不可用时，从主应用通过 Scheduler 部署通道按字节偏移续传权重；目标 worker 校验 SHA-256 后使用自己的持久卷。')}}</p>
+  <a :href="weightTransferGuide" download="model-weight-transfer.md">{{t('下载权重传输规范')}}</a>
  </section>
 </template>
 

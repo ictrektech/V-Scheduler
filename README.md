@@ -394,9 +394,9 @@ Auto 路由方式可选本地规则（默认）、请求类型、上下文大小
 网关协议适配重建 multipart、二进制或 JSON 请求体时，会先移除客户端原来的 Content-Type，再发送与新 body 匹配的单一类型；覆盖 ML Server 文本/图片 embedding、离线 ASR 和 Image Studio 输入上传。普通透传请求及上游响应保留原 MIME，文件二进制不变；调用方无需修改标准 SDK 或 curl 表单请求。
 
 
-### 模型与上游工作区及原生 Provider
+### VOS 应用组、模型与上游及原生 Provider
 
-首页「去配置上游模型」进入统一的「模型与上游」工作区；按上游或应用来源分组，支持按模型名、网址、能力搜索。来源展开后可修改连接、可见范围、路由权重、并发与放行，模型设置中保留元数据、能力、接口、预算校准和单模型放行。任务优先级仍由每次请求携带，不是模型优先级。「权重管理」保留下载、更新、选中文件、推理后端及原共享目录；`#upstreams` 旧入口转入统一工作区，`#model-hub`、所有 API、host alias 和端口保持不变。节点与 Auto 路由收于「高级管理」，关于和语言始终可见。窗口高度不足时，可在左侧导航内向下滚动。「模型与上游」可从不可用的非 Ollama 后端提示直达对应推理服务，查看状态后自行决定是否启动。Ollama 模型可按需加载。
+展开 VOS 应用组中的「V-Scheduler」，可直接从平台导航进入各子页。「模型与调用 → 去配置上游模型」也可打开「模型与上游」；按上游或应用来源分组，支持按模型名、网址、能力搜索。来源展开后可修改连接、可见范围、路由权重、并发与放行，模型设置中保留元数据、能力、接口、预算校准和单模型放行。任务优先级仍由每次请求携带，不是模型优先级。「权重管理」保留下载、更新、选中文件、推理后端及原共享目录；`#upstreams` 旧入口转入统一工作区，`#model-hub`、所有 API、host alias 和端口保持不变。节点与 Auto 路由收于「高级管理」，关于和语言始终可见。窗口高度不足时，可在左侧导航内向下滚动。「模型与上游」可从不可用的非 Ollama 后端提示直达对应推理服务，查看状态后自行决定是否启动。Ollama 模型可按需加载。
 
 一处配置后，VOS 内应用通过 `http://v-scheduler:8080/v1` 按原身份、可见范围和调度策略共享模型。厂商预设对照 dsh 去重补齐，同地址同鉴权的别名合并，独立地区或计费产品保留。自定义地址与已有上游配置不会被自动修改。
 
@@ -490,3 +490,7 @@ English readers can use the [complete API integration handbook](docs/api-referen
 ### 模型能力和放行设置
 
 在「模型与上游 → 添加单个模型」填写模型 ID，可直接设置模型类型、模型能力和支持接口。添加上游后可在探测列表逐个设置。API 使用 POST /api/v1/upstreams 的 models 数组，每项填写 id，可选 kind、capabilities、endpoints 和 metadata_override。手动添加或已注册的模型在「模型设置 → 编辑元数据」修改，API 使用 PATCH /api/v1/models，填写模型目录中的 model 和 upstream_id。只有上游所有者或管理员可以改。kind 为 chat、embedding 或 unknown，capabilities 和 endpoints 是字符串数组，未声明时沿用探测或按协议推断。注册模型的能力覆盖在重新注册后保留，metadata_override=false 立即恢复最近注册声明。注册模型的可见范围随上游。管理员可从上游已放行的模型行进入「放行与路由」，取消勾选并保存。API 使用 PUT /api/v1/upstreams/{id}/routing 的 direct=false，影响该上游下所有模型，单模型放行使用 PUT /api/v1/model-routing。
+
+从「API Key」生成个人 Key 后，结果区显示可复制的局域网 Base URL 和完整 Key。使用该 Key 查询 `GET /v1/models` 并选择可见的模型 ID。生成和查询接口契约保持一致。
+
+无共享挂载时的目标节点目录、分块上传、续传和校验见[跨节点模型权重传输规范](docs/model-weight-transfer.md)，也可从「API 文档 → 跨节点模型权重传输」下载。

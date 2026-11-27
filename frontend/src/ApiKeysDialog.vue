@@ -1,14 +1,15 @@
 <script setup lang="ts">
-import {computed,ref,onMounted,onUnmounted} from 'vue'
+import {computed,nextTick,ref,onMounted,onUnmounted} from 'vue'
 import {gatewayRequest} from './gateway-client'
 import {lanBaseURL} from './http-client.js'
 import {isSessionError,recordDiagnostic} from './diagnostics.js'
 const props=defineProps<{t:(text:string)=>string}>()
-const dialog=ref<HTMLDialogElement>(),keys=ref<any[]>([]),models=ref<any[]>([]),busy=ref(false),error=ref(''),secret=ref(''),copied=ref(false)
+const dialog=ref<HTMLDialogElement>(),keys=ref<any[]>([]),models=ref<any[]>([]),busy=ref(false),error=ref(''),copied=ref(false)
 const mode=ref('personal'),name=ref(''),days=ref(0),model=ref(''),supplied=ref(''),confirm=ref('')
 const recovering=ref(false),ready=ref(false)
 const contextual=ref(false),lanAddress=ref('')
-const connection=ref<{model:string,key:string}|null>(null)
+const connection=ref<{model?:string,key:string}|null>(null)
+const connectionPanel=ref<HTMLElement>()
 const locked=computed(()=>busy.value||recovering.value||!ready.value)
 const visibleKeys=computed(()=>keys.value.filter(key=>Array.isArray(key.models)===(mode.value==='model')))
 let session=0,retry:ReturnType<typeof setTimeout>|undefined
@@ -70,7 +71,13 @@ async function open(target?:string){
  }).catch(()=>{})
  try{await load(id)}finally{if(current(id))busy.value=false}
 }
-function clearResult(){secret.value='';connection.value=null;copied.value=false}
+function clearResult(){connection.value=null;copied.value=false}
+async function showConnection(key:string,model?:string){
+ connection.value={key,model}
+ await nextTick()
+ connectionPanel.value?.scrollIntoView({block:'nearest'})
+ connectionPanel.value?.focus({preventScroll:true})
+}
 function resetDialog(){
  ++session;clearTimeout(retry)
  clearResult();supplied.value='';confirm.value=''
@@ -84,7 +91,10 @@ async function run(action:(id:number)=>Promise<void>){
  catch(e){if(current(id))error.value=recover(e,id)?props.t('连接恢复后可重试，输入已保留。'):safeError(e)}
  finally{if(current(id))busy.value=false}
 }
-async function create(){await run(async id=>{const result=await request('/api/v1/api-keys',{name:name.value,expires_in_days:Number(days.value)});if(current(id)){secret.value=result.api_key;name.value=''}})}
+async function create(){await run(async id=>{
+ const result=await request('/api/v1/api-keys',{name:name.value,expires_in_days:Number(days.value)})
+ if(current(id)){name.value='';await showConnection(result.api_key)}
+})}
 async function modelKey(value:string|boolean|null){
  await run(async id=>{
   const target=models.value.find(m=>m.upstream_id+'/'+m.id===model.value)
@@ -92,8 +102,8 @@ async function modelKey(value:string|boolean|null){
   const result=await request('/api/v1/models/access-key',{upstream_id:target.upstream_id,model:target.qualified,access_key:value},'PUT')
   if(!current(id))return
   const key=typeof value==='string'?value:result.model_access_keys?.[0]?.api_key
-  if(key)connection.value={model:target.qualified,key}
   supplied.value=''
+  if(key)await showConnection(key,target.qualified)
  })
 }
 async function revoke(keyId:string){await run(async id=>{await request('/api/v1/api-keys/'+encodeURIComponent(keyId),undefined,'DELETE');if(current(id))confirm.value=''})}
@@ -124,19 +134,18 @@ async function copy(value:string){try{await navigator.clipboard.writeText(value)
    <details><summary>{{t('设置已有 Key')}}</summary><label>{{t('访问 Key（至少 16 个字符）')}}<input v-model="supplied" type="password" autocomplete="off" minlength="16" maxlength="512"></label><button :disabled="locked||!model||supplied.length<16" @click="modelKey(supplied)">{{t('设置并替换')}}</button></details>
    <div v-if="confirm==='model'" class="actions"><span>{{t(model==='auto/auto'?'撤销后将恢复匿名 Auto 调用，确认撤销？':'撤销后该 Key 无法访问私有模型，确认撤销？')}}</span><button :disabled="locked" @click="modelKey(null);confirm=''">{{t('确认撤销')}}</button><button class="quiet" @click="confirm=''">{{t('取消')}}</button></div>
   </section>
-  <section v-if="connection" class="new-secret" aria-labelledby="key-lan-title">
+  <section v-if="connection" ref="connectionPanel" class="new-secret" aria-labelledby="key-lan-title" tabindex="-1">
    <h3 id="key-lan-title">{{t('局域网客户端配置')}}</h3>
-   <p>{{t('在客户端选择 OpenAI 兼容接口，并填写下列三项。')}}</p>
+   <p>{{t(connection.model?'在客户端选择 OpenAI 兼容接口，并填写下列三项。':'在客户端选择 OpenAI 兼容接口，填写下列地址和 Key。模型 ID 从该 Key 可见的模型列表中选择。')}}</p>
    <dl class="connection-fields">
     <dt>Base URL</dt><dd><code>{{lanAddress}}</code><button class="quiet" @click="copy(lanAddress)">{{t('复制 Base URL')}}</button></dd>
     <dt>API Key</dt><dd><code>{{connection.key}}</code><button class="quiet" @click="copy(connection.key)">{{t('复制 Key')}}</button></dd>
-    <dt>{{t('模型 ID')}}</dt><dd><code>{{connection.model}}</code><button class="quiet" @click="copy(connection.model)">{{t('复制模型 ID')}}</button></dd>
+    <template v-if="connection.model"><dt>{{t('模型 ID')}}</dt><dd><code>{{connection.model}}</code><button class="quiet" @click="copy(connection.model!)">{{t('复制模型 ID')}}</button></dd></template>
    </dl>
    <p>{{t('从远程入口打开时，将 Base URL 的主机名改成客户端可访问的 VOS 局域网地址。')}}</p>
    <p>{{t('请立即复制，关闭后将无法再次查看完整 Key。')}}</p>
    <p v-if="copied" role="status">{{t('已复制')}}</p>
   </section>
-  <section v-if="secret" class="new-secret" role="status"><strong>{{t('请立即复制，关闭后将无法再次查看完整 Key。')}}</strong><code>{{secret}}</code><button class="quiet" @click="copy(secret)">{{t(copied?'已复制':'复制 Key')}}</button></section>
   <p>{{t('OpenAI 使用 Authorization: Bearer KEY；Anthropic 使用 x-api-key: KEY。')}}</p>
   <template v-if="!contextual">
   <h3>{{t('我的 Key')}}</h3><p v-if="!visibleKeys.length&&!locked">{{t('还没有 API Key。')}}</p>
