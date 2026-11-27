@@ -11,6 +11,7 @@ pub enum Operation {
     ReadTransfer { transfer_id: String },
     WriteChunk { transfer_id: String, file_id: String, offset: u64 },
     CompleteTransfer { transfer_id: String },
+    DeleteModel { model_id: String },
     Capabilities,
     ModelHub,
     Execute { attempt_id: String, action: Action },
@@ -61,6 +62,9 @@ impl Operation {
             Self::CompleteTransfer { transfer_id } if identifier(transfer_id) && body_len == 0 => {
                 Some(("POST", format!("/scheduler/transfers/{transfer_id}/complete"), None))
             }
+            Self::DeleteModel { model_id } if model_identifier(model_id) && body_len == 0 => {
+                Some(("DELETE", format!("/scheduler/transfers/models/{model_id}"), None))
+            }
             Self::Capabilities if body_len == 0 => Some(("GET", "/scheduler/capabilities".into(), None)),
             Self::ModelHub if body_len == 0 => Some(("GET", "/scheduler/model-hub".into(), None)),
             Self::Execute { attempt_id, action } if identifier(attempt_id)
@@ -84,6 +88,16 @@ pub fn identifier(value: &str) -> bool {
     (1..=96).contains(&value.len())
         && value.as_bytes()[0].is_ascii_alphanumeric()
         && value.bytes().all(|byte| byte.is_ascii_alphanumeric() || b"_.-".contains(&byte))
+}
+
+pub fn model_identifier(value: &str) -> bool {
+    let valid = |part: &str| {
+        identifier(part) && part.bytes().all(|byte| !byte.is_ascii_uppercase())
+    };
+    match value.split_once('@') {
+        Some((model, variant)) => valid(model) && valid(variant),
+        None => valid(value),
+    }
 }
 
 // A private request sent only through the node managers' authenticated control plane.
@@ -130,6 +144,14 @@ pub fn shared_unavailable(status: u16, body: &[u8]) -> serde_json::Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn delete_model_only_addresses_a_literal_model_key() {
+        let request = |model_id: &str, size| Operation::DeleteModel { model_id: model_id.into() }.request(size);
+        assert_eq!(request("sd-turbo@fp16", 0), Some(("DELETE", "/scheduler/transfers/models/sd-turbo@fp16".into(), None)));
+        assert!(request("sd-turbo@../other", 0).is_none());
+        assert!(request("sd-turbo", 1).is_none());
+    }
 
     #[test]
     fn permits_only_bounded_chunks_and_literal_resource_ids() {

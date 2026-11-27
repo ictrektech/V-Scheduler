@@ -33,15 +33,103 @@ pub(super) async fn admit(tx: &mut Transaction<'_, Postgres>, executor: &Executo
     if !executor.id.starts_with(EXECUTOR_PREFIX) {
         return Ok(());
     }
-    let ready: Option<bool> = sqlx::query_scalar(
-        "SELECT d.state='running' AND d.last_error IS NULL FROM vrs_backend_deployments d
+    let ready: Option<(bool, String)> = sqlx::query_as(
+        "SELECT d.state='running' AND d.last_error IS NULL, d.id FROM vrs_backend_deployments d
          JOIN vrs_backend_executor_bindings b ON b.deployment_id=d.id
          WHERE b.executor_id=$1 FOR SHARE OF d",
     ).bind(&executor.id).fetch_optional(&mut **tx).await.map_err(unavailable)?;
-    if ready != Some(true) {
+    let Some((true, deployment_id)) = ready else {
         return Err(Error(StatusCode::CONFLICT, "BACKEND_STATE_CONFLICT"));
+    };
+    let admissible: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM vrs_backend_executor_bindings b
+         WHERE b.executor_id=$1 AND b.deployment_id=$2
+         AND NOT EXISTS(SELECT 1 FROM vrs_backend_model_deletions m
+                        WHERE m.deployment_id=b.deployment_id AND m.model_id=b.model_id))",
+    ).bind(&executor.id).bind(deployment_id).fetch_one(&mut **tx).await.map_err(unavailable)?;
+    if !admissible { return Err(Error(StatusCode::CONFLICT, "BACKEND_MODEL_DELETING")); }
+    Ok(())
+}
+
+pub(super) async fn ensure_model_not_deleting(
+    tx: &mut Transaction<'_, Postgres>, deployment: &str, model: &str,
+) -> Api<()> {
+    if model_deleting(tx, deployment, model).await? {
+        return Err(Error(StatusCode::CONFLICT, "BACKEND_MODEL_DELETING"));
     }
     Ok(())
+}
+
+async fn model_deleting(tx: &mut Transaction<'_, Postgres>, deployment: &str, model: &str) -> Api<bool> {
+    sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM vrs_backend_model_deletions WHERE deployment_id=$1 AND model_id=$2)",
+    ).bind(deployment).bind(model).fetch_one(&mut **tx).await.map_err(unavailable)
+}
+
+async fn lock_running(tx: &mut Transaction<'_, Postgres>, deployment: &str) -> Api<()> {
+    let running: Option<bool> = sqlx::query_scalar(
+        "SELECT state='running' AND last_error IS NULL FROM vrs_backend_deployments WHERE id=$1 FOR UPDATE",
+    ).bind(deployment).fetch_optional(&mut **tx).await.map_err(unavailable)?;
+    if running != Some(true) { return Err(Error(StatusCode::CONFLICT, "BACKEND_STATE_CONFLICT")); }
+    Ok(())
+}
+
+async fn verify_transfer(app: &App, headers: &HeaderMap, deployment: &str, request: &Registration) -> Api<()> {
+    let reply = backend_deployments::exchange(app, headers, deployment,
+        backend_transfers::wire::Operation::ReadTransfer { transfer_id: request.transfer_id.clone() }, &[]).await?.0;
+    if reply["data"]["model_id"] != request.model_id || reply["data"]["verified"] != true {
+        return Err(Error(StatusCode::CONFLICT, "BACKEND_MODEL_NOT_VERIFIED"));
+    }
+    Ok(())
+}
+
+pub(super) async fn remove(
+    State(app): State<App>, headers: HeaderMap, Path((deployment, model)): Path<(String, String)>,
+) -> Api<Json<Value>> {
+    if !backend_transfers::wire::model_identifier(&model) { return Err(invalid()); }
+    backend_deployments::image_studio_target(&app, &headers, &deployment).await?;
+    let principal = auth(&app, &headers).await?;
+    let capabilities = backend_deployments::exchange(&app, &headers, &deployment,
+        backend_transfers::wire::Operation::Capabilities, &[]).await?.0;
+    if capabilities["data"]["weight_model_delete"] != true {
+        return Err(Error(StatusCode::CONFLICT, "BACKEND_MODEL_DELETE_UNSUPPORTED"));
+    }
+    let mut tx = app.db.begin().await.map_err(unavailable)?;
+    lock_running(&mut tx, &deployment).await?;
+    let active: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM vrs_backend_executor_bindings b JOIN vrs_tasks t
+         ON t.body->'executor'->>'id'=b.executor_id WHERE b.deployment_id=$1 AND b.model_id=$2
+         AND t.status IN ('queued','retry_wait','assigned','running','cancelling','recovering'))",
+    ).bind(&deployment).bind(&model).fetch_one(&mut *tx).await.map_err(unavailable)?;
+    if active { return Err(Error(StatusCode::CONFLICT, "BACKEND_TASKS_ACTIVE")); }
+    sqlx::query("INSERT INTO vrs_backend_model_deletions(deployment_id,model_id) VALUES($1,$2) ON CONFLICT DO NOTHING")
+        .bind(&deployment).bind(&model).execute(&mut *tx).await.map_err(unavailable)?;
+    tx.commit().await.map_err(unavailable)?;
+
+    // The deletion marker continues to block admission if the worker or the controller is interrupted.
+    let mut tx = app.db.begin().await.map_err(unavailable)?;
+    lock_running(&mut tx, &deployment).await?;
+    if !model_deleting(&mut tx, &deployment, &model).await? {
+        return Ok(ok(json!({"deleted_transfers":0})));
+    }
+    let reply = backend_deployments::exchange(&app, &headers, &deployment,
+        backend_transfers::wire::Operation::DeleteModel { model_id: model.clone() }, &[]).await?.0;
+    let deleted = reply["data"]["deleted_transfers"].as_u64()
+        .ok_or(Error(StatusCode::BAD_GATEWAY, "BACKEND_CHANNEL_UNAVAILABLE"))?;
+    let executor: Option<String> = sqlx::query_scalar(
+        "DELETE FROM vrs_backend_executor_bindings WHERE deployment_id=$1 AND model_id=$2 RETURNING executor_id",
+    ).bind(&deployment).bind(&model).fetch_optional(&mut *tx).await.map_err(unavailable)?;
+    if let Some(executor) = executor {
+        sqlx::query("DELETE FROM vrs_executor_settings WHERE id=$1")
+            .bind(&executor).execute(&mut *tx).await.map_err(unavailable)?;
+    }
+    sqlx::query("DELETE FROM vrs_backend_model_deletions WHERE deployment_id=$1 AND model_id=$2")
+        .bind(&deployment).bind(&model).execute(&mut *tx).await.map_err(unavailable)?;
+    management::audit(&mut tx, &principal, "backend_model.delete", &deployment).await?;
+    tx.commit().await.map_err(unavailable)?;
+    management::restore(&app.db, &app.voice_config).await
+        .map_err(|_| Error(StatusCode::SERVICE_UNAVAILABLE, "BACKEND_EXECUTOR_UNAVAILABLE"))?;
+    Ok(ok(json!({"deleted_transfers":deleted})))
 }
 
 pub(super) async fn register(
@@ -52,11 +140,7 @@ pub(super) async fn register(
 ) -> Api<Json<Value>> {
     let (kind, target_id, profile) = backend_deployments::image_studio_target(&app, &headers, &deployment_id).await?;
     let authn = auth(&app, &headers).await?;
-    let reply = backend_deployments::exchange(&app, &headers, &deployment_id,
-        backend_transfers::wire::Operation::ReadTransfer { transfer_id: request.transfer_id.clone() }, &[]).await?.0;
-    if reply["data"]["model_id"] != request.model_id || reply["data"]["verified"] != true {
-        return Err(Error(StatusCode::CONFLICT, "BACKEND_MODEL_NOT_VERIFIED"));
-    }
+    verify_transfer(&app, &headers, &deployment_id, &request).await?;
     let capability = backend_deployments::exchange(&app, &headers, &deployment_id,
         backend_transfers::wire::Operation::Capabilities, &[]).await?.0;
     let mut candidates = app.config.nodes.iter().filter(|node| match kind.as_str() {
@@ -108,11 +192,9 @@ pub(super) async fn register(
         max_attempts: 1,
     };
     // Serialize registration with stop/remove and concurrent requests for the same deployment.
-    let running: Option<String> = sqlx::query_scalar("SELECT state FROM vrs_backend_deployments WHERE id=$1 FOR UPDATE")
-        .bind(&deployment_id).fetch_optional(&mut *tx).await.map_err(unavailable)?;
-    if running.as_deref() != Some("running") {
-        return Err(Error(StatusCode::CONFLICT, "BACKEND_STATE_CONFLICT"));
-    }
+    lock_running(&mut tx, &deployment_id).await?;
+    ensure_model_not_deleting(&mut tx, &deployment_id, &request.model_id).await?;
+    verify_transfer(&app, &headers, &deployment_id, &request).await?;
     if let Some((prior, prior_transfer)) = sqlx::query_as::<_, (String, String)>(
         "SELECT executor_id,transfer_id FROM vrs_backend_executor_bindings WHERE deployment_id=$1 AND model_id=$2",
     )

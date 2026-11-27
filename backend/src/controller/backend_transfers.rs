@@ -67,11 +67,21 @@ pub(super) async fn create(
     Json(manifest): Json<Manifest>,
 ) -> Api<Json<Value>> {
     if !manifest.valid() { return Err(invalid()); }
-    if manifest.source.is_some() && !model_hub_ready(&app, &headers, &id).await? {
-        return Err(Error(StatusCode::CONFLICT, "BACKEND_SHARED_MODEL_HUB_UNAVAILABLE"));
+    if manifest.source.is_some() {
+        if !model_hub_ready(&app, &headers, &id).await? {
+            return Err(Error(StatusCode::CONFLICT, "BACKEND_SHARED_MODEL_HUB_UNAVAILABLE"));
+        }
+    } else {
+        backend_deployments::image_studio_target(&app, &headers, &id).await?;
     }
     let bytes = serde_json::to_vec(&manifest).map_err(|_| invalid())?;
-    backend_deployments::exchange(&app, &headers, &id, wire::Operation::CreateTransfer, &bytes).await
+    let mut tx = app.db.begin().await.map_err(unavailable)?;
+    sqlx::query("SELECT id FROM vrs_backend_deployments WHERE id=$1 FOR SHARE")
+        .bind(&id).fetch_optional(&mut *tx).await.map_err(unavailable)?;
+    backend_models::ensure_model_not_deleting(&mut tx, &id, &manifest.model_id).await?;
+    let reply = backend_deployments::exchange(&app, &headers, &id, wire::Operation::CreateTransfer, &bytes).await?;
+    tx.commit().await.map_err(unavailable)?;
+    Ok(reply)
 }
 
 async fn model_hub_ready(app: &App, headers: &HeaderMap, id: &str) -> Api<bool> {

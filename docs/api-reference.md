@@ -387,6 +387,7 @@ Base: `http://v-scheduler:38120/api/v1`. [Complete OpenAPI](../api/openapi-v1.js
 | PUT | `/backend-deployments/{id}/transfers/{transfer_id}/files/{file_id}` | Write one chunk at a byte offset / 按字节偏移上传分块 |
 | POST | `/backend-deployments/{id}/transfers/{transfer_id}/complete` | Verify file sizes and SHA-256 / 验证文件尺寸和 SHA-256 |
 | POST | `/backend-deployments/{id}/models` | Bind a verified model to the calibrated target executor / 将已校验的模型登记到目标节点的校准执行器 |
+| DELETE | `/backend-deployments/{id}/models/{model_id}` | 删除远端模型副本和调度登记 / Delete the remote model copy and scheduling registration |
 | POST | `/backend-deployments/{id}/executions/{attempt_id}/{action}` | Start, inspect or cancel a fenced attempt / 启动、查询或取消指定代次的执行 |
 | PUT | `/backend-deployments/{id}/executions/{attempt_id}/inputs/reference` | Upload a reference image chunk / 上传参考图分块 |
 | GET | `/backend-deployments/{id}/executions/{attempt_id}/outputs/{file_id}` | Download a result chunk / 下载产物分块 |

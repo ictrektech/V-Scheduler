@@ -476,6 +476,7 @@ pub async fn serve(
         .route("/backend-deployments/{id}/start", post(backend_deployments::start))
         .route("/backend-deployments/{id}/stop", post(backend_deployments::stop))
         .route("/backend-deployments/{id}/models", post(backend_models::register))
+        .route("/backend-deployments/{id}/models/{model_id}", axum::routing::delete(backend_models::remove))
         .route("/backend-deployments/{id}/model-hub", get(backend_transfers::model_hub))
         .route("/backend-deployments/{id}/executions/{attempt_id}/{action}", post(backend_models::execute))
         .route(

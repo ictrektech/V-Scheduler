@@ -560,6 +560,97 @@
         }
       }
     },
+    "/backend-deployments/{id}/models/{model_id}": {
+      "delete": {
+        "summary": "Delete an application backend model / 删除应用后端模型",
+        "description": "Owner or administrator. Active tasks block deletion. Pending cleanup blocks admission and registration for the model. Retry the same DELETE after a channel failure. / 部署所属应用或管理员。活跃任务阻止删除。清理期间阻止该模型准入与登记。通道失败后重试同一删除。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Running application backend deployment ID. / 运行中的应用后端部署 ID。",
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{32}$"
+            }
+          },
+          {
+            "name": "model_id",
+            "in": "path",
+            "required": true,
+            "description": "Model key or key@variant. / 模型键或 key@variant。",
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9_.-]{0,95}(@[a-z0-9][a-z0-9_.-]{0,95})?$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Weights and scheduling binding removed. / 权重副本和调度登记已移除。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "data"
+                  ],
+                  "properties": {
+                    "code": {
+                      "const": "OK"
+                    },
+                    "data": {
+                      "type": "object",
+                      "required": [
+                        "deleted_transfers"
+                      ],
+                      "properties": {
+                        "deleted_transfers": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "description": "Number of target transfer records removed in this attempt. Zero may mean a retry already completed. / 本次移除的目标传输记录数。零也可以表示重试前已清理。"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required. / 需要鉴权。"
+          },
+          "403": {
+            "description": "Caller lacks permission for this deployment. / 调用者无权操作此部署。"
+          },
+          "404": {
+            "description": "Deployment or worker route is missing. / 部署或工作端路由不存在。"
+          },
+          "409": {
+            "description": "BACKEND_TASKS_ACTIVE, BACKEND_STATE_CONFLICT or BACKEND_MODEL_DELETE_UNSUPPORTED. / 任务使用中、部署状态冲突或镜像不支持删除。"
+          },
+          "422": {
+            "description": "Invalid model ID or target rejected the request. / 模型标识无效或目标拒绝请求。"
+          },
+          "429": {
+            "description": "Worker channel busy. / 目标通道繁忙。"
+          },
+          "502": {
+            "description": "BACKEND_CHANNEL_UNAVAILABLE. Retry the same deletion. / 通道不可用，请重试同一删除。"
+          },
+          "503": {
+            "description": "Scheduler storage or executor reload unavailable. / 调度存储或执行器重载不可用。"
+          }
+        }
+      }
+    },
     "/backend-deployments/{id}/models": {
       "post": {
         "summary": "Register a verified worker model / 登记已校验的模型",
