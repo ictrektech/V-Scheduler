@@ -100,6 +100,28 @@ Declare the published image for each fixed hardware Profile in the installed VOS
 
 当前通用执行协议覆盖异步任务。任务 parameters 序列化后最多 32 KiB，校准的 model_limits 与 model_parameters 合计最多 16 KiB。媒体输入使用分块通道。实时 WebSocket 和同步在线许可有各自生命周期。 / The generic execution protocol covers asynchronous jobs. Serialized task parameters are limited to 32 KiB. The calibrated model_limits and model_parameters together have a 16 KiB limit. Use the chunk input channel for media. Real-time WebSocket and synchronous permits have separate lifecycles.
 
+## 应用内接入流程 / Application-owned integration
+
+应用的部署页面调用本应用后端。本应用后端持有自己的 Scheduler 服务身份，按下表完成节点发现、部署、权重准备和模型登记。用户在该应用的业务页选择模型与执行节点。V-Scheduler 提供机制和资源管理，应用决定模型目录、支持的节点与 Profile、操作界面和任务参数。
+
+The application's deployment UI calls its own backend. That backend uses its Scheduler service identity to discover nodes, deploy, prepare weights and register models. The application presents the model and execution node in its own workflow. V-Scheduler provides orchestration and resource management. Each application owns its model catalog, supported Profiles, task parameters and user interface.
+
+| 步骤 / Step | 应用服务端调用 / Calls from the application backend |
+| --- | --- |
+| 发现 / Discover | `GET /managed-nodes` 读取节点名称和 Profile。以 `GET /backend-deployment-access/{app_id}` 的 `targets`、`images` 为准，向管理员显示本应用获准使用的节点及其发布镜像。 / Read node labels and Profiles, and intersect them with the application's permitted targets and release images. |
+| 部署 / Deploy | `POST /backend-deployments` 提交稳定的 `request_key`、`target.kind`、`target.id`、`target.profile`、该 Profile 的 `image`、`container_port` 和 `config.mode=application-backend-v1`。保留返回的 `id`，轮询 `GET /backend-deployments/{id}` 到 `running`，按 `last_error` 提示恢复操作。 / Submit the chosen target, published image and stable request key. Poll deployment status and show actionable errors. |
+| 校验权重 / Verify weights | 按[权重传输协议](model-weight-transfer.md)提交清单、传输或引用只读共享文件、完成校验，取得 `transfer_id`。 / Complete the weights protocol with a verified transfer ID. |
+| 登记 / Register | `POST /backend-deployments/{id}/models` 提交 `model_id` 与 `transfer_id`。`GET /backend-deployments/{id}/models` 返回可选部署、模型、`node_id`、`executor_id`、`profile` 和 `task_type`。 / Register the verified model and use the list to populate model and node choices. |
+| 执行 / Execute | `POST /tasks` 使用所选 `executor.id` 和 Worker 声明的类型。通过 `GET /tasks/{id}` 查询进度、结果和实际 `node_id`、`executor_id`。若任务未结束，可请求 `POST /tasks/{id}/cancel`。 / Submit to the selected executor, poll the task and compare the actual node and executor with the chosen placement. |
+
+使用 VOS 同域前缀 `/api/com.ictrek.v-scheduler/scheduler/api/v1`，服务容器可使用 `http://v-scheduler:8080/scheduler/api/v1`。浏览器使用 VOS 用户身份调用所属应用。后端从所属应用私有存储读取 Scheduler 服务凭据。管理员用 `POST /service-identities` 为对应 `app_id` 发放服务身份。服务身份只操作本应用的部署和模型登记。Worker 内部通道另用 Scheduler 注入的令牌。
+
+Use `/api/com.ictrek.v-scheduler/scheduler/api/v1` under VOS or `http://v-scheduler:8080/scheduler/api/v1` from a service container. The browser uses VOS user identity with its application. The backend uses its own Scheduler service identity from private storage. Administrators issue it with `POST /service-identities` for that `app_id`. Operations are scoped to the owning application. The private Worker channel uses a separate injected token.
+
+容器运行中仍可能收到 `409 BACKEND_EXECUTOR_TARGET_NOT_READY`。登记需要当前目标关联唯一的已批准计算 Agent，使用 `GET /nodes` 核对心跳和 `report.application_backend_dispatch=true`。SSH 目标通过 `POST /enrollments` 的 `discovery_source=modelinfer` 与 `discovery_id=<target.id>` 关联；集群目标使用关联同一 `vos_member_id` 的 Agent。完成[节点注册和审批](application-integration.md)后，可用相同 `transfer_id` 重试登记。
+
+A running container can still return `409 BACKEND_EXECUTOR_TARGET_NOT_READY`. Registration needs one approved compute agent linked to the target, with a fresh heartbeat and `report.application_backend_dispatch=true` in `GET /nodes`. For SSH, link the invitation using `discovery_source=modelinfer` and `discovery_id=<target.id>` in `POST /enrollments`. For a cluster target, match its `vos_member_id`. Complete [node enrollment and approval](application-integration.md), then retry with the same transfer ID.
+
 ## 在调度界面部署 / Deploy from the Scheduler workspace
 
 管理员打开「节点管理 → 应用后端」。可用节点区显示主机名、IP、节点类型和 Profile。「部署后端」在选定应用和兼容节点后显示对应发布镜像。已有实例可以启动、停止或删除。
