@@ -229,6 +229,7 @@ curl -fsS -X PUT "$GATEWAY/api/v1/model-routing" -H "Authorization: Bearer $VOS_
   <ol>
    <li>{{t("发现节点和镜像。用 GET /managed-nodes 读取节点名称和 Profile，用 GET /backend-deployment-access/{app_id} 确认本应用可用的 targets 和 images。应用在安装后的 Compose 中用 x-v-scheduler-backend-images 声明各 Profile 的完整发布镜像。部署使用目标 Profile；DGX Spark 使用经验证的 ARM64 CUDA 镜像。")}}</li>
    <li>{{t("部署后端。用 POST /backend-deployments 提交目标、匹配的镜像和端口。重复同一创建请求时保留 request_key 和参数。查询 GET /backend-deployments/{id}，等 running 且 endpoint 可用再准备模型。pending 包括镜像拉取、按目标架构中转和容器启动。")}}</li>
+   <li>{{t("私有仓库镜像。VOS 管理员在镜像仓库 → 设置 → 上游认证保存仓库主机名和拉取凭据。新部署和重试自动使用。SSH 节点优先按目标架构直拉，失败时主节点用同一份凭据获取带标签镜像并传给目标。应用提交已发布的镜像引用，部署请求字段和认证方式保持一致。")}}</li>
    <li>{{t("准备并登记模型。优先校验节点上可用的只读 Model Hub 文件；共享不可用时按回执偏移分块复制。Worker 用 Scheduler 注入的通道凭据处理受保护的请求。核对大小和 SHA-256 并取得 verified: true 后，向 POST /backend-deployments/{id}/models 提交 model_id 和 transfer_id。符合目标和预算要求时可直接登记，匹配的实测校准可覆盖预算。")}}</li>
    <li>{{t("调用指定节点。应用读取 GET /backend-deployments/{id}/models，保留 deployment_id、model_id、node_id、executor_id、profile 和 task_type，并显示模型与节点的选择项。用 POST /tasks 指定执行器，资源不足时在所选节点排队。用 GET /tasks/{id} 核对实际 node_id 和 executor_id，结合应用回执检查 deployment_id。位置失效或回执不符时提示重新选择。未结束的任务可用 POST /tasks/{id}/cancel 请求取消。")}}</li>
    <li>{{t("检查 Agent 和镜像。BACKEND_EXECUTOR_TARGET_NOT_READY 时检查已批准的目标绑定和新鲜心跳。用 GET /nodes 核对 application_backend_dispatch，并使用与控制器同版的 Agent 验证接入。收到 BACKEND_IMAGE_PULL_FAILED 时检查仓库认证、连通性、目标架构和镜像引用。")}}</li>

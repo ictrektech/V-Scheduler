@@ -14,6 +14,8 @@ When adding or editing a model in **Models & Providers**, use **Thinking control
 
 ## Image Registry
 
+Private registry images. A VOS administrator saves the registry host and pull credentials in Image Hub → Settings → Upstream authentication. New deployments and retries use them automatically. The SSH node pulls for its architecture first. If that fails, the controller uses the same credentials to obtain the tagged image for the target and transfers it over SSH. Apps submit the published image reference using the existing deployment request and authentication.
+
 Sign in as a VOS administrator and open **V-Scheduler → Image Registry**. Pull an upstream image into the local registry, then synchronize the repository or a specific tag. To work offline, import a Docker or OCI archive. Omit the destination to keep the archive's image name. The task panel shows progress and failure details. Management state and image layers persist in the app's `image-hub/` and `image-registry/` directories.
 
 To deploy an image, copy the tag's deployment address from image details. Open **Advanced Management → Node Management → Application Backends**, select the app and node, and use the matching image from the app’s published catalog. The data endpoint defaults to `127.0.0.1:36113` on the VOS host. For remote nodes, set `SCHEDULER_IMAGE_HUB_BIND` to a host address on a trusted network reachable from those nodes and configure their Docker runtime to access that HTTP registry.

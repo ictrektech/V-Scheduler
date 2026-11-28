@@ -24,7 +24,7 @@ Image Studio 优先在目标节点只读使用 ModelInfer 已解析的 Model Hub
 
 ## 镜像仓库
 
-在「镜像仓库 → 设置 → 上游认证」保存私有仓库的拉取凭据。部署 SSH 应用后端时，Scheduler 优先复用目标节点匹配架构的已有镜像，再尝试直拉。目标直拉失败时，主节点可以下载目标平台的带标签镜像并通过 SSH 导入。镜像准备期间保持 `pending`。应用仍通过既有 API 提供它的 Profile 镜像。 [部署接口](docs/application-backend-deployment.md)
+在「镜像仓库 → 设置 → 上游认证」一次性保存私有仓库的拉取凭据。Scheduler 自动用于 SSH 节点直拉和主节点转传，新部署和重试时即时生效。部署 SSH 应用后端时，Scheduler 优先复用目标节点匹配架构的已有镜像，再尝试直拉。目标直拉失败时，主节点可以下载目标平台的带标签镜像并通过 SSH 导入。镜像准备期间保持 `pending`。应用仍通过既有 API 提供它的 Profile 镜像。 [部署接口](docs/application-backend-deployment.md)
 
 VOS 管理员打开 **V-Scheduler → 镜像仓库**。用「拉取镜像」把上游镜像存入本地仓库，已有镜像可按仓库或标签同步。离线环境可用「导入镜像」上传 Docker 或 OCI 归档，省略目标名称时保留归档中的镜像名。任务面板显示进度和失败原因。仓库的管理数据与镜像层分别保存在应用的 `image-hub/` 和 `image-registry/` 持久化目录。
 

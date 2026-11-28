@@ -1,9 +1,11 @@
 use std::{
+    io::Write,
     path::{Path, PathBuf},
     process::Stdio,
     time::Duration,
 };
 
+use base64::{Engine, engine::general_purpose::STANDARD};
 use modelinfer::{
     error::{ModelinferError, codes},
     ssh::{RealSshExec, SshExec, SshTarget},
@@ -46,12 +48,31 @@ fn image_hub_directory() -> PathBuf {
     PathBuf::from("/var/lib/image-hub")
 }
 
-fn read_authfile(path: &Path) -> Option<Value> {
+fn read_json(path: &Path) -> Option<Value> {
     let info = std::fs::symlink_metadata(path).ok()?;
     if !info.is_file() || info.len() > 256 * 1024 {
         return None;
     }
     serde_json::from_slice(&std::fs::read(path).ok()?).ok()
+}
+
+fn configured_registry_auth(settings: &Value, repository: &str) -> Option<Vec<u8>> {
+    let registry = repository.split_once('/')?.0;
+    let credential = settings["registries"].as_array()?.iter().find(|entry| {
+        entry["host"].as_str().is_some_and(|host| {
+            host.trim()
+                .trim_end_matches('/')
+                .eq_ignore_ascii_case(registry)
+        })
+    })?;
+    let username = credential["username"]
+        .as_str()
+        .filter(|value| !value.is_empty())?;
+    let password = credential["password"]
+        .as_str()
+        .filter(|value| !value.is_empty())?;
+    let auth = STANDARD.encode(format!("{username}:{password}"));
+    serde_json::to_vec(&json!({"auths":{(registry):{"auth":auth}}})).ok()
 }
 
 pub async fn prepare(
@@ -75,9 +96,12 @@ pub async fn prepare(
         return Ok(());
     }
     let hub = image_hub_directory();
-    let authfile = hub.join("auth.json");
-    let auth = read_authfile(&authfile);
-    if let Some(credentials) = auth.as_ref().and_then(|doc| registry_auth(doc, repository)) {
+    let credentials = read_json(&hub.join("settings.json"))
+        .and_then(|doc| configured_registry_auth(&doc, repository))
+        .or_else(|| {
+            read_json(&hub.join("auth.json")).and_then(|doc| registry_auth(&doc, repository))
+        });
+    if let Some(credentials) = &credentials {
         let pull = format!(
             "umask 077; cfg=$(mktemp -d) || exit 1; trap 'rm -rf \"$cfg\"' EXIT; \
              cat >\"$cfg/config.json\" && timeout 140s docker --config \"$cfg\" pull --platform 'linux/{arch}' '{image}' >/dev/null && {inspect}"
@@ -86,7 +110,7 @@ pub async fn prepare(
             .run_with_docker_input(
                 target,
                 &pull,
-                std::io::Cursor::new(credentials),
+                std::io::Cursor::new(credentials.clone()),
                 PULL_TIMEOUT,
             )
             .await
@@ -117,8 +141,16 @@ pub async fn prepare(
     let archive = staging.path().join("image.tar");
     let mut copy = tokio::process::Command::new("skopeo");
     copy.args(["--override-os", "linux", "--override-arch", arch, "copy"]);
-    if auth.is_some() {
-        copy.arg("--src-authfile").arg(&authfile);
+    let relay_auth = credentials
+        .map(|credentials| {
+            let mut authfile = tempfile::NamedTempFile::new_in(staging.path())?;
+            authfile.write_all(&credentials)?;
+            Ok::<_, std::io::Error>(authfile)
+        })
+        .transpose()
+        .map_err(|_| failure())?;
+    if let Some(authfile) = &relay_auth {
+        copy.arg("--src-authfile").arg(authfile.path());
     }
     copy.arg(format!("docker://{image}"))
         .arg(format!("docker-archive:{}:{image}", archive.display()))
@@ -170,5 +202,22 @@ mod tests {
             json!({"auths":{"registry.example":{"auth":"scoped"}}})
         );
         assert!(registry_auth(&doc, "unconfigured.example/group/voice").is_none());
+    }
+
+    #[test]
+    fn uses_image_hub_settings_without_a_prior_pull() {
+        let settings = json!({"registries": [
+            {"host": "unrelated.example", "username": "foreign", "password": "other"},
+            {"host": "REGISTRY.example:5000", "username": "reader", "password": "test:pass"},
+            {"host": "empty.example", "username": "reader", "password": ""}
+        ]});
+        let credentials =
+            configured_registry_auth(&settings, "registry.example:5000/group/voice").unwrap();
+        assert_eq!(
+            serde_json::from_slice::<Value>(&credentials).unwrap(),
+            json!({"auths":{"registry.example:5000":{"auth": STANDARD.encode("reader:test:pass")}}})
+        );
+        assert!(configured_registry_auth(&settings, "empty.example/group/voice").is_none());
+        assert!(configured_registry_auth(&settings, "registry.example/group/voice").is_none());
     }
 }
