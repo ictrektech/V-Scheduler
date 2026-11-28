@@ -212,6 +212,7 @@ fn build(
     let mut gateway_executors = serde_json::Map::new();
     let mut model_limits = serde_json::Map::new();
     let mut model_parameters = serde_json::Map::new();
+    let mut reference_models = Vec::new();
     let mut policies = serde_json::Map::new();
     let mut executors = Vec::new();
     let mut adapters = Vec::new();
@@ -332,6 +333,7 @@ fn build(
         models.insert(model.into(), json!(executor));
         gateway_executors.insert(model.into(), json!(gateway_executor));
         model_limits.insert(model.into(), approval["model_limits"].clone());
+        ensure!(approval.get("reference_allowed").is_none_or(Value::is_boolean), "invalid reference approval");
         if application.asynchronous {
             ensure!(
                 approval["model_parameters"]
@@ -340,6 +342,9 @@ fn build(
                 "measured image runtime parameters required"
             );
             model_parameters.insert(model.into(), approval["model_parameters"].clone());
+            if approval["reference_allowed"].as_bool() == Some(true) {
+                reference_models.push(model.to_owned());
+            }
         }
         executors.push(json!({"id":executor,"app_id":application.id,"node_id":node,"contract_version":"1","task_type":task_type,"resources":resources,"upstream_urls":[upstream(application)],"placements":[],"retry_mode":if restart {"idempotent"} else {"none"},"max_attempts":if restart {3} else {1}}));
         if !application.native_permit_only { executors.push(json!({"id":gateway_executor,"app_id":owner,"node_id":node,"contract_version":"1","task_type":"model.infer","resources":resources,"upstream_urls":[upstream(application)],"placements":[],"retry_mode":"none","max_attempts":1})); }
@@ -361,6 +366,10 @@ fn build(
     let mut state = json!({"credential_epoch":epoch,"binding":{"protocol_version":1,"binding_revision":1,"app_id":application.id,"url":CONTROLLER,"token":token,"executor_token":executor_token,"upstream_url":upstream(application),"execution_settings":contract["execution_settings"],"models":models,"gateway_executors":gateway_executors,"model_limits":model_limits,"model_parameters":model_parameters},
         "principals":[{"token":token,"role":"submitter","app_id":application.id,"permit_executors":gateway_ids},{"token":gateway_token,"role":"submitter","app_id":owner,"delegated_executors":delegated_ids}],
         "executors":executors,"adapters":adapters,"gateway":{"url":CONTROLLER,"token":gateway_token,"require_model_policy":true,"models":policies}});
+    if application.asynchronous {
+        reference_models.sort();
+        state["binding"]["reference_models"] = json!(reference_models);
+    }
     if application.native_permit_only {
         state["binding"]["url"] = json!("http://v-scheduler:8080/scheduler/api/v1");
         state["principals"].as_array_mut().unwrap().truncate(1);
@@ -734,6 +743,7 @@ fn safe_failure(error: &anyhow::Error) -> &'static str {
         "native input bounds required",
         "native GPU measurement required",
         "duplicate model calibration",
+        "invalid reference approval",
         "application binding waits for active or unknown execution",
         "application executor was disabled or changed",
         "application predecessor was disabled or changed",
@@ -852,6 +862,10 @@ mod tests {
         let report = json!({});
         let first = build(app,"node",&capacity,&baseline,profile,&report,&contract,&budgets,None).unwrap();
         assert!(first["binding"]["models"]["new-model"].is_string());
+        assert!(first["binding"].get("reference_models").is_none(), "synchronous bindings must not carry image-only fields");
+        let mut invalid = budgets.clone();
+        invalid["approvals"][0]["reference_allowed"] = json!("yes");
+        assert!(build(app,"node",&capacity,&baseline,profile,&report,&contract,&invalid,None).is_err());
         contract["sync_models"].as_array_mut().unwrap().push(json!({"id":"another-new-model","task_type":"model.infer"}));
         let next = build(app,"node",&capacity,&baseline,profile,&report,&contract,&budgets,Some(&first)).unwrap();
         assert_eq!(next["binding"]["models"]["new-model"], first["binding"]["models"]["new-model"]);
@@ -962,6 +976,43 @@ mod tests {
             state["adapters"][0]["health_url"],
             "http://image-studio-backend:5000/health"
         );
+    }
+
+    #[test]
+    fn reference_calibration_is_reported_to_the_application() {
+        let app = APPLICATIONS[2];
+        let capacity = Resources { cpu_millicores: 4000, memory_mib: 8192, ..Default::default() };
+        let settings = json!({"runtime": "fixture"});
+        let contract = json!({"execution_settings": settings, "async_models": [
+            {"id": "reference-model", "task_type": "image.generate"},
+            {"id": "alpha-model", "task_type": "image.generate"},
+            {"id": "text-model", "task_type": "image.generate"}
+        ]});
+        let approval = |model: &str, reference: bool| json!({
+            "app_id": app.id, "architecture": std::env::consts::ARCH, "profile": "thor", "hardware": [],
+            "execution_settings": settings, "model_id": model, "task_type": "image.generate",
+            "resources": {"cpu_millicores": 1000, "memory_mib": 1024},
+            "evidence": {"id": "unit-only", "peak_memory_mib": 512, "confirmed_stopped": true},
+            "max_input_bytes": 8192, "model_limits": {"width": 512},
+            "model_parameters": {"backend": "fixture"}, "reference_allowed": reference
+        });
+        let approvals = json!({"protocol_version": 1, "credential_epoch": 1, "approvals": [
+            approval("reference-model", true), approval("alpha-model", true), approval("text-model", false)
+        ]});
+        let state = build(app, "node", &capacity, &Resources::default(), "thor", &json!({}), &contract, &approvals, None).unwrap();
+        assert_eq!(state["binding"]["reference_models"], json!(["alpha-model", "reference-model"]));
+        let mut invalid = approvals.clone();
+        invalid["approvals"][0]["reference_allowed"] = json!("yes");
+        assert!(build(app, "node", &capacity, &Resources::default(), "thor", &json!({}), &contract, &invalid, None).is_err());
+    }
+
+    #[test]
+    fn published_image_calibration_grants_reference_to_sd_turbo() {
+        let approvals: Value = serde_json::from_str(include_str!("../../../config/app-calibrations.json")).unwrap();
+        let measured = approvals["approvals"].as_array().unwrap().iter()
+            .find(|v| v["app_id"] == "com.ictrek.image-studio" && v["profile"] == "amd-cuda" && v["model_id"] == "sd-turbo")
+            .expect("published amd-cuda sd-turbo calibration");
+        assert_eq!(measured["reference_allowed"], json!(true));
     }
 
     #[test]

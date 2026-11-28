@@ -930,15 +930,21 @@
         "gpu_memory_mib": 6144
       },
       "evidence": {
-        "id": "image-local-bounded-20261021",
-        "image_digest": "sha256:fefb58c520f6af1fdf9ad7b9d15ecdfa9135631157755c65d2f45c462eb6340e",
+        "id": "image-bounded-20261124",
+        "image_digest": "sha256:07ff9df809378e382f62dd7c0ceb6a888d84a91e610ba41ffb3277f7acba4cba",
         "peak_memory_mib": 5789,
-        "peak_gpu_memory_mib": 3340,
+        "peak_gpu_memory_mib": 4684,
         "memory_method": "maximum of cgroup measured peak and host available-memory decrease; unified memory counted once",
-        "observed_peak_cpu_millicores": 3973,
+        "observed_peak_cpu_millicores": 5580,
+        "modes": ["txt2img", "img2img"],
+        "samples": [
+          {"date": "2026-10-21", "peak_memory_mib": 5789, "peak_gpu_memory_mib": 3340},
+          {"date": "2026-11-24", "peak_memory_mib": 2005, "peak_gpu_memory_mib": 4684}
+        ],
         "confirmed_stopped": true
       },
       "max_input_bytes": 65536,
+      "reference_allowed": true,
       "model_limits": {
         "width": 512,
         "height": 512,
