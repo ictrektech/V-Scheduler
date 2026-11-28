@@ -1,5 +1,7 @@
 # V-Scheduler Resource Scheduling
 
+To upgrade an existing installation, retain its storage and select the canonical hardware Profile. Map `amd` and `arm` to `amd-cuda` and `arm-cuda`, `amd-without-cuda` and `arm-without-cuda` to `amd-cpu` and `arm-cpu`, and `l4t` to `jetson-orin`. Replace `thor-spark` with `jetson-thor` or `dgx-spark` according to the device. Select `jetson-thor` if the device only advertises the legacy `thor-spark` identifier. Supply the updated Profile explicitly for API upgrades. To roll back, select the corresponding old Profile. Deployment and inference request contracts stay the same.
+
 Open **API Documentation → Application integration → Choose execution nodes for applications** for the built-in workflow and request examples for deployment, verified weights, model registration and execution on the chosen node. The Scheduler API contract is unchanged.
 
 Open **V-Scheduler** in the VOS application group to find Models & Usage, Models & Providers, inference deployments, Playground, Model Weights, Image Registry, Resources & Tasks, management pages and API Documentation. After creating a personal key from **API Key**, copy the LAN Base URL and key from the result panel. Choose a model visible to that key. Under **API Documentation → Cross-node model weight transfer**, download the specification for preparing weights without a Model Hub mount.

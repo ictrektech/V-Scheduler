@@ -111,7 +111,7 @@ class ModelManagementPackagingTests(unittest.TestCase):
         self.assertIn('com.ictrek.model.storage',self.configs['MODEL_HUB_SHARED_MODELS_PATH']['hints'])
 
     def test_every_profile_has_stable_storage_and_three_distinct_ollamas(self):
-        for profile in ('amd','amd-without-cuda','arm','arm-without-cuda','l4t','thor-spark'):
+        for profile in ('amd-cuda','amd-cpu','arm-cuda','arm-cpu','jetson-orin','jetson-thor','dgx-spark'):
             selected=[s for s in self.compose['services'].values() if profile in s.get('profiles',[])]
             storage=[s for s in selected if s.get('command',[None])[0]=='controller']
             self.assertEqual(len(storage),1)
@@ -128,7 +128,7 @@ class ModelManagementPackagingTests(unittest.TestCase):
                 self.assertTrue(set(service['volumes']).issubset(storage[0]['volumes']))
                 self.assertEqual(len(service['ports']),2)
                 ports.extend(service['ports'])
-                self.assertEqual(service.get('runtime')=='nvidia',profile not in ('amd-without-cuda','arm-without-cuda'))
+                self.assertEqual(service.get('runtime')=='nvidia',profile not in ('amd-cpu','arm-cpu'))
             self.assertEqual(len(set(ports)),6)
 
     def test_packaging_resolves_original_ollama_column_and_direct_router_binding(self):
@@ -145,7 +145,7 @@ class ModelManagementPackagingTests(unittest.TestCase):
 
     def test_router_is_embedded_and_legacy_addresses_remain_compatible(self):
         self.assertFalse(any(name.startswith('gateway-') for name in self.compose['services']))
-        for profile in ('amd','amd-without-cuda','arm','arm-without-cuda','l4t','thor-spark'):
+        for profile in ('amd-cuda','amd-cpu','arm-cuda','arm-cpu','jetson-orin','jetson-thor','dgx-spark'):
             selected=[s for s in self.compose['services'].values() if profile in s.get('profiles',[])]
             self.assertEqual(len(selected),4)
             controller=next(s for s in selected if s.get('command',[None])[0]=='controller')

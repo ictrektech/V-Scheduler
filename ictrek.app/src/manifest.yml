@@ -26,33 +26,33 @@ dependencies:
       version: latest
       optional: false
 profiles:
-  - name: amd
+  - name: amd-cuda
     title: {zh-CN: "AMD64 NVIDIA", en: "AMD64 NVIDIA", zh-TW: "AMD64 NVIDIA"}
     description: {zh-CN: "内置本机资源采集，安装后自动启动", en: "Built-in host resource collection starts automatically", zh-TW: "內建本機資源取樣，安裝後自動啟動"}
     caps:
       arch: amd64
       software: [cuda]
-    conflicts: [amd-without-cuda, arm, arm-without-cuda, l4t, thor-spark]
-  - name: amd-without-cuda
+    conflicts: [amd-cpu, arm-cuda, arm-cpu, jetson-orin, jetson-thor, dgx-spark]
+  - name: amd-cpu
     title: {zh-CN: "AMD64 CPU", en: "AMD64 CPU", zh-TW: "AMD64 CPU"}
     description: {zh-CN: "内置本机资源采集，安装后自动启动", en: "Built-in host resource collection starts automatically", zh-TW: "內建本機資源取樣，安裝後自動啟動"}
     caps:
       arch: amd64
-    conflicts: [amd, arm, arm-without-cuda, l4t, thor-spark]
-  - name: arm
+    conflicts: [amd-cuda, arm-cuda, arm-cpu, jetson-orin, jetson-thor, dgx-spark]
+  - name: arm-cuda
     title: {zh-CN: "ARM64 NVIDIA", en: "ARM64 NVIDIA", zh-TW: "ARM64 NVIDIA"}
     description: {zh-CN: "内置本机资源采集，安装后自动启动", en: "Built-in host resource collection starts automatically", zh-TW: "內建本機資源取樣，安裝後自動啟動"}
     caps:
       arch: arm64
       software: [cuda]
-    conflicts: [amd, amd-without-cuda, arm-without-cuda, l4t, thor-spark]
-  - name: arm-without-cuda
+    conflicts: [amd-cuda, amd-cpu, arm-cpu, jetson-orin, jetson-thor, dgx-spark]
+  - name: arm-cpu
     title: {zh-CN: "ARM64 CPU", en: "ARM64 CPU", zh-TW: "ARM64 CPU"}
     description: {zh-CN: "内置本机资源采集，安装后自动启动", en: "Built-in host resource collection starts automatically", zh-TW: "內建本機資源取樣，安裝後自動啟動"}
     caps:
       arch: arm64
-    conflicts: [amd, amd-without-cuda, arm, l4t, thor-spark]
-  - name: l4t
+    conflicts: [amd-cuda, amd-cpu, arm-cuda, jetson-orin, jetson-thor, dgx-spark]
+  - name: jetson-orin
     title: {zh-CN: "Jetson Orin", en: "Jetson Orin", zh-TW: "Jetson Orin"}
     description: {zh-CN: "内置本机资源采集，安装后自动启动", en: "Built-in host resource collection starts automatically", zh-TW: "內建本機資源取樣，安裝後自動啟動"}
     caps:
@@ -60,16 +60,25 @@ profiles:
       software: [cuda]
       device-type:
         - any-of: [jetson-orin, l4t, jetson]
-    conflicts: [amd, amd-without-cuda, arm, arm-without-cuda, thor-spark]
-  - name: thor-spark
-    title: {zh-CN: "Jetson Thor / DGX Spark", en: "Jetson Thor / DGX Spark", zh-TW: "Jetson Thor / DGX Spark"}
+    conflicts: [amd-cuda, amd-cpu, arm-cuda, arm-cpu, jetson-thor, dgx-spark]
+  - name: jetson-thor
+    title: {zh-CN: "Jetson Thor", en: "Jetson Thor", zh-TW: "Jetson Thor"}
     description: {zh-CN: "内置本机资源采集，安装后自动启动", en: "Built-in host resource collection starts automatically", zh-TW: "內建本機資源取樣，安裝後自動啟動"}
     caps:
       arch: arm64
       software: [cuda]
       device-type:
-        - any-of: [jetson-thor, dgx-spark, thor-spark, thor, spark]
-    conflicts: [amd, amd-without-cuda, arm, arm-without-cuda, l4t]
+        - any-of: [jetson-thor, thor, thor-spark]
+    conflicts: [amd-cuda, amd-cpu, arm-cuda, arm-cpu, jetson-orin, dgx-spark]
+  - name: dgx-spark
+    title: {zh-CN: "DGX Spark", en: "DGX Spark", zh-TW: "DGX Spark"}
+    description: {zh-CN: "内置本机资源采集，安装后自动启动", en: "Built-in host resource collection starts automatically", zh-TW: "內建本機資源取樣，安裝後自動啟動"}
+    caps:
+      arch: arm64
+      software: [cuda]
+      device-type:
+        - any-of: [dgx-spark, spark]
+    conflicts: [amd-cuda, amd-cpu, arm-cuda, arm-cpu, jetson-orin, jetson-thor]
 require-profiles: true
 projects:
   - name: scheduler-app-backend

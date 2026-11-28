@@ -1,5 +1,7 @@
 # V-Scheduler 资源调度
 
+从旧版升级时，在原有存储上显式选择标准硬件 Profile。`amd` 和 `arm` 分别迁移到 `amd-cuda` 和 `arm-cuda`。原 `amd-without-cuda` 和 `arm-without-cuda` 分别迁移到 `amd-cpu` 和 `arm-cpu`。`l4t` 迁移到 `jetson-orin`。`thor-spark` 按设备选择 `jetson-thor` 或 `dgx-spark`。设备只有旧的 `thor-spark` 标识时选择 `jetson-thor`。API 升级须传入新 Profile，回退时选旧包对应的 Profile。应用部署和推理 API 保持一致。
+
 打开「API 文档 → 应用接入 → 为接入应用指定执行节点」，在内置文档中查看目标节点部署、权重校验、模型登记以及指定节点执行的流程与请求示例。Scheduler API 契约保持一致。
 
 展开 VOS 应用组的「V-Scheduler」，可直接进入模型与调用、模型与上游、推理部署、试聊、权重管理、镜像仓库、资源与任务、管理页面及 API 文档。点击「API Key」生成个人 Key 后，在结果区复制局域网 Base URL 和 Key，模型从该 Key 可见的列表选择。无共享挂载时的权重准备规范可在「API 文档 → 跨节点模型权重传输」下载。

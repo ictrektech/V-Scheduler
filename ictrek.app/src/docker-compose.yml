@@ -218,65 +218,65 @@ x-ollama: &ollama
 services:
   controller-amd:
     <<: *controller
-    profiles: [amd]
+    profiles: [amd-cuda]
     image: ${V_SCHEDULER_AMD_IMAGE}
     runtime: nvidia
     environment:
       <<: *controller-env
-      MODEL_HUB_PROFILE: amd
+      MODEL_HUB_PROFILE: amd-cuda
       V_SCHEDULER_IMAGE: ${V_SCHEDULER_AMD_IMAGE}
       OLLAMA_SERVER_IMAGE: ${OLLAMA_SERVER_AMD_IMAGE}
   controller-amd-without-cuda:
     <<: *controller
-    profiles: [amd-without-cuda]
+    profiles: [amd-cpu]
     image: ${V_SCHEDULER_AMD_IMAGE}
     environment:
       <<: *controller-env
-      MODEL_HUB_PROFILE: amd-without-cuda
+      MODEL_HUB_PROFILE: amd-cpu
       V_SCHEDULER_IMAGE: ${V_SCHEDULER_AMD_IMAGE}
       OLLAMA_SERVER_IMAGE: ${OLLAMA_SERVER_AMD_IMAGE}
   controller-arm:
     <<: *controller
-    profiles: [arm]
+    profiles: [arm-cuda]
     image: ${V_SCHEDULER_ARM_IMAGE}
     runtime: nvidia
     environment:
       <<: *controller-env
-      MODEL_HUB_PROFILE: arm
+      MODEL_HUB_PROFILE: arm-cuda
       V_SCHEDULER_IMAGE: ${V_SCHEDULER_ARM_IMAGE}
       OLLAMA_SERVER_IMAGE: ${OLLAMA_SERVER_ARM_IMAGE}
   controller-arm-without-cuda:
     <<: *controller
-    profiles: [arm-without-cuda]
+    profiles: [arm-cpu]
     image: ${V_SCHEDULER_ARM_IMAGE}
     environment:
       <<: *controller-env
-      MODEL_HUB_PROFILE: arm-without-cuda
+      MODEL_HUB_PROFILE: arm-cpu
       V_SCHEDULER_IMAGE: ${V_SCHEDULER_ARM_IMAGE}
       OLLAMA_SERVER_IMAGE: ${OLLAMA_SERVER_ARM_WITHOUT_CUDA_IMAGE}
   controller-l4t:
     <<: *controller
-    profiles: [l4t]
+    profiles: [jetson-orin]
     image: ${V_SCHEDULER_ARM_IMAGE}
     runtime: nvidia
     environment:
       <<: *controller-env
-      MODEL_HUB_PROFILE: l4t
+      MODEL_HUB_PROFILE: jetson-orin
       V_SCHEDULER_IMAGE: ${V_SCHEDULER_ARM_IMAGE}
       OLLAMA_SERVER_IMAGE: ${OLLAMA_SERVER_L4T_IMAGE}
   controller-thor-spark:
     <<: *controller
-    profiles: [thor-spark]
+    profiles: [jetson-thor, dgx-spark]
     image: ${V_SCHEDULER_ARM_IMAGE}
     runtime: nvidia
     environment:
       <<: *controller-env
-      MODEL_HUB_PROFILE: thor-spark
+      MODEL_HUB_PROFILE: ${VOS_APP_PROFILES:-jetson-thor}
       V_SCHEDULER_IMAGE: ${V_SCHEDULER_ARM_IMAGE}
       OLLAMA_SERVER_IMAGE: ${OLLAMA_SERVER_THOR_SPARK_IMAGE}
   ollama-qa-amd:
     <<: *ollama
-    profiles: [amd]
+    profiles: [amd-cuda]
     image: ${OLLAMA_SERVER_AMD_IMAGE}
     runtime: nvidia
     networks:
@@ -299,7 +299,7 @@ services:
       MODEL_HUB_SERVICE_ROLE: generate
   ollama-embedding-amd:
     <<: *ollama
-    profiles: [amd]
+    profiles: [amd-cuda]
     image: ${OLLAMA_SERVER_AMD_IMAGE}
     runtime: nvidia
     networks:
@@ -322,7 +322,7 @@ services:
       MODEL_HUB_SERVICE_ROLE: embedding
   ollama-rerank-amd:
     <<: *ollama
-    profiles: [amd]
+    profiles: [amd-cuda]
     image: ${OLLAMA_SERVER_AMD_IMAGE}
     runtime: nvidia
     networks:
@@ -345,7 +345,7 @@ services:
       MODEL_HUB_SERVICE_ROLE: rerank
   ollama-qa-amd-without-cuda:
     <<: *ollama
-    profiles: [amd-without-cuda]
+    profiles: [amd-cpu]
     image: ${OLLAMA_SERVER_AMD_IMAGE}
     networks:
       vos_default:
@@ -367,7 +367,7 @@ services:
       MODEL_HUB_SERVICE_ROLE: generate
   ollama-embedding-amd-without-cuda:
     <<: *ollama
-    profiles: [amd-without-cuda]
+    profiles: [amd-cpu]
     image: ${OLLAMA_SERVER_AMD_IMAGE}
     networks:
       vos_default:
@@ -389,7 +389,7 @@ services:
       MODEL_HUB_SERVICE_ROLE: embedding
   ollama-rerank-amd-without-cuda:
     <<: *ollama
-    profiles: [amd-without-cuda]
+    profiles: [amd-cpu]
     image: ${OLLAMA_SERVER_AMD_IMAGE}
     networks:
       vos_default:
@@ -411,7 +411,7 @@ services:
       MODEL_HUB_SERVICE_ROLE: rerank
   ollama-qa-arm:
     <<: *ollama
-    profiles: [arm]
+    profiles: [arm-cuda]
     image: ${OLLAMA_SERVER_ARM_IMAGE}
     runtime: nvidia
     networks:
@@ -434,7 +434,7 @@ services:
       MODEL_HUB_SERVICE_ROLE: generate
   ollama-embedding-arm:
     <<: *ollama
-    profiles: [arm]
+    profiles: [arm-cuda]
     image: ${OLLAMA_SERVER_ARM_IMAGE}
     runtime: nvidia
     networks:
@@ -457,7 +457,7 @@ services:
       MODEL_HUB_SERVICE_ROLE: embedding
   ollama-rerank-arm:
     <<: *ollama
-    profiles: [arm]
+    profiles: [arm-cuda]
     image: ${OLLAMA_SERVER_ARM_IMAGE}
     runtime: nvidia
     networks:
@@ -480,7 +480,7 @@ services:
       MODEL_HUB_SERVICE_ROLE: rerank
   ollama-qa-arm-without-cuda:
     <<: *ollama
-    profiles: [arm-without-cuda]
+    profiles: [arm-cpu]
     image: ${OLLAMA_SERVER_ARM_WITHOUT_CUDA_IMAGE}
     networks:
       vos_default:
@@ -502,7 +502,7 @@ services:
       MODEL_HUB_SERVICE_ROLE: generate
   ollama-embedding-arm-without-cuda:
     <<: *ollama
-    profiles: [arm-without-cuda]
+    profiles: [arm-cpu]
     image: ${OLLAMA_SERVER_ARM_WITHOUT_CUDA_IMAGE}
     networks:
       vos_default:
@@ -524,7 +524,7 @@ services:
       MODEL_HUB_SERVICE_ROLE: embedding
   ollama-rerank-arm-without-cuda:
     <<: *ollama
-    profiles: [arm-without-cuda]
+    profiles: [arm-cpu]
     image: ${OLLAMA_SERVER_ARM_WITHOUT_CUDA_IMAGE}
     networks:
       vos_default:
@@ -546,7 +546,7 @@ services:
       MODEL_HUB_SERVICE_ROLE: rerank
   ollama-qa-l4t:
     <<: *ollama
-    profiles: [l4t]
+    profiles: [jetson-orin]
     image: ${OLLAMA_SERVER_L4T_IMAGE}
     runtime: nvidia
     networks:
@@ -569,7 +569,7 @@ services:
       MODEL_HUB_SERVICE_ROLE: generate
   ollama-embedding-l4t:
     <<: *ollama
-    profiles: [l4t]
+    profiles: [jetson-orin]
     image: ${OLLAMA_SERVER_L4T_IMAGE}
     runtime: nvidia
     networks:
@@ -592,7 +592,7 @@ services:
       MODEL_HUB_SERVICE_ROLE: embedding
   ollama-rerank-l4t:
     <<: *ollama
-    profiles: [l4t]
+    profiles: [jetson-orin]
     image: ${OLLAMA_SERVER_L4T_IMAGE}
     runtime: nvidia
     networks:
@@ -615,7 +615,7 @@ services:
       MODEL_HUB_SERVICE_ROLE: rerank
   ollama-qa-thor-spark:
     <<: *ollama
-    profiles: [thor-spark]
+    profiles: [jetson-thor, dgx-spark]
     image: ${OLLAMA_SERVER_THOR_SPARK_IMAGE}
     runtime: nvidia
     networks:
@@ -638,7 +638,7 @@ services:
       MODEL_HUB_SERVICE_ROLE: generate
   ollama-embedding-thor-spark:
     <<: *ollama
-    profiles: [thor-spark]
+    profiles: [jetson-thor, dgx-spark]
     image: ${OLLAMA_SERVER_THOR_SPARK_IMAGE}
     runtime: nvidia
     networks:
@@ -661,7 +661,7 @@ services:
       MODEL_HUB_SERVICE_ROLE: embedding
   ollama-rerank-thor-spark:
     <<: *ollama
-    profiles: [thor-spark]
+    profiles: [jetson-thor, dgx-spark]
     image: ${OLLAMA_SERVER_THOR_SPARK_IMAGE}
     runtime: nvidia
     networks:

@@ -315,7 +315,7 @@ with tarfile.open(sys.argv[1], "r:gz") as archive:
         assert project_compose.get("services"), f"No services in {filename}"
 assert manifest.get("category") == ["system"], "V-Scheduler must use the VOS-supported system category"
 profiles = manifest.get("profiles", [])
-assert {profile["name"] for profile in profiles} == {"amd","arm","amd-without-cuda","arm-without-cuda","l4t","thor-spark"}, "missing hardware profile"
+assert {profile["name"] for profile in profiles} == {"amd-cuda","arm-cuda","amd-cpu","arm-cpu","jetson-orin","jetson-thor","dgx-spark"}, "missing hardware profile"
 assert all(profile.get("description") for profile in profiles), "profile description is required by VOS"
 frontend = manifest.get("frontend", {})
 assert frontend.get("enabled") is True, "manifest.yml frontend.enabled must be true"
